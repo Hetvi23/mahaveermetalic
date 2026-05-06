@@ -146,13 +146,42 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				fieldname: "item_type",
 				label: "Type",
-				fieldtype: "Select",
+				fieldtype: "Link",
 				reqd: true,
-				options: "Cut\nPatti\nJari\nKasab\nRoll",
+				options: "MM Item Type Master",
 			},
 			{ fieldname: "item_name", label: "Name", fieldtype: "Data", reqd: true },
 			{ fieldname: "uom", label: "UOM", fieldtype: "Data" },
 		],
+		childTables: [
+			{
+				fieldname: "color_rates",
+				label: "Color list",
+				childDoctype: "MM Item Color Detail",
+				columns: [
+					{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
+					{ fieldname: "purchase_party", label: "Purchase party", fieldtype: "Link", options: "MM Party Master" },
+					{ fieldname: "purchase_rate", label: "Purchase rate", fieldtype: "Currency" },
+					{ fieldname: "sale_rate", label: "Sale rate", fieldtype: "Currency" },
+					{ fieldname: "weight", label: "Weight", fieldtype: "Float" },
+				],
+			},
+		],
+	},
+	{
+		slug: "item-type",
+		routeBase: "/masters/item-type",
+		doctype: "MM Item Type Master",
+		title: "Item Type Master",
+		listTagline: "Future-proof item type dictionary.",
+		navGroup: "masters",
+		formSections: [{ id: "it1", title: "Type", fieldnames: ["type_name"] }],
+		listColumns: [
+			{ fieldname: "name", label: "ID" },
+			{ fieldname: "type_name", label: "Type Name" },
+		],
+		searchField: "type_name",
+		fields: [{ fieldname: "type_name", label: "Type Name", fieldtype: "Data", reqd: true }],
 	},
 	{
 		slug: "vendor",
@@ -262,7 +291,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "r1",
 				title: "Identification",
 				description: "Roll / lot identity and where stock sits.",
-				fieldnames: ["roll_no", "lot_number", "location", "item_type"],
+				fieldnames: ["roll_no", "lot_number", "branch", "location", "supplier", "item_type"],
 			},
 			{
 				id: "r2",
@@ -270,7 +299,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				description: "What the roll represents on the floor.",
 				fieldnames: ["color_name", "cut"],
 			},
-			{ id: "r3", title: "On hand", fieldnames: ["stock_weight", "stock_box"] },
+			{ id: "r3", title: "Stock states", fieldnames: ["stock_weight", "stock_box", "reserved_weight", "issued_weight", "available_weight"] },
 		],
 		listColumns: [
 			{ fieldname: "name", label: "ID" },
@@ -282,12 +311,17 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		fields: [
 			{ fieldname: "roll_no", label: "Roll No", fieldtype: "Data" },
 			{ fieldname: "lot_number", label: "Lot Number", fieldtype: "Data" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true },
+			{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 			{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
 			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
 			{ fieldname: "item_type", label: "Item Type", fieldtype: "Link", options: "MM Item Master" },
 			{ fieldname: "stock_weight", label: "Stock (Weight)", fieldtype: "Float" },
 			{ fieldname: "stock_box", label: "Stock (Box)", fieldtype: "Float" },
+			{ fieldname: "reserved_weight", label: "Reserved (Weight)", fieldtype: "Float" },
+			{ fieldname: "issued_weight", label: "Issued (Weight)", fieldtype: "Float" },
+			{ fieldname: "available_weight", label: "Available (Weight)", fieldtype: "Float", readOnly: true },
 		],
 	},
 	{
@@ -302,7 +336,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "so-h",
 				title: "Order header",
 				description: "Series, date, and sold-to party.",
-				fieldnames: ["naming_series", "transaction_date", "party"],
+				fieldnames: ["naming_series", "transaction_date", "branch", "party", "party_company"],
 			},
 			{
 				id: "so-p",
@@ -334,7 +368,9 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				default: "MM-SO-.YYYY.-",
 			},
 			{ fieldname: "transaction_date", label: "Date", fieldtype: "Date", reqd: true },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
+			{ fieldname: "party_company", label: "Party company", fieldtype: "Data" },
 			{ fieldname: "planned_delivery_date", label: "Planned delivery", fieldtype: "Date" },
 			{ fieldname: "planning_notes", label: "Planning notes", fieldtype: "Small Text" },
 			{
@@ -380,7 +416,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "po1",
 				title: "Linkage",
 				description: "Ties back to a sales order; PO number follows SO.",
-				fieldnames: ["transaction_date", "sales_order", "po_number"],
+				fieldnames: ["transaction_date", "branch", "sales_order", "po_number"],
 			},
 			{ id: "po2", title: "Material", fieldnames: ["color", "qty_kg", "rate"] },
 			{ id: "po3", title: "Logistics", fieldnames: ["delivery_date"] },
@@ -394,6 +430,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		searchField: "color",
 		fields: [
 			{ fieldname: "transaction_date", label: "Date", fieldtype: "Date", reqd: true },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "sales_order", label: "SO reference", fieldtype: "Link", options: "MM Sales Order" },
 			{ fieldname: "po_number", label: "PO number (= SO)", fieldtype: "Data", readOnly: true },
 			{ fieldname: "color", label: "Color", fieldtype: "Data", reqd: true },
@@ -463,13 +500,13 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "in1",
 				title: "Where & when",
-				fieldnames: ["location", "posting_date"],
+				fieldnames: ["branch", "location", "posting_date"],
 			},
 			{
 				id: "in2",
 				title: "References",
 				description: "Optional SO / party / challan traceability.",
-				fieldnames: ["sales_order", "party", "challan_number"],
+				fieldnames: ["sales_order", "party", "party_company", "challan_number", "veermetlon_delivery_challan", "veermetlon_job_card"],
 			},
 			{
 				id: "in3",
@@ -486,11 +523,15 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 		searchField: "lot_number",
 		fields: [
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true },
 			{ fieldname: "posting_date", label: "Date", fieldtype: "Date", reqd: true },
 			{ fieldname: "sales_order", label: "SO number", fieldtype: "Link", options: "MM Sales Order" },
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master" },
+			{ fieldname: "party_company", label: "Party company", fieldtype: "Data" },
 			{ fieldname: "challan_number", label: "Challan number", fieldtype: "Data" },
+			{ fieldname: "veermetlon_delivery_challan", label: "Veermetlon challan", fieldtype: "Link", options: "Delivery Challan" },
+			{ fieldname: "veermetlon_job_card", label: "Veermetlon job card", fieldtype: "Link", options: "Job Card" },
 			{ fieldname: "item_type", label: "Item type", fieldtype: "Link", options: "MM Item Master", reqd: true },
 			{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
 			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
@@ -512,7 +553,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "cu1",
 				title: "Roll & shade",
-				fieldnames: ["roll_no", "shade", "cut", "status", "job_work_flag"],
+				fieldnames: ["roll_no", "branch", "shade", "cut", "status", "job_work_flag"],
 			},
 			{
 				id: "cu2",
@@ -530,6 +571,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		searchField: "roll_no",
 		fields: [
 			{ fieldname: "roll_no", label: "Roll no", fieldtype: "Data", reqd: true },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "shade", label: "Shade", fieldtype: "Data" },
 			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
 			{

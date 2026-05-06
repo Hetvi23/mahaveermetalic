@@ -1,64 +1,39 @@
 {
   "actions": [],
   "allow_rename": 1,
-  "autoname": "field:item_name",
-  "creation": "2026-05-03 00:00:00.000000",
+  "autoname": "field:type_name",
+  "creation": "2026-05-06 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
-  "field_order": ["item_type", "item_name", "uom", "section_color_rates", "color_rates"],
+  "field_order": ["type_name"],
   "fields": [
     {
-      "fieldname": "item_type",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Type",
-      "options": "MM Item Type Master",
-      "reqd": 1
-    },
-    {
-      "fieldname": "item_name",
+      "fieldname": "type_name",
       "fieldtype": "Data",
       "in_list_view": 1,
-      "label": "Name",
+      "label": "Type Name",
       "reqd": 1,
       "unique": 1
-    },
-    {
-      "fieldname": "uom",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "UOM"
-    },
-    {
-      "fieldname": "section_color_rates",
-      "fieldtype": "Section Break",
-      "label": "Color-wise details"
-    },
-    {
-      "fieldname": "color_rates",
-      "fieldtype": "Table",
-      "label": "Color list",
-      "options": "MM Item Color Detail"
     }
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
+  "modified": "2026-05-06 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
-  "name": "MM Item Master",
+  "name": "MM Item Type Master",
   "naming_rule": "By fieldname",
   "owner": "Administrator",
   "permissions": [
     {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
     {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
     {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "export": 1, "print": 1, "report": 1},
     {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
     {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
   ],
   "sort_field": "modified",
   "sort_order": "DESC",
   "states": [],
-  "title_field": "item_name"
+  "title_field": "type_name"
 }

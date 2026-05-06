@@ -125,19 +125,21 @@ export function FieldInput({ field, value, onChange, disabled, compact }: Props)
 	}
 
 	const inputType =
-		field.fieldtype === "Int"
+		field.fieldtype === "Int" ||
+		field.fieldtype === "Float" ||
+		field.fieldtype === "Currency" ||
+		field.fieldtype === "Percent"
 			? "number"
-			: field.fieldtype === "Float" || field.fieldtype === "Currency" || field.fieldtype === "Percent"
-				? "text"
-				: field.fieldtype === "Date"
-					? "date"
-					: "text";
+			: field.fieldtype === "Date"
+				? "date"
+				: "text";
 
 	return lab(
 		<input
 			className={ic}
 			disabled={ro}
 			type={inputType}
+			step={field.fieldtype === "Int" ? 1 : field.fieldtype === "Float" || field.fieldtype === "Currency" || field.fieldtype === "Percent" ? "any" : undefined}
 			value={value == null ? "" : String(value)}
 			required={field.reqd}
 			onChange={(e) => {

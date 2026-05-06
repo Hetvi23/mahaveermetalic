@@ -8,7 +8,9 @@
   "field_order": [
     "naming_series",
     "transaction_date",
+    "branch",
     "party",
+    "party_company",
     "section_items",
     "items",
     "section_planning",
@@ -43,6 +45,18 @@
       "label": "Party Name",
       "options": "MM Party Master",
       "reqd": 1
+    },
+    {
+      "fieldname": "party_company",
+      "fieldtype": "Data",
+      "label": "Party Company"
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch",
+      "in_list_view": 1
     },
     {
       "fieldname": "section_items",

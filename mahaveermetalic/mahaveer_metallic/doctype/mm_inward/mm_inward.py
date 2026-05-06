@@ -15,6 +15,7 @@ class MMInward(Document):
 	def _update_roll_inventory(self, direction: int):
 		"""Increase or decrease roll stock on submit/cancel."""
 		filters = {
+			"branch": self.branch or "",
 			"location": self.location,
 			"lot_number": self.lot_number,
 			"color_name": self.color_name,
@@ -36,14 +37,45 @@ class MMInward(Document):
 			row = frappe.get_doc(
 				{
 					"doctype": "MM Roll Inventory",
+					"branch": self.branch,
 					"location": self.location,
 					"lot_number": self.lot_number,
 					"color_name": self.color_name,
 					"cut": self.cut or "",
 					"item_type": self.item_type,
+					"supplier": self.party,
 					"roll_no": self.lot_number,
 					"stock_weight": dw,
 					"stock_box": db,
 				}
 			)
 			row.insert(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def get_veermetlon_delivery_challan(challan: str):
+	"""Fetch header + item rows from Veermetlon Delivery Challan for inward prefill."""
+	if not challan:
+		frappe.throw("Delivery Challan is required")
+	doc = frappe.get_doc("Delivery Challan", challan)
+	rows = []
+	for r in (doc.items or []):
+		rows.append(
+			{
+				"roll_no": r.roll_no,
+				"color_name": r.description_of_goods,
+				"cut": r.size,
+				"weight_in": r.net_wt,
+				"box_in": r.no_of_roll_bobbin,
+				"film": r.film,
+				"job_card": r.job_card,
+			}
+		)
+	return {
+		"delivery_challan": doc.name,
+		"party": doc.party_name or doc.party,
+		"party_ref": doc.party,
+		"sales_order": doc.sales_order,
+		"job_card": doc.job_card,
+		"items": rows,
+	}

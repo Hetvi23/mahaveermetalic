@@ -17,6 +17,27 @@ function isMmAdmin(): boolean {
 	return roles.includes("Administrator") || roles.includes("MM Admin");
 }
 
+function extractErrorMessage(e: unknown): string {
+	const msg = (e as { message?: string })?.message;
+	if (msg && msg.trim()) return msg;
+	const serverMessages = (e as { _server_messages?: string })?._server_messages;
+	if (serverMessages) {
+		try {
+			const outer = JSON.parse(serverMessages);
+			if (Array.isArray(outer) && outer.length) {
+				const first = outer[0];
+				if (typeof first === "string") {
+					const parsed = JSON.parse(first) as { message?: string };
+					if (parsed?.message) return parsed.message;
+				}
+			}
+		} catch {
+			/* ignore parse errors */
+		}
+	}
+	return "Could not save. Please check required fields and try again.";
+}
+
 export default function DocFormPage({ meta }: { meta: DocRegistryEntry }) {
 	const { name: nameParam } = useParams();
 	const isNew = !nameParam || nameParam === "new";
@@ -86,7 +107,7 @@ function DocFormNew({ meta }: { meta: DocRegistryEntry }) {
 			const n = (res as { name?: string }).name;
 			if (n) nav(`${meta.routeBase}/${encodeURIComponent(n)}`, { replace: true });
 		} catch (e) {
-			setFormError((e as { message?: string }).message || String(e));
+			setFormError(extractErrorMessage(e));
 		}
 	}
 
@@ -176,7 +197,7 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 			await mutate();
 			return true;
 		} catch (e) {
-			setFormError((e as { message?: string }).message || String(e));
+			setFormError(extractErrorMessage(e));
 			return false;
 		}
 	}
@@ -189,7 +210,7 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 			await submitRemote({ doc: { doctype: meta.doctype, name: docname } });
 			await mutate();
 		} catch (e) {
-			setFormError((e as { message?: string }).message || String(e));
+			setFormError(extractErrorMessage(e));
 		}
 	}
 

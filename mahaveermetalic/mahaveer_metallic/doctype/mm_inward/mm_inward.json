@@ -7,10 +7,14 @@
   "engine": "InnoDB",
   "field_order": [
     "location",
+    "branch",
     "posting_date",
     "sales_order",
     "party",
+    "party_company",
     "challan_number",
+    "veermetlon_delivery_challan",
+    "veermetlon_job_card",
     "item_type",
     "color_name",
     "cut",
@@ -27,6 +31,13 @@
       "label": "Location",
       "options": "MM Location Master",
       "reqd": 1
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch",
+      "in_list_view": 1
     },
     {
       "fieldname": "posting_date",
@@ -51,9 +62,27 @@
       "options": "MM Party Master"
     },
     {
+      "fieldname": "party_company",
+      "fieldtype": "Data",
+      "label": "Party Company"
+    },
+    {
       "fieldname": "challan_number",
       "fieldtype": "Data",
       "label": "Challan Number"
+    },
+    {
+      "fieldname": "veermetlon_delivery_challan",
+      "fieldtype": "Link",
+      "label": "Veermetlon Delivery Challan",
+      "options": "Delivery Challan"
+    },
+    {
+      "fieldname": "veermetlon_job_card",
+      "fieldtype": "Link",
+      "label": "Veermetlon Job Card",
+      "options": "Job Card",
+      "description": "For multi-roll inward, one lot can map to one Job Card / Lot in Veermetlon."
     },
     {
       "fieldname": "item_type",

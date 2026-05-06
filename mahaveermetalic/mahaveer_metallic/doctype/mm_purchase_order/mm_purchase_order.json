@@ -7,6 +7,7 @@
   "engine": "InnoDB",
   "field_order": [
     "transaction_date",
+    "branch",
     "sales_order",
     "po_number",
     "color",
@@ -22,6 +23,13 @@
       "label": "Date",
       "reqd": 1,
       "default": "Today"
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Branch",
+      "options": "Branch"
     },
     {
       "fieldname": "sales_order",

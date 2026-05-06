@@ -8,12 +8,17 @@
   "field_order": [
     "roll_no",
     "lot_number",
+    "branch",
     "location",
+    "supplier",
     "color_name",
     "cut",
     "item_type",
     "stock_weight",
-    "stock_box"
+    "stock_box",
+    "reserved_weight",
+    "issued_weight",
+    "available_weight"
   ],
   "fields": [
     {
@@ -35,6 +40,19 @@
       "label": "Location",
       "options": "MM Location Master",
       "reqd": 1
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "supplier",
+      "fieldtype": "Link",
+      "label": "Supplier",
+      "options": "MM Vendor Master"
     },
     {
       "fieldname": "color_name",
@@ -69,6 +87,27 @@
       "label": "Stock (Box)",
       "precision": 3,
       "default": "0"
+    },
+    {
+      "fieldname": "reserved_weight",
+      "fieldtype": "Float",
+      "label": "Reserved Stock (Weight)",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "issued_weight",
+      "fieldtype": "Float",
+      "label": "Issued Stock (Weight)",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "available_weight",
+      "fieldtype": "Float",
+      "label": "Available Stock (Weight)",
+      "precision": 3,
+      "read_only": 1
     }
   ],
   "index_web_pages_for_search": 1,

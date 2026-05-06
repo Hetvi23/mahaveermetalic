@@ -7,6 +7,7 @@
   "engine": "InnoDB",
   "field_order": [
     "roll_no",
+    "branch",
     "shade",
     "cut",
     "status",
@@ -22,6 +23,13 @@
       "in_list_view": 1,
       "label": "Roll No",
       "reqd": 1
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Branch",
+      "options": "Branch"
     },
     {
       "fieldname": "shade",
