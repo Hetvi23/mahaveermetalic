@@ -1,0 +1,120 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "naming_series:",
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "transaction_date",
+    "party",
+    "section_items",
+    "items",
+    "section_planning",
+    "planned_delivery_date",
+    "planning_notes",
+    "section_status",
+    "production_completed_percent",
+    "order_locked",
+    "admin_override_tolerance"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "MM-SO-.YYYY.-",
+      "reqd": 1,
+      "set_only_once": 1
+    },
+    {
+      "fieldname": "transaction_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Date",
+      "reqd": 1,
+      "default": "Today"
+    },
+    {
+      "fieldname": "party",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Party Name",
+      "options": "MM Party Master",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_items",
+      "fieldtype": "Section Break",
+      "label": "Line Items"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items",
+      "options": "MM Sales Order Item",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_planning",
+      "fieldtype": "Section Break",
+      "label": "Planning"
+    },
+    {
+      "fieldname": "planned_delivery_date",
+      "fieldtype": "Date",
+      "label": "Planned Delivery Date"
+    },
+    {
+      "fieldname": "planning_notes",
+      "fieldtype": "Small Text",
+      "label": "Planning Notes"
+    },
+    {
+      "fieldname": "section_status",
+      "fieldtype": "Section Break",
+      "label": "Production & Lock"
+    },
+    {
+      "fieldname": "production_completed_percent",
+      "fieldtype": "Percent",
+      "label": "Production Completed %",
+      "read_only": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "order_locked",
+      "fieldtype": "Check",
+      "label": "Order Locked",
+      "read_only": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "admin_override_tolerance",
+      "fieldtype": "Check",
+      "label": "Admin: Allow production tolerance > 4%",
+      "description": "When set, submitted production (Cutting) may exceed 4% wastage for this order."
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Sales Order",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Sales Team", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}

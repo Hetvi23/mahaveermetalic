@@ -1,0 +1,92 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "roll_no",
+    "lot_number",
+    "location",
+    "color_name",
+    "cut",
+    "item_type",
+    "stock_weight",
+    "stock_box"
+  ],
+  "fields": [
+    {
+      "fieldname": "roll_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Roll No"
+    },
+    {
+      "fieldname": "lot_number",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Lot Number"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Location",
+      "options": "MM Location Master",
+      "reqd": 1
+    },
+    {
+      "fieldname": "color_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Color",
+      "reqd": 1
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut"
+    },
+    {
+      "fieldname": "item_type",
+      "fieldtype": "Link",
+      "label": "Item Type",
+      "options": "MM Item Master"
+    },
+    {
+      "fieldname": "stock_weight",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Stock (Weight)",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "stock_box",
+      "fieldtype": "Float",
+      "label": "Stock (Box)",
+      "precision": 3,
+      "default": "0"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Roll Inventory",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

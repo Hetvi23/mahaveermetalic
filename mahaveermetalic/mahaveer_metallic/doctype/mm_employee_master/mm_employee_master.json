@@ -1,0 +1,57 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:employee_name",
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": ["employee_name", "mobile_number", "location", "department"],
+  "fields": [
+    {
+      "fieldname": "employee_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Name",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "mobile_number",
+      "fieldtype": "Data",
+      "label": "Mobile Number"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Location",
+      "options": "MM Location Master"
+    },
+    {
+      "fieldname": "department",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Department"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Employee Master",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "employee_name"
+}

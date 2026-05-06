@@ -1,0 +1,45 @@
+{
+  "actions": [],
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["bobbin_type", "bobbin_qty", "box_qty"],
+  "fields": [
+    {
+      "fieldname": "bobbin_type",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Bobbin Type",
+      "options": "MM Bobbin Master"
+    },
+    {
+      "fieldname": "bobbin_qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Bobbin Qty",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "box_qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Box Qty",
+      "precision": 3,
+      "default": "0"
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Bobbin Box Line",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

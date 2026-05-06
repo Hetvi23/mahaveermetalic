@@ -1,0 +1,125 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "location",
+    "posting_date",
+    "sales_order",
+    "party",
+    "challan_number",
+    "item_type",
+    "color_name",
+    "cut",
+    "rate",
+    "lot_number",
+    "weight_in",
+    "box_in"
+  ],
+  "fields": [
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Location",
+      "options": "MM Location Master",
+      "reqd": 1
+    },
+    {
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Date",
+      "reqd": 1,
+      "default": "Today"
+    },
+    {
+      "fieldname": "sales_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "SO Number",
+      "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "party",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Party",
+      "options": "MM Party Master"
+    },
+    {
+      "fieldname": "challan_number",
+      "fieldtype": "Data",
+      "label": "Challan Number"
+    },
+    {
+      "fieldname": "item_type",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Item Type",
+      "options": "MM Item Master",
+      "reqd": 1
+    },
+    {
+      "fieldname": "color_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Color Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "label": "Cut"
+    },
+    {
+      "fieldname": "rate",
+      "fieldtype": "Currency",
+      "label": "Rate",
+      "precision": 2
+    },
+    {
+      "fieldname": "lot_number",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Lot Number",
+      "reqd": 1
+    },
+    {
+      "fieldname": "weight_in",
+      "fieldtype": "Float",
+      "label": "Weight In (KG)",
+      "precision": 3,
+      "reqd": 1
+    },
+    {
+      "fieldname": "box_in",
+      "fieldtype": "Float",
+      "label": "Box In",
+      "precision": 3,
+      "default": "0"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "is_submittable": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Inward",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

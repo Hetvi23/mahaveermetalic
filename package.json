@@ -1,0 +1,9 @@
+{
+  "name": "mahaveermetalic",
+  "private": true,
+  "scripts": {
+    "build": "yarn --cwd frontend build",
+    "dev": "yarn --cwd frontend dev",
+    "install:frontend": "yarn --cwd frontend install"
+  }
+}

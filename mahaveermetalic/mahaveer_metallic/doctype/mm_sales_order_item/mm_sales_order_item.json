@@ -1,0 +1,79 @@
+{
+  "actions": [],
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "color_name",
+    "qty_weight",
+    "qty_box",
+    "cut",
+    "sale_rate",
+    "purchase_party",
+    "purchase_rate"
+  ],
+  "fields": [
+    {
+      "fieldname": "color_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Color Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "qty_weight",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Quantity (Weight)",
+      "precision": 3,
+      "reqd": 1
+    },
+    {
+      "fieldname": "qty_box",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Quantity (Box)",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut"
+    },
+    {
+      "fieldname": "sale_rate",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Sale Rate",
+      "precision": 2,
+      "reqd": 1
+    },
+    {
+      "fieldname": "purchase_party",
+      "fieldtype": "Link",
+      "label": "Purchase Party",
+      "options": "MM Party Master"
+    },
+    {
+      "fieldname": "purchase_rate",
+      "fieldtype": "Currency",
+      "label": "Purchase Rate",
+      "precision": 2
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Sales Order Item",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

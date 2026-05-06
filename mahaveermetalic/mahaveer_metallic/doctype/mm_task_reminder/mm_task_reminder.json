@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-06-06 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "status",
+  "column_break_status",
+  "from_datetime",
+  "to_datetime",
+  "reminder_interval_hours",
+  "section_note",
+  "description",
+  "section_recipients",
+  "reminder_recipients",
+  "completion_recipients",
+  "section_raven",
+  "include_yes_no_poll",
+  "section_internal",
+  "last_reminder_sent",
+  "completed_on",
+  "completed_by",
+  "poll_links"
+ ],
+ "fields": [
+  {"fieldname": "title", "fieldtype": "Data", "in_list_view": 1, "label": "Task title", "reqd": 1},
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nActive\nCompleted\nCancelled",
+   "reqd": 1
+  },
+  {"fieldname": "column_break_status", "fieldtype": "Column Break"},
+  {
+   "fieldname": "from_datetime",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Remind from (date & time)",
+   "reqd": 1
+  },
+  {
+   "description": "If blank, reminders continue until Completed or Cancelled.",
+   "fieldname": "to_datetime",
+   "fieldtype": "Datetime",
+   "label": "Remind until"
+  },
+  {
+   "default": "1",
+   "fieldname": "reminder_interval_hours",
+   "fieldtype": "Float",
+   "label": "Reminder interval (hours)",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {"collapsible": 1, "fieldname": "section_note", "fieldtype": "Section Break", "label": "Notes"},
+  {"fieldname": "description", "fieldtype": "Small Text", "label": "Details"},
+  {
+   "fieldname": "section_recipients",
+   "fieldtype": "Section Break",
+   "label": "Recipients"
+  },
+  {
+   "fieldname": "reminder_recipients",
+   "fieldtype": "Table",
+   "label": "Users — recurring reminders",
+   "options": "MM Task Reminder Recipient",
+   "reqd": 1
+  },
+  {
+   "fieldname": "completion_recipients",
+   "fieldtype": "Table",
+   "label": "Users — notify when completed",
+   "options": "MM Task Reminder Completion Recipient"
+  },
+  {"fieldname": "section_raven", "fieldtype": "Section Break", "label": "Raven prompts"},
+  {
+   "default": "1",
+   "description": "Sends a Raven Poll with Yes/No on reminders (vote Yes marks task complete when Raven Bot is configured). Configure MM Raven Task Notification Settings.",
+   "fieldname": "include_yes_no_poll",
+   "fieldtype": "Check",
+   "label": "Include Yes/No (Raven Poll)"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.status != 'Draft'",
+   "fieldname": "section_internal",
+   "fieldtype": "Section Break",
+   "label": "System"
+  },
+  {
+   "fieldname": "last_reminder_sent",
+   "fieldtype": "Datetime",
+   "label": "Last reminder sent",
+   "read_only": 1
+  },
+  {"fieldname": "completed_on", "fieldtype": "Datetime", "label": "Completed on", "read_only": 1},
+  {"fieldname": "completed_by", "fieldtype": "Link", "label": "Completed by", "options": "User", "read_only": 1},
+  {
+   "fieldname": "poll_links",
+   "fieldtype": "Table",
+   "label": "Raven polls (tracked)",
+   "options": "MM Task Reminder Poll Link",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-06 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Task Reminder",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {"create": 1, "delete": 1, "read": 1, "report": 1, "role": "MM Admin", "write": 1, "export": 1},
+  {"create": 1, "read": 1, "report": 1, "role": "MM Operations", "write": 1, "export": 0}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

@@ -1,0 +1,92 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2026-05-03 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "roll_no",
+    "shade",
+    "cut",
+    "status",
+    "job_work_flag",
+    "sales_order",
+    "produced_weight",
+    "wastage_percent"
+  ],
+  "fields": [
+    {
+      "fieldname": "roll_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Roll No",
+      "reqd": 1
+    },
+    {
+      "fieldname": "shade",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Shade"
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Status",
+      "options": "Draft\nIn Progress\nCompleted",
+      "default": "Draft",
+      "reqd": 1
+    },
+    {
+      "fieldname": "job_work_flag",
+      "fieldtype": "Check",
+      "label": "Job Work"
+    },
+    {
+      "fieldname": "sales_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Sales Order",
+      "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "produced_weight",
+      "fieldtype": "Float",
+      "label": "Produced Weight (KG)",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "wastage_percent",
+      "fieldtype": "Percent",
+      "label": "Wastage %",
+      "default": "0"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "is_submittable": 1,
+  "links": [],
+  "modified": "2026-05-03 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Cutting",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Production", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}
