@@ -1,12 +1,13 @@
 import { extractErrorMessage } from "@/utils/frappeError";
-import { useFrappeAuth, useFrappeCreateDoc, useSearch } from "frappe-react-sdk";
+import { useFrappeAuth, useFrappeCreateDoc, useFrappeGetDocList } from "frappe-react-sdk";
 import { 
   Users, 
   ShieldAlert, 
   Clock, 
   Calendar, 
   Send, 
-  X
+  X,
+  ChevronDown
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -15,12 +16,10 @@ function pad2(n: number) {
 	return String(n).padStart(2, "0");
 }
 
-/** Value for `<input type="datetime-local" />` in local time. */
 function toDatetimeLocalValue(d: Date) {
 	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-/** Frappe Datetime string from `datetime-local` value. */
 function toFrappeDatetime(local: string): string {
 	if (!local) return "";
 	const normalized = local.includes("T") ? local.replace("T", " ") : local;
@@ -65,8 +64,27 @@ export default function TaskReminderChatPage() {
 
   const [activeOverlay, setActiveOverlay] = useState<'assign' | 'notify' | 'duration' | 'dates' | null>(null);
   const [userQuery, setUserQuery] = useState("");
-	const { data: searchData, isLoading: searchLoading } = useSearch("User", userQuery, undefined, 15, 300);
-	const suggestions = searchData?.message ?? [];
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Fetch all users for dropdown
+  const { data: allUsersData } = useFrappeGetDocList("User", {
+    fields: ["name", "full_name", "user_image"],
+    filters: [["enabled", "=", 1], ["user_type", "=", "System User"]],
+    limit: 50,
+    orderBy: { field: "full_name", order: "asc" },
+  });
+
+  const allUsers = allUsersData ?? [];
+
+  // Filter users based on search query
+  const filteredUsers = useMemo(() => {
+    if (!userQuery.trim()) return allUsers;
+    const q = userQuery.toLowerCase();
+    return allUsers.filter(u => 
+      (u.full_name || "").toLowerCase().includes(q) || 
+      (u.name || "").toLowerCase().includes(q)
+    );
+  }, [allUsers, userQuery]);
 
 	const seeded = useRef(false);
 	useEffect(() => {
@@ -83,6 +101,12 @@ export default function TaskReminderChatPage() {
 		}
 	}, [messages]);
 
+  // Reset search when overlay changes
+  useEffect(() => {
+    setUserQuery("");
+    setShowDropdown(false);
+  }, [activeOverlay]);
+
 	const payloadBase = useMemo(
 		() => ({
 			title: title.trim(),
@@ -90,7 +114,7 @@ export default function TaskReminderChatPage() {
 			from_datetime: toFrappeDatetime(fromLocal),
 			to_datetime: toLocal.trim() ? toFrappeDatetime(toLocal) : "",
 			reminder_interval_hours: intervalHours,
-			include_yes_no_poll: 1, // Default to Yes
+			include_yes_no_poll: 1,
 			reminder_recipients: reminderUsers.map((user, i) => ({ user, idx: i + 1 })),
 			completion_recipients: completionUsers.map((user, i) => ({ user, idx: i + 1 })),
 		}),
@@ -129,10 +153,10 @@ export default function TaskReminderChatPage() {
             variant: 'success',
             content: (
               <div>
-                <strong>Reminder initialized successfully.</strong><br/>
-                Repetitions set for every {intervalHours} hour(s).<br/>
+                <strong>Reminder created successfully.</strong><br/>
+                Repeats every {intervalHours} hour(s).<br/>
                 <div className="mm-chat-success-actions">
-                  <button type="button" className="mm-btn-primary" style={{marginTop: '1rem', marginRight: '0.5rem'}} onClick={() => nav(`/tools/task-reminder/${encodeURIComponent(n)}`)}>Details</button>
+                  <button type="button" className="mm-btn-primary" onClick={() => nav(`/tools/task-reminder/${encodeURIComponent(n)}`)}>View Details</button>
                   <button type="button" className="mm-btn-secondary" onClick={resetForAnother}>New Reminder</button>
                 </div>
               </div>
@@ -161,7 +185,7 @@ export default function TaskReminderChatPage() {
     setMessages([{
       id: 'welcome-' + Date.now(),
       type: 'assistant',
-      content: "Ready for your next request. What would you like to set up?"
+      content: "Ready. What would you like to set up?"
     }]);
 	}
 
@@ -172,6 +196,7 @@ export default function TaskReminderChatPage() {
       if (!completionUsers.includes(id)) setCompletionUsers([...completionUsers, id]);
     }
     setUserQuery("");
+    setShowDropdown(false);
   }
 
   function removeUser(id: string, list: 'reminder' | 'completion') {
@@ -184,6 +209,65 @@ export default function TaskReminderChatPage() {
 
   const toggleOverlay = (type: 'assign' | 'notify' | 'duration' | 'dates') => {
     setActiveOverlay(prev => prev === type ? null : type);
+  }
+
+  /** Reusable user picker overlay */
+  function renderUserPicker(list: 'reminder' | 'completion', title: string, selectedUsers: string[]) {
+    return (
+      <div className="mm-chat-overlay">
+        <div className="mm-chat-overlay-head">
+          <span className="mm-chat-overlay-title">{title}</span>
+          <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+        </div>
+
+        {/* Selected users as chips */}
+        {selectedUsers.length > 0 && (
+          <div className="mm-chat-chips">
+            {selectedUsers.map(u => {
+              const userData = allUsers.find(au => au.name === u);
+              return (
+                <span key={u} className="mm-chat-chip-user">
+                  {userData?.full_name || u}
+                  <X size={14} style={{cursor: 'pointer', marginLeft: '4px', opacity: 0.6}} onClick={() => removeUser(u, list)}/>
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Search + Dropdown */}
+        <div className="mm-chat-user-search">
+          <div className="mm-chat-select-trigger" onClick={() => setShowDropdown(!showDropdown)}>
+            <input 
+              className="mm-input" 
+              placeholder="Search or select user..." 
+              value={userQuery} 
+              onChange={(e) => { setUserQuery(e.target.value); setShowDropdown(true); }}
+              onFocus={() => setShowDropdown(true)}
+            />
+            <ChevronDown size={16} className="mm-chat-select-arrow" />
+          </div>
+          {showDropdown && (
+            <div className="mm-chat-suggest">
+              {filteredUsers.length === 0 ? (
+                <div className="mm-chat-suggest-row" style={{color: '#94a3b8', cursor: 'default'}}>No users found</div>
+              ) : (
+                filteredUsers
+                  .filter(u => !selectedUsers.includes(u.name))
+                  .map(u => (
+                    <button key={u.name} type="button" className="mm-chat-suggest-row" onClick={() => addUser(u.name, list)}>
+                      <span style={{fontWeight: 600}}>{u.full_name || u.name}</span>
+                      {u.full_name && u.full_name !== u.name && (
+                        <span style={{color: '#94a3b8', fontSize: '0.75rem', marginLeft: '0.5rem'}}>{u.name}</span>
+                      )}
+                    </button>
+                  ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
 	return (
@@ -209,87 +293,18 @@ export default function TaskReminderChatPage() {
 			</div>
 
 			<div className="mm-chat-footer">
-        {activeOverlay === 'assign' && (
-          <div className="mm-chat-overlay">
-            <div className="mm-chat-overlay-head">
-              <span className="mm-chat-overlay-title">Assign Recipients</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
-            </div>
-            <div className="mm-chat-chips">
-              {reminderUsers.map(u => (
-                <span key={u} className="mm-chat-chip-user">
-                  {u} <X size={14} style={{cursor: 'pointer', marginLeft: '4px'}} onClick={() => removeUser(u, 'reminder')}/>
-                </span>
-              ))}
-            </div>
-            <div className="mm-chat-user-search">
-              <input 
-                className="mm-input" 
-                placeholder="Search users..." 
-                value={userQuery} 
-                onChange={(e) => setUserQuery(e.target.value)}
-              />
-              {userQuery && (
-                <div className="mm-chat-suggest">
-                  {searchLoading ? <div className="mm-chat-suggest-row">Searching...</div> : 
-                    suggestions.map(s => (
-                      <button key={s.value} type="button" className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'reminder')}>
-                        {s.label || s.value}
-                      </button>
-                    ))
-                  }
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeOverlay === 'notify' && (
-          <div className="mm-chat-overlay">
-            <div className="mm-chat-overlay-head">
-              <span className="mm-chat-overlay-title">Completion Notifications</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
-            </div>
-            <div className="mm-chat-chips">
-              {completionUsers.map(u => (
-                <span key={u} className="mm-chat-chip-user">
-                  {u} <X size={14} style={{cursor: 'pointer', marginLeft: '4px'}} onClick={() => removeUser(u, 'completion')}/>
-                </span>
-              ))}
-            </div>
-            <div className="mm-chat-user-search">
-              <input 
-                className="mm-input" 
-                placeholder="Search admins..." 
-                value={userQuery} 
-                onChange={(e) => setUserQuery(e.target.value)}
-              />
-              {userQuery && (
-                <div className="mm-chat-suggest">
-                   {searchLoading ? <div className="mm-chat-suggest-row">Searching...</div> : 
-                    suggestions.map(s => (
-                      <button key={s.value} type="button" className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'completion')}>
-                        {s.label || s.value}
-                      </button>
-                    ))
-                  }
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {activeOverlay === 'assign' && renderUserPicker('reminder', 'Assign Recipients', reminderUsers)}
+        {activeOverlay === 'notify' && renderUserPicker('completion', 'Completion Notifications', completionUsers)}
 
         {activeOverlay === 'duration' && (
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
               <span className="mm-chat-overlay-title">Recurrence Interval</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
-            <div className="mm-chat-interval-row" style={{justifyContent: 'center'}}>
+            <div className="mm-chat-interval-row">
 							{INTERVAL_CHIPS.map((h) => (
-								<button
-									key={h}
-									type="button"
+								<button key={h} type="button"
 									className={`mm-chat-interval-chip ${intervalHours === h ? "active" : ""}`}
 									onClick={() => setIntervalHours(h)}
 								>
@@ -297,14 +312,12 @@ export default function TaskReminderChatPage() {
 								</button>
 							))}
 						</div>
-            <input 
-              type="number" 
-              className="mm-input" 
-              style={{marginTop: '1rem'}}
-              value={intervalHours} 
-              onChange={(e) => setIntervalHours(Number(e.target.value))}
-              placeholder="Custom hours..."
-            />
+            <div style={{marginTop: '0.75rem'}}>
+              <label className="mm-chat-label" style={{display: 'block', marginBottom: '0.4rem'}}>Custom (hours)</label>
+              <input type="number" className="mm-input" value={intervalHours} 
+                onChange={(e) => setIntervalHours(Number(e.target.value))} min={1}
+              />
+            </div>
           </div>
         )}
 
@@ -312,15 +325,15 @@ export default function TaskReminderChatPage() {
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
               <span className="mm-chat-overlay-title">Schedule Window</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
             <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
               <div>
-                <label className="mm-chat-label" style={{marginBottom: '0.5rem', display: 'block', fontWeight: '600'}}>Commences At</label>
+                <label className="mm-chat-label" style={{display: 'block', marginBottom: '0.4rem'}}>Start Date & Time</label>
                 <input type="datetime-local" className="mm-input" value={fromLocal} onChange={(e) => setFromLocal(e.target.value)} />
               </div>
               <div>
-                <label className="mm-chat-label" style={{marginBottom: '0.5rem', display: 'block', fontWeight: '600'}}>Terminates At (Optional)</label>
+                <label className="mm-chat-label" style={{display: 'block', marginBottom: '0.4rem'}}>End Date & Time (Optional)</label>
                 <input type="datetime-local" className="mm-input" value={toLocal} onChange={(e) => setToLocal(e.target.value)} />
               </div>
             </div>
@@ -328,37 +341,29 @@ export default function TaskReminderChatPage() {
         )}
 
         <div className="mm-chat-actions-row">
-          <button 
-            type="button"
+          <button type="button"
             className={`mm-chat-action-btn ${reminderUsers.length > 0 ? 'active' : ''}`} 
-            onPointerDown={() => toggleOverlay('assign')}
             onClick={() => toggleOverlay('assign')}
           >
             <Users size={18} /> {reminderUsers.length || 'Assign'}
           </button>
-          <button 
-            type="button"
+          <button type="button"
             className={`mm-chat-action-btn ${completionUsers.length > 0 ? 'active' : ''}`} 
-            onPointerDown={() => toggleOverlay('notify')}
             onClick={() => toggleOverlay('notify')}
           >
             <ShieldAlert size={18} /> {completionUsers.length || 'Notify'}
           </button>
-          <button 
-            type="button"
+          <button type="button"
             className={`mm-chat-action-btn active`} 
-            onPointerDown={() => toggleOverlay('duration')}
             onClick={() => toggleOverlay('duration')}
           >
             <Clock size={18} /> {intervalHours}h
           </button>
-          <button 
-            type="button"
+          <button type="button"
             className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} 
-            onPointerDown={() => toggleOverlay('dates')}
             onClick={() => toggleOverlay('dates')}
           >
-            <Calendar size={18} /> {toLocal ? 'Window' : 'Schedule'}
+            <Calendar size={18} /> {toLocal ? 'Scheduled' : 'Schedule'}
           </button>
         </div>
 

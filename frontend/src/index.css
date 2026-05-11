@@ -234,12 +234,95 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
 
 .mm-chat-overlay {
   position: absolute; bottom: 100%; left: 1rem; right: 1rem; margin-bottom: 1rem;
-  background: #fff; border-radius: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-  padding: 1.5rem; z-index: 2000; border: 1px solid #f1f5f9;
+  background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  padding: 1.5rem; z-index: 2000; border: 1px solid #e2e8f0;
+  animation: mm-fade-in 0.25s ease-out;
+}
+
+.mm-chat-overlay-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid #f1f5f9;
+}
+.mm-chat-overlay-title { font-size: 0.9375rem; font-weight: 700; color: #0f172a; }
+.mm-chat-overlay-close {
+  width: 2rem; height: 2rem; border-radius: 8px; border: none;
+  background: #f1f5f9; color: #64748b; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.mm-chat-overlay-close:hover { background: #e2e8f0; color: #0f172a; }
+
+.mm-chat-chips {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;
+}
+.mm-chat-chip-user {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.4rem 0.65rem; border-radius: 999px;
+  background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
+  font-size: 0.8125rem; font-weight: 600;
+}
+
+.mm-chat-user-search { position: relative; }
+
+.mm-chat-select-trigger {
+  position: relative;
+}
+.mm-chat-select-trigger .mm-input {
+  padding-right: 2.5rem;
+  cursor: pointer;
+}
+.mm-chat-select-arrow {
+  position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%);
+  color: #94a3b8; pointer-events: none;
+}
+
+.mm-chat-suggest {
+  position: absolute; left: 0; right: 0; top: 100%; margin-top: 6px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.12); max-height: 14rem;
+  overflow-y: auto; z-index: 3000;
+}
+.mm-chat-suggest-row {
+  display: flex; align-items: center; width: 100%; text-align: left;
+  padding: 0.65rem 1rem; border: none; background: transparent;
+  cursor: pointer; font: inherit; font-size: 0.875rem; color: #1e293b;
+  border-bottom: 1px solid #f8fafc; transition: background 0.15s;
+}
+.mm-chat-suggest-row:last-child { border-bottom: none; }
+.mm-chat-suggest-row:hover { background: #f1f5f9; }
+
+.mm-chat-interval-row {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;
+}
+.mm-chat-interval-chip {
+  min-height: 2.75rem; min-width: 3.5rem; padding: 0 1rem;
+  border-radius: 12px; border: 2px solid #e2e8f0; background: #fff;
+  font-weight: 700; font-size: 0.9375rem; cursor: pointer;
+  transition: all 0.15s;
+}
+.mm-chat-interval-chip:hover { border-color: #94a3b8; }
+.mm-chat-interval-chip.active {
+  border-color: #0f172a; background: #0f172a; color: #fff;
+}
+
+.mm-chat-label { font-size: 0.8125rem; font-weight: 600; color: #475569; }
+
+.mm-input {
+  width: 100%; border: 1px solid #e2e8f0; border-radius: 10px;
+  padding: 0.6rem 0.85rem; font-size: 0.875rem; font-family: inherit;
+  color: #0f172a; background: #fff; transition: all 0.2s;
+}
+.mm-input:focus {
+  outline: none; border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
 .mm-chat-success-bubble { background: #f0fdf4 !important; border: 1px solid #bbf7d0 !important; color: #166534 !important; }
 .mm-chat-error-bubble { background: #fef2f2 !important; border: 1px solid #fecaca !important; color: #991b1b !important; }
 
+.mm-chat-success-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+
 .mm-btn-primary { background: #0f172a; color: #fff; border-radius: 10px; border: none; font-weight: 600; padding: 0.6rem 1.2rem; cursor: pointer; }
+.mm-btn-primary:hover { background: #1e293b; }
 .mm-btn-secondary { background: #fff; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 10px; font-weight: 600; padding: 0.6rem 1.2rem; cursor: pointer; }
+.mm-btn-secondary:hover { background: #f8fafc; }
