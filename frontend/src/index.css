@@ -992,34 +992,49 @@ body {
   gap: 0.75rem;
   align-items: center;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 50;
 }
 
 .mm-chat-action-btn {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.6rem 1rem;
-  border-radius: 12px;
+  padding: 0.6rem 1.25rem;
+  border-radius: 14px;
   background: #f1f5f9;
   color: #475569;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 50;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .mm-chat-action-btn:hover {
   background: #e2e8f0;
   color: #1e293b;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+}
+
+.mm-chat-action-btn:active {
+  transform: scale(0.92);
+  background: #cbd5e1;
 }
 
 .mm-chat-action-btn.active {
   background: #eff6ff;
   color: #1d4ed8;
-  border-color: rgba(29, 78, 216, 0.2);
-  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.1);
+  border-color: rgba(29, 78, 216, 0.3);
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.1);
+}
+
+.mm-chat-action-btn svg {
+  pointer-events: none;
 }
 
 .mm-chat-overlay {
@@ -1032,7 +1047,7 @@ body {
   box-shadow: 0 20px 50px rgba(0,0,0,0.15);
   border: 1px solid rgba(0,0,0,0.05);
   padding: 1.5rem;
-  z-index: 20;
+  z-index: 60;
   animation: mm-fade-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -1065,7 +1080,7 @@ body {
   right: 0;
   bottom: 100%;
   margin-bottom: 4px;
-  z-index: 10;
+  z-index: 70;
   background: #fff;
   border: 1px solid var(--mm-border);
   border-radius: 10px;

@@ -183,6 +183,10 @@ export default function TaskReminderChatPage() {
     }
   }
 
+  const toggleOverlay = (type: 'assign' | 'notify' | 'duration' | 'dates') => {
+    setActiveOverlay(prev => prev === type ? null : type);
+  }
+
 	return (
 		<div className="mm-page mm-page-enter mm-chat-page">
 			<header className="mm-chat-header">
@@ -330,28 +334,28 @@ export default function TaskReminderChatPage() {
           <button 
             type="button"
             className={`mm-chat-action-btn ${reminderUsers.length > 0 ? 'active' : ''}`} 
-            onClick={() => setActiveOverlay(prev => prev === 'assign' ? null : 'assign')}
+            onPointerDown={() => toggleOverlay('assign')}
           >
             <Users size={16} /> {reminderUsers.length || 'Assign'}
           </button>
           <button 
             type="button"
             className={`mm-chat-action-btn ${completionUsers.length > 0 ? 'active' : ''}`} 
-            onClick={() => setActiveOverlay(prev => prev === 'notify' ? null : 'notify')}
+            onPointerDown={() => toggleOverlay('notify')}
           >
             <ShieldAlert size={16} /> {completionUsers.length || 'Notify'}
           </button>
           <button 
             type="button"
             className={`mm-chat-action-btn active`} 
-            onClick={() => setActiveOverlay(prev => prev === 'duration' ? null : 'duration')}
+            onPointerDown={() => toggleOverlay('duration')}
           >
             <Clock size={16} /> {intervalHours}h
           </button>
           <button 
             type="button"
             className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} 
-            onClick={() => setActiveOverlay(prev => prev === 'dates' ? null : 'dates')}
+            onPointerDown={() => toggleOverlay('dates')}
           >
             <Calendar size={16} /> {toLocal ? 'Set' : 'Timing'}
           </button>
