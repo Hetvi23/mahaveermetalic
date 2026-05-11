@@ -57,8 +57,7 @@ export default function TaskReminderChatPage() {
       type: 'assistant',
       content: (
         <>
-          <strong>Hello.</strong> Type the message or task you want to send as a reminder. 
-          Use the icons below to assign people and set timing.
+          <strong>Welcome back.</strong> How can I help you today? Type your message below and use the options to configure recipients and timing.
         </>
       )
     }
@@ -99,9 +98,9 @@ export default function TaskReminderChatPage() {
 	);
 
 	function validate(): string | null {
-		if (!title.trim()) return "Please type the message first.";
-		if (!fromLocal.trim()) return "Choose a start time.";
-		if (!reminderUsers.length) return "Assign at least one person.";
+		if (!title.trim()) return "Please enter a message to continue.";
+		if (!fromLocal.trim()) return "A start time is required.";
+		if (!reminderUsers.length) return "Please assign at least one recipient.";
 		return null;
 	}
 
@@ -130,11 +129,11 @@ export default function TaskReminderChatPage() {
             variant: 'success',
             content: (
               <div>
-                <strong>Reminder Sent!</strong><br/>
-                It will repeat every {intervalHours} hour(s).<br/>
+                <strong>Reminder initialized successfully.</strong><br/>
+                Repetitions set for every {intervalHours} hour(s).<br/>
                 <div className="mm-chat-success-actions">
-                  <button type="button" className="mm-btn-primary mm-btn-compact" onClick={() => nav(`/tools/task-reminder/${encodeURIComponent(n)}`)}>View Details</button>
-                  <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetForAnother}>Create New</button>
+                  <button type="button" className="mm-btn-primary" style={{marginTop: '1rem', marginRight: '0.5rem'}} onClick={() => nav(`/tools/task-reminder/${encodeURIComponent(n)}`)}>Details</button>
+                  <button type="button" className="mm-btn-secondary" onClick={resetForAnother}>New Reminder</button>
                 </div>
               </div>
             )
@@ -162,7 +161,7 @@ export default function TaskReminderChatPage() {
     setMessages([{
       id: 'welcome-' + Date.now(),
       type: 'assistant',
-      content: "Ready for another one. Type your message below."
+      content: "Ready for your next request. What would you like to set up?"
     }]);
 	}
 
@@ -188,14 +187,11 @@ export default function TaskReminderChatPage() {
   }
 
 	return (
-		<div className="mm-page mm-page-enter mm-chat-page">
+		<div className="mm-page-enter mm-chat-page">
 			<header className="mm-chat-header">
-				<div className="mm-chat-header-info">
-					<h1>Create Reminder</h1>
-					<p className="mm-page-sub">Labour-friendly simplified UI</p>
-				</div>
-        <Link to="/tools/task-reminder" className="mm-btn-secondary mm-btn-compact">
-          Full List
+				<h1>Task Reminders</h1>
+        <Link to="/tools/task-reminder" className="mm-btn-secondary">
+          History
         </Link>
 			</header>
 
@@ -203,7 +199,7 @@ export default function TaskReminderChatPage() {
         {messages.map(m => (
           <div key={m.id} className={`mm-chat-row ${m.type}`}>
             <div className="mm-chat-avatar">
-              {m.type === 'assistant' ? 'MM' : 'YOU'}
+              {m.type === 'assistant' ? 'AI' : 'ME'}
             </div>
             <div className={`mm-chat-bubble ${m.variant === 'success' ? 'mm-chat-success-bubble' : m.variant === 'error' ? 'mm-chat-error-bubble' : ''}`}>
               {m.content}
@@ -216,26 +212,26 @@ export default function TaskReminderChatPage() {
         {activeOverlay === 'assign' && (
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
-              <span className="mm-chat-overlay-title">Assign To (Workers)</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <span className="mm-chat-overlay-title">Assign Recipients</span>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
             </div>
             <div className="mm-chat-chips">
               {reminderUsers.map(u => (
                 <span key={u} className="mm-chat-chip-user">
-                  {u} <X size={12} className="mm-chat-chip-x" onClick={() => removeUser(u, 'reminder')}/>
+                  {u} <X size={14} style={{cursor: 'pointer', marginLeft: '4px'}} onClick={() => removeUser(u, 'reminder')}/>
                 </span>
               ))}
             </div>
             <div className="mm-chat-user-search">
               <input 
                 className="mm-input" 
-                placeholder="Search workers..." 
+                placeholder="Search users..." 
                 value={userQuery} 
                 onChange={(e) => setUserQuery(e.target.value)}
               />
               {userQuery && (
                 <div className="mm-chat-suggest">
-                  {searchLoading ? <div className="mm-chat-suggest-row">Loading...</div> : 
+                  {searchLoading ? <div className="mm-chat-suggest-row">Searching...</div> : 
                     suggestions.map(s => (
                       <button key={s.value} type="button" className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'reminder')}>
                         {s.label || s.value}
@@ -251,13 +247,13 @@ export default function TaskReminderChatPage() {
         {activeOverlay === 'notify' && (
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
-              <span className="mm-chat-overlay-title">Notify Admins when done</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <span className="mm-chat-overlay-title">Completion Notifications</span>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
             </div>
             <div className="mm-chat-chips">
               {completionUsers.map(u => (
                 <span key={u} className="mm-chat-chip-user">
-                  {u} <X size={12} className="mm-chat-chip-x" onClick={() => removeUser(u, 'completion')}/>
+                  {u} <X size={14} style={{cursor: 'pointer', marginLeft: '4px'}} onClick={() => removeUser(u, 'completion')}/>
                 </span>
               ))}
             </div>
@@ -270,7 +266,7 @@ export default function TaskReminderChatPage() {
               />
               {userQuery && (
                 <div className="mm-chat-suggest">
-                   {searchLoading ? <div className="mm-chat-suggest-row">Loading...</div> : 
+                   {searchLoading ? <div className="mm-chat-suggest-row">Searching...</div> : 
                     suggestions.map(s => (
                       <button key={s.value} type="button" className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'completion')}>
                         {s.label || s.value}
@@ -286,10 +282,10 @@ export default function TaskReminderChatPage() {
         {activeOverlay === 'duration' && (
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
-              <span className="mm-chat-overlay-title">Repeat Interval (Hours)</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <span className="mm-chat-overlay-title">Recurrence Interval</span>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
             </div>
-            <div className="mm-chat-interval-row">
+            <div className="mm-chat-interval-row" style={{justifyContent: 'center'}}>
 							{INTERVAL_CHIPS.map((h) => (
 								<button
 									key={h}
@@ -304,6 +300,7 @@ export default function TaskReminderChatPage() {
             <input 
               type="number" 
               className="mm-input" 
+              style={{marginTop: '1rem'}}
               value={intervalHours} 
               onChange={(e) => setIntervalHours(Number(e.target.value))}
               placeholder="Custom hours..."
@@ -314,16 +311,16 @@ export default function TaskReminderChatPage() {
         {activeOverlay === 'dates' && (
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
-              <span className="mm-chat-overlay-title">Timing (Start & End)</span>
-              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <span className="mm-chat-overlay-title">Schedule Window</span>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={20}/></button>
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
               <div>
-                <label className="mm-chat-label">Start Date & Time</label>
+                <label className="mm-chat-label" style={{marginBottom: '0.5rem', display: 'block', fontWeight: '600'}}>Commences At</label>
                 <input type="datetime-local" className="mm-input" value={fromLocal} onChange={(e) => setFromLocal(e.target.value)} />
               </div>
               <div>
-                <label className="mm-chat-label">End Date & Time (Optional)</label>
+                <label className="mm-chat-label" style={{marginBottom: '0.5rem', display: 'block', fontWeight: '600'}}>Terminates At (Optional)</label>
                 <input type="datetime-local" className="mm-input" value={toLocal} onChange={(e) => setToLocal(e.target.value)} />
               </div>
             </div>
@@ -336,35 +333,35 @@ export default function TaskReminderChatPage() {
             className={`mm-chat-action-btn ${reminderUsers.length > 0 ? 'active' : ''}`} 
             onPointerDown={() => toggleOverlay('assign')}
           >
-            <Users size={16} /> {reminderUsers.length || 'Assign'}
+            <Users size={18} /> {reminderUsers.length || 'Assign'}
           </button>
           <button 
             type="button"
             className={`mm-chat-action-btn ${completionUsers.length > 0 ? 'active' : ''}`} 
             onPointerDown={() => toggleOverlay('notify')}
           >
-            <ShieldAlert size={16} /> {completionUsers.length || 'Notify'}
+            <ShieldAlert size={18} /> {completionUsers.length || 'Notify'}
           </button>
           <button 
             type="button"
             className={`mm-chat-action-btn active`} 
             onPointerDown={() => toggleOverlay('duration')}
           >
-            <Clock size={16} /> {intervalHours}h
+            <Clock size={18} /> {intervalHours}h
           </button>
           <button 
             type="button"
             className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} 
             onPointerDown={() => toggleOverlay('dates')}
           >
-            <Calendar size={16} /> {toLocal ? 'Set' : 'Timing'}
+            <Calendar size={18} /> {toLocal ? 'Window' : 'Schedule'}
           </button>
         </div>
 
         <div className="mm-chat-input-row">
           <textarea 
             className="mm-chat-input-box" 
-            placeholder="Type your message here..." 
+            placeholder="Write your request..." 
             rows={1}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -380,7 +377,7 @@ export default function TaskReminderChatPage() {
             disabled={loading || !title.trim()} 
             onClick={submit}
           >
-            <Send size={20} />
+            <Send size={22} />
           </button>
         </div>
 			</div>
