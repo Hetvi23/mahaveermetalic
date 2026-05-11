@@ -27,7 +27,21 @@ function toFrappeDatetime(local: string): string {
 	return normalized;
 }
 
-const INTERVAL_CHIPS = [1, 2, 4, 8, 24];
+// value is in hours (fractional for minutes)
+const INTERVAL_CHIPS: { label: string; value: number }[] = [
+  { label: '15m', value: 0.25 },
+  { label: '30m', value: 0.5 },
+  { label: '1h', value: 1 },
+  { label: '2h', value: 2 },
+  { label: '4h', value: 4 },
+  { label: '8h', value: 8 },
+  { label: '24h', value: 24 },
+];
+
+function formatInterval(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  return `${hours}h`;
+}
 
 interface Message {
   id: string;
@@ -303,19 +317,19 @@ export default function TaskReminderChatPage() {
               <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
             <div className="mm-chat-interval-row">
-							{INTERVAL_CHIPS.map((h) => (
-								<button key={h} type="button"
-									className={`mm-chat-interval-chip ${intervalHours === h ? "active" : ""}`}
-									onClick={() => setIntervalHours(h)}
+							{INTERVAL_CHIPS.map((chip) => (
+								<button key={chip.value} type="button"
+									className={`mm-chat-interval-chip ${intervalHours === chip.value ? "active" : ""}`}
+									onClick={() => setIntervalHours(chip.value)}
 								>
-									{h}h
+									{chip.label}
 								</button>
 							))}
 						</div>
             <div style={{marginTop: '0.75rem'}}>
-              <label className="mm-chat-label" style={{display: 'block', marginBottom: '0.4rem'}}>Custom (hours)</label>
-              <input type="number" className="mm-input" value={intervalHours} 
-                onChange={(e) => setIntervalHours(Number(e.target.value))} min={1}
+              <label className="mm-chat-label" style={{display: 'block', marginBottom: '0.4rem'}}>Custom (minutes)</label>
+              <input type="number" className="mm-input" value={Math.round(intervalHours * 60)} 
+                onChange={(e) => setIntervalHours(Number(e.target.value) / 60)} min={5} step={5}
               />
             </div>
           </div>
@@ -357,7 +371,7 @@ export default function TaskReminderChatPage() {
             className={`mm-chat-action-btn active`} 
             onClick={() => toggleOverlay('duration')}
           >
-            <Clock size={18} /> {intervalHours}h
+            <Clock size={18} /> {formatInterval(intervalHours)}
           </button>
           <button type="button"
             className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} 

@@ -54,12 +54,10 @@ class MMTaskReminder(Document):
 	def after_insert(self):
 		"""Send immediate assignment notification to all recipients."""
 		if self.status == "Active" and self.reminder_recipients:
-			frappe.enqueue(
-				"mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.mm_task_reminder._send_assignment_notification",
-				queue="short",
-				job_name=f"mm-task-reminder-assign-{self.name}",
-				reminder_name=self.name,
-			)
+			try:
+				_send_assignment_notification(self.name)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Assignment {self.name}")
 
 	def mark_completed_via_raven(self, completed_by_user: str):
 		self.status = "Completed"
