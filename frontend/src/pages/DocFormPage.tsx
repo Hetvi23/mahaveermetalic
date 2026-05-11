@@ -1,6 +1,7 @@
 import ChildTableEditor, { type ChildRow } from "@/components/ChildTableEditor";
 import { FieldInput } from "@/components/FieldInputs";
 import { resolveFormSections, type DocRegistryEntry } from "@/config/registry";
+import { extractErrorMessage } from "@/utils/frappeError";
 import {
 	useFrappeCreateDoc,
 	useFrappeGetDoc,
@@ -15,27 +16,6 @@ function isMmAdmin(): boolean {
 	const boot = (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot;
 	const roles = boot?.user?.roles ?? [];
 	return roles.includes("Administrator") || roles.includes("MM Admin");
-}
-
-function extractErrorMessage(e: unknown): string {
-	const msg = (e as { message?: string })?.message;
-	if (msg && msg.trim()) return msg;
-	const serverMessages = (e as { _server_messages?: string })?._server_messages;
-	if (serverMessages) {
-		try {
-			const outer = JSON.parse(serverMessages);
-			if (Array.isArray(outer) && outer.length) {
-				const first = outer[0];
-				if (typeof first === "string") {
-					const parsed = JSON.parse(first) as { message?: string };
-					if (parsed?.message) return parsed.message;
-				}
-			}
-		} catch {
-			/* ignore parse errors */
-		}
-	}
-	return "Could not save. Please check required fields and try again.";
 }
 
 export default function DocFormPage({ meta }: { meta: DocRegistryEntry }) {

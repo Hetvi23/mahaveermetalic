@@ -28,6 +28,13 @@ export default function DocListPage({ meta }: { meta: DocRegistryEntry }) {
 					<h1 className="mm-page-title">{meta.title}</h1>
 					{meta.listTagline ? <p className="mm-list-tagline">{meta.listTagline}</p> : <p className="mm-page-sub">{meta.doctype}</p>}
 					<p className="mm-page-sub mm-list-doctype">{meta.doctype}</p>
+					{meta.slug === "task-reminder" ? (
+						<p className="mm-page-sub mm-task-reminder-chat-link">
+							<Link to="/tools/reminders-chat" className="mm-link-pill">
+								Open simple chat screen (step‑by‑step for shop floor)
+							</Link>
+						</p>
+					) : null}
 				</div>
 				<Link className="mm-btn-primary mm-btn-glow" to={`${meta.routeBase}/new`}>
 					+ New

@@ -5,10 +5,12 @@ import Dashboard from "./pages/Dashboard";
 import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
 import SalesOrderStock from "./pages/SalesOrderStock";
+import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 
 const EXTRA_NAV: { to: string; label: string; end: boolean; navGroup: NavGroup }[] = [
 	{ to: "/sales-order/stock", label: "SO Stock helper", end: false, navGroup: "tools" },
+	{ to: "/tools/reminders-chat", label: "Reminders (simple chat)", end: true, navGroup: "tools" },
 ];
 
 const NAV_GROUP_LABELS: { key: NavGroup; label: string }[] = [
@@ -117,6 +119,7 @@ export default function App() {
 							/>
 						))}
 						<Route path="/sales-order/stock" element={<SalesOrderStock />} />
+						<Route path="/tools/reminders-chat" element={<TaskReminderChatPage />} />
 					</Route>
 				</Routes>
 			</BrowserRouter>
