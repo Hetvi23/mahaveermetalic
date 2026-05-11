@@ -6,10 +6,7 @@ import {
   Clock, 
   Calendar, 
   Send, 
-  X,
-  Plus,
-  Trash2,
-  CalendarCheck
+  X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -216,7 +213,7 @@ export default function TaskReminderChatPage() {
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
               <span className="mm-chat-overlay-title">Assign To (Workers)</span>
-              <button className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
             <div className="mm-chat-chips">
               {reminderUsers.map(u => (
@@ -236,7 +233,7 @@ export default function TaskReminderChatPage() {
                 <div className="mm-chat-suggest">
                   {searchLoading ? <div className="mm-chat-suggest-row">Loading...</div> : 
                     suggestions.map(s => (
-                      <button key={s.value} className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'reminder')}>
+                      <button key={s.value} type="button" className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'reminder')}>
                         {s.label || s.value}
                       </button>
                     ))
@@ -251,7 +248,7 @@ export default function TaskReminderChatPage() {
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
               <span className="mm-chat-overlay-title">Notify Admins when done</span>
-              <button className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
             <div className="mm-chat-chips">
               {completionUsers.map(u => (
@@ -271,7 +268,7 @@ export default function TaskReminderChatPage() {
                 <div className="mm-chat-suggest">
                    {searchLoading ? <div className="mm-chat-suggest-row">Loading...</div> : 
                     suggestions.map(s => (
-                      <button key={s.value} className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'completion')}>
+                      <button key={s.value} type="button" className="mm-chat-suggest-row" onClick={() => addUser(s.value, 'completion')}>
                         {s.label || s.value}
                       </button>
                     ))
@@ -286,7 +283,7 @@ export default function TaskReminderChatPage() {
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
               <span className="mm-chat-overlay-title">Repeat Interval (Hours)</span>
-              <button className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
             <div className="mm-chat-interval-row">
 							{INTERVAL_CHIPS.map((h) => (
@@ -314,7 +311,7 @@ export default function TaskReminderChatPage() {
           <div className="mm-chat-overlay">
             <div className="mm-chat-overlay-head">
               <span className="mm-chat-overlay-title">Timing (Start & End)</span>
-              <button className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
+              <button type="button" className="mm-chat-overlay-close" onClick={() => setActiveOverlay(null)}><X size={18}/></button>
             </div>
             <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
               <div>
@@ -330,16 +327,32 @@ export default function TaskReminderChatPage() {
         )}
 
         <div className="mm-chat-actions-row">
-          <button className={`mm-chat-action-btn ${reminderUsers.length > 0 ? 'active' : ''}`} onClick={() => setActiveOverlay('assign')}>
+          <button 
+            type="button"
+            className={`mm-chat-action-btn ${reminderUsers.length > 0 ? 'active' : ''}`} 
+            onClick={() => setActiveOverlay(prev => prev === 'assign' ? null : 'assign')}
+          >
             <Users size={16} /> {reminderUsers.length || 'Assign'}
           </button>
-          <button className={`mm-chat-action-btn ${completionUsers.length > 0 ? 'active' : ''}`} onClick={() => setActiveOverlay('notify')}>
+          <button 
+            type="button"
+            className={`mm-chat-action-btn ${completionUsers.length > 0 ? 'active' : ''}`} 
+            onClick={() => setActiveOverlay(prev => prev === 'notify' ? null : 'notify')}
+          >
             <ShieldAlert size={16} /> {completionUsers.length || 'Notify'}
           </button>
-          <button className={`mm-chat-action-btn active`} onClick={() => setActiveOverlay('duration')}>
+          <button 
+            type="button"
+            className={`mm-chat-action-btn active`} 
+            onClick={() => setActiveOverlay(prev => prev === 'duration' ? null : 'duration')}
+          >
             <Clock size={16} /> {intervalHours}h
           </button>
-          <button className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} onClick={() => setActiveOverlay('dates')}>
+          <button 
+            type="button"
+            className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} 
+            onClick={() => setActiveOverlay(prev => prev === 'dates' ? null : 'dates')}
+          >
             <Calendar size={16} /> {toLocal ? 'Set' : 'Timing'}
           </button>
         </div>
