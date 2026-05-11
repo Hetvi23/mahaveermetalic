@@ -51,6 +51,16 @@ class MMTaskReminder(Document):
 				reminder_name=self.name,
 			)
 
+	def after_insert(self):
+		"""Send immediate assignment notification to all recipients."""
+		if self.status == "Active" and self.reminder_recipients:
+			frappe.enqueue(
+				"mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.mm_task_reminder._send_assignment_notification",
+				queue="short",
+				job_name=f"mm-task-reminder-assign-{self.name}",
+				reminder_name=self.name,
+			)
+
 	def mark_completed_via_raven(self, completed_by_user: str):
 		self.status = "Completed"
 		self.completed_on = now_datetime()
@@ -91,3 +101,52 @@ def _send_completion_messages(reminder_name: str | None = None):
 	delivery = RavenTaskDelivery()
 	for user_id in recipients:
 		delivery.send_html_dm(user_id, msg)
+
+
+def _send_assignment_notification(reminder_name: str | None = None):
+	"""Send an immediate 'you have been assigned' DM when a task reminder is created."""
+	if not reminder_name:
+		return
+
+	from mahaveermetalic.mahaveer_metallic.task_reminder.raven_send import RavenTaskDelivery
+
+	doc = frappe.get_doc("MM Task Reminder", reminder_name)
+	recipients = [r.user for r in doc.reminder_recipients if r.user]
+	if not recipients:
+		return
+
+	created_by = doc.owner or ""
+	creator_name = (frappe.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
+
+	interval_h = doc.reminder_interval_hours or 1
+	start_time = frappe.utils.format_datetime(doc.from_datetime) if doc.from_datetime else "now"
+	end_info = (
+		f"until {frappe.utils.format_datetime(doc.to_datetime)}"
+		if doc.to_datetime
+		else "until completed"
+	)
+
+	url = frappe.utils.get_url_to_form("MM Task Reminder", doc.name)
+
+	msg = (
+		f"<p><strong>📋 New Task Assigned to You</strong></p>"
+		f"<p><strong>{escape_html(doc.title)}</strong></p>"
+	)
+	if doc.description:
+		msg += f"<p>{escape_html(doc.description)}</p>"
+	msg += (
+		f"<p>Assigned by <em>{escape_html(creator_name)}</em></p>"
+		f"<p>Reminders start at <strong>{start_time}</strong>, "
+		f"repeating every <strong>{interval_h:g} hour(s)</strong> {end_info}.</p>"
+		f"<p>You will receive a completion poll with each reminder — "
+		f"vote <strong>Yes</strong> to mark it done.</p>"
+		f'<p><a href="{url}">View task details</a></p>'
+	)
+
+	delivery = RavenTaskDelivery()
+	for user_id in recipients:
+		try:
+			delivery.send_html_dm(user_id, msg)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Assignment DM {reminder_name}")
+
