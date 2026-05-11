@@ -337,6 +337,8 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
 .mm-page-enter { animation: mm-fade-in 0.45s ease-out both; }
 .mm-page-title { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.03em; }
 .mm-page-sub { margin: 0.2rem 0 0; font-size: 0.8125rem; color: var(--mm-muted); }
+.mm-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.mm-page-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
 
 /* List page */
 .mm-list-hero {
@@ -361,6 +363,10 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   border: 1px solid var(--mm-border); box-shadow: var(--mm-shadow);
 }
 .mm-card-pad { padding: 1.15rem 1.25rem 1.35rem; }
+.mm-card-form-shell { overflow: hidden; display: flex; flex-direction: column; }
+.mm-card-form-body { flex: 1; min-height: 0; }
+.mm-form-actions-sticky { margin: 0; padding: 1rem 1.25rem; border-top: 1px solid var(--mm-border); background: #fff; position: sticky; bottom: 0; display: flex; gap: 0.65rem; }
+.mm-panel-child { background: linear-gradient(180deg, #f8fafc 0%, #fff 40%); }
 
 /* Search */
 .mm-search-wrap { position: relative; flex: 1; min-width: 0; max-width: 360px; }
