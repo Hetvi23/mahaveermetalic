@@ -332,6 +332,7 @@ export default function TaskReminderChatPage() {
             type="button"
             className={`mm-chat-action-btn ${reminderUsers.length > 0 ? 'active' : ''}`} 
             onPointerDown={() => toggleOverlay('assign')}
+            onClick={() => toggleOverlay('assign')}
           >
             <Users size={18} /> {reminderUsers.length || 'Assign'}
           </button>
@@ -339,6 +340,7 @@ export default function TaskReminderChatPage() {
             type="button"
             className={`mm-chat-action-btn ${completionUsers.length > 0 ? 'active' : ''}`} 
             onPointerDown={() => toggleOverlay('notify')}
+            onClick={() => toggleOverlay('notify')}
           >
             <ShieldAlert size={18} /> {completionUsers.length || 'Notify'}
           </button>
@@ -346,6 +348,7 @@ export default function TaskReminderChatPage() {
             type="button"
             className={`mm-chat-action-btn active`} 
             onPointerDown={() => toggleOverlay('duration')}
+            onClick={() => toggleOverlay('duration')}
           >
             <Clock size={18} /> {intervalHours}h
           </button>
@@ -353,6 +356,7 @@ export default function TaskReminderChatPage() {
             type="button"
             className={`mm-chat-action-btn ${toLocal ? 'active' : ''}`} 
             onPointerDown={() => toggleOverlay('dates')}
+            onClick={() => toggleOverlay('dates')}
           >
             <Calendar size={18} /> {toLocal ? 'Window' : 'Schedule'}
           </button>
