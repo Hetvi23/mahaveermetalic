@@ -7,17 +7,32 @@ def on_raven_poll_vote_after_insert(doc, method=None):
 	if not frappe.db.exists("DocType", "MM Task Reminder Poll Link"):
 		return
 
-	option_norm = (doc.option or "").strip().lower()
+	frappe.log_error(f"Poll Vote Doc: {doc.as_dict()}", "MM Task Reminder Debug")
+	
+	try:
+		option = doc.get("option")
+	except Exception as e:
+		frappe.log_error(f"Failed to get option: {str(e)}", "MM Task Reminder Debug")
+		return
+
+	option_norm = (option or "").strip().lower()
 
 	if option_norm not in {"yes"}:
 		return
 
-	parent_reminder = frappe.db.get_value("MM Task Reminder Poll Link", {"poll_id": doc.poll_id}, "parent")
+	try:
+		poll_id = doc.get("poll_id")
+		user_id = doc.get("user_id")
+	except Exception as e:
+		frappe.log_error(f"Failed to get doc fields: {str(e)}", "MM Task Reminder Debug")
+		return
+
+	parent_reminder = frappe.db.get_value("MM Task Reminder Poll Link", {"poll_id": poll_id}, "parent")
 
 	if not parent_reminder:
 		return
 
-	frappe_user = frappe.db.get_value("Raven User", doc.user_id, "user")
+	frappe_user = frappe.db.get_value("Raven User", user_id, "user")
 
 	r = frappe.get_doc("MM Task Reminder", parent_reminder)
 	if r.status in ("Completed", "Cancelled"):
