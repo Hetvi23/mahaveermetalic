@@ -3,21 +3,48 @@
 import frappe
 
 
+def on_raven_poll_vote_before_insert(doc, method=None):
+	"""
+	Set a short title on Raven Poll Vote before insert to avoid the
+	140-char limit error that occurs when Frappe tries to use the full
+	doc dict as the title (triggered by the custom 'title' field on the site).
+	"""
+	try:
+		poll_id = (doc.get("poll_id") or "")[:50]
+		user_id = (doc.get("user_id") or "")[:50]
+		doc.title = f"{poll_id}-{user_id}"[:140]
+	except Exception:
+		pass
+
+
 def on_raven_poll_vote_after_insert(doc, method=None):
 	if not frappe.db.exists("DocType", "MM Task Reminder Poll Link"):
 		return
 
-	frappe.log_error(f"Poll Vote Doc: {doc.as_dict()}", "MM Task Reminder Debug")
+	# Handle both old Raven (option field) and new Raven (vote_selection child table)
+	options_selected = []
 	
 	try:
-		option = doc.get("option")
+		# Old Raven
+		if doc.get("option"):
+			options_selected.append(doc.get("option"))
+		
+		# New Raven (child table)
+		if doc.get("vote_selection"):
+			for row in doc.get("vote_selection"):
+				# In newer Raven, 'option' might be a link or ID, we need to check its text
+				opt_val = row.get("option")
+				if opt_val:
+					# If opt_val is an ID, get its actual text
+					# (Raven Poll Option.option)
+					opt_text = frappe.db.get_value("Raven Poll Option", opt_val, "option") or opt_val
+					options_selected.append(opt_text)
 	except Exception as e:
-		frappe.log_error(f"Failed to get option: {str(e)}", "MM Task Reminder Debug")
-		return
+		frappe.log_error(f"Failed to extract options: {str(e)}", "MM Task Reminder Debug")
 
-	option_norm = (option or "").strip().lower()
+	is_yes = any((o or "").strip().lower() == "yes" for o in options_selected)
 
-	if option_norm not in {"yes"}:
+	if not is_yes:
 		return
 
 	try:

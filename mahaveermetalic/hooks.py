@@ -139,6 +139,7 @@ after_install = "mahaveermetalic.install.after_install"
 
 doc_events = {
 	"Raven Poll Vote": {
+		"before_insert": "mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.poll_hooks.on_raven_poll_vote_before_insert",
 		"after_insert": "mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.poll_hooks.on_raven_poll_vote_after_insert",
 	}
 }
