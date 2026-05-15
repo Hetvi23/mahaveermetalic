@@ -40,7 +40,17 @@ class RavenTaskDelivery:
 		poll_id = None
 
 		url = frappe.utils.get_url_to_form("MM Task Reminder", reminder.name)
-		interval_h = reminder.reminder_interval_hours or 1
+		interval_min = reminder.reminder_interval_minutes or 60
+		# Format interval for display
+		if interval_min < 60:
+			interval_str = f"{interval_min} min"
+		elif interval_min % 60 == 0:
+			hrs = interval_min // 60
+			interval_str = f"{hrs} hr"
+		else:
+			hrs = interval_min / 60
+			interval_str = f"{hrs:g} hr"
+
 		window_end = (
 			frappe.utils.format_datetime(reminder.to_datetime)
 			if reminder.to_datetime
@@ -51,7 +61,7 @@ class RavenTaskDelivery:
 		if reminder.description:
 			intro_html += f"<p>{escape_html(reminder.description)}</p>"
 		intro_html += (
-			f"<p>Repeats every <strong>{interval_h:g}</strong> hr. "
+			f"<p>Repeats every <strong>{interval_str}</strong>. "
 			f"Runs until <em>{window_end}</em>.</p>"
 			f'<p><a href="{url}">Open reminder</a></p>'
 		)

@@ -35,9 +35,10 @@ def _process(doc, now):
 	if end and now > end:
 		return
 
-	interval_hours = doc.reminder_interval_hours or 1
-	if interval_hours <= 0:
+	interval_minutes = doc.reminder_interval_minutes or 60
+	if interval_minutes <= 0:
 		return
+	interval_hours = interval_minutes / 60.0
 
 	if doc.last_reminder_sent:
 		next_at = frappe.utils.add_to_date(get_datetime(doc.last_reminder_sent), hours=interval_hours)

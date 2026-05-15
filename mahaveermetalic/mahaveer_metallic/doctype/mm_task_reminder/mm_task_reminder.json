@@ -11,7 +11,7 @@
   "column_break_status",
   "from_datetime",
   "to_datetime",
-  "reminder_interval_hours",
+  "reminder_interval_minutes",
   "section_note",
   "description",
   "section_recipients",
@@ -26,7 +26,13 @@
   "poll_links"
  ],
  "fields": [
-  {"fieldname": "title", "fieldtype": "Data", "in_list_view": 1, "label": "Task title", "reqd": 1},
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Task title",
+   "reqd": 1
+  },
   {
    "default": "Draft",
    "fieldname": "status",
@@ -37,7 +43,10 @@
    "options": "Draft\nActive\nCompleted\nCancelled",
    "reqd": 1
   },
-  {"fieldname": "column_break_status", "fieldtype": "Column Break"},
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
   {
    "fieldname": "from_datetime",
    "fieldtype": "Datetime",
@@ -52,15 +61,24 @@
    "label": "Remind until"
   },
   {
-   "default": "1",
-   "fieldname": "reminder_interval_hours",
-   "fieldtype": "Float",
-   "label": "Reminder interval (hours)",
+   "default": "60",
+   "fieldname": "reminder_interval_minutes",
+   "fieldtype": "Int",
+   "label": "Reminder interval (minutes)",
    "non_negative": 1,
    "reqd": 1
   },
-  {"collapsible": 1, "fieldname": "section_note", "fieldtype": "Section Break", "label": "Notes"},
-  {"fieldname": "description", "fieldtype": "Small Text", "label": "Details"},
+  {
+   "collapsible": 1,
+   "fieldname": "section_note",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Details"
+  },
   {
    "fieldname": "section_recipients",
    "fieldtype": "Section Break",
@@ -79,7 +97,11 @@
    "label": "Users — notify when completed",
    "options": "MM Task Reminder Completion Recipient"
   },
-  {"fieldname": "section_raven", "fieldtype": "Section Break", "label": "Raven prompts"},
+  {
+   "fieldname": "section_raven",
+   "fieldtype": "Section Break",
+   "label": "Raven prompts"
+  },
   {
    "default": "1",
    "description": "Sends a Raven Poll with Yes/No on reminders (vote Yes marks task complete when Raven Bot is configured). Configure MM Raven Task Notification Settings.",
@@ -100,8 +122,19 @@
    "label": "Last reminder sent",
    "read_only": 1
   },
-  {"fieldname": "completed_on", "fieldtype": "Datetime", "label": "Completed on", "read_only": 1},
-  {"fieldname": "completed_by", "fieldtype": "Link", "label": "Completed by", "options": "User", "read_only": 1},
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Datetime",
+   "label": "Completed on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_by",
+   "fieldtype": "Link",
+   "label": "Completed by",
+   "options": "User",
+   "read_only": 1
+  },
   {
    "fieldname": "poll_links",
    "fieldtype": "Table",
@@ -131,8 +164,23 @@
    "share": 1,
    "write": 1
   },
-  {"create": 1, "delete": 1, "read": 1, "report": 1, "role": "MM Admin", "write": 1, "export": 1},
-  {"create": 1, "read": 1, "report": 1, "role": "MM Operations", "write": 1, "export": 0}
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "MM Admin",
+   "write": 1,
+   "export": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "MM Operations",
+   "write": 1,
+   "export": 0
+  }
  ],
  "row_format": "Dynamic",
  "sort_field": "modified",
