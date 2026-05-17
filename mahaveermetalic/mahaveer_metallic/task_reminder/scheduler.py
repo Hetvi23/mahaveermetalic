@@ -63,6 +63,42 @@ def _process(doc, now):
 
 	end = get_datetime(doc.to_datetime) if doc.to_datetime else None
 	if end and now > end:
+		# The deadline has passed and the task is still Active (incomplete).
+		# Identify all recipients who did not complete the task.
+		unfinished_users = []
+		for row in doc.reminder_recipients:
+			if not row.user:
+				continue
+			if not has_user_completed(doc, row.user):
+				unfinished_users.append(row.user)
+
+		if unfinished_users and doc.owner:
+			try:
+				from frappe.utils.data import escape_html
+				user_names = []
+				for u in unfinished_users:
+					fn = frappe.db.get_value("User", u, "full_name") or u
+					user_names.append(f"<strong>{escape_html(fn)}</strong> ({escape_html(u)})")
+
+				msg = (
+					f"<p><strong>⚠️ Task Reminder Deadline Passed</strong></p>"
+					f"<p>The task <strong>\"{escape_html(doc.title)}\"</strong> reached its end time "
+					f"({frappe.utils.format_datetime(doc.to_datetime)}) but was not completed by the following assignees:</p>"
+					f"<ul>"
+				)
+				for name in user_names:
+					msg += f"<li>{name}</li>"
+				msg += f"</ul>"
+
+				delivery = RavenTaskDelivery()
+				delivery.send_html_dm(doc.owner, msg)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Deadline Notification Failure {doc.name}")
+
+		# Cancel the task to prevent further processing or reminders
+		doc.status = "Cancelled"
+		doc.flags.ignore_permissions = True
+		doc.save()
 		return
 
 	interval_minutes = doc.reminder_interval_minutes or 60
