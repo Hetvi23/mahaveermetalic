@@ -196,35 +196,56 @@ def on_raven_message_after_insert(doc, method=None):
 	active_reminders = frappe.get_all(
 		"MM Task Reminder",
 		filters={"status": "Active"},
-		fields=["name", "title", "description", "owner", "from_datetime", "to_datetime", "reminder_interval_minutes"]
+		pluck="name"
 	)
 
 	from mahaveermetalic.mahaveer_metallic.task_reminder.scheduler import has_user_completed
 	from frappe.utils.data import escape_html
 
 	users_tasks = []
-	for r in active_reminders:
-		r_doc = frappe.get_doc("MM Task Reminder", r.name)
+	for r_name in active_reminders:
+		r_doc = frappe.get_doc("MM Task Reminder", r_name)
 		is_recipient = any(row.user == doc.owner for row in r_doc.reminder_recipients if row.user)
-		if is_recipient and not has_user_completed(r_doc, doc.owner):
-			users_tasks.append(r_doc)
+		is_owner = (r_doc.owner == doc.owner)
+
+		if is_recipient or is_owner:
+			completed = False
+			if is_recipient:
+				completed = has_user_completed(r_doc, doc.owner)
+			else:
+				completed = all(has_user_completed(r_doc, row.user) for row in r_doc.reminder_recipients if row.user)
+
+			if not completed:
+				users_tasks.append({
+					"doc": r_doc,
+					"is_owner": is_owner and not is_recipient
+				})
 
 	if users_tasks:
 		reply = f"<p>📋 <strong>Your Active Tasks ({len(users_tasks)})</strong></p>"
-		for i, t in enumerate(users_tasks, 1):
+		for i, t_info in enumerate(users_tasks, 1):
+			t = t_info["doc"]
+			is_owner = t_info["is_owner"]
 			created_by = t.owner or "System"
 			creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
 			url = frappe.utils.get_url_to_form("MM Task Reminder", t.name)
 			
+			role_badge = "[Owner]" if is_owner else "[Assignee]"
+			
 			reply += (
-				f"<p><strong>{i}. {escape_html(t.title)}</strong><br>"
-				f"Assigned by: <em>{escape_html(creator_name)}</em><br>"
+				f"<p><strong>{i}. {escape_html(t.title)}</strong> <strong>{role_badge}</strong><br>"
 			)
+			if is_owner:
+				assignees = [frappe.db.get_value("User", row.user, "full_name") or row.user for row in t.reminder_recipients if row.user]
+				reply += f"Assigned to: <em>{escape_html(', '.join(assignees) or 'None')}</em><br>"
+			else:
+				reply += f"Assigned by: <em>{escape_html(creator_name)}</em><br>"
+
 			if t.description:
 				reply += f"Details: <em>{escape_html(t.description)}</em><br>"
 			
 			# Format interval
-			interval_min = t.reminder_interval_minutes or 60
+			interval_min = t.get("reminder_interval_minutes") or (int(t.get("reminder_interval_hours") * 60) if t.get("reminder_interval_hours") else 60)
 			if interval_min < 60:
 				interval_str = f"{interval_min} min"
 			elif interval_min % 60 == 0:
