@@ -103,7 +103,7 @@ export default function TaskReminderChatPage() {
 	const seeded = useRef(false);
 	useEffect(() => {
 		if (seeded.current) return;
-		if (currentUser && currentUser !== "Guest" && currentUser !== "Administrator") {
+		if (currentUser && currentUser.toLowerCase() !== "guest" && currentUser.toLowerCase() !== "administrator") {
 			setReminderUsers([currentUser]);
 			seeded.current = true;
 		}
@@ -193,7 +193,7 @@ export default function TaskReminderChatPage() {
 		setFromLocal(toDatetimeLocalValue(new Date()));
 		setToLocal("");
 		setIntervalHours(1);
-		if (currentUser && currentUser !== "Guest" && currentUser !== "Administrator") setReminderUsers([currentUser]);
+		if (currentUser && currentUser.toLowerCase() !== "guest" && currentUser.toLowerCase() !== "administrator") setReminderUsers([currentUser]);
 		else setReminderUsers([]);
 		setCompletionUsers([]);
     setMessages([{
