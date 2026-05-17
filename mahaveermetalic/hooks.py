@@ -149,7 +149,7 @@ doc_events = {
 
 scheduler_events = {
 	"cron": {
-		"*/10 * * * *": [
+		"* * * * *": [
 			"mahaveermetalic.mahaveer_metallic.task_reminder.scheduler.run_reminder_checks",
 		]
 	},
