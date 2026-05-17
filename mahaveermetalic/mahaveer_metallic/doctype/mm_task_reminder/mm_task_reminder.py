@@ -132,7 +132,7 @@ def _send_assignment_notification(reminder_name: str | None = None):
 	created_by = doc.owner or ""
 	creator_name = (frappe.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
 
-	interval_h = doc.reminder_interval_hours or 1
+	interval_h = doc.get("reminder_interval_hours") or (doc.get("reminder_interval_minutes") / 60.0 if doc.get("reminder_interval_minutes") else 1.0)
 	start_time = frappe.utils.format_datetime(doc.from_datetime) if doc.from_datetime else "now"
 	end_info = (
 		f"until {frappe.utils.format_datetime(doc.to_datetime)}"

@@ -141,7 +141,7 @@ def _process(doc, now):
 		doc.save()
 		return
 
-	interval_minutes = doc.reminder_interval_minutes or 60
+	interval_minutes = doc.get("reminder_interval_minutes") or (int(doc.get("reminder_interval_hours") * 60) if doc.get("reminder_interval_hours") else 60)
 	if interval_minutes <= 0:
 		logger.warn(f"Task '{doc.name}' has invalid interval minutes ({interval_minutes}). Skipping.")
 		return

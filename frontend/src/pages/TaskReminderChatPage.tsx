@@ -218,6 +218,7 @@ export default function TaskReminderChatPage() {
 			description: description.trim() || undefined,
 			from_datetime: toFrappeDatetime(fromLocal),
 			to_datetime: toLocal.trim() ? toFrappeDatetime(toLocal) : "",
+			reminder_interval_hours: intervalHours,
 			reminder_interval_minutes: Math.round(intervalHours * 60),
 			include_yes_no_poll: 1,
 			reminder_recipients: reminderUsers.map((user, i) => ({ user, idx: i + 1 })),
