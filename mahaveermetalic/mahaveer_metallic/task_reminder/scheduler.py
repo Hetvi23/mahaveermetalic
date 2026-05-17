@@ -53,6 +53,10 @@ def _process(doc, now):
 	if doc.status != "Active":
 		return
 
+	# Skip reminder notifications during quiet hours: 8 PM (20:00) to 8 AM (08:00)
+	if now.hour >= 20 or now.hour < 8:
+		return
+
 	start = get_datetime(doc.from_datetime)
 	if now < start:
 		return
