@@ -164,63 +164,7 @@ def on_raven_message_after_insert(doc, method=None):
 	soup = BeautifulSoup(remark_text, "html.parser")
 	cleaned_text = soup.get_text(" ", strip=True)
 
-	# 1. Check if user is asking for active tasks
-	lower_text = cleaned_text.lower().strip()
-	is_asking_for_tasks = any(phrase in lower_text for phrase in ["active task", "my task", "show task", "list task", "what are my task", "pending task"]) or lower_text in ["tasks", "task"]
-
-	if is_asking_for_tasks:
-		active_reminders = frappe.get_all(
-			"MM Task Reminder",
-			filters={"status": "Active"},
-			fields=["name", "title", "description", "owner", "from_datetime", "to_datetime", "reminder_interval_minutes"]
-		)
-
-		from mahaveermetalic.mahaveer_metallic.task_reminder.scheduler import has_user_completed
-		from frappe.utils.data import escape_html
-
-		users_tasks = []
-		for r in active_reminders:
-			r_doc = frappe.get_doc("MM Task Reminder", r.name)
-			is_recipient = any(row.user == doc.owner for row in r_doc.reminder_recipients if row.user)
-			if is_recipient and not has_user_completed(r_doc, doc.owner):
-				users_tasks.append(r_doc)
-
-		if users_tasks:
-			reply = f"<p>📋 <strong>Your Active Tasks ({len(users_tasks)})</strong></p>"
-			for i, t in enumerate(users_tasks, 1):
-				created_by = t.owner or "System"
-				creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
-				url = frappe.utils.get_url_to_form("MM Task Reminder", t.name)
-				
-				reply += (
-					f"<p><strong>{i}. {escape_html(t.title)}</strong><br>"
-					f"Assigned by: <em>{escape_html(creator_name)}</em><br>"
-				)
-				if t.description:
-					reply += f"Details: <em>{escape_html(t.description)}</em><br>"
-				
-				# Format interval
-				interval_min = t.reminder_interval_minutes or 60
-				if interval_min < 60:
-					interval_str = f"{interval_min} min"
-				elif interval_min % 60 == 0:
-					hrs = interval_min // 60
-					interval_str = f"{hrs} hr"
-				else:
-					hrs = interval_min / 60
-					interval_str = f"{hrs:g} hr"
-					
-				reply += (
-					f"Reminds every: <strong>{interval_str}</strong><br>"
-					f'<a href="{url}">View Task Details</a></p>'
-				)
-		else:
-			reply = "<p>🎉 <strong>You have no active or pending tasks at the moment!</strong></p>"
-
-		delivery.send_html_dm(doc.owner, reply)
-		return
-
-	# 2. Check if user has a pending "No" vote awaiting remark
+	# 1. Check if user has a pending "No" vote awaiting remark
 	reminder_name = frappe.cache().get_value(f"task_reminder_no_vote:{doc.owner}")
 	if reminder_name:
 		# Clear cache key immediately
@@ -248,12 +192,53 @@ def on_raven_message_after_insert(doc, method=None):
 			delivery.send_html_dm(doc.owner, f"<p>Thank you, your remark has been recorded: <em>\"{cleaned_text}\"</em></p>")
 		return
 
-	# 3. If neither, send a premium guide help message
-	help_msg = (
-		f"<p>👋 Hello! I am the <strong>Mahaveer Metallic Task Bot</strong>.</p>"
-		f"<p>I manage your automated task reminders and polls.</p>"
-		f"<p>💡 <strong>Quick Commands</strong>:<br>"
-		f"• Type <strong>'active tasks'</strong> to list your pending tasks and view their details.<br>"
-		f"• Vote on your task reminder polls to update their completion status.</p>"
+	# 2. By default, show active tasks list for any other incoming message
+	active_reminders = frappe.get_all(
+		"MM Task Reminder",
+		filters={"status": "Active"},
+		fields=["name", "title", "description", "owner", "from_datetime", "to_datetime", "reminder_interval_minutes"]
 	)
-	delivery.send_html_dm(doc.owner, help_msg)
+
+	from mahaveermetalic.mahaveer_metallic.task_reminder.scheduler import has_user_completed
+	from frappe.utils.data import escape_html
+
+	users_tasks = []
+	for r in active_reminders:
+		r_doc = frappe.get_doc("MM Task Reminder", r.name)
+		is_recipient = any(row.user == doc.owner for row in r_doc.reminder_recipients if row.user)
+		if is_recipient and not has_user_completed(r_doc, doc.owner):
+			users_tasks.append(r_doc)
+
+	if users_tasks:
+		reply = f"<p>📋 <strong>Your Active Tasks ({len(users_tasks)})</strong></p>"
+		for i, t in enumerate(users_tasks, 1):
+			created_by = t.owner or "System"
+			creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
+			url = frappe.utils.get_url_to_form("MM Task Reminder", t.name)
+			
+			reply += (
+				f"<p><strong>{i}. {escape_html(t.title)}</strong><br>"
+				f"Assigned by: <em>{escape_html(creator_name)}</em><br>"
+			)
+			if t.description:
+				reply += f"Details: <em>{escape_html(t.description)}</em><br>"
+			
+			# Format interval
+			interval_min = t.reminder_interval_minutes or 60
+			if interval_min < 60:
+				interval_str = f"{interval_min} min"
+			elif interval_min % 60 == 0:
+				hrs = interval_min // 60
+				interval_str = f"{hrs} hr"
+			else:
+				hrs = interval_min / 60
+				interval_str = f"{hrs:g} hr"
+				
+			reply += (
+				f"Reminds every: <strong>{interval_str}</strong><br>"
+				f'<a href="{url}">View Task Details</a></p>'
+			)
+	else:
+		reply = "<p>🎉 <strong>You have no active or pending tasks at the moment!</strong></p>"
+
+	delivery.send_html_dm(doc.owner, reply)
