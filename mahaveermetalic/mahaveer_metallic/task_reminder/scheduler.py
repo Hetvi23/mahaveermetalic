@@ -23,6 +23,32 @@ def run_reminder_checks():
 			frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Scheduler {name}")
 
 
+def has_user_completed(doc, user_id):
+	polls = [row.poll_id for row in doc.poll_links if row.for_user == user_id and row.poll_id]
+	if not polls:
+		return False
+
+	votes = frappe.get_all(
+		"Raven Poll Vote",
+		filters={"poll_id": ["in", polls]},
+		fields=["name", "option"]
+	)
+
+	for v in votes:
+		if v.option and v.option.strip().lower() == "yes":
+			return True
+
+		vote_doc = frappe.get_doc("Raven Poll Vote", v.name)
+		if vote_doc.get("vote_selection"):
+			for row in vote_doc.get("vote_selection"):
+				opt_val = row.get("option")
+				if opt_val:
+					opt_text = frappe.db.get_value("Raven Poll Option", opt_val, "option") or opt_val
+					if opt_text and opt_text.strip().lower() == "yes":
+						return True
+	return False
+
+
 def _process(doc, now):
 	if doc.status != "Active":
 		return
@@ -45,9 +71,14 @@ def _process(doc, now):
 			return
 
 	delivery = RavenTaskDelivery()
+	sent_any = False
 	for row in doc.reminder_recipients:
 		if not row.user:
 			continue
+		if has_user_completed(doc, row.user):
+			continue
 		delivery.send_reminder_bundle(doc, row.user)
+		sent_any = True
 
-	doc.db_set("last_reminder_sent", now, update_modified=False)
+	if sent_any:
+		doc.db_set("last_reminder_sent", now, update_modified=False)
