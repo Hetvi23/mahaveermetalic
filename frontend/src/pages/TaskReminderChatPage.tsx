@@ -1,5 +1,5 @@
 import { extractErrorMessage } from "@/utils/frappeError";
-import { useFrappeAuth, useFrappeCreateDoc, useFrappeGetDocList } from "frappe-react-sdk";
+import { useFrappeAuth, useFrappeCreateDoc, useFrappeGetDocList, useFrappeGetCall } from "frappe-react-sdk";
 import { 
   Users, 
   ShieldAlert, 
@@ -56,6 +56,10 @@ export default function TaskReminderChatPage() {
 	const { createDoc, loading } = useFrappeCreateDoc();
 	const streamRef = useRef<HTMLDivElement>(null);
 	const footerRef = useRef<HTMLDivElement>(null);
+
+	const { data: activeTasks } = useFrappeGetCall(
+		"mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.poll_hooks.get_active_tasks_for_user"
+	);
 
 	const [title, setTitle] = useState("");
 	const [description, setDescription] = useState("");
@@ -117,6 +121,51 @@ export default function TaskReminderChatPage() {
 	}, [messages]);
 
 	useEffect(() => {
+		if (activeTasks && Array.isArray(activeTasks) && activeTasks.length > 0) {
+			const activeTasksMsg: Message = {
+				id: "active-tasks-list",
+				type: "assistant",
+				content: (
+					<div>
+						<p>📋 <strong>Your Active Tasks ({activeTasks.length})</strong></p>
+						{activeTasks.map((t: any, index: number) => {
+							const intervalMin = t.reminder_interval_minutes || 60;
+							let intervalStr = "";
+							if (intervalMin < 60) {
+								intervalStr = `${intervalMin}m`;
+							} else if (intervalMin % 60 === 0) {
+								intervalStr = `${intervalMin / 60}h`;
+							} else {
+								intervalStr = `${(intervalMin / 60).toFixed(1)}h`;
+							}
+
+							return (
+								<div key={t.name} className="mm-active-task-item" style={{
+									borderLeft: '3px solid #3b82f6',
+									paddingLeft: '8px',
+									marginBottom: '12px',
+									fontSize: '0.9rem'
+								}}>
+									<strong>{index + 1}. {t.title}</strong><br/>
+									<span style={{color: '#64748b'}}>Assigned by: {t.creator_name} | Status: <strong>{t.status}</strong></span><br/>
+									{t.description && <span style={{display: 'block', fontStyle: 'italic', margin: '4px 0'}}>{t.description}</span>}
+									<span style={{color: '#94a3b8', fontSize: '0.8rem'}}>Repeats every {intervalStr}</span>
+								</div>
+							);
+						})}
+					</div>
+				)
+			};
+			setMessages(prev => {
+				if (prev.some(m => m.id === "active-tasks-list")) {
+					return prev.map(m => m.id === "active-tasks-list" ? activeTasksMsg : m);
+				}
+				return [...prev, activeTasksMsg];
+			});
+		}
+	}, [activeTasks]);
+
+	useEffect(() => {
 		function handleClickOutside(event: MouseEvent) {
 			if (footerRef.current && !footerRef.current.contains(event.target as Node)) {
 				setActiveOverlay(null);
@@ -172,6 +221,8 @@ export default function TaskReminderChatPage() {
 			});
 			const n = (res as { name?: string }).name;
 			if (n) {
+				setTitle("");
+				setDescription("");
         setMessages(prev => {
           const filtered = prev.filter(m => m.id !== 'sending');
           return [...filtered, { 

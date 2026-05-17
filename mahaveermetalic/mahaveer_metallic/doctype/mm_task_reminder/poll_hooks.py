@@ -242,3 +242,37 @@ def on_raven_message_after_insert(doc, method=None):
 		reply = "<p>🎉 <strong>You have no active or pending tasks at the moment!</strong></p>"
 
 	delivery.send_html_dm(doc.owner, reply)
+
+
+@frappe.whitelist()
+def get_active_tasks_for_user():
+	user = frappe.session.user
+	# Get all active task reminders
+	active_reminders = frappe.get_all(
+		"MM Task Reminder",
+		filters={"status": "Active"},
+		fields=["name", "title", "description", "owner", "from_datetime", "to_datetime", "reminder_interval_minutes"]
+	)
+
+	from mahaveermetalic.mahaveer_metallic.task_reminder.scheduler import has_user_completed
+
+	users_tasks = []
+	for r in active_reminders:
+		r_doc = frappe.get_doc("MM Task Reminder", r.name)
+		is_recipient = any(row.user == user for row in r_doc.reminder_recipients if row.user)
+		if is_recipient and not has_user_completed(r_doc, user):
+			# Format full creator name
+			created_by = r_doc.owner or "System"
+			creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
+
+			users_tasks.append({
+				"name": r.name,
+				"title": r.title,
+				"description": r.description,
+				"creator_name": creator_name,
+				"from_datetime": r.from_datetime,
+				"to_datetime": r.to_datetime,
+				"reminder_interval_minutes": r.reminder_interval_minutes,
+				"status": r_doc.status
+			})
+	return users_tasks
