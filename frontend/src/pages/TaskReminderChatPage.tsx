@@ -147,14 +147,33 @@ export default function TaskReminderChatPage() {
 
 								return (
 									<div key={t.name} className="mm-active-task-item" style={{
-										borderLeft: '3px solid #3b82f6',
+										borderLeft: t.role === "Owner" ? '3px solid #10b981' : '3px solid #3b82f6',
 										paddingLeft: '8px',
 										marginBottom: '12px',
 										fontSize: '0.9rem'
 									}}>
-										<strong>{index + 1}. {t.title}</strong><br/>
-										<span style={{color: '#64748b'}}>Assigned by: {t.creator_name} | Status: <strong>{t.status}</strong></span><br/>
-										{t.description && <span style={{display: 'block', fontStyle: 'italic', margin: '4px 0'}}>{t.description}</span>}
+										<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+											<strong>{index + 1}. {t.title}</strong>
+											<span style={{
+												fontSize: '0.7rem',
+												fontWeight: 'bold',
+												padding: '1px 6px',
+												borderRadius: '4px',
+												backgroundColor: t.role === "Owner" ? '#d1fae5' : '#dbeafe',
+												color: t.role === "Owner" ? '#065f46' : '#1e40af'
+											}}>
+												{t.role}
+											</span>
+										</div>
+										<span style={{color: '#64748b', fontSize: '0.85rem'}}>
+											{t.role === "Owner" ? (
+												<>Assigned to: <strong>{t.assignees ? t.assignees.join(', ') : 'None'}</strong></>
+											) : (
+												<>Assigned by: <strong>{t.creator_name}</strong></>
+											)}
+											{" | Status: "}<strong style={{color: '#3b82f6'}}>{t.status}</strong>
+										</span><br/>
+										{t.description && <span style={{display: 'block', fontStyle: 'italic', margin: '4px 0', color: '#475569'}}>{t.description}</span>}
 										<span style={{color: '#94a3b8', fontSize: '0.8rem'}}>Repeats every {intervalStr}</span>
 									</div>
 								);

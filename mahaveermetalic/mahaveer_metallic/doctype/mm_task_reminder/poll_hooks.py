@@ -260,19 +260,37 @@ def get_active_tasks_for_user():
 	for r in active_reminders:
 		r_doc = frappe.get_doc("MM Task Reminder", r.name)
 		is_recipient = any(row.user == user for row in r_doc.reminder_recipients if row.user)
-		if is_recipient and not has_user_completed(r_doc, user):
-			# Format full creator name
-			created_by = r_doc.owner or "System"
-			creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
+		is_owner = (r_doc.owner == user)
 
-			users_tasks.append({
-				"name": r.name,
-				"title": r.title,
-				"description": r.description,
-				"creator_name": creator_name,
-				"from_datetime": r.from_datetime,
-				"to_datetime": r.to_datetime,
-				"reminder_interval_minutes": r.reminder_interval_minutes,
-				"status": r_doc.status
-			})
+		if is_recipient or is_owner:
+			completed = False
+			if is_recipient:
+				completed = has_user_completed(r_doc, user)
+			else:
+				completed = all(has_user_completed(r_doc, row.user) for row in r_doc.reminder_recipients if row.user)
+
+			if not completed:
+				# Format full creator name
+				created_by = r_doc.owner or "System"
+				creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
+
+				# List of assignee names
+				assignees = []
+				for row in r_doc.reminder_recipients:
+					if row.user:
+						fn = frappe.db.get_value("User", row.user, "full_name") or row.user
+						assignees.append(fn)
+
+				users_tasks.append({
+					"name": r.name,
+					"title": r.title,
+					"description": r.description,
+					"creator_name": creator_name,
+					"assignees": assignees,
+					"from_datetime": r.from_datetime,
+					"to_datetime": r.to_datetime,
+					"reminder_interval_minutes": r.reminder_interval_minutes,
+					"status": r_doc.status,
+					"role": "Owner" if is_owner and not is_recipient else "Assignee"
+				})
 	return users_tasks
