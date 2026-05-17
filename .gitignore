@@ -1,0 +1,9 @@
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.DS_Store
+node_modules/
+dist/
+frontend/dist/
+frontend/node_modules/
