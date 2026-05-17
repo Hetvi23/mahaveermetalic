@@ -25,19 +25,25 @@ def get_mahaveer_logger():
 	return logger
 
 
-def log_reminder_activity(message, level="info"):
+def log_reminder_activity(message, level="Info", task_name=None):
 	logger = get_mahaveer_logger()
-	if level == "info":
+	if level.lower() == "info":
 		logger.info(message)
-	elif level == "warn":
+	elif level.lower() == "warn":
 		logger.warn(message)
-	elif level == "error":
+	elif level.lower() == "error":
 		logger.error(message)
 
-	# Also record in standard Frappe "Error Log" so users can filter by "MM Task Reminder Log" in Desk UI
+	# Also record in our new dedicated "MM Task Reminder Log" doctype
 	try:
-		# Use standard log_error helper from frappe
-		frappe.log_error(title="MM Task Reminder Log", message=message)
+		frappe.get_doc({
+			"doctype": "MM Task Reminder Log",
+			"title": f"Scheduler Log - {task_name}" if task_name else "Scheduler Global Event",
+			"level": level.capitalize(),
+			"message": message,
+			"timestamp": now_datetime(),
+			"task": task_name
+		}).insert(ignore_permissions=True)
 	except Exception:
 		pass
 
@@ -59,7 +65,7 @@ def run_reminder_checks():
 		try:
 			_process(doc, now)
 		except Exception as e:
-			log_reminder_activity(f"Error processing task reminder '{name}': {str(e)}", "error")
+			log_reminder_activity(f"Error processing task reminder '{name}': {str(e)}", "error", task_name=name)
 			frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Scheduler {name}")
 
 	log_reminder_activity("Scheduler completed reminder checks.", "info")
@@ -104,27 +110,27 @@ def _cleanup_old_polls(doc, user_id):
 
 
 def _process(doc, now):
-	log_reminder_activity(f"Processing task '{doc.name}' ('{doc.title}')", "info")
+	log_reminder_activity(f"Processing task '{doc.name}' ('{doc.title}')", "info", task_name=doc.name)
 
 	if doc.status != "Active":
-		log_reminder_activity(f"Task '{doc.name}' is not Active (current status: '{doc.status}'). Skipping.", "info")
+		log_reminder_activity(f"Task '{doc.name}' is not Active (current status: '{doc.status}'). Skipping.", "info", task_name=doc.name)
 		return
 
 	# Skip reminder notifications during quiet hours: 8 PM (20:00) to 8 AM (08:00)
 	if now.hour >= 20 or now.hour < 8:
-		log_reminder_activity(f"Skipping task '{doc.name}' ('{doc.title}') - Quiet hours active (8 PM to 8 AM). Current hour: {now.hour}", "info")
+		log_reminder_activity(f"Skipping task '{doc.name}' ('{doc.title}') - Quiet hours active (8 PM to 8 AM). Current hour: {now.hour}", "info", task_name=doc.name)
 		return
 
 	start = get_datetime(doc.from_datetime)
 	if now < start:
-		log_reminder_activity(f"Skipping task '{doc.name}' - Start datetime '{doc.from_datetime}' is in the future. Current time: '{now}'", "info")
+		log_reminder_activity(f"Skipping task '{doc.name}' - Start datetime '{doc.from_datetime}' is in the future. Current time: '{now}'", "info", task_name=doc.name)
 		return
 
 	end = get_datetime(doc.to_datetime) if doc.to_datetime else None
 	if end and now > end:
 		# The deadline has passed and the task is still Active (incomplete).
 		# Identify all recipients who did not complete the task.
-		log_reminder_activity(f"Task '{doc.name}' deadline passed ('{doc.to_datetime}'). checking for unfinished users...", "info")
+		log_reminder_activity(f"Task '{doc.name}' deadline passed ('{doc.to_datetime}'). checking for unfinished users...", "info", task_name=doc.name)
 		unfinished_users = []
 		for row in doc.reminder_recipients:
 			if not row.user:
@@ -133,7 +139,7 @@ def _process(doc, now):
 				unfinished_users.append(row.user)
 
 		if unfinished_users:
-			log_reminder_activity(f"Task '{doc.name}' ('{doc.title}') not completed by users: {unfinished_users}", "warn")
+			log_reminder_activity(f"Task '{doc.name}' ('{doc.title}') not completed by users: {unfinished_users}", "warn", task_name=doc.name)
 			if doc.owner:
 				try:
 					from frappe.utils.data import escape_html
@@ -153,16 +159,16 @@ def _process(doc, now):
 					msg += f"</ul>"
 
 					delivery = RavenTaskDelivery()
-					log_reminder_activity(f"Notifying task owner '{doc.owner}' of unfinished assignees.", "info")
+					log_reminder_activity(f"Notifying task owner '{doc.owner}' of unfinished assignees.", "info", task_name=doc.name)
 					delivery.send_html_dm(doc.owner, msg)
 				except Exception as e:
-					log_reminder_activity(f"Failed to notify task owner '{doc.owner}' of unfinished assignees for task '{doc.name}': {str(e)}", "error")
+					log_reminder_activity(f"Failed to notify task owner '{doc.owner}' of unfinished assignees for task '{doc.name}': {str(e)}", "error", task_name=doc.name)
 					frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Deadline Notification Failure {doc.name}")
 		else:
-			log_reminder_activity(f"All assignees completed task '{doc.name}' before deadline.", "info")
+			log_reminder_activity(f"All assignees completed task '{doc.name}' before deadline.", "info", task_name=doc.name)
 
 		# Cancel the task to prevent further processing or reminders
-		log_reminder_activity(f"Marking task '{doc.name}' as Cancelled since the deadline has passed.", "info")
+		log_reminder_activity(f"Marking task '{doc.name}' as Cancelled since the deadline has passed.", "info", task_name=doc.name)
 		doc.status = "Cancelled"
 		doc.flags.ignore_permissions = True
 		doc.save()
@@ -170,13 +176,13 @@ def _process(doc, now):
 
 	interval_minutes = doc.get("reminder_interval_minutes") or (int(doc.get("reminder_interval_hours") * 60) if doc.get("reminder_interval_hours") else 60)
 	if interval_minutes <= 0:
-		log_reminder_activity(f"Task '{doc.name}' has invalid interval minutes ({interval_minutes}). Skipping.", "warn")
+		log_reminder_activity(f"Task '{doc.name}' has invalid interval minutes ({interval_minutes}). Skipping.", "warn", task_name=doc.name)
 		return
 
 	if doc.last_reminder_sent:
 		next_at = frappe.utils.add_to_date(get_datetime(doc.last_reminder_sent), minutes=interval_minutes)
 		if now < next_at:
-			log_reminder_activity(f"Skipping task '{doc.name}' - next reminder scheduled at '{next_at}' (current time: '{now}')", "info")
+			log_reminder_activity(f"Skipping task '{doc.name}' - next reminder scheduled at '{next_at}' (current time: '{now}')", "info", task_name=doc.name)
 			return
 
 	delivery = RavenTaskDelivery()
@@ -185,14 +191,14 @@ def _process(doc, now):
 		if not row.user:
 			continue
 		if has_user_completed(doc, row.user):
-			log_reminder_activity(f"Assignee '{row.user}' already completed task '{doc.name}'. Skipping reminder.", "info")
+			log_reminder_activity(f"Assignee '{row.user}' already completed task '{doc.name}'. Skipping reminder.", "info", task_name=doc.name)
 			continue
 		
-		log_reminder_activity(f"Sending recurring reminder bundle to assignee '{row.user}' for task '{doc.name}'", "info")
+		log_reminder_activity(f"Sending recurring reminder bundle to assignee '{row.user}' for task '{doc.name}'", "info", task_name=doc.name)
 		_cleanup_old_polls(doc, row.user)
 		delivery.send_reminder_bundle(doc, row.user)
 		sent_any = True
 
 	if sent_any:
-		log_reminder_activity(f"Updating last reminder sent timestamp for task '{doc.name}' to '{now}'", "info")
+		log_reminder_activity(f"Updating last reminder sent timestamp for task '{doc.name}' to '{now}'", "info", task_name=doc.name)
 		doc.db_set("last_reminder_sent", now, update_modified=False)
