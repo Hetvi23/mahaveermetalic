@@ -86,19 +86,35 @@ def _send_completion_messages(reminder_name: str | None = None):
 
 	doc = frappe.get_doc("MM Task Reminder", reminder_name)
 	recipients = [r.user for r in doc.completion_recipients if r.user]
+	if doc.owner and doc.owner not in recipients:
+		recipients.append(doc.owner)
+
 	if not recipients:
 		return
+
 	completed_by = doc.completed_by or ""
-	title = (frappe.get_value("User", completed_by, "full_name") or completed_by) if completed_by else "Unknown"
+	completed_by_name = (frappe.get_value("User", completed_by, "full_name") or completed_by) if completed_by else "Unknown"
+
+	details = []
+	for row in doc.reminder_recipients:
+		if row.user:
+			fn = frappe.db.get_value("User", row.user, "full_name") or row.user
+			rc = row.completed_at_reminder or 1
+			details.append(f"<li><strong>{escape_html(fn)}</strong> completed at reminder count <strong>{rc}</strong></li>")
 
 	msg = (
-		f"<p><strong>Task reminder completed</strong></p>"
-		f"<p>{escape_html(doc.title)}</p>"
-		f"<p>Marked complete by <em>{escape_html(title)}</em></p>"
+		f"<p><strong>🎉 Task Reminder Completed</strong></p>"
+		f"<p><strong>{escape_html(doc.title)}</strong></p>"
+		f"<p>Marked complete by <em>{escape_html(completed_by_name)}</em></p>"
+		f"<ul>" + "".join(details) + "</ul>"
 	)
+
 	delivery = RavenTaskDelivery()
 	for user_id in recipients:
-		delivery.send_html_dm(user_id, msg)
+		try:
+			delivery.send_html_dm(user_id, msg)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Completion DM {reminder_name} to {user_id}")
 
 
 def _send_assignment_notification(reminder_name: str | None = None):
