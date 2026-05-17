@@ -113,6 +113,7 @@ def _complete_reminder_background(reminder_name: str | None = None, frappe_user:
 	for row in doc.reminder_recipients:
 		if row.user == frappe_user:
 			row.completed_at_reminder = reminder_count
+			row.completed_time = frappe.utils.now_datetime()
 			updated_row = True
 
 	if updated_row:
@@ -142,27 +143,117 @@ def on_raven_message_after_insert(doc, method=None):
 	if doc.is_bot_message or not doc.owner:
 		return
 
-	# Check if user has a pending "No" vote awaiting remark
-	reminder_name = frappe.cache().get_value(f"task_reminder_no_vote:{doc.owner}")
-	if not reminder_name:
+	# Only respond to messages in our bot's DM channel with the user
+	from mahaveermetalic.mahaveer_metallic.task_reminder.raven_send import RavenTaskDelivery
+	delivery = RavenTaskDelivery()
+	bot_name = delivery.bot_name
+	if not bot_name:
 		return
 
-	# Clear cache key immediately
-	frappe.cache().delete_value(f"task_reminder_no_vote:{doc.owner}")
+	try:
+		bot = frappe.get_doc("Raven Bot", bot_name)
+		bot_dm_channel = bot.create_direct_message_channel(doc.owner)
+	except Exception:
+		return
 
-	full_name = frappe.db.get_value("User", doc.owner, "full_name") or doc.owner
+	if doc.channel_id != bot_dm_channel:
+		return
+
 	remark_text = doc.content or doc.text or ""
-
 	from bs4 import BeautifulSoup
 	soup = BeautifulSoup(remark_text, "html.parser")
-	cleaned_remark = soup.get_text(" ", strip=True)
+	cleaned_text = soup.get_text(" ", strip=True)
 
-	if cleaned_remark:
-		# Add a timeline comment to the MM Task Reminder document
-		r_doc = frappe.get_doc("MM Task Reminder", reminder_name)
-		r_doc.add_comment("Comment", text=f"<strong>{full_name}</strong> voted No on poll. Remark: {cleaned_remark}")
+	# 1. Check if user is asking for active tasks
+	lower_text = cleaned_text.lower().strip()
+	is_asking_for_tasks = any(phrase in lower_text for phrase in ["active task", "my task", "show task", "list task", "what are my task", "pending task"]) or lower_text in ["tasks", "task"]
 
-		# Send confirmation message
-		from mahaveermetalic.mahaveer_metallic.task_reminder.raven_send import RavenTaskDelivery
-		delivery = RavenTaskDelivery()
-		delivery.send_html_dm(doc.owner, f"<p>Thank you, your remark has been recorded: <em>\"{cleaned_remark}\"</em></p>")
+	if is_asking_for_tasks:
+		active_reminders = frappe.get_all(
+			"MM Task Reminder",
+			filters={"status": "Active"},
+			fields=["name", "title", "description", "owner", "from_datetime", "to_datetime", "reminder_interval_minutes"]
+		)
+
+		from mahaveermetalic.mahaveer_metallic.task_reminder.scheduler import has_user_completed
+		from frappe.utils.data import escape_html
+
+		users_tasks = []
+		for r in active_reminders:
+			r_doc = frappe.get_doc("MM Task Reminder", r.name)
+			is_recipient = any(row.user == doc.owner for row in r_doc.reminder_recipients if row.user)
+			if is_recipient and not has_user_completed(r_doc, doc.owner):
+				users_tasks.append(r_doc)
+
+		if users_tasks:
+			reply = f"<p>📋 <strong>Your Active Tasks ({len(users_tasks)})</strong></p>"
+			for i, t in enumerate(users_tasks, 1):
+				created_by = t.owner or "System"
+				creator_name = frappe.db.get_value("User", created_by, "full_name") or created_by
+				url = frappe.utils.get_url_to_form("MM Task Reminder", t.name)
+				
+				reply += (
+					f"<p><strong>{i}. {escape_html(t.title)}</strong><br>"
+					f"Assigned by: <em>{escape_html(creator_name)}</em><br>"
+				)
+				if t.description:
+					reply += f"Details: <em>{escape_html(t.description)}</em><br>"
+				
+				# Format interval
+				interval_min = t.reminder_interval_minutes or 60
+				if interval_min < 60:
+					interval_str = f"{interval_min} min"
+				elif interval_min % 60 == 0:
+					hrs = interval_min // 60
+					interval_str = f"{hrs} hr"
+				else:
+					hrs = interval_min / 60
+					interval_str = f"{hrs:g} hr"
+					
+				reply += (
+					f"Reminds every: <strong>{interval_str}</strong><br>"
+					f'<a href="{url}">View Task Details</a></p>'
+				)
+		else:
+			reply = "<p>🎉 <strong>You have no active or pending tasks at the moment!</strong></p>"
+
+		delivery.send_html_dm(doc.owner, reply)
+		return
+
+	# 2. Check if user has a pending "No" vote awaiting remark
+	reminder_name = frappe.cache().get_value(f"task_reminder_no_vote:{doc.owner}")
+	if reminder_name:
+		# Clear cache key immediately
+		frappe.cache().delete_value(f"task_reminder_no_vote:{doc.owner}")
+
+		full_name = frappe.db.get_value("User", doc.owner, "full_name") or doc.owner
+
+		if cleaned_text:
+			# Add a timeline comment to the MM Task Reminder document
+			r_doc = frappe.get_doc("MM Task Reminder", reminder_name)
+			r_doc.add_comment("Comment", text=f"<strong>{full_name}</strong> voted No on poll. Remark: {cleaned_text}")
+
+			# Save the remark to the child recipients row
+			updated_row = False
+			for row in r_doc.reminder_recipients:
+				if row.user == doc.owner:
+					row.remark = cleaned_text
+					updated_row = True
+
+			if updated_row:
+				r_doc.flags.ignore_permissions = True
+				r_doc.save()
+
+			# Send confirmation message
+			delivery.send_html_dm(doc.owner, f"<p>Thank you, your remark has been recorded: <em>\"{cleaned_text}\"</em></p>")
+		return
+
+	# 3. If neither, send a premium guide help message
+	help_msg = (
+		f"<p>👋 Hello! I am the <strong>Mahaveer Metallic Task Bot</strong>.</p>"
+		f"<p>I manage your automated task reminders and polls.</p>"
+		f"<p>💡 <strong>Quick Commands</strong>:<br>"
+		f"• Type <strong>'active tasks'</strong> to list your pending tasks and view their details.<br>"
+		f"• Vote on your task reminder polls to update their completion status.</p>"
+	)
+	delivery.send_html_dm(doc.owner, help_msg)

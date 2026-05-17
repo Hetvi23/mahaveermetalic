@@ -60,7 +60,10 @@ class RavenTaskDelivery:
 		user_polls = [row for row in reminder.poll_links if row.for_user == user_id]
 		reminder_count = len(user_polls) + 1
 
-		intro_html = f"<p><strong>Task reminder - {reminder_count}</strong></p>"
+		created_by = reminder.owner or ""
+		creator_name = (frappe.db.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
+
+		intro_html = f"<p>🔔<strong>Task reminder</strong>🔔- {reminder_count}</p>"
 		if reminder.description:
 			intro_html += f"<p>{escape_html(reminder.description)}</p>"
 		intro_html += (
@@ -73,13 +76,13 @@ class RavenTaskDelivery:
 
 		if getattr(reminder, "include_yes_no_poll", 0):
 			try:
-				poll_id = self._send_completion_poll(reminder.name, reminder.title, user_id, reminder.to_datetime, reminder_count)
+				poll_id = self._send_completion_poll(reminder.name, reminder.title, user_id, reminder.to_datetime, reminder_count, creator_name)
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), "MM Task Reminder Raven Poll")
 
 		return message_id, poll_id
 
-	def _send_completion_poll(self, reminder_name: str, title: str, user_id: str, poll_end_dt, reminder_count: int) -> str | None:
+	def _send_completion_poll(self, reminder_name: str, title: str, user_id: str, poll_end_dt, reminder_count: int, creator_name: str) -> str | None:
 		if not self.bot_name:
 			return None
 		from raven.utils import get_raven_user
@@ -89,10 +92,6 @@ class RavenTaskDelivery:
 
 		bot = self.get_bot_doc()
 		channel_id = bot.create_direct_message_channel(user_id)
-
-		parent_doc = frappe.get_doc("MM Task Reminder", reminder_name)
-		created_by = parent_doc.owner or ""
-		creator_name = (frappe.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
 
 		poll = frappe.get_doc(
 			{

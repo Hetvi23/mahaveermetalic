@@ -6,7 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "completed_at_reminder"
+  "completed_at_reminder",
+  "completed_time",
+  "remark"
  ],
  "fields": [
   {
@@ -22,6 +24,20 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Completed at Reminder Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Completed Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remark",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Remark",
    "read_only": 1
   }
  ],
