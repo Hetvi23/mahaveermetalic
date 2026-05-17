@@ -60,7 +60,7 @@ class RavenTaskDelivery:
 		user_polls = [row for row in reminder.poll_links if row.for_user == user_id]
 		reminder_count = len(user_polls) + 1
 
-		intro_html = f"<p><strong>Reminder {reminder_count}</strong>: {escape_html(reminder.title)}</p>"
+		intro_html = f"<p><strong>Task reminder - {reminder_count}</strong></p>"
 		if reminder.description:
 			intro_html += f"<p>{escape_html(reminder.description)}</p>"
 		intro_html += (
@@ -90,10 +90,14 @@ class RavenTaskDelivery:
 		bot = self.get_bot_doc()
 		channel_id = bot.create_direct_message_channel(user_id)
 
+		parent_doc = frappe.get_doc("MM Task Reminder", reminder_name)
+		created_by = parent_doc.owner or ""
+		creator_name = (frappe.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
+
 		poll = frappe.get_doc(
 			{
 				"doctype": "Raven Poll",
-				"question": f'Have you completed (Reminder {reminder_count}): "{title}"?',
+				"question": f'{title} - **Assigned by {creator_name}**',
 				"options": [{"option": "Yes"}, {"option": "No"}],
 				"end_date": poll_end_dt,
 			}
