@@ -55,6 +55,7 @@ export default function TaskReminderChatPage() {
 	const { currentUser } = useFrappeAuth();
 	const { createDoc, loading } = useFrappeCreateDoc();
 	const streamRef = useRef<HTMLDivElement>(null);
+	const footerRef = useRef<HTMLDivElement>(null);
 
 	const [title, setTitle] = useState("");
 	const [description, setDescription] = useState("");
@@ -114,6 +115,18 @@ export default function TaskReminderChatPage() {
 			streamRef.current.scrollTop = streamRef.current.scrollHeight;
 		}
 	}, [messages]);
+
+	useEffect(() => {
+		function handleClickOutside(event: MouseEvent) {
+			if (footerRef.current && !footerRef.current.contains(event.target as Node)) {
+				setActiveOverlay(null);
+			}
+		}
+		document.addEventListener("mousedown", handleClickOutside);
+		return () => {
+			document.removeEventListener("mousedown", handleClickOutside);
+		};
+	}, []);
 
   // Reset search when overlay changes
   useEffect(() => {
@@ -306,7 +319,7 @@ export default function TaskReminderChatPage() {
         ))}
 			</div>
 
-			<div className="mm-chat-footer">
+			<div className="mm-chat-footer" ref={footerRef}>
         {activeOverlay === 'assign' && renderUserPicker('reminder', 'Assign Recipients', reminderUsers)}
         {activeOverlay === 'notify' && renderUserPicker('completion', 'Completion Notifications', completionUsers)}
 
