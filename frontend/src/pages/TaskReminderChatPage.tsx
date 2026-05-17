@@ -56,6 +56,7 @@ export default function TaskReminderChatPage() {
 	const { createDoc, loading } = useFrappeCreateDoc();
 	const streamRef = useRef<HTMLDivElement>(null);
 	const footerRef = useRef<HTMLDivElement>(null);
+	const searchContainerRef = useRef<HTMLDivElement>(null);
 
 	const { data: activeTasks } = useFrappeGetCall(
 		"mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.poll_hooks.get_active_tasks_for_user"
@@ -121,38 +122,44 @@ export default function TaskReminderChatPage() {
 	}, [messages]);
 
 	useEffect(() => {
-		if (activeTasks && Array.isArray(activeTasks) && activeTasks.length > 0) {
+		if (activeTasks && Array.isArray(activeTasks)) {
 			const activeTasksMsg: Message = {
 				id: "active-tasks-list",
 				type: "assistant",
 				content: (
 					<div>
 						<p>📋 <strong>Your Active Tasks ({activeTasks.length})</strong></p>
-						{activeTasks.map((t: any, index: number) => {
-							const intervalMin = t.reminder_interval_minutes || 60;
-							let intervalStr = "";
-							if (intervalMin < 60) {
-								intervalStr = `${intervalMin}m`;
-							} else if (intervalMin % 60 === 0) {
-								intervalStr = `${intervalMin / 60}h`;
-							} else {
-								intervalStr = `${(intervalMin / 60).toFixed(1)}h`;
-							}
+						{activeTasks.length === 0 ? (
+							<p style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.9rem', margin: '4px 0 0 0' }}>
+								You have no active tasks at the moment!
+							</p>
+						) : (
+							activeTasks.map((t: any, index: number) => {
+								const intervalMin = t.reminder_interval_minutes || 60;
+								let intervalStr = "";
+								if (intervalMin < 60) {
+									intervalStr = `${intervalMin}m`;
+								} else if (intervalMin % 60 === 0) {
+									intervalStr = `${intervalMin / 60}h`;
+								} else {
+									intervalStr = `${(intervalMin / 60).toFixed(1)}h`;
+								}
 
-							return (
-								<div key={t.name} className="mm-active-task-item" style={{
-									borderLeft: '3px solid #3b82f6',
-									paddingLeft: '8px',
-									marginBottom: '12px',
-									fontSize: '0.9rem'
-								}}>
-									<strong>{index + 1}. {t.title}</strong><br/>
-									<span style={{color: '#64748b'}}>Assigned by: {t.creator_name} | Status: <strong>{t.status}</strong></span><br/>
-									{t.description && <span style={{display: 'block', fontStyle: 'italic', margin: '4px 0'}}>{t.description}</span>}
-									<span style={{color: '#94a3b8', fontSize: '0.8rem'}}>Repeats every {intervalStr}</span>
-								</div>
-							);
-						})}
+								return (
+									<div key={t.name} className="mm-active-task-item" style={{
+										borderLeft: '3px solid #3b82f6',
+										paddingLeft: '8px',
+										marginBottom: '12px',
+										fontSize: '0.9rem'
+									}}>
+										<strong>{index + 1}. {t.title}</strong><br/>
+										<span style={{color: '#64748b'}}>Assigned by: {t.creator_name} | Status: <strong>{t.status}</strong></span><br/>
+										{t.description && <span style={{display: 'block', fontStyle: 'italic', margin: '4px 0'}}>{t.description}</span>}
+										<span style={{color: '#94a3b8', fontSize: '0.8rem'}}>Repeats every {intervalStr}</span>
+									</div>
+								);
+							})
+						)}
 					</div>
 				)
 			};
@@ -169,6 +176,9 @@ export default function TaskReminderChatPage() {
 		function handleClickOutside(event: MouseEvent) {
 			if (footerRef.current && !footerRef.current.contains(event.target as Node)) {
 				setActiveOverlay(null);
+			}
+			if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+				setShowDropdown(false);
 			}
 		}
 		document.addEventListener("mousedown", handleClickOutside);
@@ -314,7 +324,7 @@ export default function TaskReminderChatPage() {
         )}
 
         {/* Search + Dropdown */}
-        <div className="mm-chat-user-search">
+        <div className="mm-chat-user-search" ref={searchContainerRef}>
           <div className="mm-chat-select-trigger" onClick={() => setShowDropdown(!showDropdown)}>
             <input 
               className="mm-input" 
