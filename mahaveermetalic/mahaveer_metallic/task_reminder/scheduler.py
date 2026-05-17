@@ -91,6 +91,18 @@ def has_user_completed(doc, user_id):
 	return False
 
 
+def _cleanup_old_polls(doc, user_id):
+	polls = [row.poll_id for row in doc.poll_links if row.for_user == user_id and row.poll_id]
+	if not polls:
+		return
+	msg_names = frappe.get_all("Raven Message", filters={"poll_id": ["in", polls]}, pluck="name")
+	for msg_name in msg_names:
+		try:
+			frappe.delete_doc("Raven Message", msg_name, ignore_permissions=True, delete_permanently=True)
+		except Exception:
+			pass
+
+
 def _process(doc, now):
 	log_reminder_activity(f"Processing task '{doc.name}' ('{doc.title}')", "info")
 
@@ -177,6 +189,7 @@ def _process(doc, now):
 			continue
 		
 		log_reminder_activity(f"Sending recurring reminder bundle to assignee '{row.user}' for task '{doc.name}'", "info")
+		_cleanup_old_polls(doc, row.user)
 		delivery.send_reminder_bundle(doc, row.user)
 		sent_any = True
 
