@@ -4,7 +4,10 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": ["user"],
+ "field_order": [
+  "user",
+  "completed_at_reminder"
+ ],
  "fields": [
   {
    "fieldname": "user",
@@ -13,6 +16,13 @@
    "label": "User",
    "options": "User",
    "reqd": 1
+  },
+  {
+   "fieldname": "completed_at_reminder",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Completed at Reminder Count",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,

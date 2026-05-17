@@ -104,6 +104,21 @@ def _complete_reminder_background(reminder_name: str | None = None, frappe_user:
 	if doc.status in ("Completed", "Cancelled"):
 		return
 
+	# Save Completed at Reminder Count in the task reminder recipients table
+	reminder_count = len([r for r in doc.poll_links if r.for_user == frappe_user])
+	if reminder_count == 0:
+		reminder_count = 1
+
+	updated_row = False
+	for row in doc.reminder_recipients:
+		if row.user == frappe_user:
+			row.completed_at_reminder = reminder_count
+			updated_row = True
+
+	if updated_row:
+		doc.flags.ignore_permissions = True
+		doc.save()
+
 	# Import helper from scheduler to check individual completion
 	from mahaveermetalic.mahaveer_metallic.task_reminder.scheduler import has_user_completed
 

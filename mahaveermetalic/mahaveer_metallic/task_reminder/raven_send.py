@@ -57,7 +57,10 @@ class RavenTaskDelivery:
 			else "until you mark Complete (or vote Yes)"
 		)
 
-		intro_html = f"<p><strong>Reminder</strong>: {escape_html(reminder.title)}</p>"
+		user_polls = [row for row in reminder.poll_links if row.for_user == user_id]
+		reminder_count = len(user_polls) + 1
+
+		intro_html = f"<p><strong>Reminder {reminder_count}</strong>: {escape_html(reminder.title)}</p>"
 		if reminder.description:
 			intro_html += f"<p>{escape_html(reminder.description)}</p>"
 		intro_html += (
@@ -70,13 +73,13 @@ class RavenTaskDelivery:
 
 		if getattr(reminder, "include_yes_no_poll", 0):
 			try:
-				poll_id = self._send_completion_poll(reminder.name, reminder.title, user_id, reminder.to_datetime)
+				poll_id = self._send_completion_poll(reminder.name, reminder.title, user_id, reminder.to_datetime, reminder_count)
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), "MM Task Reminder Raven Poll")
 
 		return message_id, poll_id
 
-	def _send_completion_poll(self, reminder_name: str, title: str, user_id: str, poll_end_dt) -> str | None:
+	def _send_completion_poll(self, reminder_name: str, title: str, user_id: str, poll_end_dt, reminder_count: int) -> str | None:
 		if not self.bot_name:
 			return None
 		from raven.utils import get_raven_user
@@ -90,7 +93,7 @@ class RavenTaskDelivery:
 		poll = frappe.get_doc(
 			{
 				"doctype": "Raven Poll",
-				"question": f'Have you completed: "{title}"?',
+				"question": f'Have you completed (Reminder {reminder_count}): "{title}"?',
 				"options": [{"option": "Yes"}, {"option": "No"}],
 				"end_date": poll_end_dt,
 			}
