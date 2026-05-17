@@ -11,6 +11,7 @@
   "column_break_status",
   "from_datetime",
   "to_datetime",
+  "reminder_interval_hours",
   "reminder_interval_minutes",
   "section_note",
   "description",
@@ -59,6 +60,13 @@
    "fieldname": "to_datetime",
    "fieldtype": "Datetime",
    "label": "Remind until"
+  },
+  {
+   "fieldname": "reminder_interval_hours",
+   "fieldtype": "Float",
+   "label": "Interval (hours)",
+   "non_negative": 1,
+   "reqd": 1
   },
   {
    "default": "60",
