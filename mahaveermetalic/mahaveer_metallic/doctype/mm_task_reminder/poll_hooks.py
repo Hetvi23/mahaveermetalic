@@ -143,20 +143,35 @@ def on_raven_message_after_insert(doc, method=None):
 	if doc.is_bot_message or not doc.owner:
 		return
 
-	# Only respond to messages in our bot's DM channel with the user
 	from mahaveermetalic.mahaveer_metallic.task_reminder.raven_send import RavenTaskDelivery
 	delivery = RavenTaskDelivery()
-	bot_name = delivery.bot_name
-	if not bot_name:
-		return
+	notification_bot_name = delivery.bot_name
 
-	try:
-		bot = frappe.get_doc("Raven Bot", bot_name)
-		bot_dm_channel = bot.create_direct_message_channel(doc.owner)
-	except Exception:
-		return
+	active_task_bot_name = "Active Task Bot"
+	
+	is_notification_bot = False
+	is_active_task_bot = False
+	responding_bot = None
 
-	if doc.channel_id != bot_dm_channel:
+	if notification_bot_name and frappe.db.exists("Raven Bot", notification_bot_name):
+		try:
+			n_bot = frappe.get_doc("Raven Bot", notification_bot_name)
+			if doc.channel_id == n_bot.create_direct_message_channel(doc.owner):
+				is_notification_bot = True
+				responding_bot = n_bot
+		except Exception:
+			pass
+
+	if not responding_bot and frappe.db.exists("Raven Bot", active_task_bot_name):
+		try:
+			a_bot = frappe.get_doc("Raven Bot", active_task_bot_name)
+			if doc.channel_id == a_bot.create_direct_message_channel(doc.owner):
+				is_active_task_bot = True
+				responding_bot = a_bot
+		except Exception:
+			pass
+
+	if not responding_bot:
 		return
 
 	remark_text = doc.content or doc.text or ""
@@ -188,8 +203,8 @@ def on_raven_message_after_insert(doc, method=None):
 				r_doc.flags.ignore_permissions = True
 				r_doc.save()
 
-			# Send confirmation message
-			delivery.send_html_dm(doc.owner, f"<p>Thank you, your remark has been recorded: <em>\"{cleaned_text}\"</em></p>")
+			# Send confirmation message using the bot that received it
+			responding_bot.send_direct_message(doc.owner, text=f"<p>Thank you, your remark has been recorded: <em>\"{cleaned_text}\"</em></p>", markdown=False)
 		return
 
 	# 2. By default, show active tasks list for any other incoming message
@@ -262,7 +277,7 @@ def on_raven_message_after_insert(doc, method=None):
 	else:
 		reply = "<p>🎉 <strong>You have no active or pending tasks at the moment!</strong></p>"
 
-	delivery.send_html_dm(doc.owner, reply)
+	responding_bot.send_direct_message(doc.owner, text=reply, markdown=False)
 
 
 @frappe.whitelist()
