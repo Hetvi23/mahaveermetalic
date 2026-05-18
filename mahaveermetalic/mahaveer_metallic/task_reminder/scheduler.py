@@ -183,11 +183,11 @@ def _process(doc, now):
 		log_reminder_activity(f"Task '{doc.name}' has invalid interval minutes ({interval_minutes}). Skipping.", "warn", task_name=doc.name)
 		return
 
-	if doc.last_reminder_sent:
-		next_at = frappe.utils.add_to_date(get_datetime(doc.last_reminder_sent), minutes=interval_minutes)
-		if now < next_at:
-			log_reminder_activity(f"Skipping task '{doc.name}' - next reminder scheduled at '{next_at}' (current time: '{now}')", "info", task_name=doc.name)
-			return
+	base_time = doc.last_reminder_sent or doc.from_datetime
+	next_at = frappe.utils.add_to_date(get_datetime(base_time), minutes=interval_minutes)
+	if now < next_at:
+		log_reminder_activity(f"Skipping task '{doc.name}' - next reminder scheduled at '{next_at}' (current time: '{now}')", "info", task_name=doc.name)
+		return
 
 	delivery = RavenTaskDelivery()
 	sent_any = False

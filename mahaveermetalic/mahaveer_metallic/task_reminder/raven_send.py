@@ -63,22 +63,21 @@ class RavenTaskDelivery:
 		created_by = reminder.owner or ""
 		creator_name = (frappe.db.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
 
-		intro_html = f"<p>🔔<strong>Task reminder</strong>🔔- {reminder_count}</p>"
-		if reminder.description:
-			intro_html += f"<p>{escape_html(reminder.description)}</p>"
-		intro_html += (
-			f"<p>Repeats every <strong>{interval_str}</strong>. "
-			f"Runs until <em>{window_end}</em>.</p>"
-			f'<p><a href="{url}">Open reminder</a></p>'
-		)
-
-		message_id = self.send_html_dm(user_id, intro_html)
-
 		if getattr(reminder, "include_yes_no_poll", 0):
 			try:
 				poll_id = self._send_completion_poll(reminder.name, reminder.title, user_id, reminder.to_datetime, reminder_count, creator_name)
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), "MM Task Reminder Raven Poll")
+		else:
+			intro_html = f"<p>🔔<strong>Task reminder</strong>🔔 - {reminder_count}</p>"
+			if reminder.description:
+				intro_html += f"<p>{escape_html(reminder.description)}</p>"
+			intro_html += (
+				f"<p>Repeats every <strong>{interval_str}</strong>. "
+				f"Runs until <em>{window_end}</em>.</p>"
+				f'<p><a href="{url}">Open reminder</a></p>'
+			)
+			message_id = self.send_html_dm(user_id, intro_html)
 
 		return message_id, poll_id
 
