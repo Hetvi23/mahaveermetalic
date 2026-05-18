@@ -140,6 +140,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   font-weight: 800;
   background: linear-gradient(135deg, #0f172a, #334155);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -412,32 +413,65 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
 @keyframes mm-shimmer { to { background-position: 200% 0; } }
 
 /* Forms */
-.mm-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem 1.5rem; margin-bottom: 1rem; }
+.mm-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem 1rem; margin-bottom: 0.75rem; }
 @media (max-width: 720px) { .mm-form-grid { grid-template-columns: 1fr; } }
 .mm-span-2 { grid-column: span 2; }
-.mm-field { display: flex; flex-direction: column; gap: 0.5rem; }
-.mm-field-label { font-size: 0.8125rem; font-weight: 700; color: #475569; }
-.mm-textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9375rem; font-family: inherit; background: #fff; transition: all 0.2s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+.mm-field { display: flex; flex-direction: column; gap: 0.35rem; }
+.mm-field-label { font-size: 0.75rem; font-weight: 700; color: #475569; }
+.mm-textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.875rem; font-family: inherit; background: #fff; transition: all 0.2s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
 .mm-textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), inset 0 2px 4px rgba(0,0,0,0.02); }
-.mm-form-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--mm-border); }
+.mm-textarea:disabled { background: #f8fafc; color: #64748b; border-color: #e2e8f0; cursor: not-allowed; box-shadow: none; }
+.mm-form-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--mm-border); }
 
 /* Panels (form sections) */
-.mm-panel { border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03); }
-.mm-panel-head { margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid #f1f5f9; }
-.mm-panel-title { margin: 0; font-size: 1.1rem; font-weight: 800; color: #0f172a; }
-.mm-panel-desc { margin: 0.35rem 0 0; font-size: 0.875rem; color: #64748b; }
+.mm-panel { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; padding: 1rem 1.25rem; margin-bottom: 0.85rem; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.02); }
+.mm-panel-head { margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #f1f5f9; }
+.mm-panel-title { margin: 0; font-size: 0.95rem; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.03em; }
+.mm-panel-desc { margin: 0.2rem 0 0; font-size: 0.75rem; color: #64748b; }
 .mm-panel-enter { opacity: 0; animation: mm-fade-in 0.5s ease-out forwards; }
 
 /* Enhanced Inputs */
 .mm-input {
-  width: 100%; border: 1px solid #cbd5e1; border-radius: 12px;
-  padding: 0.75rem 1rem; font-size: 0.9375rem; font-family: inherit;
+  width: 100%; border: 1px solid #cbd5e1; border-radius: 8px;
+  padding: 0.5rem 0.75rem; font-size: 0.875rem; font-family: inherit;
   color: #0f172a; background: #fff; transition: all 0.2s;
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
 }
 .mm-input:focus {
   outline: none; border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), inset 0 2px 4px rgba(0,0,0,0.02);
+}
+.mm-input:disabled {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Compact child inputs */
+.mm-input-compact {
+  padding: 0.35rem 0.55rem !important;
+  font-size: 0.8125rem !important;
+  border-radius: 6px !important;
+}
+.mm-field-compact {
+  margin: 0 !important;
+}
+
+/* Interval layout */
+.mm-interval-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.mm-interval-helper {
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.25rem;
 }
 
 /* Child tables */

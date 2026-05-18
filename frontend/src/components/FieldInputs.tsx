@@ -124,6 +124,32 @@ export function FieldInput({ field, value, onChange, disabled, compact }: Props)
 		);
 	}
 
+	if (field.fieldname === "reminder_interval_hours") {
+		const displayValue = value == null || value === "" ? "" : String(Number(Number(value).toFixed(3)));
+		const mins = value == null || value === "" ? 0 : Math.round(Number(value) * 60);
+		return lab(
+			<div className="mm-interval-input-wrapper">
+				<input
+					className={ic}
+					disabled={ro}
+					type="number"
+					step="any"
+					value={displayValue}
+					required={field.reqd}
+					onChange={(e) => {
+						const raw = e.target.value;
+						onChange(raw === "" ? null : parseFloat(raw));
+					}}
+				/>
+				{value != null && value !== "" && (
+					<div className="mm-interval-helper">
+						⏱️ Equivalent to: <strong>{mins} minutes</strong>
+					</div>
+				)}
+			</div>
+		);
+	}
+
 	const inputType =
 		field.fieldtype === "Int" ||
 		field.fieldtype === "Float" ||

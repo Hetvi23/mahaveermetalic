@@ -194,6 +194,25 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 		}
 	}
 
+	const recordTitle = useMemo(() => {
+		const candidates = [
+			values.title,
+			values.party_name,
+			values.item_name,
+			values.vendor_name,
+			values.employee_name,
+			values.location_name,
+			values.color_name,
+			values.challan_number
+		];
+		for (const val of candidates) {
+			if (typeof val === "string" && val.trim() !== "") {
+				return val.trim();
+			}
+		}
+		return undefined;
+	}, [values]);
+
 	const busy = updating || submitting;
 
 	return (
@@ -201,6 +220,7 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 			meta={meta}
 			isNew={false}
 			docname={docname}
+			recordTitle={recordTitle}
 			onSave={() => {
 				void onSave();
 			}}
@@ -241,6 +261,7 @@ function DocFormShell({
 	formError,
 	bannerLocked,
 	bannerSubmitted,
+	recordTitle,
 }: {
 	meta: DocRegistryEntry;
 	isNew: boolean;
@@ -253,7 +274,19 @@ function DocFormShell({
 	formError: string | null;
 	bannerLocked?: boolean;
 	bannerSubmitted?: boolean;
+	recordTitle?: string;
 }) {
+	const isHashId = docname && /^[a-z0-9]{10}$/.test(docname);
+	const displaySub = isNew 
+		? meta.doctype 
+		: isHashId 
+			? meta.title 
+			: `${meta.title} • ${docname}`;
+
+	const displayTitle = isNew 
+		? `New ${meta.title}` 
+		: recordTitle || docname || meta.title;
+
 	return (
 		<div className="mm-page mm-page-enter">
 			<nav className="mm-breadcrumb" aria-label="Breadcrumb">
@@ -267,7 +300,7 @@ function DocFormShell({
 						<span className="mm-bc-sep" aria-hidden>
 							/
 						</span>
-						<span className="mm-bc-current">{docname}</span>
+						<span className="mm-bc-current">{recordTitle || docname}</span>
 					</>
 				)}
 				{isNew && (
@@ -281,8 +314,8 @@ function DocFormShell({
 			</nav>
 			<header className="mm-page-head">
 				<div>
-					<h1 className="mm-page-title">{isNew ? `New ${meta.title}` : meta.title}</h1>
-					<p className="mm-page-sub">{isNew ? meta.doctype : docname}</p>
+					<h1 className="mm-page-title">{displayTitle}</h1>
+					<p className="mm-page-sub">{displaySub}</p>
 				</div>
 				<div className="mm-page-actions">
 					<Link className="mm-btn-secondary" to={meta.routeBase}>

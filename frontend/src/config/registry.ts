@@ -94,7 +94,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "party_name", label: "Name" },
 			{ fieldname: "mobile_number", label: "Mobile" },
 			{ fieldname: "modified", label: "Updated" },
@@ -136,9 +135,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
-			{ fieldname: "item_type", label: "Type" },
 			{ fieldname: "item_name", label: "Name" },
+			{ fieldname: "item_type", label: "Type" },
 			{ fieldname: "uom", label: "UOM" },
 		],
 		searchField: "item_name",
@@ -177,7 +175,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		navGroup: "masters",
 		formSections: [{ id: "it1", title: "Type", fieldnames: ["type_name"] }],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "type_name", label: "Type Name" },
 		],
 		searchField: "type_name",
@@ -199,7 +196,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "v2", title: "Address", fieldnames: ["address"] },
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "vendor_name", label: "Name" },
 			{ fieldname: "mobile_no", label: "Mobile" },
 		],
@@ -220,7 +216,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		navGroup: "masters",
 		formSections: [{ id: "b1", title: "Bobbin specification", fieldnames: ["bobbin_name", "quality", "weight"] }],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "bobbin_name", label: "Name" },
 			{ fieldname: "quality", label: "Quality" },
 		],
@@ -243,7 +238,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "e2", title: "Placement", description: "Where they work in the network.", fieldnames: ["location", "department"] },
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "employee_name", label: "Name" },
 			{ fieldname: "location", label: "Location" },
 			{ fieldname: "department", label: "Department" },
@@ -268,7 +262,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "l2", title: "Address", fieldnames: ["address"] },
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "location_name", label: "Name" },
 			{ fieldname: "contact_number", label: "Contact" },
 		],
@@ -302,7 +295,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "r3", title: "Stock states", fieldnames: ["stock_weight", "stock_box", "reserved_weight", "issued_weight", "available_weight"] },
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "location", label: "Location" },
 			{ fieldname: "color_name", label: "Color" },
 			{ fieldname: "stock_weight", label: "Wt" },
@@ -422,7 +414,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "po3", title: "Logistics", fieldnames: ["delivery_date"] },
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "po_number", label: "PO No" },
 			{ fieldname: "color", label: "Color" },
 			{ fieldname: "qty_kg", label: "Qty KG" },
@@ -455,7 +446,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "challan_number", label: "Challan" },
 			{ fieldname: "given_received", label: "Given/Recv" },
 			{ fieldname: "party", label: "Party" },
@@ -516,7 +506,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "in4", title: "Receipt quantities", fieldnames: ["lot_number", "weight_in", "box_in"] },
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "posting_date", label: "Date" },
 			{ fieldname: "location", label: "Location" },
 			{ fieldname: "docstatus", label: "Status" },
@@ -563,7 +552,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "roll_no", label: "Roll" },
 			{ fieldname: "status", label: "Status" },
 			{ fieldname: "docstatus", label: "Doc" },
@@ -621,7 +609,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 		],
 		listColumns: [
-			{ fieldname: "name", label: "ID" },
 			{ fieldname: "title", label: "Task" },
 			{ fieldname: "status", label: "Status" },
 			{ fieldname: "from_datetime", label: "From" },
@@ -653,22 +640,18 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				label: "Users — recurring reminders",
 				childDoctype: "MM Task Reminder Recipient",
 				reqd: true,
-				columns: [{ fieldname: "user", label: "User", fieldtype: "Link", options: "User", reqd: true }],
+				columns: [
+					{ fieldname: "user", label: "User", fieldtype: "Link", options: "User", reqd: true },
+					{ fieldname: "completed_at_reminder", label: "Completed at Reminder Count", fieldtype: "Int", readOnly: true },
+					{ fieldname: "completed_time", label: "Completed Time", fieldtype: "Datetime", readOnly: true },
+					{ fieldname: "remark", label: "Remark", fieldtype: "Small Text", readOnly: true },
+				],
 			},
 			{
 				fieldname: "completion_recipients",
 				label: "Users — notify when completed",
 				childDoctype: "MM Task Reminder Completion Recipient",
 				columns: [{ fieldname: "user", label: "User", fieldtype: "Link", options: "User", reqd: true }],
-			},
-			{
-				fieldname: "poll_links",
-				label: "Raven polls (tracked)",
-				childDoctype: "MM Task Reminder Poll Link",
-				columns: [
-					{ fieldname: "for_user", label: "User", fieldtype: "Link", options: "User", readOnly: true },
-					{ fieldname: "poll_id", label: "Poll ID", fieldtype: "Data", readOnly: true },
-				],
 			},
 		],
 	},
