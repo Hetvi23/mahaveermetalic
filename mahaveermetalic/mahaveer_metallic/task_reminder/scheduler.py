@@ -79,19 +79,23 @@ def has_user_completed(doc, user_id):
 	votes = frappe.get_all(
 		"Raven Poll Vote",
 		filters={"poll_id": ["in", polls]},
-		fields=["name", "option"]
+		fields=["name"]
 	)
 
 	for v in votes:
-		if v.option and v.option.strip().lower() == "yes":
+		vote_doc = frappe.get_doc("Raven Poll Vote", v.name)
+		
+		# Safe check for old Raven (option field)
+		opt_val = vote_doc.get("option")
+		if opt_val and opt_val.strip().lower() == "yes":
 			return True
 
-		vote_doc = frappe.get_doc("Raven Poll Vote", v.name)
+		# Safe check for new Raven (vote_selection child table)
 		if vote_doc.get("vote_selection"):
 			for row in vote_doc.get("vote_selection"):
-				opt_val = row.get("option")
-				if opt_val:
-					opt_text = frappe.db.get_value("Raven Poll Option", opt_val, "option") or opt_val
+				opt_val_child = row.get("option")
+				if opt_val_child:
+					opt_text = frappe.db.get_value("Raven Poll Option", opt_val_child, "option") or opt_val_child
 					if opt_text and opt_text.strip().lower() == "yes":
 						return True
 	return False
