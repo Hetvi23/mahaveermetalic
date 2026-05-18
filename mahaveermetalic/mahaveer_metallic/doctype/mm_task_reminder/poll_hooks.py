@@ -315,3 +315,4 @@ def get_active_tasks_for_user():
 					"role": "Owner" if is_owner and not is_recipient else "Assignee"
 				})
 	return users_tasks
+
