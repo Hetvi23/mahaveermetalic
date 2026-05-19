@@ -5,10 +5,16 @@ import { Link } from "react-router-dom";
 
 export default function DocListPage({ meta }: { meta: DocRegistryEntry }) {
 	const [q, setQ] = useState("");
-	const fields = useMemo(() => meta.listColumns.map((c) => c.fieldname), [meta.listColumns]);
+	const fields = useMemo(() => {
+		const cols = meta.listColumns.map((c) => c.fieldname);
+		if (!cols.includes("name")) {
+			return [...cols, "name"];
+		}
+		return cols;
+	}, [meta.listColumns]);
 	const filters = useMemo(() => {
 		if (!q.trim() || !meta.searchField) return undefined;
-		return [[meta.searchField, "like", `%${q.trim()}%`]];
+		return [[meta.searchField, "like", `%${q.trim()}%`]] as any;
 	}, [q, meta.searchField]);
 
 	const { data, error, isLoading, mutate } = useFrappeGetDocList(meta.doctype, {
