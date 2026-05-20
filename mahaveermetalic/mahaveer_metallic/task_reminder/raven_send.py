@@ -40,7 +40,8 @@ class RavenTaskDelivery:
 		poll_id = None
 
 		url = frappe.utils.get_url_to_form("MM Task Reminder", reminder.name)
-		interval_min = reminder.reminder_interval_minutes or 60
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.mm_task_reminder import get_interval_minutes
+		interval_min = get_interval_minutes(reminder)
 		# Format interval for display
 		if interval_min < 60:
 			interval_str = f"{interval_min} min"

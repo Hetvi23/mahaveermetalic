@@ -260,7 +260,8 @@ def on_raven_message_after_insert(doc, method=None):
 				reply += f"Details: <em>{escape_html(t.description)}</em><br>"
 			
 			# Format interval
-			interval_min = t.get("reminder_interval_minutes") or (int(t.get("reminder_interval_hours") * 60) if t.get("reminder_interval_hours") else 60)
+			from mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.mm_task_reminder import get_interval_minutes
+			interval_min = get_interval_minutes(t)
 			if interval_min < 60:
 				interval_str = f"{interval_min} min"
 			elif interval_min % 60 == 0:

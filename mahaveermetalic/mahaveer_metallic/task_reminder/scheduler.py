@@ -178,7 +178,8 @@ def _process(doc, now):
 		doc.save()
 		return
 
-	interval_minutes = doc.get("reminder_interval_minutes") or (int(doc.get("reminder_interval_hours") * 60) if doc.get("reminder_interval_hours") else 60)
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_task_reminder.mm_task_reminder import get_interval_minutes
+	interval_minutes = get_interval_minutes(doc)
 	if interval_minutes <= 0:
 		log_reminder_activity(f"Task '{doc.name}' has invalid interval minutes ({interval_minutes}). Skipping.", "warn", task_name=doc.name)
 		return

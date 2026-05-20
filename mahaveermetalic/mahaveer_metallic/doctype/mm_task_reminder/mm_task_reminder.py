@@ -29,6 +29,16 @@ class MMTaskReminder(Document):
 				seen_c.add(row.user)
 
 	def before_save(self):
+		# Sync interval hours and minutes
+		h_val = self.get("reminder_interval_hours")
+		m_val = self.get("reminder_interval_minutes")
+		if h_val is not None:
+			expected_mins = round(h_val * 60)
+			if m_val is None or m_val != expected_mins:
+				self.reminder_interval_minutes = expected_mins
+		elif m_val is not None:
+			self.reminder_interval_hours = m_val / 60.0
+
 		if (
 			not self.is_new()
 			and self.status == "Active"
@@ -132,7 +142,14 @@ def _send_assignment_notification(reminder_name: str | None = None):
 	created_by = doc.owner or ""
 	creator_name = (frappe.get_value("User", created_by, "full_name") or created_by) if created_by else "System"
 
-	interval_h = doc.get("reminder_interval_hours") or (doc.get("reminder_interval_minutes") / 60.0 if doc.get("reminder_interval_minutes") else 1.0)
+	interval_min = doc.get("reminder_interval_minutes") or round((doc.get("reminder_interval_hours") or 1.0) * 60)
+	if interval_min < 60:
+		interval_str = f"{interval_min} min"
+	elif interval_min % 60 == 0:
+		interval_str = f"{interval_min // 60} hour(s)"
+	else:
+		interval_str = f"{interval_min / 60:g} hour(s)"
+
 	start_time = frappe.utils.format_datetime(doc.from_datetime) if doc.from_datetime else "now"
 	end_info = (
 		f"until {frappe.utils.format_datetime(doc.to_datetime)}"
@@ -151,7 +168,7 @@ def _send_assignment_notification(reminder_name: str | None = None):
 	msg += (
 		f"<p>Assigned by <em>{escape_html(creator_name)}</em></p>"
 		f"<p>Reminders start at <strong>{start_time}</strong>, "
-		f"repeating every <strong>{interval_h:g} hour(s)</strong> {end_info}.</p>"
+		f"repeating every <strong>{interval_str}</strong> {end_info}.</p>"
 		f"<p>You will receive a completion poll with each reminder — "
 		f"vote <strong>Yes</strong> to mark it done.</p>"
 		f'<p><a href="{url}">View task details</a></p>'
@@ -164,3 +181,12 @@ def _send_assignment_notification(reminder_name: str | None = None):
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"MM Task Reminder Assignment DM {reminder_name}")
 
+
+def get_interval_minutes(doc) -> int:
+	h = doc.get("reminder_interval_hours")
+	m = doc.get("reminder_interval_minutes")
+	if h is not None:
+		expected_m = round(h * 60)
+		if expected_m > 0 and (m is None or m != expected_m):
+			return expected_m
+	return m or 60

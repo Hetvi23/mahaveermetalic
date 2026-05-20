@@ -262,7 +262,7 @@ export default function TaskReminderChatPage() {
             content: (
               <div>
                 <strong>Reminder created successfully.</strong><br/>
-                Repeats every {intervalHours} hour(s).<br/>
+                Repeats every {intervalHours < 1 ? `${Math.round(intervalHours * 60)} min` : `${intervalHours} hour(s)`}.<br/>
                 <div className="mm-chat-success-actions">
                   <button type="button" className="mm-btn-primary" onClick={() => nav(`/tools/task-reminder/${encodeURIComponent(n)}`)}>View Details</button>
                   <button type="button" className="mm-btn-secondary" onClick={resetForAnother}>New Reminder</button>
