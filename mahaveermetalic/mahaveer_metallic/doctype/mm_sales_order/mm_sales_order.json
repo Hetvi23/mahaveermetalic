@@ -78,7 +78,7 @@
       "label": "Order Locked",
       "read_only": 1,
       "default": "0"
-    },
+    }
   ],
   "index_web_pages_for_search": 1,
   "links": [],
