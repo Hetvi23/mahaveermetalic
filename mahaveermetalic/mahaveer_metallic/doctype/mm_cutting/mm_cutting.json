@@ -11,10 +11,7 @@
     "shade",
     "cut",
     "status",
-    "job_work_flag",
-    "sales_order",
-    "produced_weight",
-    "wastage_percent"
+    "job_work_flag"
   ],
   "fields": [
     {
@@ -57,26 +54,6 @@
       "fieldtype": "Check",
       "label": "Job Work"
     },
-    {
-      "fieldname": "sales_order",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Sales Order",
-      "options": "MM Sales Order"
-    },
-    {
-      "fieldname": "produced_weight",
-      "fieldtype": "Float",
-      "label": "Produced Weight (KG)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "wastage_percent",
-      "fieldtype": "Percent",
-      "label": "Wastage %",
-      "default": "0"
-    }
   ],
   "index_web_pages_for_search": 1,
   "is_submittable": 1,

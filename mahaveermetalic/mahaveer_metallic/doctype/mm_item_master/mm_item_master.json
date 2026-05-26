@@ -5,7 +5,7 @@
   "creation": "2026-05-03 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
-  "field_order": ["item_type", "item_name", "uom", "section_color_rates", "color_rates"],
+  "field_order": ["item_type", "item_name", "uom"],
   "fields": [
     {
       "fieldname": "item_type",
@@ -28,17 +28,6 @@
       "fieldtype": "Data",
       "in_list_view": 1,
       "label": "UOM"
-    },
-    {
-      "fieldname": "section_color_rates",
-      "fieldtype": "Section Break",
-      "label": "Color-wise details"
-    },
-    {
-      "fieldname": "color_rates",
-      "fieldtype": "Table",
-      "label": "Color list",
-      "options": "MM Item Color Detail"
     }
   ],
   "index_web_pages_for_search": 1,

@@ -10,16 +10,11 @@
     "transaction_date",
     "branch",
     "party",
-    "party_company",
     "section_items",
     "items",
-    "section_planning",
-    "planned_delivery_date",
-    "planning_notes",
     "section_status",
     "production_completed_percent",
-    "order_locked",
-    "admin_override_tolerance"
+    "order_locked"
   ],
   "fields": [
     {
@@ -47,11 +42,6 @@
       "reqd": 1
     },
     {
-      "fieldname": "party_company",
-      "fieldtype": "Data",
-      "label": "Party Company"
-    },
-    {
       "fieldname": "branch",
       "fieldtype": "Link",
       "label": "Branch",
@@ -69,21 +59,6 @@
       "label": "Items",
       "options": "MM Sales Order Item",
       "reqd": 1
-    },
-    {
-      "fieldname": "section_planning",
-      "fieldtype": "Section Break",
-      "label": "Planning"
-    },
-    {
-      "fieldname": "planned_delivery_date",
-      "fieldtype": "Date",
-      "label": "Planned Delivery Date"
-    },
-    {
-      "fieldname": "planning_notes",
-      "fieldtype": "Small Text",
-      "label": "Planning Notes"
     },
     {
       "fieldname": "section_status",
@@ -104,12 +79,6 @@
       "read_only": 1,
       "default": "0"
     },
-    {
-      "fieldname": "admin_override_tolerance",
-      "fieldtype": "Check",
-      "label": "Admin: Allow production tolerance > 4%",
-      "description": "When set, submitted production (Cutting) may exceed 4% wastage for this order."
-    }
   ],
   "index_web_pages_for_search": 1,
   "links": [],

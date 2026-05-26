@@ -11,17 +11,12 @@
     "posting_date",
     "sales_order",
     "party",
-    "party_company",
     "challan_number",
     "veermetlon_delivery_challan",
     "veermetlon_job_card",
     "item_type",
-    "color_name",
-    "cut",
     "rate",
-    "lot_number",
-    "weight_in",
-    "box_in"
+    "lot_number"
   ],
   "fields": [
     {
@@ -62,11 +57,6 @@
       "options": "MM Party Master"
     },
     {
-      "fieldname": "party_company",
-      "fieldtype": "Data",
-      "label": "Party Company"
-    },
-    {
       "fieldname": "challan_number",
       "fieldtype": "Data",
       "label": "Challan Number"
@@ -93,18 +83,6 @@
       "reqd": 1
     },
     {
-      "fieldname": "color_name",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Color Name",
-      "reqd": 1
-    },
-    {
-      "fieldname": "cut",
-      "fieldtype": "Data",
-      "label": "Cut"
-    },
-    {
       "fieldname": "rate",
       "fieldtype": "Currency",
       "label": "Rate",
@@ -117,20 +95,6 @@
       "label": "Lot Number",
       "reqd": 1
     },
-    {
-      "fieldname": "weight_in",
-      "fieldtype": "Float",
-      "label": "Weight In (KG)",
-      "precision": 3,
-      "reqd": 1
-    },
-    {
-      "fieldname": "box_in",
-      "fieldtype": "Float",
-      "label": "Box In",
-      "precision": 3,
-      "default": "0"
-    }
   ],
   "index_web_pages_for_search": 1,
   "is_submittable": 1,
