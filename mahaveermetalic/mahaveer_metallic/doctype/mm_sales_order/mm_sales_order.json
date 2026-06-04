@@ -8,11 +8,15 @@
   "field_order": [
     "naming_series",
     "transaction_date",
+    "delivery_date",
     "branch",
     "party",
     "section_items",
     "items",
     "section_status",
+    "ordered_weight",
+    "inwarded_weight",
+    "required_weight",
     "production_completed_percent",
     "order_locked"
   ],
@@ -32,6 +36,12 @@
       "label": "Date",
       "reqd": 1,
       "default": "Today"
+    },
+    {
+      "fieldname": "delivery_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Delivery Date"
     },
     {
       "fieldname": "party",
@@ -64,6 +74,27 @@
       "fieldname": "section_status",
       "fieldtype": "Section Break",
       "label": "Production & Lock"
+    },
+    {
+      "fieldname": "ordered_weight",
+      "fieldtype": "Float",
+      "label": "Order Weight (Kg)",
+      "precision": 3,
+      "read_only": 1
+    },
+    {
+      "fieldname": "inwarded_weight",
+      "fieldtype": "Float",
+      "label": "Inwards (Kg)",
+      "precision": 3,
+      "read_only": 1
+    },
+    {
+      "fieldname": "required_weight",
+      "fieldtype": "Float",
+      "label": "Required (Kg)",
+      "precision": 3,
+      "read_only": 1
     },
     {
       "fieldname": "production_completed_percent",

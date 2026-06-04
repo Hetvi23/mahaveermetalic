@@ -1,4 +1,5 @@
 import ChildTableEditor, { type ChildRow } from "@/components/ChildTableEditor";
+import SalesOrderStockPanel from "@/components/SalesOrderStockPanel";
 import { FieldInput } from "@/components/FieldInputs";
 import { resolveFormSections, type DocRegistryEntry } from "@/config/registry";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -10,7 +11,7 @@ import {
 } from "frappe-react-sdk";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 function isMmAdmin(): boolean {
 	const boot = (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot;
@@ -30,6 +31,7 @@ export default function DocFormPage({ meta }: { meta: DocRegistryEntry }) {
 
 function DocFormNew({ meta }: { meta: DocRegistryEntry }) {
 	const nav = useNavigate();
+	const [searchParams] = useSearchParams();
 	const { createDoc, loading: creating } = useFrappeCreateDoc();
 	const [values, setValues] = useState<Record<string, unknown>>({});
 	const [children, setChildren] = useState<Record<string, ChildRow[]>>({});
@@ -55,13 +57,24 @@ function DocFormNew({ meta }: { meta: DocRegistryEntry }) {
 		if (meta.doctype === "MM Inward") {
 			init.posting_date = new Date().toISOString().slice(0, 10);
 		}
+		if (meta.doctype === "MM Cutting") {
+			init.posting_date = new Date().toISOString().slice(0, 10);
+		}
+		if (meta.doctype === "MM Bobbin Box Tracking") {
+			init.chalan_date = new Date().toISOString().slice(0, 10);
+		}
+		// Seed any header field passed via query string (e.g. cutting worklist → form).
+		for (const f of meta.fields) {
+			const qv = searchParams.get(f.fieldname);
+			if (qv !== null) init[f.fieldname] = qv;
+		}
 		const cinit: Record<string, ChildRow[]> = {};
 		for (const t of meta.childTables || []) {
 			cinit[t.fieldname] = [emptyChildRow(t.columns)];
 		}
 		setValues(init);
 		setChildren(cinit);
-	}, [meta]);
+	}, [meta, searchParams]);
 
 	function setField(fn: string, v: unknown) {
 		setValues((prev) => ({ ...prev, [fn]: v }));
@@ -243,6 +256,9 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 						readOnlyForm={frozen}
 						docstatus={docstatus}
 					/>
+					{meta.doctype === "MM Sales Order" && data?.name && (
+						<SalesOrderStockPanel docname={String(data.name)} />
+					)}
 				</>
 			}
 		/>

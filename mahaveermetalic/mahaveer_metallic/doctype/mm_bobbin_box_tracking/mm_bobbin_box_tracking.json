@@ -7,8 +7,10 @@
   "engine": "InnoDB",
   "field_order": [
     "challan_number",
+    "chalan_date",
     "given_received",
     "party",
+    "note",
     "bobbin_type_section",
     "lines",
     "returnable_box"
@@ -20,6 +22,14 @@
       "in_list_view": 1,
       "label": "Challan Number",
       "reqd": 1
+    },
+    {
+      "fieldname": "chalan_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Chalan Date",
+      "reqd": 1,
+      "default": "Today"
     },
     {
       "fieldname": "given_received",
@@ -37,6 +47,11 @@
       "label": "Party",
       "options": "MM Party Master",
       "reqd": 1
+    },
+    {
+      "fieldname": "note",
+      "fieldtype": "Small Text",
+      "label": "Note"
     },
     {
       "fieldname": "bobbin_type_section",

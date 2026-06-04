@@ -16,7 +16,9 @@
     "veermetlon_job_card",
     "item_type",
     "rate",
-    "lot_number"
+    "lot_number",
+    "section_items",
+    "items"
   ],
   "fields": [
     {
@@ -93,6 +95,18 @@
       "fieldtype": "Data",
       "in_list_view": 1,
       "label": "Lot Number",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_items",
+      "fieldtype": "Section Break",
+      "label": "Rolls Received"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Inward Items",
+      "options": "MM Inward Item",
       "reqd": 1
     }
   ],

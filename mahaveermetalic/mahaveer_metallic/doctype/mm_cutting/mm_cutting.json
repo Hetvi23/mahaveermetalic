@@ -6,14 +6,44 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
+    "posting_date",
+    "customer_order",
+    "source_roll",
     "roll_no",
     "branch",
     "shade",
     "cut",
     "status",
-    "job_work_flag"
+    "job_work_flag",
+    "section_patti",
+    "patti_entries",
+    "section_totals",
+    "total_patti_qty",
+    "total_net_weight"
   ],
   "fields": [
+    {
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Date",
+      "reqd": 1,
+      "default": "Today"
+    },
+    {
+      "fieldname": "customer_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Customer Order",
+      "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "source_roll",
+      "fieldtype": "Link",
+      "label": "Source Roll (stock)",
+      "options": "MM Roll Inventory",
+      "description": "Roll inventory row being cut. Its stock is reduced by total net weight on submit."
+    },
     {
       "fieldname": "roll_no",
       "fieldtype": "Data",
@@ -53,6 +83,37 @@
       "fieldname": "job_work_flag",
       "fieldtype": "Check",
       "label": "Job Work"
+    },
+    {
+      "fieldname": "section_patti",
+      "fieldtype": "Section Break",
+      "label": "Patti Entries"
+    },
+    {
+      "fieldname": "patti_entries",
+      "fieldtype": "Table",
+      "label": "Patti",
+      "options": "MM Cutting Patti",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_totals",
+      "fieldtype": "Section Break",
+      "label": "Totals"
+    },
+    {
+      "fieldname": "total_patti_qty",
+      "fieldtype": "Float",
+      "label": "Total Patti Qty",
+      "precision": 3,
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_net_weight",
+      "fieldtype": "Float",
+      "label": "Total Net Weight (Kg)",
+      "precision": 3,
+      "read_only": 1
     }
   ],
   "index_web_pages_for_search": 1,

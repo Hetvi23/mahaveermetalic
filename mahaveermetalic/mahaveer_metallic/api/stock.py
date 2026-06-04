@@ -2,6 +2,7 @@
 # License: MIT
 
 import frappe
+from frappe import _
 
 
 @frappe.whitelist()
@@ -61,3 +62,64 @@ def get_stock_summary(color_name=None, cut=None, location=None, item_type=None, 
 		"total_available_weight": total_available_weight,
 		"suggest_purchase_order": total_available_weight <= 0 and total_box <= 0,
 	}
+
+
+def _line_available(color_name, cut):
+	"""Available roll weight for a colour/cut across all locations."""
+	rows = get_roll_stock(color_name=color_name, cut=cut)
+	return sum(float(r.get("available_weight") or 0) for r in rows)
+
+
+@frappe.whitelist()
+def get_so_stock_status(sales_order):
+	"""SRS 5.1: per-line stock visibility for a Sales Order, flagging shortfalls
+	that should trigger a Purchase Order."""
+	so = frappe.get_doc("MM Sales Order", sales_order)
+	lines = []
+	any_short = False
+	for it in so.items:
+		required = float(it.qty_weight or 0)
+		available = _line_available(it.color_name, it.cut)
+		short = round(max(0.0, required - available), 3)
+		if short > 0:
+			any_short = True
+		lines.append(
+			{
+				"color_name": it.color_name,
+				"cut": it.cut,
+				"required": round(required, 3),
+				"available": round(available, 3),
+				"short": short,
+				"purchase_rate": float(it.purchase_rate or 0),
+			}
+		)
+	return {"sales_order": so.name, "party": so.party, "lines": lines, "any_short": any_short}
+
+
+@frappe.whitelist()
+def create_purchase_order_from_so(sales_order):
+	"""SRS 5.1: 'if no stock → trigger Purchase Order'. Creates one draft MM
+	Purchase Order per short line (qty = shortfall). Returns the PO names."""
+	status = get_so_stock_status(sales_order)
+	so = frappe.get_doc("MM Sales Order", sales_order)
+	created = []
+	for line in status["lines"]:
+		if line["short"] <= 0:
+			continue
+		po = frappe.get_doc(
+			{
+				"doctype": "MM Purchase Order",
+				"transaction_date": frappe.utils.today(),
+				"branch": so.branch,
+				"sales_order": so.name,
+				"color": line["color_name"],
+				"qty_kg": line["short"],
+				"rate": line["purchase_rate"] or 0,
+				"delivery_date": so.get("delivery_date"),
+			}
+		)
+		po.insert(ignore_permissions=True)
+		created.append(po.name)
+	if not created:
+		frappe.msgprint(_("All lines have enough stock — no Purchase Order needed."))
+	return {"created": created}

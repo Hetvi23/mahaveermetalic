@@ -18,7 +18,8 @@
     "stock_box",
     "reserved_weight",
     "issued_weight",
-    "available_weight"
+    "available_weight",
+    "reorder_weight"
   ],
   "fields": [
     {
@@ -108,6 +109,14 @@
       "label": "Available Stock (Weight)",
       "precision": 3,
       "read_only": 1
+    },
+    {
+      "fieldname": "reorder_weight",
+      "fieldtype": "Float",
+      "label": "Reorder Level (Weight)",
+      "precision": 3,
+      "default": "0",
+      "description": "Flag as low stock on the dashboard when available falls below this. 0 = no alert."
     }
   ],
   "index_web_pages_for_search": 1,

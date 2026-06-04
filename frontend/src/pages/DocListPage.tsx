@@ -1,10 +1,12 @@
 import type { DocRegistryEntry } from "@/config/registry";
 import { useFrappeGetDocList } from "frappe-react-sdk";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 export default function DocListPage({ meta }: { meta: DocRegistryEntry }) {
-	const [q, setQ] = useState("");
+	const [searchParams] = useSearchParams();
+	// Seed the search box from ?q= so the Home global search can deep-link here.
+	const [q, setQ] = useState(() => searchParams.get("q") ?? "");
 	const fields = useMemo(() => {
 		const cols = meta.listColumns.map((c) => c.fieldname);
 		if (!cols.includes("name")) {

@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
 import SalesOrderStock from "./pages/SalesOrderStock";
+import CuttingWorklist from "./pages/CuttingWorklist";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
@@ -78,7 +79,9 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<AuthedShell />}>
             <Route path="/" element={<Dashboard />} />
-            {DOC_REGISTRY.map((meta) => (
+            {/* Cutting uses a custom two-panel worklist instead of the generic list. */}
+            <Route path="/cutting" element={<CuttingWorklist />} />
+            {DOC_REGISTRY.filter((meta) => meta.routeBase !== "/cutting").map((meta) => (
               <Route key={meta.slug} path={meta.routeBase} element={<DocListPage meta={meta} />} />
             ))}
             {DOC_REGISTRY.map((meta) => (
