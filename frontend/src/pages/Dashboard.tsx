@@ -10,7 +10,6 @@ import {
   HardHat,
   Building2,
   Boxes,
-  Tags,
   ShoppingCart,
   ArrowDownToLine,
   Scissors,
@@ -108,7 +107,6 @@ const CATEGORIES: Category[] = [
     items: [
       { label: "Customers", icon: Users, to: "/masters/party" },
       { label: "Colors / Items", icon: Palette, to: "/masters/item" },
-      { label: "Item Types", icon: Tags, to: "/masters/item-type" },
       { label: "Roll Inventory", icon: ScrollText, to: "/roll-inventory" },
       { label: "Bobbins", icon: Disc3, to: "/masters/bobbin" },
       { label: "Vendors", icon: Building2, to: "/masters/vendor" },

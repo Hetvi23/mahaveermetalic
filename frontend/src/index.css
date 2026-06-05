@@ -709,6 +709,20 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   .mm-ow-grid { grid-template-columns: 1fr; }
   .mm-ow-table-scroll { max-height: none; }
 }
+
+/* ── Inward (challan-driven) ───────────────────────────── */
+.mm-iw { display: flex; flex-direction: column; gap: 1rem; }
+.mm-iw-entry-grid { display: grid; grid-template-columns: 180px 1.6fr 1fr; gap: 0.85rem; align-items: end; }
+.mm-iw-challan-row { display: flex; gap: 0.5rem; }
+.mm-iw-challan-row .mm-input { flex: 1; }
+.mm-iw-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.25rem; align-items: start; }
+.mm-iw-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }
+.mm-iw-sec-head .mm-panel-title { display: flex; align-items: center; gap: 0.35rem; margin: 0; }
+.mm-iw-num { width: 80px; text-align: right; }
+@media (max-width: 1000px) {
+  .mm-iw-entry-grid { grid-template-columns: 1fr; }
+  .mm-iw-grid { grid-template-columns: 1fr; }
+}
 .mm-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .mm-page-title { margin: 0; font-size: 1.25rem; font-weight: 800; color: var(--mm-text); letter-spacing: -0.02em; }
 .mm-page-sub { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--mm-text-sec); }
@@ -917,6 +931,8 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 
 /* ── Autocomplete ─────────────────────────────────────── */
 .mm-link-wrap { position: relative; }
+.mm-link-input { padding-right: 1.9rem; }
+.mm-link-caret { position: absolute; right: 0.6rem; top: 50%; transform: translateY(-50%); color: var(--mm-text-sec); pointer-events: none; }
 .mm-suggest { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 0.2rem 0; background: #fff; border: 1.5px solid var(--mm-border); border-radius: var(--mm-radius-sm); box-shadow: var(--mm-shadow-lg); max-height: 200px; overflow-y: auto; list-style: none; }
 .mm-suggest-item { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.8rem; }
 .mm-suggest-item:hover { background: #fefce8; }

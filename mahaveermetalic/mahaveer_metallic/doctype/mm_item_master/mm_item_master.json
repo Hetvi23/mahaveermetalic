@@ -9,10 +9,10 @@
   "fields": [
     {
       "fieldname": "item_type",
-      "fieldtype": "Link",
+      "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Type",
-      "options": "MM Item Type Master",
+      "options": "Cut\nPatti\nJari\nKasab\nRoll",
       "reqd": 1
     },
     {

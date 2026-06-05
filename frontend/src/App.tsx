@@ -7,6 +7,7 @@ import SalesOrderStock from "./pages/SalesOrderStock";
 import CuttingWorklist from "./pages/CuttingWorklist";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
+import InwardWorkspace from "./pages/InwardWorkspace";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
@@ -69,6 +70,7 @@ const WIDE_PATHS = [
   ...DOC_REGISTRY.filter((m) => m.navGroup === "masters").map((m) => m.routeBase),
   "/cutting",
   "/sales-order",
+  "/inward",
 ];
 
 export default function App() {
@@ -90,7 +92,8 @@ export default function App() {
             {/* Cutting + Orders use custom full-width screens instead of the generic list. */}
             <Route path="/cutting" element={<CuttingWorklist />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
-            {DOC_REGISTRY.filter((meta) => meta.routeBase !== "/cutting" && meta.routeBase !== "/sales-order").map((meta) => (
+            <Route path="/inward" element={<InwardWorkspace />} />
+            {DOC_REGISTRY.filter((meta) => !["/cutting", "/sales-order", "/inward"].includes(meta.routeBase)).map((meta) => (
               <Route
                 key={meta.slug}
                 path={meta.routeBase}

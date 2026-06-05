@@ -27,7 +27,7 @@
       "in_list_view": 1,
       "label": "Location",
       "options": "MM Location Master",
-      "reqd": 1
+      "description": "Auto-set from the posting employee's branch/location."
     },
     {
       "fieldname": "branch",
@@ -81,8 +81,7 @@
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Item Type",
-      "options": "MM Item Master",
-      "reqd": 1
+      "options": "MM Item Master"
     },
     {
       "fieldname": "rate",

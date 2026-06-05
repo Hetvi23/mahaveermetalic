@@ -5,7 +5,7 @@
   "creation": "2026-05-03 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
-  "field_order": ["employee_name", "mobile_number", "location", "department"],
+  "field_order": ["employee_name", "mobile_number", "user", "branch", "location", "department"],
   "fields": [
     {
       "fieldname": "employee_name",
@@ -19,6 +19,20 @@
       "fieldname": "mobile_number",
       "fieldtype": "Data",
       "label": "Mobile Number"
+    },
+    {
+      "fieldname": "user",
+      "fieldtype": "Link",
+      "label": "Login User",
+      "options": "User",
+      "description": "Used to resolve branch/location for inwards this user posts."
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Branch",
+      "options": "Branch"
     },
     {
       "fieldname": "location",

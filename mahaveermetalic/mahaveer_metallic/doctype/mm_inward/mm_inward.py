@@ -8,11 +8,27 @@ from frappe.model.document import Document
 
 class MMInward(Document):
 	def validate(self):
+		self._set_branch_location_from_employee()
 		if not self.items:
 			frappe.throw(_("Add at least one inward item."))
 		for row in self.items:
 			if (row.weight or 0) <= 0 and (row.qty_box or 0) <= 0:
 				frappe.throw(_("Row #{0}: enter a Weight or Box quantity.").format(row.idx))
+
+	def _set_branch_location_from_employee(self):
+		"""Branch/Location are hidden on the form — derive them from the MM Employee
+		Master linked to the posting (logged-in) user."""
+		emp = frappe.db.get_value(
+			"MM Employee Master",
+			{"user": frappe.session.user},
+			["branch", "location"],
+			as_dict=True,
+		)
+		if emp:
+			if emp.branch:
+				self.branch = emp.branch
+			if emp.location:
+				self.location = emp.location
 
 	def on_submit(self):
 		"""SRS 5.4 output: posting an inward increases Roll inventory."""

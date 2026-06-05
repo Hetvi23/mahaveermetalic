@@ -144,27 +144,13 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				fieldname: "item_type",
 				label: "Type",
-				fieldtype: "Link",
+				fieldtype: "Select",
 				reqd: true,
-				options: "MM Item Type Master",
+				options: "Cut\nPatti\nJari\nKasab\nRoll",
 			},
 			{ fieldname: "item_name", label: "Name", fieldtype: "Data", reqd: true },
 			{ fieldname: "uom", label: "UOM", fieldtype: "Data" },
 		],
-	},
-	{
-		slug: "item-type",
-		routeBase: "/masters/item-type",
-		doctype: "MM Item Type Master",
-		title: "Item Type Master",
-		listTagline: "Future-proof item type dictionary.",
-		navGroup: "masters",
-		formSections: [{ id: "it1", title: "Type", fieldnames: ["type_name"] }],
-		listColumns: [
-			{ fieldname: "type_name", label: "Type Name" },
-		],
-		searchField: "type_name",
-		fields: [{ fieldname: "type_name", label: "Type Name", fieldtype: "Data", reqd: true }],
 	},
 	{
 		slug: "vendor",
@@ -220,11 +206,12 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		listTagline: "People mapped to locations and departments.",
 		navGroup: "masters",
 		formSections: [
-			{ id: "e1", title: "Person", fieldnames: ["employee_name", "mobile_number"] },
-			{ id: "e2", title: "Placement", description: "Where they work in the network.", fieldnames: ["location", "department"] },
+			{ id: "e1", title: "Person", fieldnames: ["employee_name", "mobile_number", "user"] },
+			{ id: "e2", title: "Placement", description: "Drives branch/location on inwards this user posts.", fieldnames: ["branch", "location", "department"] },
 		],
 		listColumns: [
 			{ fieldname: "employee_name", label: "Name" },
+			{ fieldname: "branch", label: "Branch" },
 			{ fieldname: "location", label: "Location" },
 			{ fieldname: "department", label: "Department" },
 		],
@@ -232,6 +219,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		fields: [
 			{ fieldname: "employee_name", label: "Name", fieldtype: "Data", reqd: true },
 			{ fieldname: "mobile_number", label: "Mobile Number", fieldtype: "Data" },
+			{ fieldname: "user", label: "Login User", fieldtype: "Link", options: "User" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "department", label: "Department", fieldtype: "Data" },
 		],
@@ -479,8 +468,9 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		formSections: [
 			{
 				id: "in1",
-				title: "Where & when",
-				fieldnames: ["branch", "location", "posting_date"],
+				title: "When",
+				description: "Branch & location are taken from the posting employee.",
+				fieldnames: ["posting_date"],
 			},
 			{
 				id: "in2",
