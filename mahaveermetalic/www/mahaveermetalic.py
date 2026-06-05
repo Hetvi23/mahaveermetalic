@@ -20,8 +20,23 @@ def get_context(context):
 	context.boot = get_boot()
 	context.csrf_token = csrf_token
 	context.build_version = frappe.utils.get_build_version()
+	context.asset_version = _asset_version()
 
 	return context
+
+
+def _asset_version() -> str:
+	"""Mtime of the built SPA bundle, used to cache-bust the asset URLs so a new
+	`yarn build` is picked up without a manual hard refresh."""
+	import os
+
+	try:
+		path = frappe.get_app_path(
+			"mahaveermetalic", "public", "mahaveermetalic", "assets", "index.js"
+		)
+		return str(int(os.path.getmtime(path)))
+	except Exception:
+		return frappe.utils.get_build_version()
 
 
 @frappe.whitelist(methods=["POST"], allow_guest=True)

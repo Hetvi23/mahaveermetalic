@@ -5,6 +5,7 @@ import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
 import SalesOrderStock from "./pages/SalesOrderStock";
 import CuttingWorklist from "./pages/CuttingWorklist";
+import MasterWorkspace from "./pages/MasterWorkspace";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
@@ -52,16 +53,24 @@ function AuthedShell() {
   }
 
   const isHome = location.pathname === "/";
+  // Full-width screens (workspaces / multi-pane) break out of the 800px column.
+  const wide = WIDE_PATHS.includes(location.pathname);
 
   return (
     <div className="mm-shell">
       {!isHome && <TopBar />}
-      <div className={isHome ? undefined : "mm-main"}>
+      <div className={isHome ? undefined : wide ? "mm-full" : "mm-main"}>
         <Outlet />
       </div>
     </div>
   );
 }
+
+// Masters use the combined form+list workspace; cutting is a two-panel worklist.
+const WIDE_PATHS = [
+  ...DOC_REGISTRY.filter((m) => m.navGroup === "masters").map((m) => m.routeBase),
+  "/cutting",
+];
 
 export default function App() {
   const url = import.meta.env.DEV ? "" : window.location.origin;
@@ -82,7 +91,17 @@ export default function App() {
             {/* Cutting uses a custom two-panel worklist instead of the generic list. */}
             <Route path="/cutting" element={<CuttingWorklist />} />
             {DOC_REGISTRY.filter((meta) => meta.routeBase !== "/cutting").map((meta) => (
-              <Route key={meta.slug} path={meta.routeBase} element={<DocListPage meta={meta} />} />
+              <Route
+                key={meta.slug}
+                path={meta.routeBase}
+                element={
+                  meta.navGroup === "masters" ? (
+                    <MasterWorkspace meta={meta} />
+                  ) : (
+                    <DocListPage meta={meta} />
+                  )
+                }
+              />
             ))}
             {DOC_REGISTRY.map((meta) => (
               <Route key={`${meta.slug}-new`} path={`${meta.routeBase}/new`} element={<DocFormPage meta={meta} />} />

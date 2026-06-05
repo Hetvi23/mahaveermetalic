@@ -372,7 +372,7 @@ function DocFormShell({
 	);
 }
 
-function DocFields({
+export function DocFields({
 	meta,
 	values,
 	setField,
@@ -441,7 +441,7 @@ function DocFields({
 	);
 }
 
-function buildPayload(
+export function buildPayload(
 	meta: DocRegistryEntry,
 	values: Record<string, unknown>,
 	childState: Record<string, ChildRow[]>,
@@ -476,7 +476,7 @@ function buildPayload(
 	return d;
 }
 
-function validatePayload(meta: DocRegistryEntry, payload: Record<string, unknown>): string | null {
+export function validatePayload(meta: DocRegistryEntry, payload: Record<string, unknown>): string | null {
 	for (const f of meta.fields) {
 		if (f.reqd && !f.readOnly) {
 			const v = payload[f.fieldname];
@@ -493,7 +493,7 @@ function validatePayload(meta: DocRegistryEntry, payload: Record<string, unknown
 	return null;
 }
 
-function emptyChildRow(columns: { fieldname: string; fieldtype: string }[]): ChildRow {
+export function emptyChildRow(columns: { fieldname: string; fieldtype: string }[]): ChildRow {
 	const r: ChildRow = {};
 	for (const c of columns) {
 		if (c.fieldtype === "Check") r[c.fieldname] = 0;
