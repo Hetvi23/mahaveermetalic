@@ -6,6 +6,7 @@ import DocListPage from "./pages/DocListPage";
 import SalesOrderStock from "./pages/SalesOrderStock";
 import CuttingWorklist from "./pages/CuttingWorklist";
 import MasterWorkspace from "./pages/MasterWorkspace";
+import OrderWorkspace from "./pages/OrderWorkspace";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
@@ -70,6 +71,7 @@ function AuthedShell() {
 const WIDE_PATHS = [
   ...DOC_REGISTRY.filter((m) => m.navGroup === "masters").map((m) => m.routeBase),
   "/cutting",
+  "/sales-order",
 ];
 
 export default function App() {
@@ -88,9 +90,10 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<AuthedShell />}>
             <Route path="/" element={<Dashboard />} />
-            {/* Cutting uses a custom two-panel worklist instead of the generic list. */}
+            {/* Cutting + Orders use custom full-width screens instead of the generic list. */}
             <Route path="/cutting" element={<CuttingWorklist />} />
-            {DOC_REGISTRY.filter((meta) => meta.routeBase !== "/cutting").map((meta) => (
+            <Route path="/sales-order" element={<OrderWorkspace />} />
+            {DOC_REGISTRY.filter((meta) => meta.routeBase !== "/cutting" && meta.routeBase !== "/sales-order").map((meta) => (
               <Route
                 key={meta.slug}
                 path={meta.routeBase}

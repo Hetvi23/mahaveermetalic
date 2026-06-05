@@ -644,6 +644,58 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   .mm-ws-form { position: static; }
   .mm-ws-table-scroll { max-height: none; }
 }
+
+/* ── Orders workspace ──────────────────────────────────── */
+.mm-ow { display: flex; flex-direction: column; gap: 1rem; }
+.mm-ow-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 520px) 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.mm-ow-form { padding: 1.1rem 1.25rem 1.25rem; }
+.mm-ow-builder {
+  margin-top: 0.9rem; padding: 0.85rem 0.9rem; border: 1px dashed var(--mm-border-dark);
+  border-radius: var(--mm-radius-sm); background: var(--mm-bg);
+}
+.mm-ow-builder-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--mm-accent); margin-bottom: 0.6rem; }
+.mm-ow-additem { margin-top: 0.5rem; }
+.mm-ow-items { margin-top: 0.9rem; }
+.mm-ow-items table { width: 100%; }
+.mm-ow-items tfoot td { border-top: 2px solid var(--mm-border-dark); }
+.mm-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: 1px solid var(--mm-border); border-radius: 6px;
+  background: var(--mm-card); color: var(--mm-danger); cursor: pointer;
+}
+.mm-icon-btn:hover { background: var(--mm-danger-bg); }
+.mm-ow-prod { margin-top: 1rem; font-size: 0.85rem; color: var(--mm-text-sec); }
+
+.mm-ow-list { padding: 0.85rem 1rem 1rem; }
+.mm-ow-list-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+.mm-ow-search { flex: 1; min-width: 160px; }
+.mm-ow-table-scroll { max-height: calc(100vh - 220px); overflow: auto; }
+.mm-ow-cell-order { font-weight: 700; color: var(--mm-accent); white-space: nowrap; }
+.mm-ow-fulfil-col { min-width: 180px; }
+.mm-ow-fulfil { display: flex; align-items: center; gap: 0.5rem; }
+.mm-ow-fulfil .mm-open-bar { flex: 1; min-width: 60px; }
+.mm-ow-fulfil-txt { font-size: 0.72rem; color: var(--mm-text-sec); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Filter chips */
+.mm-chips { display: inline-flex; gap: 0.3rem; }
+.mm-chip {
+  padding: 0.35rem 0.8rem; border: 1px solid var(--mm-border); border-radius: 99px;
+  background: var(--mm-card); color: var(--mm-text-sec); font-size: 0.8rem; font-weight: 650; cursor: pointer;
+}
+.mm-chip:hover { border-color: var(--mm-border-dark); }
+.mm-chip-active { background: var(--mm-primary); color: #fff; border-color: var(--mm-primary); }
+
+.mm-pill-pending { background: var(--mm-accent-bg); color: #b45309; border: 1px solid rgba(217,119,6,0.2); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
+
+@media (max-width: 980px) {
+  .mm-ow-grid { grid-template-columns: 1fr; }
+  .mm-ow-table-scroll { max-height: none; }
+}
 .mm-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .mm-page-title { margin: 0; font-size: 1.25rem; font-weight: 800; color: var(--mm-text); letter-spacing: -0.02em; }
 .mm-page-sub { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--mm-text-sec); }
