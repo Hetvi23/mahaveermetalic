@@ -380,6 +380,7 @@ export function DocFields({
 	setChildRows,
 	readOnlyForm,
 	docstatus,
+	compact,
 }: {
 	meta: DocRegistryEntry;
 	values: Record<string, unknown>;
@@ -388,10 +389,47 @@ export function DocFields({
 	setChildRows: Dispatch<SetStateAction<Record<string, ChildRow[]>>>;
 	readOnlyForm: boolean;
 	docstatus: number;
+	/** Tight layout for the side-by-side workspace: no bordered cards / descriptions. */
+	compact?: boolean;
 }) {
 	const ro = readOnlyForm || (docstatus === 1 && Boolean(meta.isSubmittable));
 	const sections = useMemo(() => resolveFormSections(meta), [meta]);
 	const fieldMap = useMemo(() => Object.fromEntries(meta.fields.map((f) => [f.fieldname, f])), [meta.fields]);
+
+	if (compact) {
+		return (
+			<>
+				{sections.map((sec) => (
+					<div key={sec.id} className="mm-cform-sec">
+						{sections.length > 1 && <div className="mm-cform-sec-title">{sec.title}</div>}
+						<div className="mm-form-grid mm-form-grid-tight">
+							{sec.fieldnames.map((fn) => {
+								const f = fieldMap[fn];
+								if (!f) return null;
+								return (
+									<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
+										<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={ro} />
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				))}
+				{meta.childTables?.map((t) => (
+					<div key={t.fieldname} className="mm-cform-sec">
+						<div className="mm-cform-sec-title">{t.label}</div>
+						<ChildTableEditor
+							schema={t}
+							rows={childRows[t.fieldname] || []}
+							onChange={(rows) => setChildRows((c) => ({ ...c, [t.fieldname]: rows }))}
+							disabled={ro}
+							hideTitle
+						/>
+					</div>
+				))}
+			</>
+		);
+	}
 
 	return (
 		<>

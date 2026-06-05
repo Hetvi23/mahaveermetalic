@@ -243,10 +243,10 @@ export default function OrderWorkspace() {
         {/* LEFT — order builder */}
         <section className="mm-card mm-ow-form">
           <div className="mm-ws-form-head">
-            <h2 className="mm-panel-title">{selected ? `Order ${selected}` : "New order"}</h2>
+            <h2 className="mm-panel-title">{selected ? `Editing ${selected}` : "New order"}</h2>
             {selected && (
-              <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetNew}>
-                <Plus size={14} /> New
+              <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetNew} title="Close — back to new order">
+                <X size={14} /> Close
               </button>
             )}
           </div>

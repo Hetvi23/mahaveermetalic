@@ -13,7 +13,7 @@ import { DOC_REGISTRY } from "@/config/registry";
 
 function TopBar() {
   const navigate = useNavigate();
-  const { currentUser, logout } = useFrappeAuth();
+  const { currentUser } = useFrappeAuth();
 
   return (
     <div className="mm-topbar">
@@ -25,11 +25,8 @@ function TopBar() {
       <button
         type="button"
         className="mm-btn-close"
-        title="Log out"
-        onClick={async () => {
-          await logout();
-          navigate("/login", { replace: true });
-        }}
+        title="Close — back to Home"
+        onClick={() => navigate("/")}
       >
         ✕
       </button>

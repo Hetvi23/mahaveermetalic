@@ -612,6 +612,19 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 }
 .mm-ws-flash { font-size: 0.8rem; font-weight: 700; color: var(--mm-green); }
 
+/* Compact form (workspaces): no bordered cards / descriptions, tight spacing */
+.mm-cform-sec { margin-bottom: 0.7rem; }
+.mm-cform-sec + .mm-cform-sec { border-top: 1px solid var(--mm-border); padding-top: 0.6rem; }
+.mm-cform-sec-title {
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--mm-text-sec); margin-bottom: 0.45rem;
+}
+.mm-form-grid-tight { gap: 0.45rem 0.6rem; margin-bottom: 0; }
+.mm-form-grid-tight .mm-field { gap: 0.15rem; }
+.mm-form-grid-tight .mm-field-label { font-size: 0.66rem; }
+.mm-form-grid-tight .mm-input { padding: 0.4rem 0.55rem; }
+.mm-form-grid-tight .mm-textarea { rows: 2; min-height: 48px; }
+
 .mm-btn-danger {
   background: var(--mm-danger-bg);
   color: var(--mm-danger);

@@ -6,7 +6,7 @@ import {
   useFrappeGetDocList,
   useFrappeUpdateDoc,
 } from "frappe-react-sdk";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Search, Trash2, X } from "lucide-react";
 import type { DocRegistryEntry } from "@/config/registry";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { DocFields, buildPayload, validatePayload, emptyChildRow } from "./DocFormPage";
@@ -147,10 +147,10 @@ export default function MasterWorkspace({ meta }: { meta: DocRegistryEntry }) {
         {/* LEFT — entry / edit form */}
         <section className="mm-card mm-ws-form">
           <div className="mm-ws-form-head">
-            <h2 className="mm-panel-title">{selected ? "Edit" : "Add new"}</h2>
+            <h2 className="mm-panel-title">{selected ? "Editing record" : "Add new"}</h2>
             {selected && (
-              <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetToNew}>
-                <Plus size={14} /> New
+              <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetToNew} title="Close edit — back to add new">
+                <X size={14} /> Close
               </button>
             )}
           </div>
@@ -165,6 +165,7 @@ export default function MasterWorkspace({ meta }: { meta: DocRegistryEntry }) {
             setChildRows={setChildren}
             readOnlyForm={false}
             docstatus={0}
+            compact
           />
 
           <div className="mm-ws-form-actions">
