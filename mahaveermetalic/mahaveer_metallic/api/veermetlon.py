@@ -31,13 +31,27 @@ def _vm_get(path: str, params=None):
 	secret = s.get_password("api_secret", raise_exception=False) if s.api_secret else None
 	if s.api_key and secret:
 		headers["Authorization"] = f"token {s.api_key}:{secret}"
+	url = f"{base}{path}"
 	try:
-		resp = requests.get(f"{base}{path}", headers=headers, params=params, timeout=20)
+		resp = requests.get(url, headers=headers, params=params, timeout=20)
 	except requests.RequestException as e:
 		frappe.throw(_("Could not reach Veermetlon at {0}: {1}").format(base, str(e)))
 	if resp.status_code >= 400:
 		frappe.throw(_("Veermetlon API error ({0}): {1}").format(resp.status_code, resp.text[:300]))
-	return resp.json()
+	try:
+		return resp.json()
+	except ValueError:
+		# Reachable, but the body isn't JSON — almost always the Base URL points at a
+		# website / login / proxy page instead of the Veermetlon Frappe API.
+		snippet = " ".join((resp.text or "").split())[:200] or "(empty response)"
+		frappe.throw(
+			_(
+				"Veermetlon did not return JSON from {0} (HTTP {1}). "
+				"Check the Base URL in MM Veermetlon Settings points to the Veermetlon "
+				"Frappe site (include https://, no extra path) and that the API key/secret "
+				"are set. The server returned: {2}"
+			).format(url, resp.status_code, snippet)
+		)
 
 
 def _fetch_vm_challan(challan_no: str) -> dict:
