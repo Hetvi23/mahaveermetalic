@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mahavir Metalic — UI direction options</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #e9eef3; color: #0f172a; padding: 28px 16px 60px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .intro { text-align: center; margin-bottom: 28px; }
+  .intro h1 { font-size: 1.5rem; letter-spacing: -0.02em; }
+  .intro p { color: #64748b; margin-top: 6px; font-size: 0.92rem; }
+  .opt { margin-bottom: 40px; }
+  .opt-tag { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; padding: 5px 12px; border-radius: 99px; margin-bottom: 6px; }
+  .opt-desc { color: #475569; font-size: 0.88rem; margin: 4px 0 14px; max-width: 760px; }
+  .frame { border-radius: 16px; overflow: hidden; box-shadow: 0 18px 50px rgba(2,6,23,0.18); border: 1px solid rgba(2,6,23,0.08); }
+  .browser-bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 14px; background: #dfe5ec; }
+  .dot { width: 11px; height: 11px; border-radius: 99px; }
+  .url { flex: 1; margin-left: 10px; background: #fff; border-radius: 7px; font-size: 0.7rem; color: #64748b; padding: 4px 10px; }
+
+  /* ===== shared mock skeleton ===== */
+  .app { display: flex; min-height: 540px; }
+  .side { width: 210px; flex-shrink: 0; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 16px 16px 14px; }
+  .logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; }
+  .brand b { font-size: 0.95rem; display: block; line-height: 1; }
+  .brand small { font-size: 0.62rem; letter-spacing: 0.12em; }
+  .navg { padding: 6px 10px; }
+  .navg-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 10px 8px 4px; opacity: 0.6; }
+  .navi { display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 9px; font-size: 0.83rem; font-weight: 500; cursor: default; }
+  .navi .ic { width: 17px; text-align: center; }
+  .content { flex: 1; padding: 22px 24px; overflow: hidden; }
+  .h-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  .h-row h2 { font-size: 1.45rem; letter-spacing: -0.02em; }
+  .h-row span { font-size: 0.78rem; opacity: 0.65; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .kpi { border-radius: 14px; padding: 14px; min-height: 100px; display: flex; flex-direction: column; gap: 2px; }
+  .kpi .kic { font-size: 17px; opacity: 0.85; }
+  .kpi .kval { font-size: 1.9rem; font-weight: 800; line-height: 1.05; }
+  .kpi .klab { font-size: 0.76rem; font-weight: 700; }
+  .kpi .khint { font-size: 0.66rem; opacity: 0.7; }
+  .panel { border-radius: 14px; padding: 4px 0; }
+  .panel h3 { font-size: 0.82rem; padding: 12px 16px 8px; }
+  .trow { display: grid; grid-template-columns: 1fr 1fr 1.4fr 90px; gap: 10px; padding: 9px 16px; font-size: 0.78rem; align-items: center; }
+  .bar { height: 6px; border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; }
+
+  /* ============ A. WARM INDUSTRIAL PRO ============ */
+  #A .app { background: #f7f4ee; }
+  #A .side { background: #fffdfa; border-right: 1px solid #ece6db; }
+  #A .logo { background: linear-gradient(135deg,#fbbf24,#d97706); color: #fff; }
+  #A .brand small { color: #b45309; }
+  #A .navg-label { color: #9a8d76; }
+  #A .navi { color: #44403c; }
+  #A .navi.on { background: #fef3e2; color: #b45309; font-weight: 700; }
+  #A .content { background: #f7f4ee; }
+  #A .kpi { background: #fff; border: 1px solid #ece6db; box-shadow: 0 1px 3px rgba(0,0,0,.05); border-left: 4px solid #cbd5e1; }
+  #A .kpi.a { border-left-color: #d97706; } #A .kpi.a .kic, #A .kpi.a .kval { color: #b45309; }
+  #A .kpi.b { border-left-color: #3b82f6; } #A .kpi.b .kic { color: #2563eb; }
+  #A .kpi.c { border-left-color: #fbbf24; } #A .kpi.c .kic { color: #b45309; }
+  #A .kpi.d { border-left-color: #16a34a; } #A .kpi.d .kic { color: #16a34a; }
+  #A .panel { background: #fff; border: 1px solid #ece6db; }
+  #A .trow { border-top: 1px solid #f1ece2; }
+  #A .trow b { color: #b45309; }
+  #A .bar { background: #ece6db; } #A .bar > i { background: #16a34a; }
+  #A .opt-tag { background: #fef3e2; color: #b45309; }
+
+  /* ============ B. MIDNIGHT + AMBER ============ */
+  #B .app { background: #f1f5f9; }
+  #B .side { background: #0f172a; }
+  #B .logo { background: linear-gradient(135deg,#fbbf24,#d97706); color: #fff; }
+  #B .brand b { color: #fff; } #B .brand small { color: #fbbf24; }
+  #B .navg-label { color: #64748b; }
+  #B .navi { color: #cbd5e1; }
+  #B .navi.on { background: rgba(217,119,6,.16); color: #fbbf24; font-weight: 700; box-shadow: inset 2px 0 0 #fbbf24; }
+  #B .content { background: #f1f5f9; }
+  #B .kpi { background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(2,6,23,.06); }
+  #B .kpi.a { background: linear-gradient(135deg,#fff,#fff7ed); } #B .kpi.a .kic,#B .kpi.a .kval { color: #c2410c; }
+  #B .kpi.b .kic { color: #2563eb; } #B .kpi.b .kval { color: #1e3a8a; }
+  #B .kpi.c .kic { color: #b45309; }
+  #B .kpi.d .kic { color: #16a34a; } #B .kpi.d .kval { color: #166534; }
+  #B .panel { background: #fff; border: 1px solid #e2e8f0; }
+  #B .trow { border-top: 1px solid #f1f5f9; }
+  #B .trow b { color: #c2410c; }
+  #B .bar { background: #e2e8f0; } #B .bar > i { background: #16a34a; }
+  #B .opt-tag { background: #0f172a; color: #fbbf24; }
+
+  /* ============ C. FRIENDLY BIG-TOUCH ============ */
+  #C .app { background: #f6f8fb; }
+  #C .side { background: #fff; border-right: 1px solid #eef2f7; }
+  #C .logo { background: #fde68a; }
+  #C .brand small { color: #94a3b8; }
+  #C .navg-label { color: #94a3b8; }
+  #C .navi { color: #334155; font-weight: 600; border-radius: 12px; }
+  #C .navi.on { background: #eef6ff; color: #2563eb; }
+  #C .content { background: #f6f8fb; }
+  #C .kpis { gap: 14px; }
+  #C .kpi { border-radius: 20px; color: #fff; min-height: 112px; box-shadow: 0 8px 20px rgba(2,6,23,.10); }
+  #C .kpi .khint { opacity: 0.9; }
+  #C .kpi.a { background: linear-gradient(135deg,#fb923c,#ea580c); }
+  #C .kpi.b { background: linear-gradient(135deg,#60a5fa,#2563eb); }
+  #C .kpi.c { background: linear-gradient(135deg,#fbbf24,#d97706); }
+  #C .kpi.d { background: linear-gradient(135deg,#34d399,#059669); }
+  #C .panel { background: #fff; border-radius: 20px; box-shadow: 0 8px 20px rgba(2,6,23,.06); }
+  #C .trow { border-top: 1px solid #f1f5f9; }
+  #C .trow b { color: #2563eb; }
+  #C .bar { background: #eef2f7; } #C .bar > i { background: #10b981; }
+  #C .opt-tag { background: #eef6ff; color: #2563eb; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="intro">
+    <h1>Mahavir Metalic — 3 UI directions</h1>
+    <p>Same screen (Home), three looks. Pick the one you like — I'll apply it across the whole app (phone + web).</p>
+  </div>
+
+  <!-- ============ OPTION A ============ -->
+  <section class="opt" id="A">
+    <span class="opt-tag">🔶 Option A · Warm Industrial Pro</span>
+    <p class="opt-desc">An elevated version of what you have now — warm cream background, amber brand, soft cards with a coloured accent edge. Familiar, professional, low-risk. Best if you like the current feel but want it cleaner and richer.</p>
+    <div class="frame">
+      <div class="browser-bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="url">vm.essenceerp.in/mahaveermetalic</span></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><div class="logo">🏭</div><div><b>Mahavir</b><small>METALIC</small></div></div>
+          <div class="navg">
+            <div class="navi on"><span class="ic">⌂</span> Home</div>
+            <div class="navg-label">Orders &amp; Purchase</div>
+            <div class="navi"><span class="ic">🛒</span> Orders</div>
+            <div class="navi"><span class="ic">📋</span> Purchase Orders</div>
+            <div class="navg-label">Shop Floor</div>
+            <div class="navi"><span class="ic">↓</span> Inward</div>
+            <div class="navi"><span class="ic">✂</span> Cutting</div>
+          </div>
+        </aside>
+        <main class="content">
+          <div class="h-row"><h2>Today</h2><span>Wed 11 Jun 2026</span></div>
+          <div class="kpis">
+            <div class="kpi a"><span class="kic">🛒</span><span class="kval">12</span><span class="klab">Open orders</span><span class="khint">9 completed</span></div>
+            <div class="kpi b"><span class="kic">📅</span><span class="kval">3</span><span class="klab">Due today</span><span class="khint">1 overdue</span></div>
+            <div class="kpi c"><span class="kic">🧵</span><span class="kval">8</span><span class="klab">Rolls to cut</span><span class="khint">2,400 kg</span></div>
+            <div class="kpi d"><span class="kic">↓</span><span class="kval">5</span><span class="klab">Inward today</span><span class="khint">posted</span></div>
+          </div>
+          <div class="panel">
+            <h3>Open orders</h3>
+            <div class="trow" style="opacity:.6;font-size:.66rem;text-transform:uppercase"><span>Order</span><span>Date</span><span>Party</span><span>Progress</span></div>
+            <div class="trow"><b>UM12</b><span>10/06</span><span>Rajeshree Jari</span><span class="bar"><i style="width:40%"></i></span></div>
+            <div class="trow"><b>UM11</b><span>09/06</span><span>Amar Enterprise</span><span class="bar"><i style="width:70%"></i></span></div>
+            <div class="trow"><b>HM7</b><span>08/06</span><span>Prem Jariwala</span><span class="bar"><i style="width:20%"></i></span></div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION B ============ -->
+  <section class="opt" id="B">
+    <span class="opt-tag">🌙 Option B · Midnight + Amber</span>
+    <p class="opt-desc">A premium SaaS look — dark navy sidebar with a glowing amber active state, bright airy content, tinted KPI cards. Distinctive and modern; the dark rail makes it feel like a "real product," not a Frappe page.</p>
+    <div class="frame">
+      <div class="browser-bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="url">vm.essenceerp.in/mahaveermetalic</span></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><div class="logo">🏭</div><div><b>Mahavir</b><small>METALIC</small></div></div>
+          <div class="navg">
+            <div class="navi on"><span class="ic">⌂</span> Home</div>
+            <div class="navg-label">Orders &amp; Purchase</div>
+            <div class="navi"><span class="ic">🛒</span> Orders</div>
+            <div class="navi"><span class="ic">📋</span> Purchase Orders</div>
+            <div class="navg-label">Shop Floor</div>
+            <div class="navi"><span class="ic">↓</span> Inward</div>
+            <div class="navi"><span class="ic">✂</span> Cutting</div>
+          </div>
+        </aside>
+        <main class="content">
+          <div class="h-row"><h2>Today</h2><span>Wed 11 Jun 2026</span></div>
+          <div class="kpis">
+            <div class="kpi a"><span class="kic">🛒</span><span class="kval">12</span><span class="klab">Open orders</span><span class="khint">9 completed</span></div>
+            <div class="kpi b"><span class="kic">📅</span><span class="kval">3</span><span class="klab">Due today</span><span class="khint">1 overdue</span></div>
+            <div class="kpi c"><span class="kic">🧵</span><span class="kval">8</span><span class="klab">Rolls to cut</span><span class="khint">2,400 kg</span></div>
+            <div class="kpi d"><span class="kic">↓</span><span class="kval">5</span><span class="klab">Inward today</span><span class="khint">posted</span></div>
+          </div>
+          <div class="panel">
+            <h3>Open orders</h3>
+            <div class="trow" style="opacity:.6;font-size:.66rem;text-transform:uppercase"><span>Order</span><span>Date</span><span>Party</span><span>Progress</span></div>
+            <div class="trow"><b>UM12</b><span>10/06</span><span>Rajeshree Jari</span><span class="bar"><i style="width:40%"></i></span></div>
+            <div class="trow"><b>UM11</b><span>09/06</span><span>Amar Enterprise</span><span class="bar"><i style="width:70%"></i></span></div>
+            <div class="trow"><b>HM7</b><span>08/06</span><span>Prem Jariwala</span><span class="bar"><i style="width:20%"></i></span></div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION C ============ -->
+  <section class="opt" id="C">
+    <span class="opt-tag">🟦 Option C · Friendly Big-Touch</span>
+    <p class="opt-desc">Big, colourful, rounded — each metric is a full-colour tile, large icons, lots of breathing room. Easiest for shop-floor staff on phones who aren't power users. Most "unique" and approachable; furthest from the competitor.</p>
+    <div class="frame">
+      <div class="browser-bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="url">vm.essenceerp.in/mahaveermetalic</span></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><div class="logo">🏭</div><div><b>Mahavir</b><small>METALIC</small></div></div>
+          <div class="navg">
+            <div class="navi on"><span class="ic">⌂</span> Home</div>
+            <div class="navg-label">Orders &amp; Purchase</div>
+            <div class="navi"><span class="ic">🛒</span> Orders</div>
+            <div class="navi"><span class="ic">📋</span> Purchase Orders</div>
+            <div class="navg-label">Shop Floor</div>
+            <div class="navi"><span class="ic">↓</span> Inward</div>
+            <div class="navi"><span class="ic">✂</span> Cutting</div>
+          </div>
+        </aside>
+        <main class="content">
+          <div class="h-row"><h2>Today</h2><span>Wed 11 Jun 2026</span></div>
+          <div class="kpis">
+            <div class="kpi a"><span class="kic">🛒</span><span class="kval">12</span><span class="klab">Open orders</span><span class="khint">9 completed</span></div>
+            <div class="kpi b"><span class="kic">📅</span><span class="kval">3</span><span class="klab">Due today</span><span class="khint">1 overdue</span></div>
+            <div class="kpi c"><span class="kic">🧵</span><span class="kval">8</span><span class="klab">Rolls to cut</span><span class="khint">2,400 kg</span></div>
+            <div class="kpi d"><span class="kic">↓</span><span class="kval">5</span><span class="klab">Inward today</span><span class="khint">posted</span></div>
+          </div>
+          <div class="panel">
+            <h3>Open orders</h3>
+            <div class="trow" style="opacity:.6;font-size:.66rem;text-transform:uppercase"><span>Order</span><span>Date</span><span>Party</span><span>Progress</span></div>
+            <div class="trow"><b>UM12</b><span>10/06</span><span>Rajeshree Jari</span><span class="bar"><i style="width:40%"></i></span></div>
+            <div class="trow"><b>UM11</b><span>09/06</span><span>Amar Enterprise</span><span class="bar"><i style="width:70%"></i></span></div>
+            <div class="trow"><b>HM7</b><span>08/06</span><span>Prem Jariwala</span><span class="bar"><i style="width:20%"></i></span></div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <p style="text-align:center;color:#94a3b8;font-size:0.8rem;margin-top:8px">
+    These are static previews of the look only. The real screens (orders, inward, cutting, chat) keep all their features — just restyled in the chosen direction.
+  </p>
+</div>
+</body>
+</html>
