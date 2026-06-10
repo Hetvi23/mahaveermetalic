@@ -1,9 +1,11 @@
 import { FrappeProvider, useFrappeAuth } from "frappe-react-sdk";
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import AppNav, { isSupplierOnly } from "./components/AppNav";
 import Dashboard from "./pages/Dashboard";
 import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
 import SalesOrderStock from "./pages/SalesOrderStock";
+import SupplierPending from "./pages/SupplierPending";
 import CuttingWorklist from "./pages/CuttingWorklist";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
@@ -11,29 +13,6 @@ import InwardWorkspace from "./pages/InwardWorkspace";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
-
-function TopBar() {
-  const navigate = useNavigate();
-  const { currentUser } = useFrappeAuth();
-
-  return (
-    <div className="mm-topbar">
-      <button type="button" className="mm-btn-back" onClick={() => navigate("/")}>
-        ← Home
-      </button>
-      <span className="mm-topbar-brand">Mahavir Metalic</span>
-      <span className="mm-topbar-user">{currentUser}</span>
-      <button
-        type="button"
-        className="mm-btn-close"
-        title="Close — back to Home"
-        onClick={() => navigate("/")}
-      >
-        ✕
-      </button>
-    </div>
-  );
-}
 
 function AuthedShell() {
   const { currentUser, isLoading } = useFrappeAuth();
@@ -51,16 +30,21 @@ function AuthedShell() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
+  // Supplier logins only get their pending view — keep them out of the ops home.
+  if (isSupplierOnly() && location.pathname === "/") {
+    return <Navigate to="/supplier-pending" replace />;
+  }
+
   const isHome = location.pathname === "/";
-  // Full-width screens (workspaces / multi-pane) break out of the 800px column.
-  const wide = WIDE_PATHS.includes(location.pathname);
+  // Full-width screens (workspaces / multi-pane) break out of the centered column.
+  const wide = isHome || WIDE_PATHS.includes(location.pathname);
 
   return (
-    <div className="mm-shell">
-      {!isHome && <TopBar />}
-      <div className={isHome ? undefined : wide ? "mm-full" : "mm-main"}>
+    <div className="mm-app">
+      <AppNav />
+      <main className={`mm-app-content ${wide ? "mm-app-content-wide" : ""}`}>
         <Outlet />
-      </div>
+      </main>
     </div>
   );
 }
@@ -113,6 +97,7 @@ export default function App() {
               <Route key={`${meta.slug}-edit`} path={`${meta.routeBase}/:name`} element={<DocFormPage meta={meta} />} />
             ))}
             <Route path="/sales-order/stock" element={<SalesOrderStock />} />
+            <Route path="/supplier-pending" element={<SupplierPending />} />
             <Route path="/tools/reminders-chat" element={<TaskReminderChatPage />} />
           </Route>
         </Routes>

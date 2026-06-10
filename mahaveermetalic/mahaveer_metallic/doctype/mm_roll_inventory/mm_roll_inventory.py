@@ -21,11 +21,10 @@ class MMRollInventory(Document):
 				"location": self.location,
 				"lot_number": self.lot_number or "",
 				"color_name": self.color_name,
-				"cut": self.cut or "",
 			},
 			"name",
 		)
 		if dup and dup != self.name:
 			frappe.throw(
-				frappe._("Roll inventory already exists for this Branch, Location, Lot, Color and Cut combination.")
+				frappe._("Roll inventory already exists for this Branch, Location, Lot and Color combination.")
 			)

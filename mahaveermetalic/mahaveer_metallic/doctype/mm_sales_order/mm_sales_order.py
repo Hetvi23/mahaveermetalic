@@ -4,17 +4,80 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.model.naming import make_autoname
 
 def is_mm_admin() -> bool:
 	roles = frappe.get_roles()
 	return "MM Admin" in roles or "Administrator" in roles
 
 
+def branch_series_prefix(branch: str) -> str:
+	"""Number-series prefix derived from the branch: Udhna → UM, Hojiwala → HM.
+	Any other branch falls back to its first letter + 'M' (e.g. 'Katargam' → KM).
+	Override a specific branch by adding it to BRANCH_PREFIX below."""
+	if not branch:
+		return "MM"
+	key = branch.strip().lower()
+	BRANCH_PREFIX = {"udhna": "UM", "hojiwala": "HM"}
+	for name, prefix in BRANCH_PREFIX.items():
+		if name in key:
+			return prefix
+	return branch.strip()[0].upper() + "M"
+
+
 class MMSalesOrder(Document):
+	def autoname(self):
+		"""Name = branch prefix + running number (UM1, UM2 … / HM1, HM2 …)."""
+		prefix = branch_series_prefix(self.branch)
+		raw = make_autoname(prefix + ".#####")  # e.g. UM00001
+		self.name = prefix + str(int(raw[len(prefix):]))  # → UM1
+
 	def validate(self):
+		self._require_weight_or_box()
 		self._compute_ordered_weight()
 		self._prevent_duplicate_order()
 		self._enforce_lock_rules()
+
+	def on_update(self):
+		self._sync_purchase_orders()
+
+	def _require_weight_or_box(self):
+		"""Each line must carry a Weight or a Box quantity (at least one, both allowed)."""
+		for it in self.items:
+			if (it.qty_weight or 0) <= 0 and (it.qty_box or 0) <= 0:
+				frappe.throw(
+					_("Row #{0}: enter a Weight or a Box quantity (at least one is required).").format(it.idx)
+				)
+
+	def _sync_purchase_orders(self):
+		"""One Purchase Order per order line that names a supplier. Idempotent: a PO is
+		matched back by its so_item ref, so re-saving the order updates the existing PO
+		instead of creating a duplicate. Same item + same supplier on a different order
+		stays a separate PO (the dashboard combines them per supplier+item)."""
+		for it in self.items:
+			if not it.purchase_party:
+				continue
+			existing = frappe.db.get_value("MM Purchase Order", {"so_item": it.name}, "name")
+			po = frappe.get_doc("MM Purchase Order", existing) if existing else frappe.new_doc("MM Purchase Order")
+			self._fill_po(po, it)
+			if existing:
+				po.save(ignore_permissions=True)
+			else:
+				po.insert(ignore_permissions=True)
+
+	def _fill_po(self, po, it):
+		po.supplier = it.purchase_party
+		po.sales_order = self.name
+		po.so_item = it.name
+		po.transaction_date = self.transaction_date
+		po.branch = self.branch
+		po.location = self.location
+		po.color = it.color_name
+		po.cut = it.cut
+		po.qty_kg = it.qty_weight or 0
+		po.qty_box = it.qty_box or 0
+		po.rate = it.purchase_rate
+		po.delivery_date = it.delivery_date
 
 	def _prevent_duplicate_order(self):
 		"""SRS rule (non-negotiable): don't create a new order that duplicates an

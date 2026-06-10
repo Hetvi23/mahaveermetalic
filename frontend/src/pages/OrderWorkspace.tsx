@@ -18,6 +18,7 @@ type Item = {
   name?: string;
   color_name: string;
   cut: string;
+  delivery_date: string;
   qty_weight: number | "";
   qty_box: number | "";
   sale_rate: number | "";
@@ -28,6 +29,7 @@ type Item = {
 const blankItem = (): Item => ({
   color_name: "",
   cut: "",
+  delivery_date: "",
   qty_weight: "",
   qty_box: "",
   sale_rate: "",
@@ -40,10 +42,11 @@ const F: Record<string, FieldSchema> = {
   delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   party: { fieldname: "party", label: "Company / Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
   cut: { fieldname: "cut", label: "Cut", fieldtype: "Data" },
-  qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float", reqd: true },
+  item_delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
+  qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float" },
   qty_box: { fieldname: "qty_box", label: "Box", fieldtype: "Float" },
   sale_rate: { fieldname: "sale_rate", label: "Sale rate", fieldtype: "Currency", reqd: true },
-  purchase_party: { fieldname: "purchase_party", label: "Purchase party", fieldtype: "Link", options: "MM Party Master" },
+  purchase_party: { fieldname: "purchase_party", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
   purchase_rate: { fieldname: "purchase_rate", label: "Purchase rate", fieldtype: "Currency" },
 };
 
@@ -132,6 +135,7 @@ export default function OrderWorkspace() {
         name: r.name as string,
         color_name: String(r.color_name ?? ""),
         cut: String(r.cut ?? ""),
+        delivery_date: r.delivery_date ? String(r.delivery_date) : "",
         qty_weight: (r.qty_weight as number) ?? "",
         qty_box: (r.qty_box as number) ?? "",
         sale_rate: (r.sale_rate as number) ?? "",
@@ -158,7 +162,9 @@ export default function OrderWorkspace() {
 
   function addItem() {
     if (!draft.color_name.trim()) return setFormError("Pick a colour for the item.");
-    if (!draft.qty_weight || Number(draft.qty_weight) <= 0) return setFormError("Enter the item weight.");
+    const hasWeight = !!draft.qty_weight && Number(draft.qty_weight) > 0;
+    const hasBox = !!draft.qty_box && Number(draft.qty_box) > 0;
+    if (!hasWeight && !hasBox) return setFormError("Enter a weight or a box quantity (at least one).");
     if (draft.sale_rate === "" || Number(draft.sale_rate) < 0) return setFormError("Enter the sale rate.");
     setFormError(null);
     setItems((prev) => [...prev, draft]);
@@ -185,6 +191,7 @@ export default function OrderWorkspace() {
         idx: idx + 1,
         color_name: it.color_name,
         cut: it.cut,
+        delivery_date: it.delivery_date || null,
         qty_weight: it.qty_weight || 0,
         qty_box: it.qty_box || 0,
         sale_rate: it.sale_rate || 0,
@@ -275,6 +282,7 @@ export default function OrderWorkspace() {
                   <input className="mm-input" list="mm-color-opts" value={draft.color_name} onChange={(e) => setDraft((d) => ({ ...d, color_name: e.target.value }))} />
                 </label>
                 <FieldInput field={F.cut} value={draft.cut} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />
+                <FieldInput field={F.item_delivery_date} value={draft.delivery_date} onChange={(v) => setDraft((d) => ({ ...d, delivery_date: String(v ?? "") }))} />
                 <FieldInput field={F.qty_weight} value={draft.qty_weight} onChange={(v) => setDraft((d) => ({ ...d, qty_weight: v as number }))} />
                 <FieldInput field={F.qty_box} value={draft.qty_box} onChange={(v) => setDraft((d) => ({ ...d, qty_box: v as number }))} />
                 <FieldInput field={F.sale_rate} value={draft.sale_rate} onChange={(v) => setDraft((d) => ({ ...d, sale_rate: v as number }))} />
@@ -295,8 +303,11 @@ export default function OrderWorkspace() {
                   <tr>
                     <th>Color</th>
                     <th>Cut</th>
+                    <th>Delivery</th>
                     <th className="mm-num">Wt</th>
+                    <th className="mm-num">Box</th>
                     <th className="mm-num">Rate</th>
+                    <th>Supplier</th>
                     {!ro && <th />}
                   </tr>
                 </thead>
@@ -305,8 +316,11 @@ export default function OrderWorkspace() {
                     <tr key={i}>
                       <td>{it.color_name}</td>
                       <td>{it.cut || "—"}</td>
+                      <td>{it.delivery_date || "—"}</td>
                       <td className="mm-num">{Number(it.qty_weight) || 0}</td>
+                      <td className="mm-num">{Number(it.qty_box) || 0}</td>
                       <td className="mm-num">{Number(it.sale_rate) || 0}</td>
+                      <td>{it.purchase_party || "—"}</td>
                       {!ro && (
                         <td className="mm-num">
                           <button type="button" className="mm-icon-btn" title="Remove" onClick={() => removeItem(i)}>
@@ -319,9 +333,9 @@ export default function OrderWorkspace() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={2}><strong>Total</strong></td>
+                    <td colSpan={3}><strong>Total</strong></td>
                     <td className="mm-num"><strong>{itemsTotal.toLocaleString()}</strong></td>
-                    <td colSpan={ro ? 1 : 2} />
+                    <td colSpan={ro ? 3 : 4} />
                   </tr>
                 </tfoot>
               </table>

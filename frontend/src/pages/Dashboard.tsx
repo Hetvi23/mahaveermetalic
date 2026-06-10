@@ -1,129 +1,18 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useFrappeAuth, useFrappeGetCall } from "frappe-react-sdk";
+import { useFrappeGetCall } from "frappe-react-sdk";
 import { useState } from "react";
 import {
-  Home,
-  Users,
-  Palette,
-  ScrollText,
-  Disc3,
-  HardHat,
-  Building2,
-  Boxes,
   ShoppingCart,
-  ArrowDownToLine,
+  ScrollText,
   Scissors,
-  Monitor,
-  Factory,
-  Rocket,
-  ArrowUpFromLine,
-  ArrowDownFromLine,
-  ClipboardList,
-  Package,
-  Truck,
-  Bell,
-  ListChecks,
+  ArrowDownToLine,
+  Disc3,
   Search,
-  LogOut,
   ArrowRight,
   CalendarClock,
   AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
-
-type NavItem = {
-  label: string;
-  icon: LucideIcon;
-  to?: string;
-};
-
-type Category = {
-  key: string;
-  label: string;
-  icon: LucideIcon;
-  items: NavItem[];
-};
-
-/**
- * Reorganised around the physical shop-floor pipeline instead of abstract
- * module type. This removes the duplicate-name confusion (Bobbins / Rolls /
- * Orders / Chalan each appeared in 2–4 of the old menus).
- */
-const CATEGORIES: Category[] = [
-  {
-    key: "orders",
-    label: "Orders",
-    icon: ShoppingCart,
-    items: [
-      { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
-      { label: "Order Stock", icon: Search, to: "/sales-order/stock" },
-      { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
-    ],
-  },
-  {
-    key: "inward",
-    label: "Inward",
-    icon: ArrowDownToLine,
-    items: [
-      { label: "Inwards", icon: ArrowDownToLine, to: "/inward" },
-      { label: "Rolls in Stock", icon: ScrollText, to: "/roll-inventory" },
-    ],
-  },
-  {
-    key: "cutting",
-    label: "Cutting",
-    icon: Scissors,
-    items: [
-      { label: "Cutting", icon: Scissors, to: "/cutting" },
-      { label: "Patties", icon: Package },
-    ],
-  },
-  {
-    key: "production",
-    label: "Production",
-    icon: Factory,
-    items: [
-      { label: "Program", icon: Monitor },
-      { label: "Production", icon: Factory },
-      { label: "Bobbin In/Out", icon: Disc3, to: "/bobbin-tracking" },
-    ],
-  },
-  {
-    key: "dispatch",
-    label: "Dispatch",
-    icon: Truck,
-    items: [
-      { label: "Sales", icon: Rocket },
-      { label: "Job Out", icon: ArrowUpFromLine },
-      { label: "Job In", icon: ArrowDownFromLine },
-      { label: "Chalan", icon: ClipboardList },
-      { label: "Deliverable", icon: Truck },
-    ],
-  },
-  {
-    key: "masters",
-    label: "Masters",
-    icon: Boxes,
-    items: [
-      { label: "Customers", icon: Users, to: "/masters/party" },
-      { label: "Colors / Items", icon: Palette, to: "/masters/item" },
-      { label: "Roll Inventory", icon: ScrollText, to: "/roll-inventory" },
-      { label: "Bobbins", icon: Disc3, to: "/masters/bobbin" },
-      { label: "Vendors", icon: Building2, to: "/masters/vendor" },
-      { label: "Locations", icon: Building2, to: "/masters/location" },
-      { label: "Staff", icon: HardHat, to: "/masters/employee" },
-    ],
-  },
-  {
-    key: "tools",
-    label: "Tools",
-    icon: Bell,
-    items: [
-      { label: "Reminders", icon: Bell, to: "/tools/reminders-chat" },
-      { label: "Tasks", icon: ListChecks, to: "/tools/task-reminder" },
-    ],
-  },
-];
 
 type OpenOrder = {
   name: string;
@@ -239,7 +128,7 @@ function HomeView() {
     {
       label: "Bobbin boxes out",
       value: s?.bobbin_boxes_out ?? 0,
-      hint: "returnable, pending",
+      hint: "given, pending",
       icon: Disc3,
       to: "/bobbin-tracking",
       tone: "slate",
@@ -415,159 +304,21 @@ function HomeView() {
 }
 
 export default function Dashboard() {
-  const { currentUser, logout } = useFrappeAuth();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("home");
-
-  const displayName = currentUser
-    ? currentUser.split("@")[0].replace(/[._]/g, " ")
-    : "";
-
-  const activeCat = CATEGORIES.find((c) => c.key === activeTab);
-  const isHome = activeTab === "home";
-
-  const TABS: { key: string; label: string; icon: LucideIcon }[] = [
-    { key: "home", label: "Home", icon: Home },
-    ...CATEGORIES.map((c) => ({ key: c.key, label: c.label, icon: c.icon })),
-  ];
-
-  const logoutBtn = (
-    <button
-      type="button"
-      className="mm-dash-side-logout"
-      title="Log out"
-      onClick={async () => {
-        await logout();
-        navigate("/login", { replace: true });
-      }}
-    >
-      <LogOut size={16} />
-    </button>
-  );
-
+  const dateLabel = new Date().toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
   return (
-    <div className="mm-dash">
-      {/* Sidebar */}
-      <aside className="mm-dash-side">
-        <div className="mm-dash-side-brand">
-          <div className="mm-dash-side-logo">
-            <Factory size={22} strokeWidth={2.2} />
-          </div>
-          <div className="mm-dash-side-brand-text">
-            <span className="mm-dash-side-name">Mahavir</span>
-            <span className="mm-dash-side-sub">Metalic</span>
-          </div>
+    <div className="mm-home-page mm-page-enter">
+      <header className="mm-app-header">
+        <div>
+          <h1 className="mm-page-title">Today</h1>
+          <p className="mm-page-sub">{dateLabel}</p>
         </div>
-
-        <nav className="mm-dash-side-nav">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                className={`mm-dash-side-btn ${activeTab === tab.key ? "mm-dash-side-btn-active" : ""}`}
-                onClick={() => setActiveTab(tab.key)}
-              >
-                <Icon size={18} strokeWidth={1.8} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="mm-dash-side-footer">
-          <div className="mm-dash-side-user" title={currentUser || ""}>
-            {displayName || "User"}
-          </div>
-          {logoutBtn}
-        </div>
-      </aside>
-
-      {/* Mobile top bar */}
-      <header className="mm-dash-mobile-header">
-        <div className="mm-dash-mobile-brand">
-          <Factory size={18} strokeWidth={2.2} />
-          <span>Mahavir Metalic</span>
-        </div>
-        {logoutBtn}
       </header>
-
-      {/* Mobile tabs */}
-      <div className="mm-dash-mobile-tabs">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              className={`mm-dash-mob-tab ${activeTab === tab.key ? "mm-dash-mob-tab-active" : ""}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              <Icon size={14} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Content area */}
-      <main className="mm-dash-content">
-        <div className="mm-dash-content-header">
-          <h1 className="mm-dash-content-title">{isHome ? "Today" : activeCat!.label}</h1>
-          <span className="mm-dash-content-count">
-            {isHome
-              ? new Date().toLocaleDateString(undefined, {
-                  weekday: "short",
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })
-              : `${activeCat!.items.length} modules`}
-          </span>
-        </div>
-
-        {isHome ? (
-          <HomeView />
-        ) : (
-          <div className="mm-dash-grid" key={activeTab}>
-            {activeCat!.items.map((item, i) => {
-              const Icon = item.icon;
-              const inner = (
-                <>
-                  <div className="mm-dash-card-icon">
-                    <Icon size={28} strokeWidth={1.6} />
-                  </div>
-                  <span className="mm-dash-card-label">{item.label}</span>
-                  {!item.to && <span className="mm-dash-card-soon">Soon</span>}
-                </>
-              );
-
-              if (item.to) {
-                return (
-                  <Link
-                    key={`${item.label}-${i}`}
-                    to={item.to}
-                    className="mm-dash-card mm-fade-in"
-                    style={{ animationDelay: `${i * 40}ms` }}
-                  >
-                    {inner}
-                  </Link>
-                );
-              }
-              return (
-                <div
-                  key={`${item.label}-${i}`}
-                  className="mm-dash-card mm-dash-card-disabled mm-fade-in"
-                  style={{ animationDelay: `${i * 40}ms` }}
-                >
-                  {inner}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
+      <HomeView />
     </div>
   );
 }

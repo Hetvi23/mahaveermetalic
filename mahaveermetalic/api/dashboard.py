@@ -59,10 +59,10 @@ def get_summary():
 		(today,),
 	)
 
-	# Returnable bobbin boxes still out (given, returnable, not yet received back).
+	# Bobbin/box challans given out (not yet received back).
 	bobbin_boxes_out = _count(
 		"select count(*) from `tabMM Bobbin Box Tracking` "
-		"where given_received = 'Given' and ifnull(returnable_box, 0) = 1"
+		"where given_received = 'Given'"
 	)
 
 	# Deliveries — only open orders (production < 100%) with a delivery date set.

@@ -1,0 +1,26 @@
+{
+  "name": "Mahavir Metalic",
+  "short_name": "Mahavir",
+  "description": "Mahavir Metalic — orders, inward, cutting, dispatch & supplier pending.",
+  "start_url": "/mahaveermetalic",
+  "scope": "/mahaveermetalic",
+  "id": "/mahaveermetalic",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8fafc",
+  "theme_color": "#d97706",
+  "icons": [
+    {
+      "src": "/assets/mahaveermetalic/mahaveermetalic/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/mahaveermetalic/mahaveermetalic/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

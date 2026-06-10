@@ -6,6 +6,7 @@
   "engine": "InnoDB",
   "field_order": [
     "color_name",
+    "delivery_date",
     "qty_weight",
     "qty_box",
     "cut",
@@ -22,12 +23,18 @@
       "reqd": 1
     },
     {
+      "fieldname": "delivery_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Delivery Date"
+    },
+    {
       "fieldname": "qty_weight",
       "fieldtype": "Float",
       "in_list_view": 1,
       "label": "Quantity (Weight)",
       "precision": 3,
-      "reqd": 1
+      "default": "0"
     },
     {
       "fieldname": "qty_box",
@@ -54,8 +61,8 @@
     {
       "fieldname": "purchase_party",
       "fieldtype": "Link",
-      "label": "Purchase Party",
-      "options": "MM Party Master"
+      "label": "Supplier",
+      "options": "MM Vendor Master"
     },
     {
       "fieldname": "purchase_rate",

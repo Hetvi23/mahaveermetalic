@@ -6,16 +6,29 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
+    "branch",
+    "location",
     "challan_number",
     "chalan_date",
     "given_received",
     "party",
     "note",
     "bobbin_type_section",
-    "lines",
-    "returnable_box"
+    "lines"
   ],
   "fields": [
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "label": "Location",
+      "options": "MM Location Master"
+    },
     {
       "fieldname": "challan_number",
       "fieldtype": "Data",
@@ -64,11 +77,6 @@
       "label": "Lines",
       "options": "MM Bobbin Box Line",
       "reqd": 1
-    },
-    {
-      "fieldname": "returnable_box",
-      "fieldtype": "Check",
-      "label": "Returnable Box"
     }
   ],
   "index_web_pages_for_search": 1,

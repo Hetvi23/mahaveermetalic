@@ -12,7 +12,6 @@
     "location",
     "supplier",
     "color_name",
-    "cut",
     "item_type",
     "stock_weight",
     "stock_box",
@@ -61,12 +60,6 @@
       "in_list_view": 1,
       "label": "Color",
       "reqd": 1
-    },
-    {
-      "fieldname": "cut",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Cut"
     },
     {
       "fieldname": "item_type",

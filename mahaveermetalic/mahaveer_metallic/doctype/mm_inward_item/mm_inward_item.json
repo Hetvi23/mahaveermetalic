@@ -8,6 +8,7 @@
     "job_work",
     "challan_number",
     "customer_order",
+    "item_type",
     "roll_name",
     "color_name",
     "cut",
@@ -33,6 +34,13 @@
       "in_list_view": 1,
       "label": "Customer Order",
       "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "item_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Item Type",
+      "options": "Cut\nPatti\nJari\nKasab\nRoll"
     },
     {
       "fieldname": "roll_name",

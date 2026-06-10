@@ -6,11 +6,12 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
+    "branch",
+    "location",
     "posting_date",
     "customer_order",
     "source_roll",
     "roll_no",
-    "branch",
     "shade",
     "cut",
     "status",
@@ -57,6 +58,12 @@
       "in_list_view": 1,
       "label": "Branch",
       "options": "Branch"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "label": "Location",
+      "options": "MM Location Master"
     },
     {
       "fieldname": "shade",

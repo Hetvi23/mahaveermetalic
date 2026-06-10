@@ -1,10 +1,11 @@
 import ChildTableEditor, { type ChildRow } from "@/components/ChildTableEditor";
 import SalesOrderStockPanel from "@/components/SalesOrderStockPanel";
 import { FieldInput } from "@/components/FieldInputs";
-import { resolveFormSections, type DocRegistryEntry } from "@/config/registry";
+import { isFieldVisible, resolveFormSections, type DocRegistryEntry } from "@/config/registry";
 import { extractErrorMessage } from "@/utils/frappeError";
 import {
 	useFrappeCreateDoc,
+	useFrappeGetCall,
 	useFrappeGetDoc,
 	useFrappePostCall,
 	useFrappeUpdateDoc,
@@ -79,6 +80,25 @@ function DocFormNew({ meta }: { meta: DocRegistryEntry }) {
 	function setField(fn: string, v: unknown) {
 		setValues((prev) => ({ ...prev, [fn]: v }));
 	}
+
+	// Auto-fill branch / location from the logged-in user's employee profile (editable).
+	const hasBranch = meta.fields.some((f) => f.fieldname === "branch");
+	const hasLocation = meta.fields.some((f) => f.fieldname === "location");
+	const { data: defaults } = useFrappeGetCall<{ message: { branch: string | null; location: string | null } }>(
+		"mahaveermetalic.api.session.get_branch_location",
+		undefined,
+		"mm-session-branch-location", // cached once per session across all forms
+	);
+	useEffect(() => {
+		const d = defaults?.message;
+		if (!d) return;
+		setValues((prev) => {
+			const next = { ...prev };
+			if (hasBranch && d.branch && !prev.branch) next.branch = d.branch;
+			if (hasLocation && d.location && !prev.location) next.location = d.location;
+			return next;
+		});
+	}, [defaults, hasBranch, hasLocation]);
 
 	const payload = useMemo(() => buildPayload(meta, values, children, undefined), [meta, values, children]);
 
@@ -405,7 +425,7 @@ export function DocFields({
 						<div className="mm-form-grid mm-form-grid-tight">
 							{sec.fieldnames.map((fn) => {
 								const f = fieldMap[fn];
-								if (!f) return null;
+								if (!f || !isFieldVisible(f, values)) return null;
 								return (
 									<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
 										<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={ro} />
@@ -446,7 +466,7 @@ export function DocFields({
 					<div className="mm-form-grid">
 						{sec.fieldnames.map((fn) => {
 							const f = fieldMap[fn];
-							if (!f) return null;
+							if (!f || !isFieldVisible(f, values)) return null;
 							return (
 								<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
 									<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={ro} />
@@ -497,7 +517,8 @@ export function buildPayload(
 			.map((row) => {
 				const o: Record<string, unknown> = {};
 				for (const c of t.columns) {
-					o[c.fieldname] = row[c.fieldname];
+					// Don't persist a value for a column hidden by its dependsOn rule.
+					o[c.fieldname] = isFieldVisible(c, row) ? row[c.fieldname] : "";
 				}
 				if (row.name) o.name = row.name;
 				return o;

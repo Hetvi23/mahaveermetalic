@@ -6,8 +6,8 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
-    "location",
     "branch",
+    "location",
     "posting_date",
     "sales_order",
     "party",

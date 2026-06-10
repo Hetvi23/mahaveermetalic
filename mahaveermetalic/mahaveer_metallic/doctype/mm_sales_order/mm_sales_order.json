@@ -6,10 +6,11 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
+    "branch",
+    "location",
     "naming_series",
     "transaction_date",
     "delivery_date",
-    "branch",
     "party",
     "section_items",
     "items",
@@ -57,6 +58,12 @@
       "label": "Branch",
       "options": "Branch",
       "in_list_view": 1
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "label": "Location",
+      "options": "MM Location Master"
     },
     {
       "fieldname": "section_items",

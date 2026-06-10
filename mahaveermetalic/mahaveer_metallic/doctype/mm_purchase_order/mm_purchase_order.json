@@ -6,14 +6,19 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
-    "transaction_date",
     "branch",
+    "location",
+    "transaction_date",
+    "supplier",
     "sales_order",
     "po_number",
     "color",
+    "cut",
     "qty_kg",
+    "qty_box",
     "rate",
-    "delivery_date"
+    "delivery_date",
+    "so_item"
   ],
   "fields": [
     {
@@ -30,6 +35,19 @@
       "in_list_view": 1,
       "label": "Branch",
       "options": "Branch"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "label": "Location",
+      "options": "MM Location Master"
+    },
+    {
+      "fieldname": "supplier",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Supplier",
+      "options": "MM Vendor Master"
     },
     {
       "fieldname": "sales_order",
@@ -53,23 +71,41 @@
       "reqd": 1
     },
     {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "label": "Cut"
+    },
+    {
       "fieldname": "qty_kg",
       "fieldtype": "Float",
+      "in_list_view": 1,
       "label": "Qty (KG)",
+      "precision": 3
+    },
+    {
+      "fieldname": "qty_box",
+      "fieldtype": "Float",
+      "label": "Qty (Box)",
       "precision": 3,
-      "reqd": 1
+      "default": "0"
     },
     {
       "fieldname": "rate",
       "fieldtype": "Currency",
       "label": "Rate",
-      "precision": 2,
-      "reqd": 1
+      "precision": 2
     },
     {
       "fieldname": "delivery_date",
       "fieldtype": "Date",
       "label": "Delivery Date"
+    },
+    {
+      "fieldname": "so_item",
+      "fieldtype": "Data",
+      "label": "SO Item Ref",
+      "read_only": 1,
+      "description": "Internal link to the Sales Order line that generated this PO."
     }
   ],
   "index_web_pages_for_search": 1,
@@ -85,7 +121,8 @@
     {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
     {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
     {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Supplier", "read": 1, "print": 1, "report": 1}
   ],
   "sort_field": "modified",
   "sort_order": "DESC",

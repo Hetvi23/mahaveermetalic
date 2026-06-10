@@ -16,8 +16,11 @@ class MMInward(Document):
 				frappe.throw(_("Row #{0}: enter a Weight or Box quantity.").format(row.idx))
 
 	def _set_branch_location_from_employee(self):
-		"""Branch/Location are hidden on the form — derive them from the MM Employee
-		Master linked to the posting (logged-in) user."""
+		"""Default Branch/Location from the posting (logged-in) user's MM Employee
+		Master, but only when left blank — they are shown on the form and remain
+		editable, so a user-set value must win."""
+		if self.branch and self.location:
+			return
 		emp = frappe.db.get_value(
 			"MM Employee Master",
 			{"user": frappe.session.user},
@@ -25,9 +28,9 @@ class MMInward(Document):
 			as_dict=True,
 		)
 		if emp:
-			if emp.branch:
+			if not self.branch and emp.branch:
 				self.branch = emp.branch
-			if emp.location:
+			if not self.location and emp.location:
 				self.location = emp.location
 
 	def on_submit(self):
@@ -52,20 +55,19 @@ class MMInward(Document):
 		for order in orders:
 			recalculate_order_fulfilment(order)
 
-	def _find_roll(self, color_name, cut):
+	def _find_roll(self, color_name):
 		"""Match the Roll Inventory row by the same key Roll Inventory dedups on
-		(branch, location, lot_number, color_name, cut). Empty Link/Data fields are
+		(branch, location, lot_number, color_name). Empty Link/Data fields are
 		stored as NULL, so compare in Python to avoid ''-vs-NULL mismatches."""
 		candidates = frappe.get_all(
 			"MM Roll Inventory",
 			filters={"location": self.location, "color_name": color_name},
-			fields=["name", "branch", "lot_number", "cut"],
+			fields=["name", "branch", "lot_number"],
 		)
 		for c in candidates:
 			if (
 				(c.branch or "") == (self.branch or "")
 				and (c.lot_number or "") == (self.lot_number or "")
-				and (c.cut or "") == (cut or "")
 			):
 				return c.name
 		return None
@@ -77,7 +79,7 @@ class MMInward(Document):
 			if not weight and not boxes:
 				continue
 
-			existing = self._find_roll(row.color_name, row.cut)
+			existing = self._find_roll(row.color_name)
 
 			if existing:
 				doc = frappe.get_doc("MM Roll Inventory", existing)
@@ -93,7 +95,6 @@ class MMInward(Document):
 						"branch": self.branch,
 						"location": self.location,
 						"color_name": row.color_name,
-						"cut": row.cut,
 						"item_type": self.item_type,
 						"stock_weight": weight,
 						"stock_box": boxes,

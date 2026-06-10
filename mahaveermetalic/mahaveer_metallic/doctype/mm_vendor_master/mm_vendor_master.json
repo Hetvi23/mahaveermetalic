@@ -5,7 +5,7 @@
   "creation": "2026-05-03 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
-  "field_order": ["vendor_name", "mobile_no", "email", "address"],
+  "field_order": ["vendor_name", "mobile_no", "email", "address", "user"],
   "fields": [
     {
       "fieldname": "vendor_name",
@@ -14,6 +14,14 @@
       "label": "Name",
       "reqd": 1,
       "unique": 1
+    },
+    {
+      "fieldname": "user",
+      "fieldtype": "Link",
+      "label": "Login User",
+      "options": "User",
+      "unique": 1,
+      "description": "Link the supplier's login. When set, that user (with the MM Supplier role) sees only this vendor's purchase orders and pending."
     },
     {
       "fieldname": "mobile_no",

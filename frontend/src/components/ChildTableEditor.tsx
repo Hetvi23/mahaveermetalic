@@ -1,4 +1,4 @@
-import type { ChildTableSchema, FieldSchema } from "@/config/registry";
+import { isFieldVisible, type ChildTableSchema, type FieldSchema } from "@/config/registry";
 import { FieldInput } from "./FieldInputs";
 
 export type ChildRow = Record<string, unknown>;
@@ -52,17 +52,23 @@ export default function ChildTableEditor({ schema, rows, onChange, disabled, hid
 					<tbody>
 						{rows.map((row, i) => (
 							<tr key={i}>
-								{schema.columns.map((col) => (
-									<td key={col.fieldname}>
-										<FieldInput
-											field={col}
-											value={row[col.fieldname]}
-											onChange={(v) => updateRow(i, col.fieldname, v)}
-											disabled={disabled}
-											compact
-										/>
-									</td>
-								))}
+								{schema.columns.map((col) =>
+									isFieldVisible(col, row) ? (
+										<td key={col.fieldname}>
+											<FieldInput
+												field={col}
+												value={row[col.fieldname]}
+												onChange={(v) => updateRow(i, col.fieldname, v)}
+												disabled={disabled}
+												compact
+											/>
+										</td>
+									) : (
+										<td key={col.fieldname} className="mm-td-na" aria-hidden>
+											—
+										</td>
+									),
+								)}
 								<td>
 									<button type="button" className="mm-btn-ghost" disabled={disabled} onClick={() => removeRow(i)}>
 										Remove

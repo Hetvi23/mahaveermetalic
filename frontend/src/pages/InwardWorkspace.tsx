@@ -83,8 +83,10 @@ export default function InwardWorkspace() {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
 
-  const ordersForColor = (color: string) =>
-    orders.filter((o) => (o.color_name || "").toLowerCase() === (color || "").toLowerCase());
+  const ordersForColor = (color: string) => {
+    const c = (color || "").trim().toLowerCase();
+    return orders.filter((o) => (o.color_name || "").trim().toLowerCase() === c);
+  };
 
   const totals = useMemo(
     () => ({

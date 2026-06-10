@@ -19,6 +19,10 @@ export type FieldSchema = {
 	reqd?: boolean;
 	readOnly?: boolean;
 	default?: string;
+	/** Conditional visibility: only show this field/column when the sibling
+	 * `field`'s current value is one of `in`. Evaluated against the record
+	 * (top-level fields) or the row (child-table columns). */
+	dependsOn?: { field: string; in: string[] };
 };
 
 export type ChildTableSchema = {
@@ -58,6 +62,13 @@ export type DocRegistryEntry = {
 	/** When omitted, a single “Details” section is used */
 	formSections?: FormSectionConfig[];
 };
+
+/** Evaluate a field's `dependsOn` against a record/row. No rule → always visible. */
+export function isFieldVisible(field: FieldSchema, record: Record<string, unknown>): boolean {
+	const dep = field.dependsOn;
+	if (!dep) return true;
+	return dep.in.includes(String(record[dep.field] ?? ""));
+}
 
 export function resolveFormSections(meta: DocRegistryEntry): FormSectionConfig[] {
 	if (meta.formSections?.length) return meta.formSections;
@@ -166,6 +177,12 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				fieldnames: ["vendor_name", "mobile_no", "email"],
 			},
 			{ id: "v2", title: "Address", fieldnames: ["address"] },
+			{
+				id: "v3",
+				title: "Supplier login",
+				description: "Link a User to let this supplier log in and see only their own POs / pending.",
+				fieldnames: ["user"],
+			},
 		],
 		listColumns: [
 			{ fieldname: "vendor_name", label: "Name" },
@@ -177,6 +194,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "mobile_no", label: "Mobile No", fieldtype: "Data", reqd: true },
 			{ fieldname: "email", label: "Email", fieldtype: "Data" },
 			{ fieldname: "address", label: "Address", fieldtype: "Small Text" },
+			{ fieldname: "user", label: "Login User", fieldtype: "Link", options: "User" },
 		],
 	},
 	{
@@ -265,7 +283,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "r2",
 				title: "Variant",
 				description: "What the roll represents on the floor.",
-				fieldnames: ["color_name", "cut"],
+				fieldnames: ["color_name"],
 			},
 			{ id: "r3", title: "Stock states", fieldnames: ["stock_weight", "stock_box", "reserved_weight", "issued_weight", "available_weight", "reorder_weight"] },
 		],
@@ -282,7 +300,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true },
 			{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 			{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
-			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
 			{ fieldname: "item_type", label: "Item Type", fieldtype: "Link", options: "MM Item Master" },
 			{ fieldname: "stock_weight", label: "Stock (Weight)", fieldtype: "Float" },
 			{ fieldname: "stock_box", label: "Stock (Box)", fieldtype: "Float" },
@@ -303,8 +320,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "so-h",
 				title: "Order header",
-				description: "Series, dates, and sold-to party.",
-				fieldnames: ["naming_series", "transaction_date", "delivery_date", "branch", "party"],
+				description: "Branch & location (auto-filled from your profile), series, dates, and sold-to party.",
+				fieldnames: ["branch", "location", "naming_series", "transaction_date", "delivery_date", "party"],
 			},
 			{
 				id: "so-x",
@@ -342,6 +359,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "transaction_date", label: "Date", fieldtype: "Date", reqd: true },
 			{ fieldname: "delivery_date", label: "Delivery Date", fieldtype: "Date" },
 			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
+			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
 			{ fieldname: "ordered_weight", label: "Order Weight (Kg)", fieldtype: "Float", readOnly: true },
 			{ fieldname: "inwarded_weight", label: "Inwards (Kg)", fieldtype: "Float", readOnly: true },
@@ -362,11 +380,12 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				reqd: true,
 				columns: [
 					{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
-					{ fieldname: "qty_weight", label: "Qty (weight)", fieldtype: "Float", reqd: true },
+					{ fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
+					{ fieldname: "qty_weight", label: "Qty (weight)", fieldtype: "Float" },
 					{ fieldname: "qty_box", label: "Qty (box)", fieldtype: "Float" },
 					{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
 					{ fieldname: "sale_rate", label: "Sale rate", fieldtype: "Currency", reqd: true },
-					{ fieldname: "purchase_party", label: "Purchase party", fieldtype: "Link", options: "MM Party Master" },
+					{ fieldname: "purchase_party", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 					{ fieldname: "purchase_rate", label: "Purchase rate", fieldtype: "Currency" },
 				],
 			},
@@ -383,14 +402,15 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "po1",
 				title: "Linkage",
-				description: "Ties back to a sales order; PO number follows SO.",
-				fieldnames: ["transaction_date", "branch", "sales_order", "po_number"],
+				description: "Branch & location (auto-filled), supplier, and SO linkage. Auto-generated per order line; editable.",
+				fieldnames: ["branch", "location", "transaction_date", "supplier", "sales_order", "po_number"],
 			},
-			{ id: "po2", title: "Material", fieldnames: ["color", "qty_kg", "rate"] },
+			{ id: "po2", title: "Material", fieldnames: ["color", "cut", "qty_kg", "qty_box", "rate"] },
 			{ id: "po3", title: "Logistics", fieldnames: ["delivery_date"] },
 		],
 		listColumns: [
 			{ fieldname: "po_number", label: "PO No" },
+			{ fieldname: "supplier", label: "Supplier" },
 			{ fieldname: "color", label: "Color" },
 			{ fieldname: "qty_kg", label: "Qty KG" },
 		],
@@ -398,12 +418,17 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		fields: [
 			{ fieldname: "transaction_date", label: "Date", fieldtype: "Date", reqd: true },
 			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
+			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
+			{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 			{ fieldname: "sales_order", label: "SO reference", fieldtype: "Link", options: "MM Sales Order" },
 			{ fieldname: "po_number", label: "PO number (= SO)", fieldtype: "Data", readOnly: true },
 			{ fieldname: "color", label: "Color", fieldtype: "Data", reqd: true },
-			{ fieldname: "qty_kg", label: "Qty (KG)", fieldtype: "Float", reqd: true },
-			{ fieldname: "rate", label: "Rate", fieldtype: "Currency", reqd: true },
+			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
+			{ fieldname: "qty_kg", label: "Qty (KG)", fieldtype: "Float" },
+			{ fieldname: "qty_box", label: "Qty (Box)", fieldtype: "Float" },
+			{ fieldname: "rate", label: "Rate", fieldtype: "Currency" },
 			{ fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
+			{ fieldname: "so_item", label: "SO Item Ref", fieldtype: "Data", readOnly: true },
 		],
 	},
 	{
@@ -417,8 +442,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "bb1",
 				title: "Challan",
-				description: "Direction of movement and counterparty.",
-				fieldnames: ["challan_number", "chalan_date", "given_received", "party", "note", "returnable_box"],
+				description: "Branch & location (auto-filled), direction of movement and counterparty.",
+				fieldnames: ["branch", "location", "challan_number", "chalan_date", "given_received", "party", "note"],
 			},
 		],
 		listColumns: [
@@ -429,6 +454,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 		searchField: "challan_number",
 		fields: [
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
+			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "challan_number", label: "Challan number", fieldtype: "Data", reqd: true },
 			{ fieldname: "chalan_date", label: "Chalan Date", fieldtype: "Date", reqd: true },
 			{
@@ -441,7 +468,6 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
 			{ fieldname: "note", label: "Note", fieldtype: "Small Text" },
-			{ fieldname: "returnable_box", label: "Returnable box", fieldtype: "Check" },
 		],
 		childTables: [
 			{
@@ -468,9 +494,9 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		formSections: [
 			{
 				id: "in1",
-				title: "When",
-				description: "Branch & location are taken from the posting employee.",
-				fieldnames: ["posting_date"],
+				title: "Where & when",
+				description: "Branch & location auto-fill from your profile — editable if you post for another site.",
+				fieldnames: ["branch", "location", "posting_date"],
 			},
 			{
 				id: "in2",
@@ -509,9 +535,10 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 					{ fieldname: "job_work", label: "Job Work", fieldtype: "Check" },
 					{ fieldname: "challan_number", label: "Challan No", fieldtype: "Data" },
 					{ fieldname: "customer_order", label: "Customer Order", fieldtype: "Link", options: "MM Sales Order" },
+					{ fieldname: "item_type", label: "Item Type", fieldtype: "Select", options: "Cut\nPatti\nJari\nKasab\nRoll" },
 					{ fieldname: "roll_name", label: "Roll", fieldtype: "Data" },
 					{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
-					{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
+					{ fieldname: "cut", label: "Cut", fieldtype: "Data", dependsOn: { field: "item_type", in: ["Patti"] } },
 					{ fieldname: "qty_box", label: "Qty (Box)", fieldtype: "Float" },
 					{ fieldname: "weight", label: "Weight (Kg)", fieldtype: "Float", reqd: true },
 				],
@@ -530,8 +557,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "cu1",
 				title: "Roll & shade",
-				description: "Pick the source roll in stock; net weight cut is deducted from it on submit.",
-				fieldnames: ["posting_date", "customer_order", "source_roll", "roll_no", "branch", "shade", "cut", "status", "job_work_flag"],
+				description: "Branch & location auto-fill from your profile. Pick the source roll in stock; net weight cut is deducted from it on submit.",
+				fieldnames: ["branch", "location", "posting_date", "customer_order", "source_roll", "roll_no", "shade", "cut", "status", "job_work_flag"],
 			},
 			{
 				id: "cu2",
@@ -553,6 +580,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "source_roll", label: "Source Roll (stock)", fieldtype: "Link", options: "MM Roll Inventory" },
 			{ fieldname: "roll_no", label: "Roll no", fieldtype: "Data", reqd: true },
 			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
+			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "shade", label: "Shade", fieldtype: "Data" },
 			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
 			{
