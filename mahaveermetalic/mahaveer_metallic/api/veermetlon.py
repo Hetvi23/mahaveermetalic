@@ -72,6 +72,20 @@ def _fetch_vm_challan(challan_no: str) -> dict:
 	return doc
 
 
+def _has_local_delivery_challan() -> bool:
+	"""True when Veermetlon's Delivery Challan doctype lives on THIS site, i.e. the
+	veermetlon app is installed here — then we read it from the DB directly and skip
+	the HTTP API, API keys and guest access entirely."""
+	return bool(frappe.db.exists("DocType", "Delivery Challan"))
+
+
+def _local_challan(challan_no: str) -> dict:
+	name = frappe.db.get_value("Delivery Challan", {"challan_no": challan_no}, "name")
+	if not name:
+		frappe.throw(_("Challan {0} not found.").format(challan_no))
+	return frappe.get_doc("Delivery Challan", name).as_dict()
+
+
 def _matching_orders(colors):
 	"""Open MM Sales Orders (any customer) whose line colour matches the challan."""
 	colors = [c for c in {(c or "").strip() for c in colors} if c]
@@ -117,7 +131,8 @@ def fetch_challan(challan_no: str):
 	challan_no = (challan_no or "").strip()
 	if not challan_no:
 		frappe.throw(_("Enter a challan number."))
-	doc = _fetch_vm_challan(challan_no)
+	# Same-site Veermetlon → read from the DB; otherwise use the remote HTTP API.
+	doc = _local_challan(challan_no) if _has_local_delivery_challan() else _fetch_vm_challan(challan_no)
 	items = _normalize_items(doc)
 	matching = _matching_orders([i["color"] for i in items])
 	return {
@@ -133,5 +148,7 @@ def fetch_challan(challan_no: str):
 @frappe.whitelist()
 def test_connection():
 	"""Quick health-check used from the settings screen."""
+	if _has_local_delivery_challan():
+		return {"ok": True, "mode": "local", "delivery_challans": frappe.db.count("Delivery Challan")}
 	data = _vm_get("/api/method/frappe.ping")
-	return {"ok": True, "response": data}
+	return {"ok": True, "mode": "remote", "response": data}
