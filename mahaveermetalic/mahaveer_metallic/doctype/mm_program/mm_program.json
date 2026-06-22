@@ -1,0 +1,206 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2026-06-21 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "branch",
+    "location",
+    "program_date",
+    "customer_order",
+    "source_cutting",
+    "roll_no",
+    "shade",
+    "cut",
+    "machine_no",
+    "shift",
+    "status",
+    "is_running",
+    "closed",
+    "released",
+    "job_work_flag",
+    "production",
+    "section_qty",
+    "total_batches",
+    "completed_batches",
+    "patti_qty",
+    "net_weight"
+  ],
+  "fields": [
+    {
+      "fieldname": "program_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Program Date",
+      "reqd": 1,
+      "default": "Today"
+    },
+    {
+      "fieldname": "customer_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Customer Order",
+      "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "source_cutting",
+      "fieldtype": "Link",
+      "label": "Source Cutting (patty)",
+      "options": "MM Cutting",
+      "description": "The finished cutting (patty) sent into this program."
+    },
+    {
+      "fieldname": "roll_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Patty / Roll No"
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "label": "Location",
+      "options": "MM Location Master"
+    },
+    {
+      "fieldname": "shade",
+      "fieldtype": "Data",
+      "label": "Shade"
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut"
+    },
+    {
+      "fieldname": "machine_no",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Machine No",
+      "options": "MM Machine"
+    },
+    {
+      "fieldname": "shift",
+      "fieldtype": "Select",
+      "label": "Shift",
+      "options": "\nDay\nNight"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Status",
+      "options": "Open\nRunning\nPartially Done\nCompleted",
+      "default": "Running",
+      "reqd": 1,
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "Open = waiting/reverted, Running = on machine, Partially Done = some batches finished, Completed = all batches done."
+    },
+    {
+      "fieldname": "is_running",
+      "fieldtype": "Check",
+      "label": "Running",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "Active on a machine (distinguishes Running from Open when no batch is yet completed)."
+    },
+    {
+      "fieldname": "closed",
+      "fieldtype": "Check",
+      "label": "Closed",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "Closed (with audit trail) — the program is locked from further batch changes."
+    },
+    {
+      "fieldname": "released",
+      "fieldtype": "Check",
+      "label": "Freed from Machine",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "A completed program manually freed off the machine — its slot is open for a new program."
+    },
+    {
+      "fieldname": "job_work_flag",
+      "fieldtype": "Check",
+      "label": "Job Work"
+    },
+    {
+      "fieldname": "production",
+      "fieldtype": "Link",
+      "label": "Production",
+      "options": "MM Production",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "The MM Production this program (threads) was wound into."
+    },
+    {
+      "fieldname": "section_qty",
+      "fieldtype": "Section Break",
+      "label": "Quantity"
+    },
+    {
+      "fieldname": "total_batches",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Total Batches",
+      "description": "Number of batches (one patty = one batch)."
+    },
+    {
+      "fieldname": "completed_batches",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Completed Batches",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "patti_qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "No of Patty",
+      "precision": 3,
+      "reqd": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "net_weight",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Weight (Kg)",
+      "precision": 3,
+      "reqd": 1,
+      "default": "0"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "is_submittable": 1,
+  "track_changes": 1,
+  "links": [],
+  "modified": "2026-06-22 09:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Program",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Production", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

@@ -164,10 +164,13 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   }
   .mm-app-content {
     margin: 0; margin-left: 232px; max-width: none;
+    /* width:auto (not 100%) so the fixed 232px rail offset shrinks the content box
+       instead of pushing its right edge off-screen (which clipped wide screens) */
+    width: auto;
     padding: 1.4rem 1.6rem 2.4rem;
   }
   .mm-app-content > .mm-page { max-width: 860px; margin-left: auto; margin-right: auto; }
-  .mm-app-content-wide { padding-left: 1.6rem; padding-right: 1.6rem; }
+  .mm-app-content-wide { max-width: 1640px; padding-left: 2rem; padding-right: 2rem; }
 }
 
 /* ── App shell (legacy, still used by Login) ───────────── */
@@ -1260,3 +1263,106 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   /* keep the composer above the bottom tab bar */
   .mm-chat-footer { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* ════════════════════════════════════════════════════════
+   Pipeline screens — Cutting & Program (worklist + list + modal)
+   ════════════════════════════════════════════════════════ */
+
+/* View toggle (Worklist / List) */
+.mm-seg { display: inline-flex; background: var(--mm-bg); border: 1px solid var(--mm-border); border-radius: 99px; padding: 3px; gap: 2px; }
+.mm-seg-btn { padding: 0.4rem 0.95rem; border: 0; background: transparent; border-radius: 99px; font-size: 0.82rem; font-weight: 650; color: var(--mm-text-sec); cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem; }
+.mm-seg-btn-active { background: #fff; color: var(--mm-text); box-shadow: var(--mm-shadow); }
+
+/* Status / state chips */
+.mm-state { display: inline-block; padding: 0.18rem 0.6rem; border-radius: 99px; font-size: 0.72rem; font-weight: 750; white-space: nowrap; }
+.mm-state-cut, .mm-state-completed { background: var(--mm-green-bg); color: var(--mm-green); }
+.mm-state-incutting, .mm-state-running { background: var(--mm-blue-bg); color: var(--mm-blue); }
+.mm-state-ininventory, .mm-state-open { background: var(--mm-bg); color: var(--mm-text-sec); border: 1px solid var(--mm-border); }
+.mm-state-partiallydone { background: var(--mm-accent-bg); color: #b45309; }
+
+/* Centered modal */
+.mm-modal-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: grid; place-items: center; z-index: 60; padding: 1rem; }
+.mm-modal { background: #fff; border-radius: var(--mm-radius-lg); box-shadow: var(--mm-shadow-lg); width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+.mm-modal-wide { width: min(960px, 100%); }
+.mm-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--mm-border); }
+.mm-modal-title { font-weight: 800; font-size: 1.05rem; }
+.mm-modal-body { padding: 1.1rem 1.25rem; overflow: auto; }
+.mm-modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; padding: 0.9rem 1.25rem; border-top: 1px solid var(--mm-border); }
+
+/* Picker rows inside a modal */
+.mm-pick-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; padding: 0.55rem 0.6rem; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); margin-bottom: 0.4rem; cursor: pointer; }
+.mm-pick-row:hover { border-color: var(--mm-border-dark); }
+.mm-pick-row-active { border-color: var(--mm-primary); background: var(--mm-primary-soft); }
+
+/* Machine grid (Program) */
+.mm-mach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; align-items: start; }
+.mm-mach { border: 1px solid var(--mm-border); border-radius: var(--mm-radius); background: var(--mm-card); overflow: hidden; }
+.mm-mach-closed { opacity: 0.62; }
+.mm-mach-head { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.8rem; background: var(--mm-bg); border-bottom: 1px solid var(--mm-border); }
+.mm-mach-name { font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem; }
+.mm-mach-body { padding: 0.6rem 0.7rem; display: flex; flex-direction: column; gap: 0.5rem; min-height: 64px; }
+.mm-mach-shift { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mm-text-sec); margin-top: 0.2rem; }
+.mm-prog-card { border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); padding: 0.5rem 0.6rem; background: #fff; }
+.mm-prog-card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.3rem; }
+.mm-prog-card-name { font-weight: 700; font-size: 0.85rem; }
+.mm-prog-card-meta { font-size: 0.74rem; color: var(--mm-text-sec); }
+.mm-prog-actions { display: flex; gap: 0.3rem; margin-top: 0.45rem; flex-wrap: wrap; }
+.mm-mach-add { width: 100%; border: 1.5px dashed var(--mm-border-dark); background: transparent; color: var(--mm-text-sec); border-radius: var(--mm-radius); padding: 0.7rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
+.mm-mach-add:hover { border-color: var(--mm-primary); color: var(--mm-primary); }
+
+/* Small action button used inside cards */
+.mm-mini { padding: 0.28rem 0.6rem; border-radius: 99px; border: 1px solid var(--mm-border); background: #fff; font-size: 0.74rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; color: var(--mm-text-sec); }
+.mm-mini:hover { border-color: var(--mm-border-dark); }
+.mm-mini-ok { color: var(--mm-green); border-color: var(--mm-green-bg); }
+.mm-mini-warn { color: #b45309; border-color: var(--mm-accent-bg); }
+.mm-mini-danger { color: var(--mm-danger); border-color: var(--mm-danger-bg); }
+.mm-ws-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+.mm-ws-toolbar-right { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+
+/* ════════════════════════════════════════════════════════
+   Pipeline screens — full width + roomier (less compact)
+   ════════════════════════════════════════════════════════ */
+.mm-screen { width: 100%; }
+/* Give the worklist/table screens more breathing room than the dense default */
+.mm-screen .mm-card-pad { padding: 1.4rem 1.5rem; }
+.mm-screen .mm-table { font-size: 0.92rem; }
+.mm-screen .mm-table th { font-size: 0.72rem; padding: 0.7rem 0.9rem; }
+.mm-screen .mm-table td { padding: 0.8rem 0.9rem; }
+.mm-screen .mm-cut-grid { gap: 1.5rem; }
+.mm-screen .mm-panel-title { font-size: 1rem; }
+.mm-screen .mm-page-title { font-size: 1.5rem; }
+.mm-screen .mm-page-sub { font-size: 0.9rem; }
+.mm-screen .mm-cut-go { width: 40px; height: 40px; }
+
+/* Program matrix: machines = rows, program slots = columns */
+.mm-prog-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--mm-card); border-radius: var(--mm-radius); overflow: hidden; border: 1px solid var(--mm-border); }
+.mm-prog-table th, .mm-prog-table td { border-right: 1px solid var(--mm-border); border-bottom: 1px solid var(--mm-border); padding: 0.55rem; vertical-align: top; }
+.mm-prog-table th:last-child, .mm-prog-table td:last-child { border-right: 0; }
+.mm-prog-table tbody tr:last-child td { border-bottom: 0; }
+.mm-prog-table thead th { background: var(--mm-primary); color: #fff; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; text-align: left; white-space: nowrap; }
+.mm-prog-table thead th.mm-prog-addcol { width: 52px; text-align: center; }
+.mm-prog-col { min-width: 240px; }
+.mm-prog-mcell { width: 150px; background: var(--mm-bg); }
+.mm-prog-mname { font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
+.mm-prog-cell-empty { display: grid; place-items: center; min-height: 96px; }
+.mm-prog-addcol-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--mm-border); background: #fff; color: var(--mm-text-sec); cursor: pointer; display: grid; place-items: center; }
+.mm-prog-addcol-btn:hover { border-color: var(--mm-primary); color: var(--mm-primary); }
+.mm-prog-row-closed .mm-prog-mcell { color: var(--mm-text-sec); }
+.mm-prog-row-closed td:not(.mm-prog-mcell) { background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(148,163,184,0.06) 8px, rgba(148,163,184,0.06) 16px); }
+.mm-add-row { margin-top: 1rem; }
+
+/* Program list — source chips */
+.mm-state-inventory { background: var(--mm-bg); color: var(--mm-text-sec); border: 1px solid var(--mm-border); }
+.mm-state-program { background: var(--mm-blue-bg); color: var(--mm-blue); }
+
+/* disabled mini buttons + per-machine cut input */
+.mm-mini:disabled { opacity: 0.4; cursor: not-allowed; }
+.mm-mach-cut { margin: 0.45rem 0; width: 100%; max-width: 120px; font-weight: 700; }
+
+/* Cutting board — columns by Cut, cards = patty-batches */
+.mm-cutboard { display: flex; gap: 1rem; overflow-x: auto; align-items: flex-start; padding-bottom: 0.5rem; }
+.mm-cutcol { flex: 0 0 280px; background: var(--mm-card); border: 1px solid var(--mm-border); border-radius: var(--mm-radius); overflow: hidden; }
+.mm-cutcol-head { background: var(--mm-primary); color: #fff; padding: 0.55rem 0.85rem; font-weight: 800; font-size: 0.85rem; }
+.mm-cutcol-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.55rem; min-height: 60px; }
+/* Inline editable status select in the cutting list */
+.mm-status-select { font-weight: 750; border-radius: 99px; padding: 0.25rem 0.6rem; min-width: 130px; }

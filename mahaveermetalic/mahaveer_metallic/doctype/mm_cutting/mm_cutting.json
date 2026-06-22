@@ -16,9 +16,11 @@
     "cut",
     "status",
     "job_work_flag",
+    "program",
     "section_patti",
     "patti_entries",
     "section_totals",
+    "roll_qty",
     "total_patti_qty",
     "total_net_weight"
   ],
@@ -82,7 +84,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Status",
-      "options": "Draft\nIn Progress\nCompleted",
+      "options": "Draft\nOpen\nIn Progress\nCompleted",
       "default": "Draft",
       "reqd": 1
     },
@@ -90,6 +92,15 @@
       "fieldname": "job_work_flag",
       "fieldtype": "Check",
       "label": "Job Work"
+    },
+    {
+      "fieldname": "program",
+      "fieldtype": "Link",
+      "label": "Program",
+      "options": "MM Program",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "The MM Program this finished cutting (patty) was sent into."
     },
     {
       "fieldname": "section_patti",
@@ -109,6 +120,13 @@
       "label": "Totals"
     },
     {
+      "fieldname": "roll_qty",
+      "fieldtype": "Int",
+      "label": "Roll Qty",
+      "read_only": 1,
+      "description": "Number of inward roll entries assigned into this cutting."
+    },
+    {
       "fieldname": "total_patti_qty",
       "fieldtype": "Float",
       "label": "Total Patti Qty",
@@ -126,7 +144,7 @@
   "index_web_pages_for_search": 1,
   "is_submittable": 1,
   "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
+  "modified": "2026-06-22 10:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Cutting",

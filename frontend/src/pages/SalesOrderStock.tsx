@@ -59,7 +59,7 @@ export default function SalesOrderStock() {
 						<input className="mm-input" value={color} onChange={(e) => setColor(e.target.value)} />
 					</label>
 					<label className="mm-field">
-						<span className="mm-field-label">Cut</span>
+						<span className="mm-field-label">Size</span>
 						<input className="mm-input" value={cut} onChange={(e) => setCut(e.target.value)} />
 					</label>
 					<label className="mm-field mm-span-2">

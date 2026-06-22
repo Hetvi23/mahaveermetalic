@@ -1,0 +1,70 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:machine_no",
+  "creation": "2026-06-21 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "machine_no",
+    "machine_name",
+    "cut",
+    "branch",
+    "closed"
+  ],
+  "fields": [
+    {
+      "fieldname": "machine_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Machine No",
+      "reqd": 1,
+      "unique": 1,
+      "description": "Serial number of the machine (1, 2, 3 …)."
+    },
+    {
+      "fieldname": "machine_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Machine Name"
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut",
+      "description": "Default cut for this machine — every program run on it inherits this cut. Set once, change only when needed."
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "closed",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Closed",
+      "description": "A closed machine cannot take new programs; its programs are returned to the list until it is reopened."
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-06-22 10:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Machine",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "report": 1, "share": 1},
+    {"role": "MM Production", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "machine_no",
+  "sort_order": "ASC",
+  "states": []
+}

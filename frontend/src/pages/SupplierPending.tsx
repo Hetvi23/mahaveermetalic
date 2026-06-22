@@ -80,7 +80,7 @@ export default function SupplierPending() {
                   <tr>
                     <th>Supplier</th>
                     <th>Color</th>
-                    <th>Cut</th>
+                    <th>Size</th>
                     <th className="mm-num">Ordered</th>
                     <th className="mm-num">Received</th>
                     <th className="mm-num">Pending</th>

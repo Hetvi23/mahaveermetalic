@@ -41,7 +41,7 @@ const F: Record<string, FieldSchema> = {
   transaction_date: { fieldname: "transaction_date", label: "Order date", fieldtype: "Date", reqd: true },
   delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   party: { fieldname: "party", label: "Company / Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
-  cut: { fieldname: "cut", label: "Cut", fieldtype: "Data" },
+  cut: { fieldname: "cut", label: "Size", fieldtype: "Data" },
   item_delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float" },
   qty_box: { fieldname: "qty_box", label: "Box", fieldtype: "Float" },
@@ -302,7 +302,7 @@ export default function OrderWorkspace() {
                 <thead>
                   <tr>
                     <th>Color</th>
-                    <th>Cut</th>
+                    <th>Size</th>
                     <th>Delivery</th>
                     <th className="mm-num">Wt</th>
                     <th className="mm-num">Box</th>

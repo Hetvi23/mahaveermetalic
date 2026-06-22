@@ -63,6 +63,7 @@ const SECTIONS: Section[] = [
     items: [
       { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
       { label: "Cutting", icon: Scissors, to: "/cutting" },
+      { label: "Program", icon: Monitor, to: "/program" },
       { label: "Bobbin In / Out", icon: Disc3, to: "/bobbin-tracking" },
       { label: "Roll Inventory", icon: ScrollText, to: "/roll-inventory" },
     ],
@@ -92,7 +93,6 @@ const SECTIONS: Section[] = [
     key: "soon",
     label: "Coming soon",
     items: [
-      { label: "Program", icon: Monitor },
       { label: "Production", icon: Factory },
       { label: "Patties", icon: Package },
       { label: "Sales", icon: Rocket },

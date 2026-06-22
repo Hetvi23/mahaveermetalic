@@ -34,6 +34,19 @@ class MMCutting(Document):
 
 	def on_cancel(self):
 		self._consume_source_roll(sign=1)
+		self._release_inward_entries()
+
+	def _release_inward_entries(self):
+		"""Return any inward entries assigned via the cutting-assignment flow back to
+		stock so they reappear on the left 'In Stock' list."""
+		assigned = frappe.get_all("MM Inward Item", filters={"cutting": self.name}, pluck="name")
+		for name in assigned:
+			frappe.db.set_value(
+				"MM Inward Item",
+				name,
+				{"cut_status": "In Stock", "cutting": None},
+				update_modified=False,
+			)
 
 	def _consume_source_roll(self, sign: int):
 		"""Reduce (on submit) / restore (on cancel) source roll stock by total net weight.

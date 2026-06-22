@@ -1,0 +1,47 @@
+{
+  "actions": [],
+  "creation": "2026-06-21 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_overrides",
+    "admin_override_pin",
+    "production_tolerance_percent"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_overrides",
+      "fieldtype": "Section Break",
+      "label": "Admin Overrides"
+    },
+    {
+      "fieldname": "admin_override_pin",
+      "fieldtype": "Password",
+      "label": "Admin Override PIN",
+      "description": "PIN required to override production tolerance (>4% variance) and other admin gates."
+    },
+    {
+      "fieldname": "production_tolerance_percent",
+      "fieldtype": "Float",
+      "label": "Production Tolerance (%)",
+      "precision": 2,
+      "default": "4",
+      "description": "Production net weight may differ from the input thread weight by up to this %. Beyond it, the Admin Override PIN is required."
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "issingle": 1,
+  "links": [],
+  "modified": "2026-06-21 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "print": 1, "report": 1, "share": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

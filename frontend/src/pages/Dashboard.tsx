@@ -241,7 +241,7 @@ function HomeView() {
             <div className="mm-open-row mm-low-row mm-open-head">
               <span>Location</span>
               <span>Color</span>
-              <span>Cut</span>
+              <span>Size</span>
               <span className="mm-open-prog">Available / Reorder</span>
             </div>
             {s.low_stock_rolls.map((r) => (

@@ -60,7 +60,7 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
               <thead>
                 <tr>
                   <th>Color</th>
-                  <th>Cut</th>
+                  <th>Size</th>
                   <th className="mm-num">Required</th>
                   <th className="mm-num">Available</th>
                   <th className="mm-num">Short</th>

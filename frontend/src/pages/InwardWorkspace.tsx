@@ -16,6 +16,7 @@ type MatchOrder = {
 };
 type FetchResult = {
   challan_no: string;
+  coating?: string;
   party_name?: string;
   dated?: string;
   items: ChallanItem[];
@@ -70,7 +71,8 @@ export default function InwardWorkspace() {
         })),
       );
       setOrders(m.matching_orders || []);
-      setLot(m.challan_no || challanNo.trim());
+      // Lot id = the coating selected on the VM challan; fall back to the challan no.
+      setLot(m.coating || m.challan_no || challanNo.trim());
       setFetched(true);
       if ((m.items || []).length === 0) setError("Challan found but it has no rolls.");
     } catch (e) {
@@ -170,7 +172,7 @@ export default function InwardWorkspace() {
           </label>
           <label className="mm-field">
             <span className="mm-field-label">Lot number</span>
-            <input className="mm-input" value={lot} onChange={(e) => setLot(e.target.value)} placeholder="Auto from challan" />
+            <input className="mm-input" value={lot} onChange={(e) => setLot(e.target.value)} placeholder="Auto from challan coating" />
           </label>
         </div>
         {error && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{error}</p>}
@@ -191,7 +193,7 @@ export default function InwardWorkspace() {
                   <tr>
                     <th>Roll</th>
                     <th>Color</th>
-                    <th>Cut</th>
+                    <th>Size</th>
                     <th className="mm-num">Qty</th>
                     <th className="mm-num">Weight</th>
                     <th>Allocate to order</th>
@@ -250,7 +252,7 @@ export default function InwardWorkspace() {
                       <th>Order</th>
                       <th>Party</th>
                       <th>Color</th>
-                      <th>Cut</th>
+                      <th>Size</th>
                       <th className="mm-num">Req</th>
                     </tr>
                   </thead>

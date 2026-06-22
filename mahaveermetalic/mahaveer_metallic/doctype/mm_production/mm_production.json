@@ -1,0 +1,217 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2026-06-21 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "branch",
+    "location",
+    "posting_date",
+    "customer_order",
+    "source_program",
+    "roll_no",
+    "shade",
+    "machine_no",
+    "operator",
+    "shift",
+    "status",
+    "job_work_flag",
+    "section_bobbins",
+    "bobbins",
+    "box_qty",
+    "box_weight",
+    "section_weights",
+    "input_weight",
+    "gross_weight",
+    "bobbin_weight",
+    "net_weight",
+    "section_variance",
+    "variance_percent",
+    "pin_override"
+  ],
+  "fields": [
+    {
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Production Date",
+      "reqd": 1,
+      "default": "Today"
+    },
+    {
+      "fieldname": "customer_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Customer Order",
+      "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "source_program",
+      "fieldtype": "Link",
+      "label": "Source Program",
+      "options": "MM Program",
+      "description": "The program (threads on machine) this production was wound from."
+    },
+    {
+      "fieldname": "roll_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Roll / Patty No"
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "label": "Location",
+      "options": "MM Location Master"
+    },
+    {
+      "fieldname": "shade",
+      "fieldtype": "Data",
+      "label": "Shade"
+    },
+    {
+      "fieldname": "machine_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Machine No"
+    },
+    {
+      "fieldname": "operator",
+      "fieldtype": "Link",
+      "label": "Operator",
+      "options": "MM Employee Master"
+    },
+    {
+      "fieldname": "shift",
+      "fieldtype": "Select",
+      "label": "Shift",
+      "options": "\nDay\nNight"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Status",
+      "options": "Draft\nIn Progress\nCompleted",
+      "default": "Completed",
+      "reqd": 1
+    },
+    {
+      "fieldname": "job_work_flag",
+      "fieldtype": "Check",
+      "label": "Job Work"
+    },
+    {
+      "fieldname": "section_bobbins",
+      "fieldtype": "Section Break",
+      "label": "Box & Bobbin Details"
+    },
+    {
+      "fieldname": "bobbins",
+      "fieldtype": "Table",
+      "label": "Bobbins",
+      "options": "MM Production Bobbin"
+    },
+    {
+      "fieldname": "box_qty",
+      "fieldtype": "Float",
+      "label": "Box Qty",
+      "precision": 3,
+      "default": "0"
+    },
+    {
+      "fieldname": "box_weight",
+      "fieldtype": "Float",
+      "label": "Box Weight (Kg)",
+      "precision": 3,
+      "default": "0",
+      "description": "Total tare weight of the boxes."
+    },
+    {
+      "fieldname": "section_weights",
+      "fieldtype": "Section Break",
+      "label": "Weight Calculation"
+    },
+    {
+      "fieldname": "input_weight",
+      "fieldtype": "Float",
+      "label": "Input Weight (Kg)",
+      "precision": 3,
+      "read_only": 1,
+      "description": "Thread/patty weight sent in from Program — the baseline for variance."
+    },
+    {
+      "fieldname": "gross_weight",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Gross Weight (Kg)",
+      "precision": 3,
+      "reqd": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "bobbin_weight",
+      "fieldtype": "Float",
+      "label": "Bobbin Weight (Kg)",
+      "precision": 3,
+      "read_only": 1,
+      "description": "Auto: sum of the bobbin rows."
+    },
+    {
+      "fieldname": "net_weight",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Net Weight (Kg)",
+      "precision": 3,
+      "read_only": 1,
+      "description": "Auto: Gross − Bobbin − Box."
+    },
+    {
+      "fieldname": "section_variance",
+      "fieldtype": "Section Break",
+      "label": "Variance"
+    },
+    {
+      "fieldname": "variance_percent",
+      "fieldtype": "Float",
+      "label": "Variance (%)",
+      "precision": 2,
+      "read_only": 1,
+      "description": "Auto: (Net − Input) ÷ Input × 100."
+    },
+    {
+      "fieldname": "pin_override",
+      "fieldtype": "Check",
+      "label": "Tolerance Override (PIN)",
+      "read_only": 1,
+      "description": "Set when an Admin PIN was used to accept a variance beyond tolerance."
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "is_submittable": 1,
+  "links": [],
+  "modified": "2026-06-21 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Production",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Production", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

@@ -7,6 +7,7 @@ import DocListPage from "./pages/DocListPage";
 import SalesOrderStock from "./pages/SalesOrderStock";
 import SupplierPending from "./pages/SupplierPending";
 import CuttingWorklist from "./pages/CuttingWorklist";
+import ProgramScreen from "./pages/ProgramScreen";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
 import InwardWorkspace from "./pages/InwardWorkspace";
@@ -53,6 +54,7 @@ function AuthedShell() {
 const WIDE_PATHS = [
   ...DOC_REGISTRY.filter((m) => m.navGroup === "masters").map((m) => m.routeBase),
   "/cutting",
+  "/program",
   "/sales-order",
   "/inward",
 ];
@@ -75,6 +77,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             {/* Cutting + Orders use custom full-width screens instead of the generic list. */}
             <Route path="/cutting" element={<CuttingWorklist />} />
+            <Route path="/program" element={<ProgramScreen />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
             <Route path="/inward" element={<InwardWorkspace />} />
             {DOC_REGISTRY.filter((meta) => !["/cutting", "/sales-order", "/inward"].includes(meta.routeBase)).map((meta) => (

@@ -1,0 +1,60 @@
+{
+  "actions": [],
+  "creation": "2026-06-21 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "bobbin",
+    "quality",
+    "qty",
+    "weight"
+  ],
+  "fields": [
+    {
+      "fieldname": "bobbin",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Bobbin",
+      "options": "MM Bobbin Master",
+      "reqd": 1
+    },
+    {
+      "fieldname": "quality",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Quality",
+      "read_only": 1
+    },
+    {
+      "fieldname": "qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Bobbin Qty",
+      "precision": 3,
+      "reqd": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "weight",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Bobbin Weight (Kg)",
+      "precision": 3,
+      "default": "0",
+      "description": "Total tare weight of these bobbins. Auto = qty × bobbin master weight when left blank."
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-06-21 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Production Bobbin",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

@@ -270,7 +270,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		routeBase: "/roll-inventory",
 		doctype: "MM Roll Inventory",
 		title: "Roll inventory",
-		listTagline: "Balances by location, color, cut, and lot.",
+		listTagline: "Balances by location, color, size, and lot.",
 		navGroup: "operations",
 		formSections: [
 			{
@@ -383,7 +383,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 					{ fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
 					{ fieldname: "qty_weight", label: "Qty (weight)", fieldtype: "Float" },
 					{ fieldname: "qty_box", label: "Qty (box)", fieldtype: "Float" },
-					{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
+					{ fieldname: "cut", label: "Size", fieldtype: "Data" },
 					{ fieldname: "sale_rate", label: "Sale rate", fieldtype: "Currency", reqd: true },
 					{ fieldname: "purchase_party", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 					{ fieldname: "purchase_rate", label: "Purchase rate", fieldtype: "Currency" },
@@ -423,7 +423,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "sales_order", label: "SO reference", fieldtype: "Link", options: "MM Sales Order" },
 			{ fieldname: "po_number", label: "PO number (= SO)", fieldtype: "Data", readOnly: true },
 			{ fieldname: "color", label: "Color", fieldtype: "Data", reqd: true },
-			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
+			{ fieldname: "cut", label: "Size", fieldtype: "Data" },
 			{ fieldname: "qty_kg", label: "Qty (KG)", fieldtype: "Float" },
 			{ fieldname: "qty_box", label: "Qty (Box)", fieldtype: "Float" },
 			{ fieldname: "rate", label: "Rate", fieldtype: "Currency" },
@@ -538,7 +538,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 					{ fieldname: "item_type", label: "Item Type", fieldtype: "Select", options: "Cut\nPatti\nJari\nKasab\nRoll" },
 					{ fieldname: "roll_name", label: "Roll", fieldtype: "Data" },
 					{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
-					{ fieldname: "cut", label: "Cut", fieldtype: "Data", dependsOn: { field: "item_type", in: ["Patti"] } },
+					{ fieldname: "cut", label: "Size", fieldtype: "Data", dependsOn: { field: "item_type", in: ["Patti"] } },
 					{ fieldname: "qty_box", label: "Qty (Box)", fieldtype: "Float" },
 					{ fieldname: "weight", label: "Weight (Kg)", fieldtype: "Float", reqd: true },
 				],
@@ -582,7 +582,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "shade", label: "Shade", fieldtype: "Data" },
-			{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
+			{ fieldname: "cut", label: "Size", fieldtype: "Data" },
 			{
 				fieldname: "status",
 				label: "Status",
@@ -603,7 +603,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				reqd: true,
 				columns: [
 					{ fieldname: "shade", label: "Shade", fieldtype: "Data" },
-					{ fieldname: "cut", label: "Cut", fieldtype: "Data" },
+					{ fieldname: "cut", label: "Size", fieldtype: "Data" },
 					{ fieldname: "patti_qty", label: "Patti Qty", fieldtype: "Float", reqd: true },
 					{ fieldname: "net_weight", label: "Net Weight (Kg)", fieldtype: "Float", reqd: true },
 					{ fieldname: "weight_per_patti", label: "Wt / Patti", fieldtype: "Float", readOnly: true },

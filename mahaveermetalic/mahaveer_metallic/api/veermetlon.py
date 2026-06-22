@@ -137,6 +137,7 @@ def fetch_challan(challan_no: str):
 	matching = _matching_orders([i["color"] for i in items])
 	return {
 		"challan_no": doc.get("challan_no") or challan_no,
+		"coating": doc.get("coating"),  # lot id in MM = the coating selected on the VM challan
 		"party_name": doc.get("party_name"),
 		"party_address": doc.get("party_address"),
 		"dated": doc.get("dated"),

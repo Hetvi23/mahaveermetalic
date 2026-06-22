@@ -177,3 +177,31 @@ def recalculate_order_fulfilment(order: str):
 		},
 		update_modified=False,
 	)
+
+
+def recalculate_production_completed(order: str):
+	"""Recompute production_completed_percent on a Sales Order from the net weight of
+	all submitted MM Production rows that reference it (produced net ÷ ordered weight).
+	Also auto-locks the order at ≥5% (SRS). Written with set_value so the SO's own
+	lock/validate rules are not re-triggered."""
+	if not order:
+		return
+	produced = frappe.db.sql(
+		"""
+		select coalesce(sum(net_weight), 0)
+		from `tabMM Production`
+		where customer_order = %s and docstatus = 1
+		""",
+		(order,),
+	)[0][0] or 0
+	ordered = frappe.db.get_value("MM Sales Order", order, "ordered_weight") or 0
+	percent = round(float(produced) / float(ordered) * 100, 2) if ordered else 0.0
+	frappe.db.set_value(
+		"MM Sales Order",
+		order,
+		{
+			"production_completed_percent": percent,
+			"order_locked": 1 if percent >= 5 else 0,
+		},
+		update_modified=False,
+	)
