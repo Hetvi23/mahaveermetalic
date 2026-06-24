@@ -85,10 +85,11 @@ export default function InwardWorkspace() {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
 
-  const ordersForColor = (color: string) => {
-    const c = (color || "").trim().toLowerCase();
-    return orders.filter((o) => (o.color_name || "").trim().toLowerCase() === c);
-  };
+  // Allocating a roll to an order is what gives it a colour — the SO is the source of truth.
+  function allocate(i: number, sales_order: string) {
+    const ord = orders.find((o) => o.sales_order === sales_order);
+    setRow(i, { customer_order: sales_order, color: ord?.color_name || "" });
+  }
 
   const totals = useMemo(
     () => ({
@@ -103,7 +104,6 @@ export default function InwardWorkspace() {
     setFlash(null);
     if (rows.length === 0) return setError("Nothing to post — fetch a challan first.");
     for (const r of rows) {
-      if (!r.color.trim()) return setError("Every roll needs a colour.");
       if (!(Number(r.weight) > 0) && !(Number(r.qty) > 0)) return setError(`Roll ${r.roll || ""} needs a weight or qty.`);
     }
     const payload = {
@@ -200,32 +200,29 @@ export default function InwardWorkspace() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => {
-                    const opts = ordersForColor(r.color);
-                    return (
-                      <tr key={i}>
-                        <td>{r.roll || "—"}</td>
-                        <td>{r.color || "—"}</td>
-                        <td>{r.cut || "—"}</td>
-                        <td className="mm-num">
-                          <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />
-                        </td>
-                        <td className="mm-num">
-                          <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.weight} onChange={(e) => setRow(i, { weight: e.target.value === "" ? "" : Number(e.target.value) })} />
-                        </td>
-                        <td>
-                          <select className="mm-input mm-input-compact" value={r.customer_order} onChange={(e) => setRow(i, { customer_order: e.target.value })}>
-                            <option value="">— none —</option>
-                            {opts.map((o) => (
-                              <option key={o.sales_order} value={o.sales_order}>
-                                {o.sales_order} · {o.party}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {rows.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.roll || "—"}</td>
+                      <td>{r.color || "—"}</td>
+                      <td>{r.cut || "—"}</td>
+                      <td className="mm-num">
+                        <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />
+                      </td>
+                      <td className="mm-num">
+                        <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.weight} onChange={(e) => setRow(i, { weight: e.target.value === "" ? "" : Number(e.target.value) })} />
+                      </td>
+                      <td>
+                        <select className="mm-input mm-input-compact" value={r.customer_order} onChange={(e) => allocate(i, e.target.value)}>
+                          <option value="">— none —</option>
+                          {orders.map((o, oi) => (
+                            <option key={`${o.sales_order}-${oi}`} value={o.sales_order}>
+                              {o.sales_order} · {o.party} · {o.color_name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -239,11 +236,11 @@ export default function InwardWorkspace() {
           {/* Matching orders reference */}
           <section className="mm-card mm-card-pad">
             <div className="mm-iw-sec-head">
-              <h2 className="mm-panel-title">Open orders for these colours</h2>
+              <h2 className="mm-panel-title">Open orders for this coating</h2>
               <span className="mm-pill mm-pill-muted">{orders.length}</span>
             </div>
             {orders.length === 0 ? (
-              <p className="mm-empty">No open orders match these colours.</p>
+              <p className="mm-empty">No open orders match this coating.</p>
             ) : (
               <div className="mm-table-scroll">
                 <table className="mm-table mm-table-dense">

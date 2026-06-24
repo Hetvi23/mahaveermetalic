@@ -9,6 +9,7 @@ Sales Orders (across customers) whose colour matches, for allocation.
 """
 
 import json
+import re
 
 import frappe
 import requests
@@ -86,14 +87,23 @@ def _local_challan(challan_no: str) -> dict:
 	return frappe.get_doc("Delivery Challan", name).as_dict()
 
 
-def _matching_orders(colors):
-	"""Open MM Sales Orders (any customer) whose line colour matches the challan."""
-	colors = [c for c in {(c or "").strip() for c in colors} if c]
-	if not colors:
+def _matching_orders(coating):
+	"""Open MM Sales Orders whose colour matches the challan's coating.
+
+	VM challans don't carry the customer colour — only the coating (which is the
+	colour/quality, e.g. "K BCH BSM"). So we filter open orders by the coating; the
+	chosen SO is then the source of truth for the roll's colour on Inward.
+	"""
+	coating = (coating or "").strip()
+	if not coating:
 		return []
-	placeholders = ", ".join(["%s"] * len(colors))
+	# Coating often carries a trailing "(date)" — match on the colour part only.
+	base = re.sub(r"\s*\([^)]*\)\s*$", "", coating).strip()
+	if not base:
+		return []
+	like = f"%{base}%"
 	return frappe.db.sql(
-		f"""
+		"""
 		select so.name as sales_order, so.party, so.delivery_date,
 			soi.color_name, soi.cut, soi.qty_weight,
 			so.required_weight
@@ -101,11 +111,11 @@ def _matching_orders(colors):
 		join `tabMM Sales Order Item` soi on soi.parent = so.name
 		where so.docstatus < 2
 			and ifnull(so.production_completed_percent, 0) < 100
-			and soi.color_name in ({placeholders})
+			and (soi.color_name like %s or %s like concat('%%', soi.color_name, '%%'))
 		order by so.delivery_date asc, so.modified desc
 		limit 50
 		""",
-		tuple(colors),
+		(like, base),
 		as_dict=True,
 	)
 
@@ -116,7 +126,8 @@ def _normalize_items(doc: dict):
 		out.append(
 			{
 				"roll": it.get("roll_no"),
-				"color": it.get("film"),  # colour = the Film link value (per spec)
+				# VM carries no customer colour — it's filled from the allocated SO on Inward.
+				"color": "",
 				"cut": it.get("size"),
 				"qty": it.get("no_of_roll_bobbin") or 0,
 				"weight": it.get("net_wt") or 0,
@@ -134,7 +145,7 @@ def fetch_challan(challan_no: str):
 	# Same-site Veermetlon → read from the DB; otherwise use the remote HTTP API.
 	doc = _local_challan(challan_no) if _has_local_delivery_challan() else _fetch_vm_challan(challan_no)
 	items = _normalize_items(doc)
-	matching = _matching_orders([i["color"] for i in items])
+	matching = _matching_orders(doc.get("coating"))
 	return {
 		"challan_no": doc.get("challan_no") or challan_no,
 		"coating": doc.get("coating"),  # lot id in MM = the coating selected on the VM challan
