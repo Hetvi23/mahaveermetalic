@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useFrappeCreateDoc, useFrappePostCall } from "frappe-react-sdk";
+import { useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Download, PackageCheck, Pencil, Plus, SkipForward, X } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -60,8 +60,9 @@ export default function InwardWorkspace() {
   const { call: fetchCall, loading: fetching } = useFrappePostCall<{ message: FetchResult }>(
     "mahaveermetalic.mahaveer_metallic.api.veermetlon.fetch_challan",
   );
-  const { createDoc, loading: creating } = useFrappeCreateDoc();
-  const { call: submitDoc, loading: submitting } = useFrappePostCall("frappe.client.submit");
+  const { call: postInward, loading: posting } = useFrappePostCall<{ message: { name: string } }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.post_inward",
+  );
 
   const processing = qIndex >= 0; // stepping through the challan queue
   const isLast = qIndex >= queue.length - 1;
@@ -210,9 +211,8 @@ export default function InwardWorkspace() {
       })),
     };
     try {
-      const res = await createDoc("MM Inward", payload);
-      const name = (res as { name?: string }).name;
-      await submitDoc({ doc: { doctype: "MM Inward", name } });
+      const res = await postInward({ payload });
+      const name = res?.message?.name;
       if (processing) {
         // Queue mode: keep the rolls on screen and wait for the user to hit "Next".
         setPostedCount((c) => c + 1);
@@ -233,7 +233,7 @@ export default function InwardWorkspace() {
     }
   }
 
-  const busy = creating || submitting;
+  const busy = posting;
 
   return (
     <div className="mm-iw">

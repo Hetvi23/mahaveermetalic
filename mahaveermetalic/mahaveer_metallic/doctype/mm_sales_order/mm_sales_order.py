@@ -37,13 +37,11 @@ class MMSalesOrder(Document):
 				)
 
 	def _sync_purchase_orders(self):
-		"""One Purchase Order per order line that names a supplier. Idempotent: a PO is
-		matched back by its so_item ref, so re-saving the order updates the existing PO
-		instead of creating a duplicate. Same item + same supplier on a different order
-		stays a separate PO (the dashboard combines them per supplier+item)."""
+		"""One Purchase Order per order line (every item gets one; the supplier is
+		optional and can be filled later). Idempotent: a PO is matched back by its
+		so_item ref, so re-saving the order updates the existing PO instead of
+		creating a duplicate."""
 		for it in self.items:
-			if not it.purchase_party:
-				continue
 			existing = frappe.db.get_value("MM Purchase Order", {"so_item": it.name}, "name")
 			po = frappe.get_doc("MM Purchase Order", existing) if existing else frappe.new_doc("MM Purchase Order")
 			self._fill_po(po, it)

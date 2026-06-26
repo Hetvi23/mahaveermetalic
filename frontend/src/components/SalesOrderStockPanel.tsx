@@ -1,6 +1,4 @@
-import { useState } from "react";
-import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { Link } from "react-router-dom";
+import { useFrappeGetCall } from "frappe-react-sdk";
 
 type Line = {
   color_name: string;
@@ -13,35 +11,18 @@ type Line = {
 type Status = { sales_order: string; party: string; lines: Line[]; any_short: boolean };
 
 /**
- * SRS 5.1: live stock visibility per order line + one-click Purchase Order for any
- * shortfall. Shown on a saved Sales Order.
+ * SRS 5.1: live stock visibility per order line. Shown on a saved Sales Order.
+ * Purchase Orders are raised automatically per order line, so this panel is now
+ * read-only (no manual "create PO" action).
  */
 export default function SalesOrderStockPanel({ docname }: { docname: string }) {
-  const { data, isLoading, error, mutate } = useFrappeGetCall<{ message: Status }>(
+  const { data, isLoading, error } = useFrappeGetCall<{ message: Status }>(
     "mahaveermetalic.mahaveer_metallic.api.stock.get_so_stock_status",
     { sales_order: docname },
     `so-stock-${docname}`,
   );
-  const { call, loading } = useFrappePostCall<{ message: { created: string[] } }>(
-    "mahaveermetalic.mahaveer_metallic.api.stock.create_purchase_order_from_so",
-  );
-  const [created, setCreated] = useState<string[]>([]);
-  const [msg, setMsg] = useState<string | null>(null);
 
   const s = data?.message;
-
-  async function makePO() {
-    setMsg(null);
-    try {
-      const r = await call({ sales_order: docname });
-      const names = r?.message?.created ?? [];
-      setCreated(names);
-      setMsg(names.length ? `Created ${names.length} Purchase Order(s).` : "All lines have enough stock — no PO needed.");
-      void mutate();
-    } catch (e) {
-      setMsg((e as { message?: string })?.message || String(e));
-    }
-  }
 
   return (
     <section className="mm-panel mm-panel-child">
@@ -82,24 +63,11 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
 
           <div className="mm-so-stock-actions">
             {s.any_short ? (
-              <button type="button" className="mm-btn-primary" disabled={loading} onClick={() => void makePO()}>
-                {loading ? "Creating…" : "Create Purchase Order for shortfall"}
-              </button>
+              <span className="mm-pill mm-pill-pending">Short stock on some lines</span>
             ) : (
               <span className="mm-pill mm-pill-ok">Enough stock for all lines</span>
             )}
           </div>
-
-          {msg && <p className="mm-muted" style={{ marginTop: "0.5rem" }}>{msg}</p>}
-          {created.length > 0 && (
-            <p style={{ marginTop: "0.25rem" }}>
-              {created.map((n) => (
-                <Link key={n} className="mm-link mm-link-pill" to={`/purchase-order/${encodeURIComponent(n)}`} style={{ marginRight: 6 }}>
-                  {n}
-                </Link>
-              ))}
-            </p>
-          )}
         </>
       )}
     </section>

@@ -41,6 +41,7 @@ const F: Record<string, FieldSchema> = {
   transaction_date: { fieldname: "transaction_date", label: "Order date", fieldtype: "Date", reqd: true },
   delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   party: { fieldname: "party", label: "Company / Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
+  color_name: { fieldname: "color_name", label: "Color", fieldtype: "Link", options: "MM Item Master", reqd: true },
   cut: { fieldname: "cut", label: "Size", fieldtype: "Data" },
   item_delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float" },
@@ -82,12 +83,6 @@ export default function OrderWorkspace() {
   const [chip, setChip] = useState<Chip>("all");
   const [q, setQ] = useState("");
   const hydrated = useRef<string | null>(null);
-
-  // Colour suggestions (our "colours" live in Item Master) for the datalist.
-  const { data: colorOpts } = useFrappeGetDocList<{ name: string; item_name?: string }>("MM Item Master", {
-    fields: ["name", "item_name"],
-    limit: 500,
-  });
 
   const filters = useMemo(() => {
     const f: unknown[] = [];
@@ -179,14 +174,26 @@ export default function OrderWorkspace() {
     setFormError(null);
     setFlash(null);
     if (!header.party) return setFormError("Choose the company / party.");
-    if (items.length === 0) return setFormError("Add at least one item.");
+    // Fold in an item that was typed into the builder but not yet "Added", so it
+    // isn't silently dropped on save.
+    let effectiveItems = items;
+    if (draft.color_name.trim()) {
+      const hasWeight = !!draft.qty_weight && Number(draft.qty_weight) > 0;
+      const hasBox = !!draft.qty_box && Number(draft.qty_box) > 0;
+      if (!hasWeight && !hasBox) return setFormError("The item you're adding needs a weight or a box quantity.");
+      if (draft.sale_rate === "" || Number(draft.sale_rate) < 0) return setFormError("The item you're adding needs a sale rate.");
+      effectiveItems = [...items, draft];
+      setItems(effectiveItems);
+      setDraft(blankItem());
+    }
+    if (effectiveItems.length === 0) return setFormError("Add at least one item.");
     const payload: Record<string, unknown> = {
       doctype: "MM Sales Order",
       naming_series: "MM-SO-.YYYY.-",
       transaction_date: header.transaction_date,
       delivery_date: header.delivery_date || null,
       party: header.party,
-      items: items.map((it, idx) => ({
+      items: effectiveItems.map((it, idx) => ({
         ...(it.name ? { name: it.name } : {}),
         idx: idx + 1,
         color_name: it.color_name,
@@ -270,16 +277,8 @@ export default function OrderWorkspace() {
           {!ro && (
             <div className="mm-ow-builder">
               <div className="mm-ow-builder-title">Add item</div>
-              <datalist id="mm-color-opts">
-                {(colorOpts ?? []).map((c) => (
-                  <option key={c.name} value={c.item_name || c.name} />
-                ))}
-              </datalist>
               <div className="mm-form-grid">
-                <label className="mm-field">
-                  <span className="mm-field-label">Color *</span>
-                  <input className="mm-input" list="mm-color-opts" value={draft.color_name} onChange={(e) => setDraft((d) => ({ ...d, color_name: e.target.value }))} />
-                </label>
+                <FieldInput field={F.color_name} value={draft.color_name} onChange={(v) => setDraft((d) => ({ ...d, color_name: String(v ?? "") }))} />
                 <FieldInput field={F.cut} value={draft.cut} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />
                 <FieldInput field={F.item_delivery_date} value={draft.delivery_date} onChange={(v) => setDraft((d) => ({ ...d, delivery_date: String(v ?? "") }))} />
                 <FieldInput field={F.qty_weight} value={draft.qty_weight} onChange={(v) => setDraft((d) => ({ ...d, qty_weight: v as number }))} />
