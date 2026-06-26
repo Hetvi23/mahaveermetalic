@@ -120,14 +120,37 @@ def _matching_orders(coating):
 	)
 
 
-def _normalize_items(doc: dict):
+def _distinct(values):
+	seen, out = set(), []
+	for v in values:
+		v = (v or "").strip()
+		if v and v not in seen:
+			seen.add(v)
+			out.append(v)
+	return out
+
+
+def _so_colours(sales_order: str, local: bool):
+	"""Colour name(s) from the challan's linked VM Sales Order lines. VM challan rolls
+	carry no customer colour, but the challan names its VM Sales Order, whose items
+	hold the colour (`colour_name`). One colour → applied to every roll."""
+	if not sales_order:
+		return []
+	if local:
+		so = frappe.get_doc("VM Sales Order", sales_order)
+		return _distinct([getattr(it, "colour_name", "") for it in (so.items or [])])
+	data = _vm_get(f"/api/resource/VM Sales Order/{frappe.utils.quote(sales_order)}").get("data") or {}
+	return _distinct([it.get("colour_name") for it in (data.get("items") or [])])
+
+
+def _normalize_items(doc: dict, default_colour: str = ""):
 	out = []
 	for it in doc.get("items") or []:
 		out.append(
 			{
 				"roll": it.get("roll_no"),
-				# VM carries no customer colour — it's filled from the allocated SO on Inward.
-				"color": "",
+				# Colour comes from the challan's VM Sales Order (editable on Inward).
+				"color": default_colour,
 				"cut": it.get("size"),
 				"qty": it.get("no_of_roll_bobbin") or 0,
 				"weight": it.get("net_wt") or 0,
@@ -143,12 +166,18 @@ def fetch_challan(challan_no: str):
 	if not challan_no:
 		frappe.throw(_("Enter a challan number."))
 	# Same-site Veermetlon → read from the DB; otherwise use the remote HTTP API.
-	doc = _local_challan(challan_no) if _has_local_delivery_challan() else _fetch_vm_challan(challan_no)
-	items = _normalize_items(doc)
+	local = _has_local_delivery_challan()
+	doc = _local_challan(challan_no) if local else _fetch_vm_challan(challan_no)
+	# Colour comes from the challan's VM Sales Order; one colour → pre-fill every roll.
+	so_colours = _so_colours(doc.get("sales_order"), local)
+	default_colour = so_colours[0] if len(so_colours) == 1 else ""
+	items = _normalize_items(doc, default_colour)
 	matching = _matching_orders(doc.get("coating"))
 	return {
 		"challan_no": doc.get("challan_no") or challan_no,
 		"coating": doc.get("coating"),  # lot id in MM = the coating selected on the VM challan
+		"sales_order": doc.get("sales_order"),
+		"so_colours": so_colours,
 		"party_name": doc.get("party_name"),
 		"party_address": doc.get("party_address"),
 		"dated": doc.get("dated"),

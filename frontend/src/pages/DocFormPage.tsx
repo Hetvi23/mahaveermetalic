@@ -157,6 +157,8 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 	const [values, setValues] = useState<Record<string, unknown>>({});
 	const [children, setChildren] = useState<Record<string, ChildRow[]>>({});
 	const [formError, setFormError] = useState<string | null>(null);
+	// Records open read-only; the user clicks "Edit" to switch into edit mode.
+	const [editing, setEditing] = useState(false);
 	const hydrated = useRef<string | null>(null);
 
 	const docstatus = (data?.docstatus as number) ?? 0;
@@ -167,6 +169,8 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 		meta.doctype === "MM Task Reminder" && ["Completed", "Cancelled"].includes(reminderStatus);
 	const frozen =
 		readOnlyForm || (docstatus === 1 && Boolean(meta.isSubmittable)) || taskReminderClosed;
+	// Editable only while the user has explicitly entered edit mode and the doc isn't frozen.
+	const canEdit = !frozen;
 
 	useEffect(() => {
 		if (!data) return;
@@ -190,6 +194,23 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 		setValues((prev) => ({ ...prev, [fn]: v }));
 	}
 
+	// Discard unsaved edits by re-hydrating from the last-loaded server doc.
+	function revertFromData() {
+		if (!data) return;
+		const next: Record<string, unknown> = {};
+		for (const f of meta.fields) {
+			next[f.fieldname] = data[f.fieldname] !== undefined ? data[f.fieldname] : "";
+		}
+		setValues(next);
+		const cnext: Record<string, ChildRow[]> = {};
+		for (const t of meta.childTables || []) {
+			const arr = (data[t.fieldname] as ChildRow[] | undefined) || [];
+			cnext[t.fieldname] = arr.length ? arr.map((r) => ({ ...r })) : [emptyChildRow(t.columns)];
+		}
+		setChildren(cnext);
+		setFormError(null);
+	}
+
 	const payload = useMemo(() => buildPayload(meta, values, children, docname), [meta, values, children, docname]);
 
 	useEffect(() => {
@@ -208,6 +229,7 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 		try {
 			await updateDoc(meta.doctype, docname, payload);
 			await mutate();
+			setEditing(false);
 			return true;
 		} catch (e) {
 			setFormError(extractErrorMessage(e));
@@ -263,6 +285,13 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 			formError={formError}
 			bannerLocked={locked}
 			bannerSubmitted={Boolean(meta.isSubmittable && docstatus === 1)}
+			editing={editing}
+			canEdit={canEdit}
+			onEdit={() => setEditing(true)}
+			onCancelEdit={() => {
+				revertFromData();
+				setEditing(false);
+			}}
 			content={
 				<>
 					{isLoading && <p className="mm-muted">Loading…</p>}
@@ -273,7 +302,7 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 						setField={setField}
 						childRows={children}
 						setChildRows={setChildren}
-						readOnlyForm={frozen}
+						readOnlyForm={frozen || !editing}
 						docstatus={docstatus}
 					/>
 					{meta.doctype === "MM Sales Order" && data?.name && (
@@ -298,6 +327,10 @@ function DocFormShell({
 	bannerLocked,
 	bannerSubmitted,
 	recordTitle,
+	editing,
+	canEdit,
+	onEdit,
+	onCancelEdit,
 }: {
 	meta: DocRegistryEntry;
 	isNew: boolean;
@@ -311,7 +344,14 @@ function DocFormShell({
 	bannerLocked?: boolean;
 	bannerSubmitted?: boolean;
 	recordTitle?: string;
+	/** Edit-mode toggle (only for existing records; new records are always editable). */
+	editing?: boolean;
+	canEdit?: boolean;
+	onEdit?: () => void;
+	onCancelEdit?: () => void;
 }) {
+	// New records skip view mode entirely. Existing records start read-only.
+	const inEditMode = isNew || Boolean(editing);
 	const isHashId = docname && /^[a-z0-9]{10}$/.test(docname);
 	const displaySub = isNew 
 		? meta.doctype 
@@ -354,6 +394,11 @@ function DocFormShell({
 					<p className="mm-page-sub">{displaySub}</p>
 				</div>
 				<div className="mm-page-actions">
+					{!isNew && (
+						<span className={`mm-mode-pill ${inEditMode ? "mm-mode-pill-edit" : "mm-mode-pill-view"}`}>
+							{inEditMode ? "Editing" : "Viewing"}
+						</span>
+					)}
 					<Link className="mm-btn-secondary" to={meta.routeBase}>
 						← Back to list
 					</Link>
@@ -373,18 +418,35 @@ function DocFormShell({
 					{content}
 				</div>
 				<div className="mm-form-actions mm-form-actions-sticky">
-					<button type="button" className="mm-btn-primary" disabled={saving || bannerLocked || bannerSubmitted} onClick={onSave}>
-						{saving ? "Saving…" : "Save"}
-					</button>
-					{onSubmit && (
-						<button
-							type="button"
-							className="mm-btn-secondary"
-							disabled={Boolean(saving || submitting || bannerLocked || bannerSubmitted)}
-							onClick={() => void onSubmit()}
-						>
-							{submitting ? "Submitting…" : "Save & submit"}
-						</button>
+					{!inEditMode ? (
+						canEdit ? (
+							<button type="button" className="mm-btn-primary" onClick={() => onEdit?.()}>
+								Edit
+							</button>
+						) : (
+							<span className="mm-muted">Read-only</span>
+						)
+					) : (
+						<>
+							<button type="button" className="mm-btn-primary" disabled={saving || bannerLocked || bannerSubmitted} onClick={onSave}>
+								{saving ? "Saving…" : "Save"}
+							</button>
+							{onSubmit && (
+								<button
+									type="button"
+									className="mm-btn-secondary"
+									disabled={Boolean(saving || submitting || bannerLocked || bannerSubmitted)}
+									onClick={() => void onSubmit()}
+								>
+									{submitting ? "Submitting…" : "Save & submit"}
+								</button>
+							)}
+							{!isNew && (
+								<button type="button" className="mm-btn-secondary" disabled={saving} onClick={() => onCancelEdit?.()}>
+									Cancel
+								</button>
+							)}
+						</>
 					)}
 				</div>
 			</div>
@@ -416,25 +478,56 @@ export function DocFields({
 	const sections = useMemo(() => resolveFormSections(meta), [meta]);
 	const fieldMap = useMemo(() => Object.fromEntries(meta.fields.map((f) => [f.fieldname, f])), [meta.fields]);
 
+	// "Same as above" support: derive ticked state from the values so it stays
+	// correct across record switches (DocFields is reused, not remounted).
+	function sameAsInfo(sec: (typeof sections)[number]) {
+		const sa = sec.sameAs;
+		if (!sa) return null;
+		const checked = sa.map.every((p) => {
+			const from = values[p.from];
+			return from != null && from !== "" && values[p.to] === from;
+		});
+		const targets = new Set(sa.map.map((p) => p.to));
+		const toggle = (next: boolean) => {
+			for (const p of sa.map) setField(p.to, next ? (values[p.from] ?? "") : "");
+		};
+		return { sa, checked, targets, toggle };
+	}
+
 	if (compact) {
 		return (
 			<>
-				{sections.map((sec) => (
-					<div key={sec.id} className="mm-cform-sec">
-						{sections.length > 1 && <div className="mm-cform-sec-title">{sec.title}</div>}
-						<div className="mm-form-grid mm-form-grid-tight">
-							{sec.fieldnames.map((fn) => {
-								const f = fieldMap[fn];
-								if (!f || !isFieldVisible(f, values)) return null;
-								return (
-									<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
-										<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={ro} />
-									</div>
-								);
-							})}
+				{sections.map((sec) => {
+					const sa = sameAsInfo(sec);
+					return (
+						<div key={sec.id} className="mm-cform-sec">
+							{sections.length > 1 && <div className="mm-cform-sec-title">{sec.title}</div>}
+							{sa && (
+								<label className="mm-sameas">
+									<input
+										type="checkbox"
+										checked={sa.checked}
+										disabled={ro}
+										onChange={(e) => sa.toggle(e.target.checked)}
+									/>
+									<span>{sa.sa.label}</span>
+								</label>
+							)}
+							<div className="mm-form-grid mm-form-grid-tight">
+								{sec.fieldnames.map((fn) => {
+									const f = fieldMap[fn];
+									if (!f || !isFieldVisible(f, values)) return null;
+									const locked = ro || Boolean(sa?.checked && sa.targets.has(fn));
+									return (
+										<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
+											<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={locked} />
+										</div>
+									);
+								})}
+							</div>
 						</div>
-					</div>
-				))}
+					);
+				})}
 				{meta.childTables?.map((t) => (
 					<div key={t.fieldname} className="mm-cform-sec">
 						<div className="mm-cform-sec-title">{t.label}</div>
@@ -453,29 +546,44 @@ export function DocFields({
 
 	return (
 		<>
-			{sections.map((sec, si) => (
-				<section
-					key={sec.id}
-					className="mm-panel mm-panel-enter"
-					style={{ animationDelay: `${Math.min(si, 8) * 42}ms` }}
-				>
-					<header className="mm-panel-head">
-						<h2 className="mm-panel-title">{sec.title}</h2>
-						{sec.description ? <p className="mm-panel-desc">{sec.description}</p> : null}
-					</header>
-					<div className="mm-form-grid">
-						{sec.fieldnames.map((fn) => {
-							const f = fieldMap[fn];
-							if (!f || !isFieldVisible(f, values)) return null;
-							return (
-								<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
-									<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={ro} />
-								</div>
-							);
-						})}
-					</div>
-				</section>
-			))}
+			{sections.map((sec, si) => {
+				const sa = sameAsInfo(sec);
+				return (
+					<section
+						key={sec.id}
+						className="mm-panel mm-panel-enter"
+						style={{ animationDelay: `${Math.min(si, 8) * 42}ms` }}
+					>
+						<header className="mm-panel-head">
+							<h2 className="mm-panel-title">{sec.title}</h2>
+							{sec.description ? <p className="mm-panel-desc">{sec.description}</p> : null}
+						</header>
+						{sa && (
+							<label className="mm-sameas">
+								<input
+									type="checkbox"
+									checked={sa.checked}
+									disabled={ro}
+									onChange={(e) => sa.toggle(e.target.checked)}
+								/>
+								<span>{sa.sa.label}</span>
+							</label>
+						)}
+						<div className="mm-form-grid">
+							{sec.fieldnames.map((fn) => {
+								const f = fieldMap[fn];
+								if (!f || !isFieldVisible(f, values)) return null;
+								const locked = ro || Boolean(sa?.checked && sa.targets.has(fn));
+								return (
+									<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
+										<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={locked} />
+									</div>
+								);
+							})}
+						</div>
+					</section>
+				);
+			})}
 			{meta.childTables?.map((t, ti) => (
 				<section
 					key={t.fieldname}

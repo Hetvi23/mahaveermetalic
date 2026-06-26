@@ -42,6 +42,13 @@ export type FormSectionConfig = {
 	title: string;
 	description?: string;
 	fieldnames: string[];
+	/** Optional "same as above" checkbox that copies values from source fields
+	 * into target fields (and locks the targets while ticked). */
+	sameAs?: {
+		label: string;
+		/** Each pair copies the `from` field's current value into the `to` field. */
+		map: { from: string; to: string }[];
+	};
 };
 
 export type DocRegistryEntry = {
@@ -96,6 +103,13 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				title: "Point of contact",
 				description: "Optional on-site or alternate contact.",
 				fieldnames: ["poc_name", "poc_number"],
+				sameAs: {
+					label: "Same as above (use Name & Mobile Number)",
+					map: [
+						{ from: "party_name", to: "poc_name" },
+						{ from: "mobile_number", to: "poc_number" },
+					],
+				},
 			},
 			{
 				id: "refs",
@@ -320,8 +334,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{
 				id: "so-h",
 				title: "Order header",
-				description: "Branch & location (auto-filled from your profile), series, dates, and sold-to party.",
-				fieldnames: ["branch", "location", "naming_series", "transaction_date", "delivery_date", "party"],
+				description: "Branch & location (auto-filled from your profile), dates, and sold-to party.",
+				fieldnames: ["branch", "location", "transaction_date", "delivery_date", "party"],
 			},
 			{
 				id: "so-x",
@@ -409,7 +423,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ id: "po3", title: "Logistics", fieldnames: ["delivery_date"] },
 		],
 		listColumns: [
-			{ fieldname: "po_number", label: "PO No" },
+			{ fieldname: "name", label: "PO No" },
+			{ fieldname: "sales_order", label: "SO" },
 			{ fieldname: "supplier", label: "Supplier" },
 			{ fieldname: "color", label: "Color" },
 			{ fieldname: "qty_kg", label: "Qty KG" },
@@ -700,4 +715,10 @@ export function getRegistryByPath(pathname: string): DocRegistryEntry | undefine
 	return DOC_REGISTRY.find(
 		(d) => pathname === d.routeBase || pathname.startsWith(`${d.routeBase}/`),
 	);
+}
+
+/** A registered master (navGroup "masters") for a given Frappe doctype, if any.
+ * Used to offer inline quick-create on Link fields that point at our masters. */
+export function getMasterByDoctype(doctype: string): DocRegistryEntry | undefined {
+	return DOC_REGISTRY.find((d) => d.doctype === doctype && d.navGroup === "masters");
 }

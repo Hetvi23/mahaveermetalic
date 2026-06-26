@@ -1,6 +1,8 @@
+import { getMasterByDoctype } from "@/config/registry";
 import { useFrappeGetDocList } from "frappe-react-sdk";
+import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import QuickCreateMaster from "./QuickCreateMaster";
 
 type Props = {
 	label: string;
@@ -14,7 +16,11 @@ type Props = {
 export default function LinkField({ label, linkDoctype, value, onChange, disabled, required }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState(value || "");
+	const [quickCreate, setQuickCreate] = useState(false);
 	const wrap = useRef<HTMLDivElement>(null);
+
+	// Offer inline "+ New" only for Link targets that are one of our masters.
+	const master = getMasterByDoctype(linkDoctype);
 
 	useEffect(() => {
 		setText(value || "");
@@ -51,12 +57,13 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 	}
 
 	return (
+		<>
 		<label className="mm-field">
 			<span className="mm-field-label">
 				{label}
 				{required ? " *" : ""}
 			</span>
-			<div className="mm-link-wrap" ref={wrap}>
+			<div className={`mm-link-wrap${master && !disabled ? " mm-link-wrap-addable" : ""}`} ref={wrap}>
 				<input
 					className="mm-input mm-link-input"
 					value={text}
@@ -72,6 +79,17 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 					autoComplete="off"
 				/>
 				<ChevronDown size={15} className="mm-link-caret" aria-hidden />
+				{master && !disabled && (
+					<button
+						type="button"
+						className="mm-link-add"
+						title={`Create new ${master.title}`}
+						aria-label={`Create new ${master.title}`}
+						onClick={() => setQuickCreate(true)}
+					>
+						<Plus size={15} />
+					</button>
+				)}
 				{open && (
 					<ul className="mm-suggest">
 						{isLoading && <li className="mm-suggest-muted">Loading…</li>}
@@ -93,5 +111,17 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 				)}
 			</div>
 		</label>
+		{quickCreate && master && (
+			<QuickCreateMaster
+				meta={master}
+				seed={text.trim()}
+				onClose={() => setQuickCreate(false)}
+				onCreated={(name) => {
+					pick(name);
+					setQuickCreate(false);
+				}}
+			/>
+		)}
+		</>
 	);
 }

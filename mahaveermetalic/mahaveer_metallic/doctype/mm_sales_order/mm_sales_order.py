@@ -11,26 +11,13 @@ def is_mm_admin() -> bool:
 	return "MM Admin" in roles or "Administrator" in roles
 
 
-def branch_series_prefix(branch: str) -> str:
-	"""Number-series prefix derived from the branch: Udhna → UM, Hojiwala → HM.
-	Any other branch falls back to its first letter + 'M' (e.g. 'Katargam' → KM).
-	Override a specific branch by adding it to BRANCH_PREFIX below."""
-	if not branch:
-		return "MM"
-	key = branch.strip().lower()
-	BRANCH_PREFIX = {"udhna": "UM", "hojiwala": "HM"}
-	for name, prefix in BRANCH_PREFIX.items():
-		if name in key:
-			return prefix
-	return branch.strip()[0].upper() + "M"
-
-
 class MMSalesOrder(Document):
 	def autoname(self):
-		"""Name = branch prefix + running number (UM1, UM2 … / HM1, HM2 …)."""
-		prefix = branch_series_prefix(self.branch)
-		raw = make_autoname(prefix + ".#####")  # e.g. UM00001
-		self.name = prefix + str(int(raw[len(prefix):]))  # → UM1
+		"""Plain running number shared across all branches: 1, 2, 3 …
+		(The 'MMSO' prefix is only the series-counter key — it is stripped off
+		so the visible id is just the digits.)"""
+		raw = make_autoname("MMSO.#####")  # e.g. MMSO00001
+		self.name = str(int(raw[len("MMSO"):]))  # → 1
 
 	def validate(self):
 		self._require_weight_or_box()

@@ -208,10 +208,9 @@ export default function OrderWorkspace() {
         const res = await createDoc("MM Sales Order", payload);
         const name = (res as { name?: string }).name;
         await mutate();
-        if (name) {
-          setSelected(name);
-          setFlash("Order created.");
-        }
+        // Clear the whole form back to a blank new order, ready for the next entry.
+        resetNew();
+        setFlash(name ? `Order ${name} created — form cleared for the next one.` : "Order created.");
         return;
       }
       await mutate();
