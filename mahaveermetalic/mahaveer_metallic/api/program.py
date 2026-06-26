@@ -122,10 +122,16 @@ DEFAULT_MACHINE_COUNT = 4
 
 
 def _ensure_default_machines():
-	"""Seed machines 1..4 the first time the screen is opened."""
+	"""Seed machines 1..4 the first time the screen is opened.
+
+	Commit explicitly: this runs inside list_machines, which is a GET — Frappe would
+	otherwise roll the inserts back, leaving the board showing machines that were
+	never persisted, so creating a program on them fails the MM Machine link check
+	("Could not find Machine No: 1")."""
 	if not frappe.db.count("MM Machine"):
 		for i in range(1, DEFAULT_MACHINE_COUNT + 1):
 			frappe.get_doc({"doctype": "MM Machine", "machine_no": str(i)}).insert(ignore_permissions=True)
+		frappe.db.commit()
 
 
 @frappe.whitelist()

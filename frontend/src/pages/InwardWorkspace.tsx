@@ -1,9 +1,14 @@
-import { useMemo, useState } from "react";
-import { useFrappePostCall } from "frappe-react-sdk";
+import { useEffect, useMemo, useState } from "react";
+import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Download, PackageCheck, Pencil, Plus, SkipForward, X } from "lucide-react";
+import type { FieldSchema } from "@/config/registry";
+import { FieldInput } from "@/components/FieldInputs";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true };
+const F_BRANCH: FieldSchema = { fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" };
 
 type ChallanItem = { roll?: string; color?: string; cut?: string; qty?: number; weight?: number };
 type MatchOrder = {
@@ -44,6 +49,8 @@ const blankRow = (): Row => ({ roll: "", color: "", cut: "", qty: "", weight: ""
  */
 export default function InwardWorkspace() {
   const [postingDate, setPostingDate] = useState(today());
+  const [branch, setBranch] = useState("");
+  const [location, setLocation] = useState("");
   const [queue, setQueue] = useState<string[]>([""]); // challan numbers to process, one per line
   const [qIndex, setQIndex] = useState(-1); // -1 = still composing the queue / manual; >=0 = processing queue[qIndex]
   const [challanNo, setChallanNo] = useState(""); // the challan currently loaded
@@ -63,6 +70,20 @@ export default function InwardWorkspace() {
   const { call: postInward, loading: posting } = useFrappePostCall<{ message: { name: string } }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.post_inward",
   );
+
+  // Branch/Location default from the logged-in user's employee profile; editable here
+  // so users without a profile (e.g. Administrator) can still pick a location.
+  const { data: defaults } = useFrappeGetCall<{ message: { branch: string | null; location: string | null } }>(
+    "mahaveermetalic.api.session.get_branch_location",
+    undefined,
+    "mm-session-branch-location",
+  );
+  useEffect(() => {
+    const d = defaults?.message;
+    if (!d) return;
+    setBranch((b) => b || d.branch || "");
+    setLocation((l) => l || d.location || "");
+  }, [defaults]);
 
   const processing = qIndex >= 0; // stepping through the challan queue
   const isLast = qIndex >= queue.length - 1;
@@ -189,6 +210,7 @@ export default function InwardWorkspace() {
     setError(null);
     setFlash(null);
     if (rows.length === 0) return setError(manual ? "Add at least one material row." : "Nothing to post — fetch a challan first.");
+    if (!location.trim()) return setError("Choose a location (roll stock is tracked per location).");
     if (!lot.trim() && !challanNo.trim()) return setError("Enter a lot number.");
     for (const r of rows) {
       if (!r.color.trim()) return setError(`Roll ${r.roll || ""} needs a colour.`);
@@ -197,6 +219,8 @@ export default function InwardWorkspace() {
     const payload = {
       doctype: "MM Inward",
       posting_date: postingDate,
+      branch: branch || null,
+      location,
       challan_number: challanNo.trim(),
       lot_number: lot || challanNo.trim(),
       items: rows.map((r, i) => ({
@@ -251,6 +275,8 @@ export default function InwardWorkspace() {
             <span className="mm-field-label">Chalan date</span>
             <input className="mm-input" type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} />
           </label>
+          <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
+          <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} />
           {fetched && (
             <label className="mm-field">
               <span className="mm-field-label">Lot number</span>
