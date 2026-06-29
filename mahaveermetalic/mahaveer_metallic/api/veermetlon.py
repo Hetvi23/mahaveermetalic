@@ -171,6 +171,11 @@ def fetch_challan(challan_no: str):
 	# Colour comes from the challan's VM Sales Order; one colour → pre-fill every roll.
 	so_colours = _so_colours(doc.get("sales_order"), local)
 	default_colour = so_colours[0] if len(so_colours) == 1 else ""
+	# Fallback: VM challans without a single SO colour still carry the coating, which
+	# IS the colour/quality (e.g. "K BCH BSM (22-12-2025)"). Strip the trailing date
+	# and use it so rolls don't land blank and force manual colour entry on every row.
+	if not default_colour:
+		default_colour = re.sub(r"\s*\([^)]*\)\s*$", "", (doc.get("coating") or "")).strip()
 	items = _normalize_items(doc, default_colour)
 	matching = _matching_orders(doc.get("coating"))
 	return {

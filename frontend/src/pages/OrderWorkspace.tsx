@@ -212,12 +212,48 @@ export default function OrderWorkspace() {
         hydrated.current = null;
         setFlash("Saved.");
       } else {
-        const res = await createDoc("MM Sales Order", payload);
-        const name = (res as { name?: string }).name;
+        // One Sales Order per item (mirrors how Purchase Orders are one-per-line):
+        // each item becomes its own SO with a single-line items table. Created
+        // sequentially so a rejected line (e.g. duplicate-order guard) only skips
+        // that item instead of failing the whole batch.
+        const created: string[] = [];
+        const skippedItems: Item[] = [];
+        const skippedMsgs: string[] = [];
+        for (const it of effectiveItems) {
+          const oneLine = {
+            idx: 1,
+            color_name: it.color_name,
+            cut: it.cut,
+            delivery_date: it.delivery_date || null,
+            qty_weight: it.qty_weight || 0,
+            qty_box: it.qty_box || 0,
+            sale_rate: it.sale_rate || 0,
+            purchase_party: it.purchase_party || null,
+            purchase_rate: it.purchase_rate || 0,
+          };
+          try {
+            const res = await createDoc("MM Sales Order", { ...payload, items: [oneLine] });
+            const name = (res as { name?: string }).name;
+            if (name) created.push(name);
+          } catch (e) {
+            skippedItems.push(it);
+            skippedMsgs.push(`${it.color_name}${it.cut ? "/" + it.cut : ""}: ${extractErrorMessage(e)}`);
+          }
+        }
         await mutate();
-        // Clear the whole form back to a blank new order, ready for the next entry.
+        if (created.length === 0) {
+          setFormError(`No orders created. ${skippedMsgs.join("; ")}`);
+          return;
+        }
+        if (skippedItems.length > 0) {
+          // Keep the rejected items in the builder so they can be fixed and retried.
+          setItems(skippedItems);
+          setDraft(blankItem());
+          setFlash(`Created ${created.join(", ")}. ${skippedItems.length} item(s) need attention — ${skippedMsgs.join("; ")}`);
+          return;
+        }
         resetNew();
-        setFlash(name ? `Order ${name} created — form cleared for the next one.` : "Order created.");
+        setFlash(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")} — form cleared for the next one.`);
         return;
       }
       await mutate();
@@ -331,7 +367,7 @@ export default function OrderWorkspace() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={3}><strong>Total</strong></td>
+                    <td colSpan={3}><strong>{selected ? "Total" : `${items.length} separate order${items.length > 1 ? "s" : ""}`}</strong></td>
                     <td className="mm-num"><strong>{itemsTotal.toLocaleString()}</strong></td>
                     <td colSpan={ro ? 3 : 4} />
                   </tr>
@@ -351,7 +387,7 @@ export default function OrderWorkspace() {
           <div className="mm-ws-form-actions">
             {!ro && (
               <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onSave()}>
-                {busy ? "Saving…" : selected ? "Save changes" : "Create order"}
+                {busy ? "Saving…" : selected ? "Save changes" : items.length > 1 ? `Create ${items.length} orders` : "Create order"}
               </button>
             )}
             {selected && !ro && (
