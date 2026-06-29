@@ -87,22 +87,25 @@ def _local_challan(challan_no: str) -> dict:
 	return frappe.get_doc("Delivery Challan", name).as_dict()
 
 
-def _matching_orders(coating):
-	"""Open MM Sales Orders whose colour matches the challan's coating.
+def _norm_colour(s: str) -> str:
+	"""Comparison key for a colour: lower-case, alphanumerics only. Strips the
+	spacing/case/bracket noise that otherwise blocks a match — e.g.
+	'SK COPPER ( ST )', 'SK COPPER(ST)' and 'sk copper st' all map to 'skcopperst'."""
+	return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
-	VM challans don't carry the customer colour — only the coating (which is the
-	colour/quality, e.g. "K BCH BSM"). So we filter open orders by the coating; the
-	chosen SO is then the source of truth for the roll's colour on Inward.
+
+def _matching_orders(colours):
+	"""Open MM Sales Orders whose item colour matches any inward roll colour.
+
+	`colours` is the list of roll colours on the challan (plus the coating as a
+	fallback). We match each Sales Order line's colour against them on the
+	normalised key, so bracket/spacing/case differences don't hide a real match —
+	this is the colour↔order link the shop floor needs when allocating rolls.
 	"""
-	coating = (coating or "").strip()
-	if not coating:
+	wanted = {_norm_colour(c) for c in (colours or []) if _norm_colour(c)}
+	if not wanted:
 		return []
-	# Coating often carries a trailing "(date)" — match on the colour part only.
-	base = re.sub(r"\s*\([^)]*\)\s*$", "", coating).strip()
-	if not base:
-		return []
-	like = f"%{base}%"
-	return frappe.db.sql(
+	rows = frappe.db.sql(
 		"""
 		select so.name as sales_order, so.party, so.delivery_date,
 			soi.color_name, soi.cut, soi.qty_weight,
@@ -111,13 +114,24 @@ def _matching_orders(coating):
 		join `tabMM Sales Order Item` soi on soi.parent = so.name
 		where so.docstatus < 2
 			and ifnull(so.production_completed_percent, 0) < 100
-			and (soi.color_name like %s or %s like concat('%%', soi.color_name, '%%'))
 		order by so.delivery_date asc, so.modified desc
-		limit 50
 		""",
-		(like, base),
 		as_dict=True,
 	)
+	out, seen = [], set()
+	for r in rows:
+		key = _norm_colour(r.color_name)
+		if not key:
+			continue
+		# Match on equality or either-contains-other so 'SK COPPER' lines still
+		# pick up 'SK COPPER ( ST )' rolls and vice versa.
+		if any(key == w or key in w or w in key for w in wanted):
+			if r.sales_order not in seen:
+				seen.add(r.sales_order)
+				out.append(r)
+		if len(out) >= 50:
+			break
+	return out
 
 
 def _distinct(values):
@@ -177,7 +191,12 @@ def fetch_challan(challan_no: str):
 	if not default_colour:
 		default_colour = re.sub(r"\s*\([^)]*\)\s*$", "", (doc.get("coating") or "")).strip()
 	items = _normalize_items(doc, default_colour)
-	matching = _matching_orders(doc.get("coating"))
+	# Match open orders by the actual roll colours, with the coating as a fallback
+	# candidate (covers rolls that came in without a resolved colour).
+	colour_candidates = _distinct([it["color"] for it in items])
+	if doc.get("coating"):
+		colour_candidates.append(doc.get("coating"))
+	matching = _matching_orders(colour_candidates)
 	return {
 		"challan_no": doc.get("challan_no") or challan_no,
 		"coating": doc.get("coating"),  # lot id in MM = the coating selected on the VM challan

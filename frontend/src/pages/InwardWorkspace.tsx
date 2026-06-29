@@ -3,7 +3,6 @@ import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Download, PackageCheck, Pencil, Plus, SkipForward, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
-import LinkField from "@/components/LinkField";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -465,112 +464,6 @@ export default function InwardWorkspace() {
           )}
         </div>
       )}
-
-      <RecentInwardsMatcher />
     </div>
-  );
-}
-
-type RecentInward = {
-  name: string;
-  posting_date?: string;
-  lot_number?: string;
-  location?: string;
-  sales_order?: string | null;
-  colours?: string;
-  total_weight?: number;
-  allocated?: boolean;
-};
-
-/**
- * Match an already-posted inward to a Sales Order after the fact — for rolls received
- * without an order, which can later be tied to one (updates SO fulfilment).
- */
-function RecentInwardsMatcher() {
-  const { data, isLoading, mutate } = useFrappeGetCall<{ message: RecentInward[] }>(
-    "mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards",
-    undefined,
-    "mm-recent-inwards",
-  );
-  const { call: allocate, loading } = useFrappePostCall<{ message: unknown }>(
-    "mahaveermetalic.mahaveer_metallic.api.inward.allocate_inward_to_order",
-  );
-  const [picks, setPicks] = useState<Record<string, string>>({});
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const list = data?.message ?? [];
-
-  async function match(name: string) {
-    const so = (picks[name] || "").trim();
-    if (!so) return;
-    setMsg(null);
-    try {
-      await allocate({ inward: name, sales_order: so });
-      setMsg(`Matched ${name} → ${so}.`);
-      setPicks((p) => ({ ...p, [name]: "" }));
-      void mutate();
-    } catch (e) {
-      setMsg((e as { message?: string })?.message || String(e));
-    }
-  }
-
-  return (
-    <section className="mm-card mm-card-pad" style={{ marginTop: "1.25rem" }}>
-      <div className="mm-iw-sec-head">
-        <h2 className="mm-panel-title">Match a posted inward to an order</h2>
-        <span className="mm-pill mm-pill-muted">{isLoading ? "…" : list.length}</span>
-      </div>
-      {msg && <p className="mm-banner mm-banner-ok" style={{ marginBottom: "0.6rem" }}>{msg}</p>}
-      {list.length === 0 ? (
-        <p className="mm-empty">No posted inwards yet.</p>
-      ) : (
-        <div className="mm-table-scroll">
-          <table className="mm-table mm-table-dense">
-            <thead>
-              <tr>
-                <th>Inward</th>
-                <th>Lot</th>
-                <th>Colour</th>
-                <th className="mm-num">Weight</th>
-                <th>Order</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((iw) => (
-                <tr key={iw.name}>
-                  <td>{iw.name}</td>
-                  <td>{iw.lot_number || "—"}</td>
-                  <td>{iw.colours || "—"}</td>
-                  <td className="mm-num">{(iw.total_weight ?? 0).toLocaleString()}</td>
-                  <td style={{ minWidth: 200 }}>
-                    {iw.allocated && iw.sales_order ? (
-                      <span className="mm-pill mm-pill-ok">{iw.sales_order}</span>
-                    ) : (
-                      <LinkField
-                        label=""
-                        linkDoctype="MM Sales Order"
-                        value={picks[iw.name] || ""}
-                        onChange={(v) => setPicks((p) => ({ ...p, [iw.name]: v }))}
-                      />
-                    )}
-                  </td>
-                  <td className="mm-num">
-                    {!(iw.allocated && iw.sales_order) && (
-                      <button type="button" className="mm-btn-secondary mm-btn-compact" disabled={loading || !(picks[iw.name] || "").trim()} onClick={() => void match(iw.name)}>
-                        Match
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="mm-muted" style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>
-        Tie rolls received without an order to a Sales Order — its inwarded weight updates immediately.
-      </p>
-    </section>
   );
 }
