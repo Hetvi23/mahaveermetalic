@@ -11,6 +11,7 @@
     "program_date",
     "customer_order",
     "source_cutting",
+    "source_inward_item",
     "roll_no",
     "shade",
     "cut",
@@ -20,6 +21,7 @@
     "is_running",
     "closed",
     "released",
+    "reverted",
     "job_work_flag",
     "production",
     "section_qty",
@@ -50,6 +52,13 @@
       "label": "Source Cutting (patty)",
       "options": "MM Cutting",
       "description": "The finished cutting (patty) sent into this program."
+    },
+    {
+      "fieldname": "source_inward_item",
+      "fieldtype": "Data",
+      "label": "Source Inward Item",
+      "read_only": 1,
+      "description": "Set when this program was created straight from an inventory roll (the cutting was auto-created). A full revert unwinds that cutting and returns the roll to inventory."
     },
     {
       "fieldname": "roll_no",
@@ -130,6 +139,14 @@
       "description": "A completed program manually freed off the machine — its slot is open for a new program."
     },
     {
+      "fieldname": "reverted",
+      "fieldtype": "Check",
+      "label": "Reverted",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "Program was reverted — taken off the machine; batches can no longer be completed on it."
+    },
+    {
       "fieldname": "job_work_flag",
       "fieldtype": "Check",
       "label": "Job Work"
@@ -193,12 +210,70 @@
   "name": "MM Program",
   "owner": "Administrator",
   "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Production", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "export": 1,
+      "print": 1,
+      "email": 1,
+      "report": 1,
+      "share": 1
+    },
+    {
+      "role": "MM Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "export": 1,
+      "print": 1,
+      "email": 1,
+      "report": 1,
+      "share": 1
+    },
+    {
+      "role": "MM Production",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "export": 1,
+      "print": 1,
+      "report": 1
+    },
+    {
+      "role": "MM Operations",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "export": 1,
+      "print": 1,
+      "report": 1
+    },
+    {
+      "role": "MM Inventory Manager",
+      "read": 1,
+      "export": 1,
+      "print": 1,
+      "report": 1
+    },
+    {
+      "role": "MM Sales Team",
+      "read": 1,
+      "export": 1,
+      "print": 1,
+      "report": 1
+    }
   ],
   "sort_field": "modified",
   "sort_order": "DESC",

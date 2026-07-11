@@ -4,13 +4,17 @@
 
   Entry picker → one list of roll entries, each tagged with a STATE chip:
       "Cut"          a finished cutting (patty), ready to program
-      "In Cutting"   a cutting still in progress (shown, not selectable)
+      "In Cutting"   a cutting still in progress (also selectable — programming it
+                     is allowed while the physical cut is still running)
       "In Inventory" a raw inward roll not yet cut → selecting it auto-creates and
                      finishes its cutting, then programs it (the chain stays intact)
   Create        → an MM Program on a Machine + Shift (Day/Night). One patty = one
                   batch; the program holds `total_batches`, status starts "Running".
   Batch actions → complete_batches / revert_batches drive the lifecycle:
-                  Running → Partially Done → Completed, and Revert (full → Open).
+                  Running → Partially Done → Completed. Reverting takes the program
+                  OFF the machine and returns the roll to wherever it came from
+                  (cutting / inward), so it reappears in the entry picker; a
+                  reverted program can never be completed again.
   Close         → close_program locks the program (audit-tracked via track_changes).
 
 A finished cutting is an available patty once status='Completed' and its `program`
@@ -45,7 +49,7 @@ def available_rolls(branch=None, location=None):
 
 	# --- Cut: finished cuttings (patties) not yet programmed ---
 	cut_filters = {"docstatus": 1, "status": "Completed", "program": ["is", "not set"]}
-	# --- In Cutting: cuttings still in progress (shown for visibility) ---
+	# --- In Cutting: cuttings still in progress (selectable — programming ahead of the cut is allowed) ---
 	prog_filters = {"docstatus": 1, "status": ["!=", "Completed"], "program": ["is", "not set"]}
 	for state, filters in (("Cut", cut_filters), ("In Cutting", prog_filters)):
 		if branch:
@@ -118,11 +122,11 @@ def available_rolls(branch=None, location=None):
 	return rows
 
 
-DEFAULT_MACHINE_COUNT = 4
+DEFAULT_MACHINE_COUNT = 5
 
 
 def _ensure_default_machines():
-	"""Seed machines 1..4 the first time the screen is opened.
+	"""Seed machines 1..5 the first time the screen is opened.
 
 	Commit explicitly: this runs inside list_machines, which is a GET — Frappe would
 	otherwise roll the inserts back, leaving the board showing machines that were
@@ -169,6 +173,21 @@ def add_machine(branch=None):
 
 
 @frappe.whitelist()
+def remove_machine(machine):
+	"""Remove a machine from the board. Only allowed when no program (active or
+	historical, non-cancelled) references it — otherwise the link check would break
+	the audit trail; close the machine instead in that case."""
+	if not frappe.db.exists("MM Machine", machine):
+		frappe.throw(_("Machine {0} not found.").format(machine))
+	if frappe.db.count("MM Program", {"machine_no": machine, "docstatus": ["<", 2]}):
+		frappe.throw(_("Machine {0} has programs on record and cannot be removed. Close it instead.").format(
+			frappe.db.get_value("MM Machine", machine, "machine_no") or machine
+		))
+	frappe.delete_doc("MM Machine", machine, ignore_permissions=True)
+	return {"machine": machine, "removed": True}
+
+
+@frappe.whitelist()
 def set_machine_cut(machine, cut=None):
 	"""Set the machine's default Cut — every program run on it inherits this cut.
 	Set once, changed only when needed."""
@@ -206,9 +225,12 @@ def close_machine(machine, reverts=None):
 		prog, n = r.get("program"), r.get("batches")
 		if not prog or not n:
 			continue
-		if frappe.db.get_value("MM Program", prog, "machine_no") != machine:
+		row = frappe.db.get_value("MM Program", prog, ["machine_no", "completed_batches"], as_dict=True)
+		if not row or row.machine_no != machine:
 			frappe.throw(_("Program {0} is not on machine {1}.").format(prog, machine))
-		applied.append(revert_batches(prog, n))
+		# `n` = batches to give back → new completed count = done − n. The program
+		# stays on the (closed) machine, unlike a picker revert.
+		applied.append(_save_batches(prog, max(0, int(row.completed_batches or 0) - int(n)), is_running=False))
 	frappe.db.set_value("MM Machine", machine, "closed", 1)
 	return {"machine": machine, "closed": True, "reverted": applied}
 
@@ -316,10 +338,10 @@ def create_program(
 	)
 	if not cut:
 		frappe.throw(_("Cutting {0} not found.").format(source_cutting))
-	# Picking an existing patty must be a finished cutting; an inventory roll comes through
-	# as an Open cutting we just created.
-	if not from_inventory and (cut.docstatus != 1 or cut.status != "Completed"):
-		frappe.throw(_("Only a finished (Completed) cutting can be sent to program."))
+	# Any submitted cutting can be programmed — finished (Cut) or still in progress
+	# (In Cutting); an inventory roll comes through as an Open cutting we just created.
+	if not from_inventory and cut.docstatus != 1:
+		frappe.throw(_("Only a submitted cutting can be sent to program."))
 	if cut.program:
 		frappe.throw(_("This patty is already in a program ({0}).").format(cut.program))
 
@@ -333,6 +355,7 @@ def create_program(
 			"program_date": program_date or frappe.utils.nowdate(),
 			"customer_order": customer_order or cut.customer_order,
 			"source_cutting": cut.name,
+			"source_inward_item": source_inward_item if from_inventory else None,
 			"roll_no": cut.roll_no,
 			"shade": cut.shade,
 			"cut": final_cut,
@@ -369,25 +392,81 @@ def _save_batches(program, completed, is_running):
 
 @frappe.whitelist()
 def complete_batches(program, count=1):
-	"""Mark `count` more batches finished (caps at total). Drives Partially Done → Completed."""
-	doc = frappe.db.get_value("MM Program", program, ["completed_batches"], as_dict=True)
+	"""Mark `count` more batches finished (caps at total). Drives Partially Done → Completed.
+	A reverted program is off the machine — completing on it is blocked for good."""
+	doc = frappe.db.get_value("MM Program", program, ["completed_batches", "reverted"], as_dict=True)
 	if not doc:
 		frappe.throw(_("Program {0} not found.").format(program))
+	if doc.reverted:
+		frappe.throw(_("Program {0} was reverted — its batches can no longer be completed.").format(program))
 	return _save_batches(program, (doc.completed_batches or 0) + int(count), is_running=True)
+
+
+def _clear_cutting_link(doc):
+	"""Clear the cutting's program link so the patty reappears in the entry picker
+	(→ back to the Cut / In Cutting list)."""
+	if doc.source_cutting and frappe.db.exists("MM Cutting", doc.source_cutting):
+		frappe.db.set_value("MM Cutting", doc.source_cutting, "program", None, update_modified=False)
+
+
+def _unwind_inventory_cutting(doc):
+	"""If the cutting was auto-created from an inventory pick and the physical cut
+	never happened (still Open), cancel it so the inward entries return to In
+	Inventory (MM Cutting.on_cancel restores them). Must run AFTER the program is
+	cancelled, or the cutting→program link blocks the cancel."""
+	if not doc.source_inward_item or not doc.source_cutting:
+		return
+	cut = frappe.db.get_value("MM Cutting", doc.source_cutting, ["docstatus", "status"], as_dict=True)
+	if cut and cut.docstatus == 1 and cut.status == "Open":
+		cutting = frappe.get_doc("MM Cutting", doc.source_cutting)
+		cutting.flags.ignore_permissions = True
+		cutting.cancel()
 
 
 @frappe.whitelist()
 def revert_batches(program, completed=None):
-	"""Revert: you report how many batches were actually completed; the remaining
-	(total − completed) return to the Open/waiting state. completed=0 → fully Open,
-	0<completed<total → Partially Done (rest open), completed=total → Completed."""
-	row = frappe.db.get_value("MM Program", program, ["total_batches", "completed_batches"], as_dict=True)
-	if not row:
-		frappe.throw(_("Program {0} not found.").format(program))
-	total = int(row.total_batches or 0)
+	"""Revert: you report how many batches were actually completed.
+
+	completed = total → nothing to revert, the program is simply Completed.
+	Anything less takes the program OFF the machine (its slot frees up) and the roll
+	goes back where it came from, reappearing in the Add-Program picker:
+	  · completed = 0 → the program is cancelled outright; an inventory pick's
+	    auto-created cutting is unwound so the roll returns to In Inventory,
+	    otherwise the patty returns to the Cut / In Cutting list.
+	  · 0 < completed < total → the done batches stay on record (Partially Done,
+	    flagged `reverted` — no further completes allowed) and the patty is released
+	    back to the picker for the remaining batches.
+	"""
+	doc = frappe.get_doc("MM Program", program)
+	if doc.closed:
+		frappe.throw(_("Program {0} is closed and cannot be changed.").format(program))
+	total = int(doc.total_batches or 0)
 	comp = 0 if completed in (None, "") else max(0, min(int(completed), total))
-	# is_running False so completed==0 lands on Open (not Running)
-	return _save_batches(program, comp, is_running=False)
+
+	if total and comp >= total:
+		return _save_batches(program, comp, is_running=False)
+
+	if comp == 0:
+		# Nothing produced — the program never happened. Clear the cutting's link
+		# first (a submitted cutting pointing here would block the cancel), cancel
+		# the program, THEN unwind an inventory pick's auto-created cutting.
+		_clear_cutting_link(doc)
+		doc.flags.ignore_permissions = True
+		doc.cancel()
+		_unwind_inventory_cutting(doc)
+		return {"program": doc.name, "status": "Cancelled", "reverted": True,
+			"completed_batches": 0, "total_batches": total}
+
+	# Partial: keep what was done, free the slot, lock further completes,
+	# and hand the patty back to the picker for the rest.
+	doc.completed_batches = comp
+	doc.is_running = 0
+	doc.reverted = 1
+	doc.released = 1
+	doc.save(ignore_permissions=True)
+	_clear_cutting_link(doc)
+	return {"program": doc.name, "status": doc.status, "reverted": True,
+		"completed_batches": doc.completed_batches, "total_batches": total}
 
 
 @frappe.whitelist()
@@ -416,8 +495,8 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 		"MM Program",
 		filters=filters,
 		fields=["name", "program_date", "customer_order", "roll_no", "machine_no", "shift", "cut",
-			"status", "is_running", "closed", "released", "total_batches", "completed_batches",
-			"patti_qty", "net_weight"],
+			"status", "is_running", "closed", "released", "reverted", "total_batches",
+			"completed_batches", "patti_qty", "net_weight"],
 		order_by="machine_no asc, shift asc, modified desc",
 		limit_page_length=500,
 	)

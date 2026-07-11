@@ -1,20 +1,20 @@
 import { useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
-  Plus, X, Power, RotateCcw, Check, CheckCircle2, Undo2, Monitor, LayoutGrid, List,
+  Plus, Minus, X, Power, RotateCcw, Check, CheckCircle2, Undo2, Monitor, LayoutGrid, List, Search, Trash2,
 } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = () => new Date().toISOString().slice(0, 10);
 const SHIFTS = ["Day", "Night"] as const;
-const DEFAULT_COLS = 4;
+const DEFAULT_COLS = 2;
 
 type Machine = { name: string; machine_no: string; machine_name?: string; cut?: string; closed?: number; active_programs?: number };
 type Program = {
   name: string; program_date?: string; customer_order?: string; roll_no?: string; shade?: string;
   machine_no?: string; shift?: string; cut?: string; status?: string; is_running?: number; closed?: number;
-  released?: number; total_batches?: number; completed_batches?: number; net_weight?: number;
+  released?: number; reverted?: number; total_batches?: number; completed_batches?: number; net_weight?: number;
 };
 type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
@@ -39,6 +39,7 @@ export default function ProgramScreen() {
   const progCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, { program_date: date }, `pg-threads-${date}`);
 
   const { call: addMachine } = useFrappePostCall(`${API}.add_machine`);
+  const { call: removeMachine } = useFrappePostCall(`${API}.remove_machine`);
   const { call: reopen } = useFrappePostCall(`${API}.reopen_machine`);
   const { call: complete } = useFrappePostCall(`${API}.complete_batches`);
   const { call: free } = useFrappePostCall(`${API}.free_program`);
@@ -90,7 +91,13 @@ export default function ProgramScreen() {
                   <th className="mm-prog-mcell">Machine</th>
                   {columns.map((c) => <th key={c} className="mm-prog-col">Program {c + 1}</th>)}
                   <th className="mm-prog-addcol">
-                    <button className="mm-prog-addcol-btn" title="Add column" onClick={() => setCols((n) => Math.max(colCount, n) + 1)}><Plus size={16} /></button>
+                    <button className="mm-prog-addcol-btn" title="Add program column" onClick={() => setCols((n) => Math.max(colCount, n) + 1)}><Plus size={16} /></button>
+                    <button
+                      className="mm-prog-addcol-btn"
+                      title="Remove empty program column"
+                      disabled={colCount <= 1 || machines.some((m) => (byMachine[m.name]?.length ?? 0) >= colCount)}
+                      onClick={() => setCols(() => Math.max(1, colCount - 1))}
+                    ><Minus size={16} /></button>
                   </th>
                 </tr>
               </thead>
@@ -110,7 +117,13 @@ export default function ProgramScreen() {
                             </div>
                           </>
                         ) : (
-                          <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
+                          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                            <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
+                            {list.length === 0 && (
+                              <button className="mm-mini" title="Remove this machine"
+                                onClick={guard(() => removeMachine({ machine: m.name }))}><Trash2 size={13} /></button>
+                            )}
+                          </div>
                         )}
                       </td>
                       {columns.map((c) => {
@@ -127,8 +140,10 @@ export default function ProgramScreen() {
                                   {p.shift || "—"} · {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches · {(p.net_weight ?? 0).toLocaleString()} kg
                                 </div>
                                 <div className="mm-prog-actions">
-                                  <button className="mm-mini" disabled={(p.completed_batches ?? 0) >= (p.total_batches ?? 0)} onClick={guard(() => complete({ program: p.name, count: 1 }))}><Check size={13} /> Complete</button>
-                                  <button className="mm-mini mm-mini-warn" disabled={p.status === "Open"} onClick={() => setReverting(p)}><Undo2 size={13} /> Revert</button>
+                                  <button className="mm-mini" disabled={!!p.reverted || (p.completed_batches ?? 0) >= (p.total_batches ?? 0)}
+                                    title={p.reverted ? "Reverted — completing is locked" : undefined}
+                                    onClick={guard(() => complete({ program: p.name, count: 1 }))}><Check size={13} /> Complete</button>
+                                  <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={() => setReverting(p)}><Undo2 size={13} /> Revert</button>
                                   {p.status === "Completed" && (
                                     <button className="mm-mini mm-mini-ok" onClick={guard(() => free({ program: p.name }))}><CheckCircle2 size={13} /> Free</button>
                                   )}
@@ -164,17 +179,20 @@ export default function ProgramScreen() {
   );
 }
 
-/* ── Revert: report how many batches completed; the rest return to Open ── */
+/* ── Revert: report how many batches completed; the program leaves the machine and
+      the roll goes back where it came from (cutting / inward → Add-program list) ── */
 function RevertDialog({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
   const total = program.total_batches ?? 0;
-  const [completed, setCompleted] = useState(program.completed_batches ?? 0);
+  const [completed, setCompleted] = useState<number | "">(program.completed_batches ?? 0);
   const { call, loading } = useFrappePostCall(`${API}.revert_batches`);
   const [err, setErr] = useState<string | null>(null);
-  const remaining = Math.max(0, total - completed);
+  const comp = completed === "" ? null : completed;
+  const remaining = comp === null ? null : Math.max(0, total - comp);
 
   async function submit() {
+    if (comp === null) return setErr("Enter how many batches were completed.");
     setErr(null);
-    try { await call({ program: program.name, completed }); onDone(); }
+    try { await call({ program: program.name, completed: comp }); onDone(); }
     catch (e) { setErr(extractErrorMessage(e)); }
   }
 
@@ -186,21 +204,31 @@ function RevertDialog({ program, onClose, onDone }: { program: Program; onClose:
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <p className="mm-page-sub" style={{ marginTop: 0 }}>How many of the {total} batches were actually completed? The rest return to Open.</p>
+          <p className="mm-page-sub" style={{ marginTop: 0 }}>
+            How many of the {total} batches were actually completed? Unless all were, the program
+            is taken off the machine and the roll returns to where it came from — it will show
+            again in the Add-program list. A reverted program cannot be completed later.
+          </p>
           <label className="mm-field">
             <span className="mm-field-label">Batches completed</span>
             <input className="mm-input" type="number" min={0} max={total} value={completed}
-              onChange={(e) => setCompleted(Math.max(0, Math.min(total, Number(e.target.value) || 0)))} />
+              onChange={(e) => setCompleted(e.target.value === "" ? "" : Math.max(0, Math.min(total, Number(e.target.value) || 0)))} />
           </label>
-          <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
-            {completed} completed · <strong>{remaining} will return to Open</strong>
-            {completed >= total ? " (program Completed)" : completed === 0 ? " (program Open)" : " (Partially Done)"}
-          </p>
+          {comp !== null && (
+            <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
+              {comp} completed · <strong>{remaining} go back to the pool</strong>
+              {comp >= total
+                ? " (nothing reverted — program Completed)"
+                : comp === 0
+                  ? " (program removed; roll returns to inventory / cutting)"
+                  : " (done batches stay on record; patty back in the picker)"}
+            </p>
+          )}
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Revert"}</button>
+          <button className="mm-btn-primary" disabled={loading || comp === null} onClick={() => void submit()}>{loading ? "Saving…" : "Revert"}</button>
         </div>
       </div>
     </div>
@@ -240,10 +268,26 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
   const [machine, setMachine] = useState(presetMachine ?? machines.find((m) => !m.closed)?.name ?? "");
   const [shift, setShift] = useState<string>("Day");
   const [order, setOrder] = useState("");
-  const [batches, setBatches] = useState(1);
+  const [batches, setBatches] = useState<number | "">(1);
   const [weight, setWeight] = useState<number | "">("");
   const [jobWork, setJobWork] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [cutFilter, setCutFilter] = useState("");
+
+  // Roll search — matches roll no, shade, cut, party, order and state chip.
+  const q = search.trim().toLowerCase();
+  const visibleRolls = q
+    ? rolls.filter((r) =>
+        [r.roll_no, r.shade, r.cut, r.party, r.customer_order, r.state, r.cutting, r.inward_item]
+          .some((v) => (v || "").toLowerCase().includes(q)))
+    : rolls;
+
+  // Cut-ID filter for the machine list (machines carry a default Cut).
+  const machineCuts = Array.from(new Set(machines.map((m) => (m.cut || "").trim()).filter(Boolean))).sort();
+  const visibleMachines = cutFilter
+    ? machines.filter((m) => (m.cut || "").trim() === cutFilter || m.name === machine)
+    : machines;
 
   const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
     `${API}.order_options_for_party`,
@@ -264,6 +308,7 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
     setErr(null);
     if (!sel) return setErr("Pick a roll / patty from the list.");
     if (!machine) return setErr("Choose a machine.");
+    if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     try {
       await create({
         source_cutting: sel.source_type === "cutting" ? sel.cutting : undefined,
@@ -289,14 +334,28 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <p className="mm-field-label" style={{ marginBottom: "0.4rem" }}>Pick a roll / patty</p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.4rem" }}>
+            <p className="mm-field-label" style={{ margin: 0 }}>Pick a roll / patty</p>
+            <div style={{ position: "relative", flex: "0 1 240px" }}>
+              <Search size={14} style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", opacity: 0.5, pointerEvents: "none" }} />
+              <input
+                className="mm-input mm-input-compact"
+                style={{ width: "100%", paddingLeft: "1.9rem" }}
+                placeholder="Search roll / shade / cut / party…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
           {rollsCall.isLoading ? (
             <p className="mm-muted">Loading…</p>
           ) : rolls.length === 0 ? (
             <p className="mm-empty">Nothing available to program.</p>
+          ) : visibleRolls.length === 0 ? (
+            <p className="mm-empty">No rolls match “{search}”.</p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
-              {rolls.map((r, i) => {
+              {visibleRolls.map((r, i) => {
                 const id = r.cutting || r.inward_item || String(i);
                 const isSel = sel && (sel.cutting || sel.inward_item) === (r.cutting || r.inward_item);
                 return (
@@ -313,9 +372,21 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
           <div className="mm-form-grid">
             <label className="mm-field">
               <span className="mm-field-label">Machine *</span>
+              {machineCuts.length > 0 && (
+                <select
+                  className="mm-input mm-input-compact"
+                  style={{ marginBottom: "0.35rem" }}
+                  title="Filter machines by their Cut id"
+                  value={cutFilter}
+                  onChange={(e) => setCutFilter(e.target.value)}
+                >
+                  <option value="">All cuts</option>
+                  {machineCuts.map((c) => <option key={c} value={c}>Cut {c}</option>)}
+                </select>
+              )}
               <select className="mm-input" value={machine} onChange={(e) => setMachine(e.target.value)}>
                 <option value="">— choose —</option>
-                {machines.map((m) => <option key={m.name} value={m.name} disabled={!!m.closed}>Machine {m.machine_no}{m.closed ? " (closed)" : ""}</option>)}
+                {visibleMachines.map((m) => <option key={m.name} value={m.name} disabled={!!m.closed}>Machine {m.machine_no}{m.cut ? ` · ${m.cut}` : ""}{m.closed ? " (closed)" : ""}</option>)}
               </select>
             </label>
             <label className="mm-field">
@@ -333,7 +404,8 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Total Batches *</span>
-              <input className="mm-input" type="number" min={1} value={batches} onChange={(e) => setBatches(Math.max(1, Number(e.target.value) || 1))} />
+              <input className="mm-input" type="number" min={1} value={batches}
+                onChange={(e) => setBatches(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1))} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Weight (Kg) *</span>
@@ -441,11 +513,11 @@ function ProgramList() {
 
   const isLoading = rollsCall.isLoading || progsCall.isLoading;
   const available: ListRow[] = (rollsCall.data?.message ?? [])
-    .filter((r) => r.state !== "In Cutting") // still being cut → not yet open
+    // In-Cutting rolls are programmable too now, so they count as available.
     .map((r, i) => ({
       key: `a-${r.cutting || r.inward_item || i}`,
       date: r.date, order: r.customer_order, roll: r.roll_no || r.shade, cut: r.cut,
-      source: r.state === "In Inventory" ? "Inventory" : "Cut",
+      source: r.state === "In Inventory" ? "Inventory" : r.state === "In Cutting" ? "In Cutting" : "Cut",
       machine: "—", shift: "—", batches: String(r.batches ?? "—"), weight: r.weight, status: "Open",
     }));
   const programs: ListRow[] = (progsCall.data ?? []).map((p) => ({

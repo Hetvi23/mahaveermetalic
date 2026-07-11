@@ -1439,3 +1439,20 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-cutcol-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.55rem; min-height: 60px; }
 /* Inline editable status select in the cutting list */
 .mm-status-select { font-weight: 750; border-radius: 99px; padding: 0.25rem 0.6rem; min-width: 130px; }
+
+/* Production screen — queue list + variance flags */
+.mm-pick-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.mm-var-over { color: var(--mm-danger); font-weight: 700; }
+.mm-var-over strong { color: var(--mm-danger); }
+.mm-var { color: var(--mm-text-sec); }
+
+/* Weighing-scale capture (Production gross weight) */
+.mm-scale { margin-top: 0.4rem; }
+.mm-scale-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.mm-scale-baud { max-width: 110px; }
+.mm-scale-hint { font-size: 0.72rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.3rem; }
+.mm-scale-reading { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 1.05rem; padding: 0.15rem 0.5rem; border-radius: var(--mm-radius-sm); }
+.mm-scale-reading.is-stable { color: var(--mm-green, #16a34a); background: rgba(22,163,74,0.1); }
+.mm-scale-reading.is-moving { color: var(--mm-text-sec); background: var(--mm-bg); }
+.mm-scale-reading em { font-style: normal; font-weight: 600; font-size: 0.7rem; opacity: 0.8; margin-left: 0.25rem; }
+.mm-scale-raw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; color: var(--mm-text-sec); margin-top: 0.3rem; word-break: break-all; }
