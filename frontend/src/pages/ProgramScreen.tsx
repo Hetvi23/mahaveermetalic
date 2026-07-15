@@ -205,9 +205,9 @@ function RevertDialog({ program, onClose, onDone }: { program: Program; onClose:
         </div>
         <div className="mm-modal-body">
           <p className="mm-page-sub" style={{ marginTop: 0 }}>
-            How many of the {total} batches were actually completed? Unless all were, the program
-            is taken off the machine and the roll returns to where it came from — it will show
-            again in the Add-program list. A reverted program cannot be completed later.
+            How many of the {total} batches were actually completed? The program is taken off the
+            machine and the roll returns to where it came from — it will show again in the
+            Add-program list. A reverted program cannot be completed later.
           </p>
           <label className="mm-field">
             <span className="mm-field-label">Batches completed</span>
@@ -217,11 +217,9 @@ function RevertDialog({ program, onClose, onDone }: { program: Program; onClose:
           {comp !== null && (
             <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
               {comp} completed · <strong>{remaining} go back to the pool</strong>
-              {comp >= total
-                ? " (nothing reverted — program Completed)"
-                : comp === 0
-                  ? " (program removed; roll returns to inventory / cutting)"
-                  : " (done batches stay on record; patty back in the picker)"}
+              {comp === 0
+                ? " (program removed; roll returns to inventory / cutting)"
+                : " (done batches stay on record; program off the machine, patty back in the picker)"}
             </p>
           )}
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
