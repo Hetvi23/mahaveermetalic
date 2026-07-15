@@ -252,9 +252,12 @@ def complete_cutting(cutting):
 
 @frappe.whitelist()
 def cutting_board(branch=None):
-	"""Cutting worklist board: ALL in-process and open cuttings, to be grouped by Cut
-	(cut = column, each cutting = a card) on the screen."""
-	filters = {"docstatus": 1, "status": ["in", ["In Progress", "Open"]]}
+	"""Cutting worklist board: in-process and open cuttings, grouped by Cut (cut =
+	column, each cutting = a card) on the screen. Cuttings already pulled into a
+	program are excluded — they've moved on to the Program stage, so leaving them here
+	would show them as still-available and clash with the Program picker (which hides
+	them)."""
+	filters = {"docstatus": 1, "status": ["in", ["In Progress", "Open"]], "program": ["is", "not set"]}
 	if branch:
 		filters["branch"] = branch
 	return frappe.get_all(
