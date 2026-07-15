@@ -516,9 +516,9 @@ type ListRow = {
 };
 
 function ProgramList() {
-  // Available pool: finished cuttings + inventory rolls not yet programmed = "Open".
-  const rollsCall = useFrappeGetCall<{ message: Roll[] }>(`${API}.available_rolls`, undefined, "pg-rolls-list");
-  // Actual programs (assigned to a machine).
+  // Only actual programs (added to a machine). The available pool (finished cuttings,
+  // in-cutting patties, inventory rolls) lives in the Add-program picker — not here —
+  // so this list is exactly the programs you created, nothing you didn't add.
   const progsCall = useFrappeGetDocList<Program>("MM Program", {
     fields: ["name", "program_date", "customer_order", "roll_no", "machine_no", "shift", "cut", "status", "total_batches", "completed_batches", "net_weight"],
     filters: [["docstatus", "<", 2]],
@@ -526,26 +526,17 @@ function ProgramList() {
     limit: 200,
   });
 
-  const isLoading = rollsCall.isLoading || progsCall.isLoading;
-  const available: ListRow[] = (rollsCall.data?.message ?? [])
-    // In-Cutting rolls are programmable too now, so they count as available.
-    .map((r, i) => ({
-      key: `a-${r.cutting || r.inward_item || i}`,
-      date: r.date, order: r.customer_order, roll: r.roll_no || r.shade, cut: r.cut,
-      source: r.state === "In Inventory" ? "Inventory" : r.state === "In Cutting" ? "In Cutting" : "Cut",
-      machine: "—", shift: "—", batches: String(r.batches ?? "—"), weight: r.weight, status: "Open",
-    }));
-  const programs: ListRow[] = (progsCall.data ?? []).map((p) => ({
+  const isLoading = progsCall.isLoading;
+  const rows: ListRow[] = (progsCall.data ?? []).map((p) => ({
     key: `p-${p.name}`, date: p.program_date, order: p.customer_order, roll: p.roll_no, cut: p.cut,
     source: "Program", machine: p.machine_no || "—", shift: p.shift || "—",
     batches: `${p.completed_batches ?? 0}/${p.total_batches ?? 0}`, weight: p.net_weight, status: p.status || "—",
   }));
-  const rows = [...available, ...programs];
 
   return (
     <section className="mm-card mm-card-pad">
       {isLoading && <p className="mm-muted">Loading…</p>}
-      {!isLoading && rows.length === 0 && <p className="mm-empty">Nothing at the program stage yet.</p>}
+      {!isLoading && rows.length === 0 && <p className="mm-empty">No programs added yet.</p>}
       {rows.length > 0 && (
         <div className="mm-table-scroll">
           <table className="mm-table mm-table-hover">
