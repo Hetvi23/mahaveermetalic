@@ -36,7 +36,10 @@ export default function ProgramScreen() {
   const [reverting, setReverting] = useState<Program | null>(null);
 
   const machinesCall = useFrappeGetCall<{ message: Machine[] }>(`${API}.list_machines`, undefined, "pg-machines");
-  const progCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, { program_date: date }, `pg-threads-${date}`);
+  // Board = every program still ON a machine (not freed → Production, not reverted →
+  // Cutting), regardless of the date it was planned. The Date selector only stamps the
+  // plan-date on NEW programs (passed to the Add-program modal), it doesn't filter here.
+  const progCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "pg-threads");
 
   const { call: addMachine } = useFrappePostCall(`${API}.add_machine`);
   const { call: removeMachine } = useFrappePostCall(`${API}.remove_machine`);
@@ -519,9 +522,11 @@ function ProgramList() {
   // Only actual programs (added to a machine). The available pool (finished cuttings,
   // in-cutting patties, inventory rolls) lives in the Add-program picker — not here —
   // so this list is exactly the programs you created, nothing you didn't add.
+  // Same set as the Board: programs still at the program stage. released=1 means it
+  // was Freed (→ Production) or Reverted (→ Cutting), so it's no longer here.
   const progsCall = useFrappeGetDocList<Program>("MM Program", {
     fields: ["name", "program_date", "customer_order", "roll_no", "machine_no", "shift", "cut", "status", "total_batches", "completed_batches", "net_weight"],
-    filters: [["docstatus", "<", 2]],
+    filters: [["docstatus", "=", 1], ["released", "=", 0]],
     orderBy: { field: "modified", order: "desc" },
     limit: 200,
   });
