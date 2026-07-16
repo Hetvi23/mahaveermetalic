@@ -276,24 +276,15 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
   const [search, setSearch] = useState("");
   const [cutFilter, setCutFilter] = useState("");
 
-  // Roll picker — constrained to the selected machine's Cut: a machine set for
-  // 50/85 only loads 50/85 patties. Uncut inventory rolls (no cut yet) still show
-  // — they take the machine's cut when programmed. Then narrowed by the search box.
+  // Picker shows ALL available rolls — the machine applies its own Cut on submit
+  // (machine cut wins), so any roll can be programmed onto any machine. Only the
+  // search box narrows the list.
   const q = search.trim().toLowerCase();
-  const selMachineCut = (machines.find((m) => m.name === machine)?.cut || "").trim();
-  const mCut = selMachineCut.toLowerCase();
-  const visibleRolls = rolls.filter((r) => {
-    const rc = (r.cut || "").trim().toLowerCase();
-    if (mCut && rc && rc !== mCut) return false; // a different, already-assigned cut → hide
-    if (
-      q &&
-      ![r.roll_no, r.shade, r.cut, r.party, r.customer_order, r.state, r.cutting, r.inward_item].some((v) =>
-        (v || "").toLowerCase().includes(q),
-      )
-    )
-      return false;
-    return true;
-  });
+  const visibleRolls = q
+    ? rolls.filter((r) =>
+        [r.roll_no, r.shade, r.cut, r.party, r.customer_order, r.state, r.cutting, r.inward_item]
+          .some((v) => (v || "").toLowerCase().includes(q)))
+    : rolls;
 
   // Cut-ID filter for the machine list (machines carry a default Cut).
   const machineCuts = Array.from(new Set(machines.map((m) => (m.cut || "").trim()).filter(Boolean))).sort();
@@ -364,13 +355,7 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
           ) : rolls.length === 0 ? (
             <p className="mm-empty">Nothing available to program.</p>
           ) : visibleRolls.length === 0 ? (
-            <p className="mm-empty">
-              {search
-                ? `No rolls match “${search}”.`
-                : selMachineCut
-                  ? `No rolls or patties for cut ${selMachineCut}.`
-                  : "Nothing available to program."}
-            </p>
+            <p className="mm-empty">No rolls match “{search}”.</p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
               {visibleRolls.map((r, i) => {
