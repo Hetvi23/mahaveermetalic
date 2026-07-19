@@ -17,6 +17,14 @@
     "item_type",
     "rate",
     "lot_number",
+    "section_receipt",
+    "receipt_status",
+    "is_partial",
+    "challan_received_weight",
+    "col_receipt",
+    "challan_expected_weight",
+    "challan_expected_box",
+    "challan_expected_rolls",
     "section_items",
     "items"
   ],
@@ -95,6 +103,58 @@
       "in_list_view": 1,
       "label": "Lot Number",
       "reqd": 1
+    },
+    {
+      "fieldname": "section_receipt",
+      "fieldtype": "Section Break",
+      "label": "Receipt & Verification"
+    },
+    {
+      "fieldname": "receipt_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Receipt Status",
+      "options": "Complete\nPartial",
+      "default": "Complete",
+      "read_only": 1,
+      "description": "Complete = challan fully received (closed to more inwards). Partial = more rolls expected on this challan."
+    },
+    {
+      "fieldname": "is_partial",
+      "fieldtype": "Check",
+      "label": "Partial receipt — more rolls to come",
+      "default": "0"
+    },
+    {
+      "fieldname": "challan_received_weight",
+      "fieldtype": "Float",
+      "label": "Received on this Inward (Kg)",
+      "precision": 3,
+      "read_only": 1
+    },
+    {
+      "fieldname": "col_receipt",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "challan_expected_weight",
+      "fieldtype": "Float",
+      "label": "Challan Expected (Kg)",
+      "precision": 3,
+      "read_only": 1
+    },
+    {
+      "fieldname": "challan_expected_box",
+      "fieldtype": "Float",
+      "label": "Challan Expected (Box)",
+      "precision": 3,
+      "read_only": 1
+    },
+    {
+      "fieldname": "challan_expected_rolls",
+      "fieldtype": "Int",
+      "label": "Challan Expected (Rolls)",
+      "read_only": 1
     },
     {
       "fieldname": "section_items",

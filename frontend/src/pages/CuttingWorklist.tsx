@@ -42,6 +42,8 @@ type BoardCard = {
   total_net_weight?: number;
   status?: string;
   program?: string;
+  unfinished?: number;
+  program_name?: string;
 };
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
@@ -152,16 +154,18 @@ export default function CuttingWorklist() {
                   <div className="mm-cutcol-head">Cut {cut}</div>
                   <div className="mm-cutcol-body">
                     {byCut[cut].map((c) => (
-                      <div className="mm-prog-card" key={c.name}>
+                      <div className={`mm-prog-card ${c.unfinished ? "mm-prog-card-unfinished" : ""}`} key={c.name}>
                         <div className="mm-prog-card-top">
                           <span className="mm-prog-card-name">{c.roll_no || c.shade || "—"}</span>
-                          <span className={stateClass(c.status)}>{c.status}</span>
+                          {c.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : <span className={stateClass(c.status)}>{c.status}</span>}
                         </div>
                         <div className="mm-prog-card-meta">
-                          {c.customer_order || "—"} · {(c.total_patti_qty ?? 0)} patty · {(c.total_net_weight ?? 0).toLocaleString()} kg{c.program ? " · planned" : ""}
+                          {c.customer_order || "—"} · {(c.total_patti_qty ?? 0)} patty · {(c.total_net_weight ?? 0).toLocaleString()} kg{c.unfinished ? " · planned from inventory" : c.program ? " · planned" : ""}
                         </div>
                         <div className="mm-prog-actions">
-                          {c.status !== "Completed" && (
+                          {c.unfinished ? (
+                            <span className="mm-muted" style={{ fontSize: "0.72rem" }}>Finish on the Program screen (pick the roll)</span>
+                          ) : c.status !== "Completed" && (
                             <button className="mm-mini mm-mini-ok" onClick={() => void onFinish(c.name)} title="Mark finished (becomes a patty)">
                               <CheckCircle2 size={13} /> Finish
                             </button>

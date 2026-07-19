@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { ArrowRight, Download, PackageCheck, Pencil, Plus, SkipForward, X } from "lucide-react";
+import { ArrowRight, Download, ListChecks, PackageCheck, Pencil, Plus, RefreshCw, SkipForward, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
+import SalesOrderPicker, { type SOOption } from "@/components/SalesOrderPicker";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true };
 const F_BRANCH: FieldSchema = { fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" };
-const F_SALES_ORDER: FieldSchema = { fieldname: "sales_order", label: "Sales order (optional)", fieldtype: "Link", options: "MM Sales Order" };
+
+type SODetail = {
+  sales_order: string;
+  party?: string;
+  party_name?: string;
+  branch?: string | null;
+  location?: string | null;
+  delivery_date?: string | null;
+  transaction_date?: string | null;
+  items: { color?: string; cut?: string; qty_box?: number; qty_weight?: number }[];
+};
 
 type ChallanItem = { roll?: string; color?: string; cut?: string; qty?: number; weight?: number };
 type MatchOrder = {
@@ -20,13 +31,16 @@ type MatchOrder = {
   qty_weight?: number;
   required_weight?: number;
 };
-type FetchResult = {
+type ChallanVerify = {
   challan_no: string;
+  expected_weight: number;
+  expected_box: number;
+  expected_rolls: number;
+  received_weight: number;
+  remaining_weight: number;
+  closed: boolean;
   coating?: string;
   sales_order?: string;
-  so_colours?: string[];
-  party_name?: string;
-  dated?: string;
   items: ChallanItem[];
   matching_orders: MatchOrder[];
 };
@@ -38,6 +52,24 @@ type Row = {
   qty: number | "";
   weight: number | "";
   customer_order: string;
+};
+
+type RecentInward = {
+  name: string;
+  posting_date?: string;
+  lot_number?: string;
+  location?: string;
+  branch?: string;
+  challan_number?: string;
+  sales_order?: string;
+  party?: string;
+  party_name?: string;
+  colours?: string;
+  rolls?: number;
+  total_box?: number;
+  total_weight?: number;
+  allocated?: boolean;
+  receipt_status?: string;
 };
 
 const blankRow = (): Row => ({ roll: "", color: "", cut: "", qty: "", weight: "", customer_order: "" });
@@ -65,13 +97,45 @@ export default function InwardWorkspace() {
   const [postedCount, setPostedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [verify, setVerify] = useState<ChallanVerify | null>(null); // VM verification for the loaded challan
+  const [isPartial, setIsPartial] = useState(false); // "more rolls to come on this challan"
 
-  const { call: fetchCall, loading: fetching } = useFrappePostCall<{ message: FetchResult }>(
-    "mahaveermetalic.mahaveer_metallic.api.veermetlon.fetch_challan",
+  const { call: verifyCall, loading: fetching } = useFrappePostCall<{ message: ChallanVerify }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.verify_challan",
   );
   const { call: postInward, loading: posting } = useFrappePostCall<{ message: { name: string } }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.post_inward",
   );
+  const { call: fetchSODetail } = useFrappePostCall<{ message: SODetail }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.sales_order_detail",
+  );
+
+  // Picking a Sales Order sets it as the header order. In manual entry it also
+  // auto-forms the Material Received rows from the order's line items (colour, size and
+  // qty/weight) — roll numbers aren't on the order, so those stay blank; qty stays editable.
+  async function pickSalesOrder(v: string, opt?: SOOption) {
+    setSalesOrder(v);
+    if (!v || !manual) return;
+    setError(null);
+    try {
+      const r = await fetchSODetail({ sales_order: v });
+      const d = r.message;
+      if (d?.branch) setBranch((b) => b || d.branch || "");
+      if (d?.location) setLocation((l) => l || d.location || "");
+      const seeded: Row[] = (d?.items || []).map((it) => ({
+        roll: "",
+        color: it.color || "",
+        cut: it.cut || "",
+        qty: it.qty_box || "",
+        weight: it.qty_weight || "",
+        customer_order: v,
+      }));
+      setRows(seeded.length ? seeded : [blankRow()]);
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    }
+    void opt;
+  }
 
   // Branch/Location default from the logged-in user's employee profile; editable here
   // so users without a profile (e.g. Administrator) can still pick a location.
@@ -86,6 +150,13 @@ export default function InwardWorkspace() {
     setBranch((b) => b || d.branch || "");
     setLocation((l) => l || d.location || "");
   }, [defaults]);
+
+  // Recent posted inwards, shown as a list below the entry form and refreshed after
+  // each successful post.
+  const { data: recentData, isLoading: recentLoading, mutate: refreshRecent } = useFrappeGetCall<{
+    message: RecentInward[];
+  }>("mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards", { limit: 30 }, "mm-inward-recent");
+  const recent = recentData?.message ?? [];
 
   const processing = qIndex >= 0; // stepping through the challan queue
   const isLast = qIndex >= queue.length - 1;
@@ -105,9 +176,13 @@ export default function InwardWorkspace() {
     setError(null);
     setFlash(null);
     setAwaitingNext(false);
+    setIsPartial(false);
     try {
-      const r = await fetchCall({ challan_no: no.trim() });
+      // verify_challan checks the challan against Veermetlon (throws if it isn't there)
+      // and returns its rolls + expected-vs-received figures for the verify panel.
+      const r = await verifyCall({ challan_no: no.trim() });
       const m = r.message;
+      setVerify(m);
       setRows(
         (m.items || []).map((it) => ({
           roll: it.roll || "",
@@ -124,10 +199,12 @@ export default function InwardWorkspace() {
       setChallanNo(no.trim());
       setManual(false);
       setFetched(true);
-      if ((m.items || []).length === 0) setError("Challan found but it has no rolls.");
+      if (m.closed) setError(`Challan ${m.challan_no} is already fully received — no further inward allowed.`);
+      else if ((m.items || []).length === 0) setError("Challan found but it has no rolls.");
     } catch (e) {
       setRows([]);
       setOrders([]);
+      setVerify(null);
       setFetched(false);
       setChallanNo(no.trim());
       setError(extractErrorMessage(e));
@@ -165,6 +242,9 @@ export default function InwardWorkspace() {
     setQueue([""]);
     setAwaitingNext(false);
     setManual(false);
+    setVerify(null);
+    setIsPartial(false);
+    setSalesOrder("");
     setError(null);
     setFlash(done ? `Batch done — ${done} inward(s) posted.` : "Batch closed.");
   }
@@ -180,6 +260,8 @@ export default function InwardWorkspace() {
     setQIndex(-1);
     setAwaitingNext(false);
     setManual(true);
+    setVerify(null);
+    setIsPartial(false);
     setFetched(true);
   }
 
@@ -208,16 +290,24 @@ export default function InwardWorkspace() {
     [rows],
   );
 
+  // Mirror the server's over-receipt allowance: max(0.5 kg, 2% of expected). Using the
+  // same tolerance keeps the panel warning consistent with what the server will accept.
+  const overTol = verify ? Math.max(0.5, (verify.expected_weight || 0) * 0.02) : 0.5;
+  const overReceipt = !!verify && totals.weight > verify.remaining_weight + overTol;
+
   async function onSubmit() {
     setError(null);
     setFlash(null);
     if (rows.length === 0) return setError(manual ? "Add at least one material row." : "Nothing to post — fetch a challan first.");
+    if (verify?.closed) return setError("This challan is already fully received — no further inward allowed.");
     if (!location.trim()) return setError("Choose a location (roll stock is tracked per location).");
     if (!lot.trim() && !challanNo.trim()) return setError("Enter a lot number.");
     for (const r of rows) {
       if (!r.color.trim()) return setError(`Roll ${r.roll || ""} needs a colour.`);
       if (!(Number(r.weight) > 0) && !(Number(r.qty) > 0)) return setError(`Roll ${r.roll || ""} needs a weight or qty.`);
     }
+    // Challan-driven inwards are verified against Veermetlon server-side; manual ones aren't.
+    const verifyAgainstVm = !manual && !!challanNo.trim();
     const payload = {
       doctype: "MM Inward",
       posting_date: postingDate,
@@ -226,6 +316,8 @@ export default function InwardWorkspace() {
       sales_order: salesOrder || null,
       challan_number: challanNo.trim(),
       lot_number: lot || challanNo.trim(),
+      verify_against_vm: verifyAgainstVm,
+      is_partial: isPartial,
       items: rows.map((r, i) => ({
         idx: i + 1,
         roll_name: r.roll,
@@ -241,18 +333,24 @@ export default function InwardWorkspace() {
     try {
       const res = await postInward({ payload });
       const name = res?.message?.name;
+      const status = res?.message?.receipt_status;
+      const tag = status === "Partial" ? " (Partial — challan still open)" : status === "Complete" ? " (Complete)" : "";
+      void refreshRecent();
       if (processing) {
         // Queue mode: keep the rolls on screen and wait for the user to hit "Next".
         setPostedCount((c) => c + 1);
         setAwaitingNext(true);
-        setFlash(`Inward ${name} posted${isLast ? " — last challan in the batch." : " — click Next challan."}`);
+        setFlash(`Inward ${name} posted${tag}${isLast ? " — last challan in the batch." : " — click Next challan."}`);
       } else {
         // Manual / single: clear the whole form.
-        setFlash(`Inward ${name} posted — roll stock updated.`);
+        setFlash(`Inward ${name} posted${tag} — roll stock updated.`);
         setRows([]);
         setOrders([]);
         setChallanNo("");
         setLot("");
+        setVerify(null);
+        setIsPartial(false);
+        setSalesOrder("");
         setFetched(false);
         setManual(false);
       }
@@ -281,7 +379,7 @@ export default function InwardWorkspace() {
           </label>
           <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
           <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} />
-          <FieldInput field={F_SALES_ORDER} value={salesOrder} onChange={(v) => setSalesOrder(String(v ?? ""))} />
+          <SalesOrderPicker label="Sales order (optional)" value={salesOrder} onChange={(v, opt) => void pickSalesOrder(v, opt)} />
           {fetched && (
             <label className="mm-field">
               <span className="mm-field-label">Lot number</span>
@@ -351,6 +449,28 @@ export default function InwardWorkspace() {
               <h2 className="mm-panel-title"><PackageCheck size={16} /> {manual ? "Material received" : "Rolls on this challan"}</h2>
               <span className="mm-muted">Total: {totals.qty} box · {totals.weight.toLocaleString()} kg</span>
             </div>
+
+            {/* Verify panel — challan expected vs entered, from Veermetlon */}
+            {!manual && verify && (
+              <div className={`mm-verify ${verify.closed ? "mm-verify-closed" : ""}`}>
+                <div className="mm-verify-row">
+                  <span className="mm-verify-badge"><PackageCheck size={13} /> Verified from Veermetlon</span>
+                  {verify.closed && <span className="mm-badge-low">Challan closed</span>}
+                </div>
+                <div className="mm-verify-stats">
+                  <div><span>Challan expects</span><strong>{verify.expected_weight.toLocaleString()} kg · {verify.expected_rolls} rolls</strong></div>
+                  <div><span>Already received</span><strong>{verify.received_weight.toLocaleString()} kg</strong></div>
+                  <div><span>Remaining</span><strong>{verify.remaining_weight.toLocaleString()} kg</strong></div>
+                  <div className={overReceipt ? "mm-verify-over" : "mm-verify-ok"}>
+                    <span>Entering now</span><strong>{totals.weight.toLocaleString()} kg</strong>
+                  </div>
+                </div>
+                {overReceipt && (
+                  <p className="mm-verify-warn">Entered weight exceeds the challan's remaining {verify.remaining_weight.toLocaleString()} kg — posting will be blocked.</p>
+                )}
+              </div>
+            )}
+
             <div className="mm-table-scroll">
               <table className="mm-table mm-table-dense">
                 <thead>
@@ -410,9 +530,15 @@ export default function InwardWorkspace() {
                   <Plus size={15} /> Add row
                 </button>
               )}
+              {!awaitingNext && (
+                <label className="mm-check mm-check-partial" title="Tick if more rolls are still coming on this challan">
+                  <input type="checkbox" checked={isPartial} onChange={(e) => setIsPartial(e.target.checked)} />
+                  Partial — more rolls to come
+                </label>
+              )}
               {!awaitingNext ? (
-                <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onSubmit()}>
-                  {busy ? "Posting…" : "Post inward"}
+                <button type="button" className="mm-btn-primary" disabled={busy || !!verify?.closed} onClick={() => void onSubmit()}>
+                  {busy ? "Posting…" : "Verify & post inward"}
                 </button>
               ) : processing ? (
                 <button type="button" className="mm-btn-primary" disabled={fetching} onClick={() => (isLast ? finishBatch() : void gotoNext())}>
@@ -464,6 +590,73 @@ export default function InwardWorkspace() {
           )}
         </div>
       )}
+
+      {/* Posted inwards list */}
+      <section className="mm-card mm-card-pad mm-iw-recent">
+        <div className="mm-iw-sec-head">
+          <h2 className="mm-panel-title"><ListChecks size={16} /> Posted inwards</h2>
+          <div className="mm-iw-recent-head-actions">
+            <span className="mm-pill mm-pill-muted">{recent.length}</span>
+            <button type="button" className="mm-icon-btn" title="Refresh" onClick={() => void refreshRecent()}>
+              <RefreshCw size={14} />
+            </button>
+          </div>
+        </div>
+        {recentLoading ? (
+          <p className="mm-empty">Loading…</p>
+        ) : recent.length === 0 ? (
+          <p className="mm-empty">No inwards posted yet.</p>
+        ) : (
+          <div className="mm-table-scroll">
+            <table className="mm-table mm-table-dense">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Challan</th>
+                  <th>Lot</th>
+                  <th>Party</th>
+                  <th>Color</th>
+                  <th>Order</th>
+                  <th>Status</th>
+                  <th>Location</th>
+                  <th className="mm-num">Rolls</th>
+                  <th className="mm-num">Box</th>
+                  <th className="mm-num">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((r) => (
+                  <tr key={r.name}>
+                    <td>{r.posting_date || "—"}</td>
+                    <td>{r.challan_number || "—"}</td>
+                    <td>{r.lot_number || "—"}</td>
+                    <td>{r.party_name || r.party || "—"}</td>
+                    <td>{r.colours || "—"}</td>
+                    <td>
+                      {r.sales_order ? (
+                        <span className="mm-ow-cell-order">{r.sales_order}</span>
+                      ) : (
+                        <span className="mm-muted">inventory</span>
+                      )}
+                    </td>
+                    <td>
+                      {r.receipt_status === "Partial" ? (
+                        <span className="mm-state-chip mm-state-inventory">Partial</span>
+                      ) : (
+                        <span className="mm-state-chip mm-state-cut">Complete</span>
+                      )}
+                    </td>
+                    <td>{r.location || "—"}</td>
+                    <td className="mm-num">{r.rolls ?? 0}</td>
+                    <td className="mm-num">{(r.total_box ?? 0).toLocaleString()}</td>
+                    <td className="mm-num">{(r.total_weight ?? 0).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

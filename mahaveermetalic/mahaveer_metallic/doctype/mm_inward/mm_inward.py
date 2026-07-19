@@ -14,6 +14,37 @@ class MMInward(Document):
 		for row in self.items:
 			if (row.weight or 0) <= 0 and (row.qty_box or 0) <= 0:
 				frappe.throw(_("Row #{0}: enter a Weight or Box quantity.").format(row.idx))
+		# is_partial (a user-facing checkbox) must win even though receipt_status carries a
+		# JSON default of "Complete" on desk-created inwards; only fall back to Complete
+		# when nothing set it (post_inward sets it explicitly on the SPA path).
+		if self.is_partial:
+			self.receipt_status = "Partial"
+		elif not self.receipt_status:
+			self.receipt_status = "Complete"
+		self._guard_challan_not_closed()
+
+	def _guard_challan_not_closed(self):
+		"""One inward per challan — unless the earlier one was Partial. A challan is
+		closed once any submitted inward for it is marked Complete; block any further
+		inward against a closed challan. Partial inwards leave the challan open."""
+		if not self.challan_number:
+			return
+		closed = frappe.db.get_value(
+			"MM Inward",
+			{
+				"challan_number": self.challan_number,
+				"docstatus": 1,
+				"receipt_status": "Complete",
+				"name": ["!=", self.name or ""],
+			},
+			"name",
+		)
+		if closed:
+			frappe.throw(
+				_("Challan {0} is already fully received (inward {1}). No further inward is allowed.").format(
+					self.challan_number, closed
+				)
+			)
 
 	def _set_branch_location_from_employee(self):
 		"""Default Branch/Location from the posting (logged-in) user's MM Employee
@@ -73,6 +104,8 @@ class MMInward(Document):
 		return None
 
 	def _apply_to_roll_inventory(self, sign: int):
+		from mahaveermetalic.mahaveer_metallic import stock_ledger
+
 		for row in self.items:
 			weight = round((row.weight or 0) * sign, 3)
 			boxes = round((row.qty_box or 0) * sign, 3)
@@ -87,7 +120,7 @@ class MMInward(Document):
 				doc.stock_box = round((doc.stock_box or 0) + boxes, 3)
 				doc.save(ignore_permissions=True)
 			elif sign > 0:
-				frappe.get_doc(
+				doc = frappe.get_doc(
 					{
 						"doctype": "MM Roll Inventory",
 						"roll_no": row.roll_name,
@@ -99,7 +132,8 @@ class MMInward(Document):
 						"stock_weight": weight,
 						"stock_box": boxes,
 					}
-				).insert(ignore_permissions=True)
+				)
+				doc.insert(ignore_permissions=True)
 			else:
 				# Cancelling but no matching stock row — nothing to reverse.
 				frappe.throw(
@@ -107,3 +141,27 @@ class MMInward(Document):
 						row.color_name, self.lot_number or "—"
 					)
 				)
+
+			# Ledger: IN on submit, reversing OUT on cancel; balance is read back from
+			# the roll row so the ledger and live inventory always agree.
+			mag_w = round(row.weight or 0, 3)
+			mag_b = round(row.qty_box or 0, 3)
+			stock_ledger.post_movement(
+				voucher_type="Inward",
+				voucher_no=self.name,
+				branch=self.branch,
+				location=self.location,
+				lot_number=self.lot_number,
+				color_name=row.color_name,
+				roll_no=row.roll_name,
+				item_type=self.item_type,
+				in_weight=mag_w if sign > 0 else 0,
+				out_weight=mag_w if sign < 0 else 0,
+				in_box=mag_b if sign > 0 else 0,
+				out_box=mag_b if sign < 0 else 0,
+				balance_weight=doc.stock_weight,
+				balance_box=doc.stock_box,
+				customer_order=row.customer_order or self.sales_order,
+				challan_number=self.challan_number,
+				remarks="Inward cancelled" if sign < 0 else None,
+			)

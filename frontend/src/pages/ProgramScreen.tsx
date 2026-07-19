@@ -15,7 +15,9 @@ type Program = {
   name: string; program_date?: string; customer_order?: string; roll_no?: string; shade?: string;
   machine_no?: string; shift?: string; cut?: string; status?: string; is_running?: number; closed?: number;
   released?: number; reverted?: number; total_batches?: number; completed_batches?: number; net_weight?: number;
+  unfinished?: number; remark?: string; roll_inventory?: string;
 };
+type InvRoll = { name: string; roll_no?: string; lot_number?: string; location?: string; color_name?: string; available_weight?: number; stock_weight?: number };
 type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
   customer_order?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number;
@@ -34,6 +36,7 @@ export default function ProgramScreen() {
   const [adding, setAdding] = useState<{ machine?: string } | null>(null);
   const [closing, setClosing] = useState<Machine | null>(null);
   const [reverting, setReverting] = useState<Program | null>(null);
+  const [finishing, setFinishing] = useState<Program | null>(null);
 
   const machinesCall = useFrappeGetCall<{ message: Machine[] }>(`${API}.list_machines`, undefined, "pg-machines");
   // Board = every program still ON a machine (not freed → Production, not reverted →
@@ -134,21 +137,31 @@ export default function ProgramScreen() {
                         return (
                           <td key={c} className="mm-prog-col">
                             {p ? (
-                              <div className="mm-prog-card">
+                              <div className={`mm-prog-card ${p.unfinished ? "mm-prog-card-unfinished" : ""}`}>
                                 <div className="mm-prog-card-top">
                                   <span className="mm-prog-card-name">{p.roll_no || p.shade || "—"}</span>
-                                  <span className={stateClass(p.status)}>{p.status}</span>
+                                  {p.unfinished ? <span className="mm-state mm-state-unfinished">Unfinished</span> : <span className={stateClass(p.status)}>{p.status}</span>}
                                 </div>
                                 <div className="mm-prog-card-meta">
-                                  {p.shift || "—"} · {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches · {(p.net_weight ?? 0).toLocaleString()} kg
+                                  {p.shift || "—"} · {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches · {p.unfinished ? "roll not yet picked" : `${(p.net_weight ?? 0).toLocaleString()} kg`}
                                 </div>
+                                {p.remark && <div className="mm-prog-card-remark">“{p.remark}”</div>}
                                 <div className="mm-prog-actions">
-                                  <button className="mm-mini" disabled={!!p.reverted || (p.completed_batches ?? 0) >= (p.total_batches ?? 0)}
-                                    title={p.reverted ? "Reverted — completing is locked" : undefined}
-                                    onClick={guard(() => complete({ program: p.name, count: 1 }))}><Check size={13} /> Complete</button>
-                                  <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={() => setReverting(p)}><Undo2 size={13} /> Revert</button>
-                                  {p.status === "Completed" && (
-                                    <button className="mm-mini mm-mini-ok" onClick={guard(() => free({ program: p.name }))}><CheckCircle2 size={13} /> Free</button>
+                                  {p.unfinished ? (
+                                    <>
+                                      <button className="mm-mini mm-mini-ok" title="Pick the roll from inventory — its weight is fetched — then finish" onClick={() => setFinishing(p)}><CheckCircle2 size={13} /> Finish (pick roll)</button>
+                                      <button className="mm-mini mm-mini-warn" onClick={() => setReverting(p)}><Undo2 size={13} /> Cancel plan</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button className="mm-mini" disabled={!!p.reverted || (p.completed_batches ?? 0) >= (p.total_batches ?? 0)}
+                                        title={p.reverted ? "Reverted — completing is locked" : undefined}
+                                        onClick={guard(() => complete({ program: p.name, count: 1 }))}><Check size={13} /> Complete</button>
+                                      <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={() => setReverting(p)}><Undo2 size={13} /> Revert</button>
+                                      {p.status === "Completed" && (
+                                        <button className="mm-mini mm-mini-ok" onClick={guard(() => free({ program: p.name }))}><CheckCircle2 size={13} /> Free</button>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -178,6 +191,70 @@ export default function ProgramScreen() {
       {adding && <AddProgramModal date={date} machines={machines} presetMachine={adding.machine} onClose={() => setAdding(null)} onDone={() => { setAdding(null); refresh(); }} />}
       {closing && <CloseMachineModal machine={closing} onClose={() => setClosing(null)} onDone={() => { setClosing(null); refresh(); }} />}
       {reverting && <RevertDialog program={reverting} onClose={() => setReverting(null)} onDone={() => { setReverting(null); refresh(); }} />}
+      {finishing && <FinishModal program={finishing} onClose={() => setFinishing(null)} onDone={() => { setFinishing(null); refresh(); }} />}
+    </div>
+  );
+}
+
+/* ── Finish an unfinished program: pick the actual roll from inventory (matched by the
+      planned colour); its weight is fetched and consumed, then the program is finished ── */
+function FinishModal({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
+  const color = program.shade || "";
+  const rollsCall = useFrappeGetCall<{ message: InvRoll[] }>(
+    `${API}.program_inventory_search`,
+    { color },
+    `pg-finish-${color}`,
+  );
+  const { call: finish, loading } = useFrappePostCall(`${API}.finish_unfinished`);
+  const rolls = rollsCall.data?.message ?? [];
+  const [roll, setRoll] = useState<InvRoll | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    if (!roll) return setErr("Pick the roll from inventory to finish.");
+    try {
+      await finish({ program: program.name, roll_inventory: roll.name });
+      onDone();
+    } catch (e) {
+      setErr(extractErrorMessage(e));
+    }
+  }
+
+  return (
+    <div className="mm-modal-scrim" onClick={onClose}>
+      <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="mm-modal-head">
+          <span className="mm-modal-title">Finish — pick the {color || "roll"} roll</span>
+          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="mm-modal-body">
+          <p className="mm-muted" style={{ marginTop: 0, fontSize: "0.8rem" }}>
+            Choose the roll physically going onto the machine — its full weight is fetched onto the program and taken out of stock.
+          </p>
+          {rollsCall.isLoading ? (
+            <p className="mm-muted">Loading…</p>
+          ) : rolls.length === 0 ? (
+            <p className="mm-empty">No {color} rolls in stock. Inward one first.</p>
+          ) : (
+            <div style={{ maxHeight: "260px", overflow: "auto" }}>
+              {rolls.map((r) => (
+                <div key={r.name} className={`mm-pick-row ${roll?.name === r.name ? "mm-pick-row-active" : ""}`} onClick={() => setRoll(r)}>
+                  <span>{r.roll_no || r.color_name || "—"}{r.lot_number ? ` · ${r.lot_number}` : ""}{r.location ? ` · ${r.location}` : ""}</span>
+                  <span className="mm-prog-card-meta">{(r.available_weight ?? r.stock_weight ?? 0).toLocaleString()} kg</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+        </div>
+        <div className="mm-modal-foot">
+          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-primary" disabled={loading || !roll} onClick={() => void submit()}>
+            {loading ? "Finishing…" : roll ? `Finish · ${(roll.available_weight ?? roll.stock_weight ?? 0).toLocaleString()} kg` : "Finish"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -261,8 +338,11 @@ function MachineCutInput({ machine, value, onSaved }: { machine: string; value?:
 
 /* ── Add program (chip picker) ──────────────────────────── */
 function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { date: string; machines: Machine[]; presetMachine?: string; onClose: () => void; onDone: () => void }) {
-  const rollsCall = useFrappeGetCall<{ message: Roll[] }>(`${API}.available_rolls`, undefined, "pg-rolls");
+  const [mode, setMode] = useState<"patty" | "inventory">("patty");
+  // Default list shows ONLY finished cuttings (patties); "From inventory" covers the rest.
+  const rollsCall = useFrappeGetCall<{ message: Roll[] }>(`${API}.available_rolls`, { finished_only: 1 }, "pg-rolls-finished");
   const { call: create, loading } = useFrappePostCall(`${API}.create_program`);
+  const { call: createUnfinished, loading: loadingUnf } = useFrappePostCall(`${API}.create_unfinished_program`);
   const rolls = rollsCall.data?.message ?? [];
 
   const [sel, setSel] = useState<Roll | null>(null);
@@ -272,9 +352,20 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
   const [batches, setBatches] = useState<number | "">(1);
   const [weight, setWeight] = useState<number | "">("");
   const [jobWork, setJobWork] = useState(false);
+  const [remark, setRemark] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [cutFilter, setCutFilter] = useState("");
+
+  // Inventory mode: search a colour, fetch its in-stock rolls, plan an unfinished program.
+  const [invColor, setInvColor] = useState("");
+  const [invRoll, setInvRoll] = useState<InvRoll | null>(null);
+  const invCall = useFrappeGetCall<{ message: InvRoll[] }>(
+    `${API}.program_inventory_search`,
+    invColor.trim() ? { color: invColor.trim() } : undefined,
+    invColor.trim() ? `pg-inv-${invColor.trim()}` : undefined,
+  );
+  const invRolls = invCall.data?.message ?? [];
 
   // Picker shows ALL available rolls — the machine applies its own Cut on submit
   // (machine cut wins), so any roll can be programmed onto any machine. Only the
@@ -309,20 +400,36 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
 
   async function submit() {
     setErr(null);
-    if (!sel) return setErr("Pick a roll / patty from the list.");
     if (!machine) return setErr("Choose a machine.");
     if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     try {
-      await create({
-        source_cutting: sel.source_type === "cutting" ? sel.cutting : undefined,
-        source_inward_item: sel.source_type === "inward" ? sel.inward_item : undefined,
-        machine_no: machine, shift,
-        customer_order: order || sel.customer_order,
-        total_batches: batches,
-        weight: weight === "" ? sel.weight : weight,
-        program_date: date,
-        job_work: jobWork ? 1 : 0,
-      });
+      if (mode === "inventory") {
+        const color = invRoll?.color_name || invColor.trim();
+        if (!color) return setErr("Search and pick a colour / roll from inventory.");
+        await createUnfinished({
+          machine_no: machine,
+          color,
+          roll_inventory: invRoll?.name,
+          total_batches: batches,
+          remark: remark || undefined,
+          customer_order: order || undefined,
+          program_date: date,
+          shift,
+          job_work: jobWork ? 1 : 0,
+        });
+      } else {
+        if (!sel) return setErr("Pick a finished patty from the list.");
+        await create({
+          source_cutting: sel.source_type === "cutting" ? sel.cutting : undefined,
+          source_inward_item: sel.source_type === "inward" ? sel.inward_item : undefined,
+          machine_no: machine, shift,
+          customer_order: order || sel.customer_order,
+          total_batches: batches,
+          weight: weight === "" ? sel.weight : weight,
+          program_date: date,
+          job_work: jobWork ? 1 : 0,
+        });
+      }
       onDone();
     } catch (e) {
       setErr(extractErrorMessage(e));
@@ -337,39 +444,74 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.4rem" }}>
-            <p className="mm-field-label" style={{ margin: 0 }}>Pick a roll / patty</p>
-            <div style={{ position: "relative", flex: "0 1 240px" }}>
-              <Search size={14} style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", opacity: 0.5, pointerEvents: "none" }} />
-              <input
-                className="mm-input mm-input-compact"
-                style={{ width: "100%", paddingLeft: "1.9rem" }}
-                placeholder="Search roll / shade / cut / party…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+          <div className="mm-seg" style={{ marginBottom: "0.7rem" }}>
+            <button className={`mm-seg-btn ${mode === "patty" ? "mm-seg-btn-active" : ""}`} onClick={() => setMode("patty")}>Finished patty</button>
+            <button className={`mm-seg-btn ${mode === "inventory" ? "mm-seg-btn-active" : ""}`} onClick={() => setMode("inventory")}>From inventory</button>
           </div>
-          {rollsCall.isLoading ? (
-            <p className="mm-muted">Loading…</p>
-          ) : rolls.length === 0 ? (
-            <p className="mm-empty">Nothing available to program.</p>
-          ) : visibleRolls.length === 0 ? (
-            <p className="mm-empty">No rolls match “{search}”.</p>
+
+          {mode === "patty" ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.4rem" }}>
+                <p className="mm-field-label" style={{ margin: 0 }}>Pick a finished patty</p>
+                <div style={{ position: "relative", flex: "0 1 240px" }}>
+                  <Search size={14} style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", opacity: 0.5, pointerEvents: "none" }} />
+                  <input
+                    className="mm-input mm-input-compact"
+                    style={{ width: "100%", paddingLeft: "1.9rem" }}
+                    placeholder="Search roll / shade / cut / party…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              {rollsCall.isLoading ? (
+                <p className="mm-muted">Loading…</p>
+              ) : rolls.length === 0 ? (
+                <p className="mm-empty">No finished patties. Use “From inventory” to plan a roll ahead of the cut.</p>
+              ) : visibleRolls.length === 0 ? (
+                <p className="mm-empty">No patties match “{search}”.</p>
+              ) : (
+                <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
+                  {visibleRolls.map((r, i) => {
+                    const id = r.cutting || r.inward_item || String(i);
+                    const isSel = sel && (sel.cutting || sel.inward_item) === (r.cutting || r.inward_item);
+                    return (
+                      <div key={id} className={`mm-pick-row ${isSel ? "mm-pick-row-active" : ""}`} onClick={() => pick(r)}>
+                        <span className={stateClass(r.state)}>{r.state}</span>
+                        <span>{(r.roll_no || r.shade || "—")} · {r.cut || "—"}{r.party ? ` · ${r.party}` : ""}</span>
+                        <span className="mm-prog-card-meta">{r.batches ?? 0} btch · {(r.weight ?? 0).toLocaleString()} kg</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           ) : (
-            <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
-              {visibleRolls.map((r, i) => {
-                const id = r.cutting || r.inward_item || String(i);
-                const isSel = sel && (sel.cutting || sel.inward_item) === (r.cutting || r.inward_item);
-                return (
-                  <div key={id} className={`mm-pick-row ${isSel ? "mm-pick-row-active" : ""}`} onClick={() => pick(r)}>
-                    <span className={stateClass(r.state)}>{r.state}</span>
-                    <span>{(r.roll_no || r.shade || "—")} · {r.cut || "—"}{r.party ? ` · ${r.party}` : ""}</span>
-                    <span className="mm-prog-card-meta">{r.batches ?? 0} btch · {(r.weight ?? 0).toLocaleString()} kg</span>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Search a colour in inventory</p>
+              <div style={{ position: "relative", marginBottom: "0.5rem" }}>
+                <Search size={14} style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", opacity: 0.5, pointerEvents: "none" }} />
+                <input className="mm-input" style={{ paddingLeft: "1.9rem" }} placeholder="Type a colour, e.g. LKBCH GOLD…" value={invColor} onChange={(e) => { setInvColor(e.target.value); setInvRoll(null); }} />
+              </div>
+              {!invColor.trim() ? (
+                <p className="mm-muted" style={{ fontSize: "0.8rem" }}>Type a colour to see its rolls in stock. You’ll pick the exact roll later, at Finish.</p>
+              ) : invCall.isLoading ? (
+                <p className="mm-muted">Searching…</p>
+              ) : invRolls.length === 0 ? (
+                <p className="mm-empty">No “{invColor}” rolls in stock.</p>
+              ) : (
+                <div style={{ maxHeight: "200px", overflow: "auto", marginBottom: "0.8rem" }}>
+                  {invRolls.map((r) => (
+                    <div key={r.name} className={`mm-pick-row ${invRoll?.name === r.name ? "mm-pick-row-active" : ""}`} onClick={() => setInvRoll(r)}>
+                      <span className="mm-state mm-state-ininventory">Inventory</span>
+                      <span>{r.color_name || "—"}{r.lot_number ? ` · ${r.lot_number}` : ""}{r.location ? ` · ${r.location}` : ""}</span>
+                      <span className="mm-prog-card-meta">{(r.available_weight ?? r.stock_weight ?? 0).toLocaleString()} kg</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mm-muted" style={{ fontSize: "0.75rem", marginTop: 0 }}>Planned rolls show <strong style={{ color: "#b91c1c" }}>red in Cutting</strong> and highlighted here until you Finish (pick the roll → weight fetched).</p>
+            </>
           )}
 
           <div className="mm-form-grid">
@@ -410,9 +552,20 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
               <input className="mm-input" type="number" min={1} value={batches}
                 onChange={(e) => setBatches(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1))} />
             </label>
+            {mode === "patty" ? (
+              <label className="mm-field">
+                <span className="mm-field-label">Weight (Kg) *</span>
+                <input className="mm-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+              </label>
+            ) : (
+              <label className="mm-field">
+                <span className="mm-field-label">Weight (Kg)</span>
+                <input className="mm-input" value="Fetched at Finish" disabled />
+              </label>
+            )}
             <label className="mm-field">
-              <span className="mm-field-label">Weight (Kg) *</span>
-              <input className="mm-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+              <span className="mm-field-label">Remark</span>
+              <input className="mm-input" value={remark} placeholder="Optional note" onChange={(e) => setRemark(e.target.value)} />
             </label>
             <label className="mm-field mm-field-inline">
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
@@ -422,7 +575,7 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Submit"}</button>
+          <button className="mm-btn-primary" disabled={loading || loadingUnf} onClick={() => void submit()}>{(loading || loadingUnf) ? "Saving…" : mode === "inventory" ? "Plan (unfinished)" : "Submit"}</button>
         </div>
       </div>
     </div>

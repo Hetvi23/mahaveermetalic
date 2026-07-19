@@ -27,6 +27,7 @@ import {
   HardHat,
   Bell,
   ListChecks,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -66,7 +67,8 @@ const SECTIONS: Section[] = [
       { label: "Program", icon: Monitor, to: "/program" },
       { label: "Production", icon: Factory, to: "/production" },
       { label: "Bobbin In / Out", icon: Disc3, to: "/bobbin-tracking" },
-      { label: "Roll Inventory", icon: ScrollText, to: "/roll-inventory" },
+      { label: "Inventory", icon: Boxes, to: "/inventory" },
+      { label: "Stock Ledger", icon: ScrollText, to: "/stock-ledger" },
     ],
   },
   {

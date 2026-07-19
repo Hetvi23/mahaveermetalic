@@ -253,22 +253,34 @@ def complete_cutting(cutting):
 @frappe.whitelist()
 def cutting_board(branch=None):
 	"""Cutting worklist board: in-process and open cuttings, grouped by Cut (cut =
-	column, each cutting = a card) on the screen. Cuttings already pulled into a
-	program are excluded — they've moved on to the Program stage, so leaving them here
-	would show them as still-available and clash with the Program picker (which hides
-	them)."""
-	filters = {"docstatus": 1, "status": ["in", ["In Progress", "Open"]], "program": ["is", "not set"]}
+	column, each cutting = a card). Cuttings already pulled into a program are excluded
+	— EXCEPT the placeholder cut of an UNFINISHED program (planned straight from an
+	inventory colour): that one shows here in RED as a cut still to be done, until the
+	operator finishes it (picks the roll, weight is fetched). Each row carries an
+	`unfinished` flag so the board can colour it."""
+	conditions = [
+		"c.docstatus = 1",
+		"c.status in ('In Progress', 'Open')",
+		"(c.program is null or p.unfinished = 1)",
+	]
+	values = {}
 	if branch:
-		filters["branch"] = branch
-	return frappe.get_all(
-		"MM Cutting",
-		filters=filters,
-		fields=[
-			"name", "posting_date", "customer_order", "roll_no", "shade", "cut",
-			"status", "roll_qty", "total_patti_qty", "total_net_weight", "program",
-		],
-		order_by="cut asc, modified desc",
-		limit_page_length=500,
+		conditions.append("c.branch = %(branch)s")
+		values["branch"] = branch
+	return frappe.db.sql(
+		f"""
+		select c.name, c.posting_date, c.customer_order, c.roll_no, c.shade, c.cut,
+			c.status, c.roll_qty, c.total_patti_qty, c.total_net_weight, c.program,
+			case when p.unfinished = 1 then 1 else 0 end as unfinished,
+			p.name as program_name
+		from `tabMM Cutting` c
+		left join `tabMM Program` p on p.name = c.program
+		where {" and ".join(conditions)}
+		order by c.cut asc, c.modified desc
+		limit 500
+		""",
+		values,
+		as_dict=True,
 	)
 
 

@@ -864,6 +864,8 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-iw-grid-single { grid-template-columns: 1fr; }
 .mm-iw-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }
 .mm-iw-sec-head .mm-panel-title { display: flex; align-items: center; gap: 0.35rem; margin: 0; }
+.mm-iw-recent { margin-top: 1rem; }
+.mm-iw-recent-head-actions { display: flex; align-items: center; gap: 0.5rem; }
 .mm-iw-num { width: 80px; text-align: right; }
 @media (max-width: 1000px) {
   .mm-iw-entry-grid { grid-template-columns: 1fr; }
@@ -1136,6 +1138,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-suggest-item { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.8rem; }
 .mm-suggest-item:hover { background: #fefce8; }
 .mm-suggest-muted { padding: 0.4rem 0.7rem; color: var(--mm-text-sec); font-size: 0.8rem; }
+.mm-suggest-rich { max-height: 280px; }
+.mm-suggest-rich .mm-suggest-item { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.7rem; }
+.mm-suggest-rich .mm-suggest-item strong { font-size: 0.82rem; }
+.mm-suggest-meta { font-size: 0.72rem; color: var(--mm-text-sec); }
 
 /* ── Breadcrumb ───────────────────────────────────────── */
 .mm-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.72rem; margin-bottom: 0.5rem; }
@@ -1456,3 +1462,41 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-scale-reading.is-moving { color: var(--mm-text-sec); background: var(--mm-bg); }
 .mm-scale-reading em { font-style: normal; font-weight: 600; font-size: 0.7rem; opacity: 0.8; margin-left: 0.25rem; }
 .mm-scale-raw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; color: var(--mm-text-sec); margin-top: 0.3rem; word-break: break-all; }
+
+/* ── Inventory + Stock Ledger + Inward verify (2026-07-18) ───────────────── */
+.mm-screen-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.mm-inv-kpis { margin-bottom: 1rem; }
+.mm-inv-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.7rem; margin-bottom: 0.8rem; }
+.mm-search-box { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 260px; min-width: 200px; padding: 0 0.6rem; border: 1.5px solid var(--mm-border); border-radius: var(--mm-radius-sm); background: #fff; color: var(--mm-text-sec); }
+.mm-search-box .mm-input { border: none; padding-left: 0; background: transparent; }
+.mm-search-box .mm-input:focus { outline: none; box-shadow: none; }
+.mm-check { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--mm-text-sec); cursor: pointer; white-space: nowrap; }
+.mm-check input { width: 15px; height: 15px; accent-color: var(--mm-blue, #2563eb); }
+.mm-check-partial { margin-left: auto; padding: 0.35rem 0.6rem; border-radius: var(--mm-radius-sm); background: #fff7ed; color: #b45309; font-weight: 600; }
+.mm-row-click { cursor: pointer; }
+.mm-row-click:hover { background: #f0f7ff; }
+.mm-badge-low { display: inline-flex; align-items: center; gap: 0.2rem; margin-left: 0.4rem; padding: 0.05rem 0.35rem; border-radius: 999px; background: #fee2e2; color: #b91c1c; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+.mm-vtag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.45rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+.mm-vtag-in { background: #dcfce7; color: #15803d; }
+.mm-vtag-out { background: #fee2e2; color: #b91c1c; }
+.mm-in { color: #15803d; font-weight: 600; }
+.mm-out { color: #b91c1c; font-weight: 600; }
+.mm-ctx-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; font-size: 0.8rem; color: var(--mm-text-sec); }
+/* Inward verify panel */
+.mm-verify { border: 1.5px solid #bfdbfe; background: #eff6ff; border-radius: var(--mm-radius-sm); padding: 0.7rem 0.9rem; margin-bottom: 0.9rem; }
+.mm-verify-closed { border-color: #fecaca; background: #fef2f2; }
+.mm-verify-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+.mm-verify-badge { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.02em; }
+.mm-verify-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; }
+.mm-verify-stats > div { display: flex; flex-direction: column; padding: 0.4rem 0.6rem; background: #fff; border-radius: var(--mm-radius-sm); border: 1px solid #e5edf7; }
+.mm-verify-stats span { font-size: 0.68rem; color: var(--mm-text-sec); text-transform: uppercase; letter-spacing: 0.02em; }
+.mm-verify-stats strong { font-size: 0.95rem; margin-top: 0.15rem; }
+.mm-verify-over strong { color: #b91c1c; }
+.mm-verify-ok strong { color: #15803d; }
+.mm-verify-warn { margin: 0.5rem 0 0; color: #b91c1c; font-size: 0.78rem; font-weight: 600; }
+
+/* ── Program: unfinished (planned-from-inventory) rolls (2026-07-18) ─────── */
+.mm-state-unfinished { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+.mm-prog-card-unfinished { border: 1.5px solid #f87171; background: #fef2f2; box-shadow: 0 0 0 1px #fecaca inset; }
+.mm-prog-card-unfinished .mm-prog-card-name { color: #b91c1c; }
+.mm-prog-card-remark { font-size: 0.72rem; color: var(--mm-text-sec); font-style: italic; margin-top: 0.1rem; }

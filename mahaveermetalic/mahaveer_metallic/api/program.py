@@ -38,20 +38,23 @@ def _party_map(orders):
 
 
 @frappe.whitelist()
-def available_rolls(branch=None, location=None):
+def available_rolls(branch=None, location=None, finished_only=0):
 	"""Entry picker: one unified list of roll entries with a state chip.
 
 	Returns rows shaped for the modal — `state` is one of Cut / In Cutting / In
 	Inventory; `source_type` + (`cutting` | `inward_item`) say how to create the
-	program from that row.
+	program from that row. `finished_only` restricts to finished cuttings (Cut) — the
+	default Add-program list; the "search inventory" mode covers everything else.
 	"""
 	rows = []
+	finished_only = int(finished_only or 0)
 
 	# --- Cut: finished cuttings (patties) not yet programmed ---
 	cut_filters = {"docstatus": 1, "status": "Completed", "program": ["is", "not set"]}
 	# --- In Cutting: cuttings still in progress (selectable — programming ahead of the cut is allowed) ---
 	prog_filters = {"docstatus": 1, "status": ["!=", "Completed"], "program": ["is", "not set"]}
-	for state, filters in (("Cut", cut_filters), ("In Cutting", prog_filters)):
+	states = (("Cut", cut_filters),) if finished_only else (("Cut", cut_filters), ("In Cutting", prog_filters))
+	for state, filters in states:
 		if branch:
 			filters["branch"] = branch
 		if location:
@@ -377,6 +380,181 @@ def create_program(
 	return {"program": program.name, "status": program.status, "total_batches": program.total_batches}
 
 
+@frappe.whitelist()
+def program_inventory_search(color=None, branch=None, location=None):
+	"""'Search a roll from inventory' for the Add-program modal — inventory rolls of a
+	colour that still have stock. If a colour has no stock, nothing comes back."""
+	from mahaveermetalic.mahaveer_metallic.api import inventory as invapi
+
+	return invapi.rolls_by_colour(color=color, branch=branch, location=location)
+
+
+@frappe.whitelist()
+def create_unfinished_program(
+	machine_no=None,
+	color=None,
+	roll_inventory=None,
+	total_batches=None,
+	remark=None,
+	customer_order=None,
+	program_date=None,
+	shift=None,
+	job_work=0,
+):
+	"""Plan a program straight from an inventory colour, BEFORE the physical cut.
+
+	Creates an UNFINISHED program (weight 0) plus a placeholder Open cutting — the
+	"planned cut". The cutting shows red on the Cutting board and the program is
+	highlighted as unfinished until the operator picks the real roll at finish (which
+	fetches its weight, consumes stock and posts the OUT ledger entry). Fewest clicks:
+	colour + batches + remark and it's on the machine.
+	"""
+	if not color and not roll_inventory:
+		frappe.throw(_("Enter a colour (or pick an inventory roll) to plan."))
+	if machine_no and frappe.db.get_value("MM Machine", machine_no, "closed"):
+		frappe.throw(_("Machine {0} is closed. Reopen it before planning a program on it.").format(machine_no))
+
+	machine_cut = frappe.db.get_value("MM Machine", machine_no, "cut") if machine_no else None
+
+	branch = location = None
+	if roll_inventory:
+		ri = frappe.db.get_value(
+			"MM Roll Inventory", roll_inventory, ["color_name", "branch", "location"], as_dict=True
+		)
+		if ri:
+			color = color or ri.color_name
+			branch, location = ri.branch, ri.location
+
+	batches = int(total_batches) if total_batches not in (None, "") else 1
+	if batches <= 0:
+		frappe.throw(_("Total Batches must be greater than 0."))
+
+	# Placeholder Open cutting — the planned cut. Zero weight until the roll is bound.
+	cutting = frappe.get_doc(
+		{
+			"doctype": "MM Cutting",
+			"posting_date": program_date or frappe.utils.nowdate(),
+			"customer_order": customer_order,
+			"roll_no": color or "—",
+			"shade": color,
+			"cut": machine_cut,
+			"status": "Open",
+			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
+			"roll_qty": 0,
+			"branch": branch,
+			"location": location,
+			"patti_entries": [{"shade": color, "cut": machine_cut, "patti_qty": batches, "net_weight": 0}],
+		}
+	)
+	cutting.insert(ignore_permissions=True)
+	cutting.submit()
+
+	program = frappe.get_doc(
+		{
+			"doctype": "MM Program",
+			"program_date": program_date or frappe.utils.nowdate(),
+			"customer_order": customer_order,
+			"source_cutting": cutting.name,
+			"roll_no": color or "—",
+			"shade": color,
+			"cut": machine_cut,
+			"machine_no": machine_no,
+			"shift": shift or None,
+			"is_running": 0,  # unfinished sits as Open/planned until the roll is bound
+			"unfinished": 1,
+			"roll_inventory": roll_inventory or None,
+			"remark": remark,
+			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
+			"branch": branch,
+			"location": location,
+			"total_batches": batches,
+			"completed_batches": 0,
+			"patti_qty": batches,
+			"net_weight": 0,
+		}
+	)
+	program.insert(ignore_permissions=True)
+	program.submit()
+	frappe.db.set_value("MM Cutting", cutting.name, "program", program.name, update_modified=False)
+	return {"program": program.name, "cutting": cutting.name, "unfinished": True}
+
+
+@frappe.whitelist()
+def finish_unfinished(program, roll_inventory=None):
+	"""Finish an unfinished (planned) program by binding the actual roll from inventory.
+
+	Pulls the roll's weight onto the program, consumes it from stock (with an OUT ledger
+	entry), completes the placeholder cutting, and clears the unfinished flag — the
+	program then runs on its machine like any other.
+	"""
+	doc = frappe.get_doc("MM Program", program)
+	if not doc.unfinished:
+		frappe.throw(_("Program {0} is already finished.").format(program))
+	roll_inventory = roll_inventory or doc.roll_inventory
+	if not roll_inventory or not frappe.db.exists("MM Roll Inventory", roll_inventory):
+		frappe.throw(_("Select the roll from inventory to finish this program."))
+
+	ri = frappe.get_doc("MM Roll Inventory", roll_inventory)
+	weight = round(float(ri.stock_weight or 0), 3)
+	box = round(float(ri.stock_box or 0), 3)
+	if weight <= 0:
+		frappe.throw(_("Roll {0} has no stock weight to consume.").format(roll_inventory))
+
+	from mahaveermetalic.mahaveer_metallic import stock_ledger
+
+	# Consume the whole roll (the weight is all fetched into the program) + OUT ledger.
+	ri.stock_weight = 0
+	ri.stock_box = 0
+	ri.save(ignore_permissions=True)
+	stock_ledger.post_movement(
+		voucher_type="Cutting",
+		voucher_no=doc.source_cutting or doc.name,
+		branch=ri.branch,
+		location=ri.location,
+		lot_number=ri.lot_number,
+		color_name=ri.color_name,
+		roll_no=ri.roll_no,
+		item_type=ri.item_type,
+		out_weight=weight,
+		out_box=box,
+		balance_weight=ri.stock_weight,
+		balance_box=ri.stock_box,
+		customer_order=doc.customer_order,
+		remarks=_("Program finish — roll cut into program {0}").format(doc.name),
+	)
+
+	# Complete the placeholder cutting with the real weight.
+	if doc.source_cutting and frappe.db.exists("MM Cutting", doc.source_cutting):
+		frappe.db.set_value(
+			"MM Cutting",
+			doc.source_cutting,
+			{"status": "Completed", "total_net_weight": weight, "roll_no": ri.roll_no or doc.roll_no},
+			update_modified=False,
+		)
+
+	# Bind the roll, pull its weight onto the program, mark it finished/running. Written
+	# with db.set_value because net_weight / roll_no aren't allow_on_submit — a plain
+	# doc.save on the submitted program would raise UpdateAfterSubmitError. Status is
+	# re-derived here (same rule as MMProgram.derive_status) since we bypass validate.
+	total = int(doc.total_batches or 0)
+	done = max(0, min(int(doc.completed_batches or 0), total))
+	status = "Completed" if (total and done >= total) else ("Partially Done" if done > 0 else "Running")
+	frappe.db.set_value(
+		"MM Program",
+		doc.name,
+		{
+			"roll_inventory": roll_inventory,
+			"net_weight": weight,
+			"roll_no": ri.roll_no or doc.roll_no,
+			"unfinished": 0,
+			"is_running": 1,
+			"status": status,
+		},
+		update_modified=True,
+	)
+	return {"program": doc.name, "net_weight": weight, "unfinished": False, "status": status}
+
+
 def _save_batches(program, completed, is_running):
 	"""Update the batch counters and let the controller re-derive status. Uses
 	doc.save so the change is captured in the audit trail (track_changes)."""
@@ -490,9 +668,9 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 	return frappe.get_all(
 		"MM Program",
 		filters=filters,
-		fields=["name", "program_date", "customer_order", "roll_no", "machine_no", "shift", "cut",
-			"status", "is_running", "closed", "released", "reverted", "total_batches",
-			"completed_batches", "patti_qty", "net_weight"],
+		fields=["name", "program_date", "customer_order", "roll_no", "shade", "machine_no", "shift", "cut",
+			"status", "is_running", "closed", "released", "reverted", "unfinished", "remark",
+			"roll_inventory", "total_batches", "completed_batches", "patti_qty", "net_weight"],
 		order_by="machine_no asc, shift asc, modified desc",
 		limit_page_length=500,
 	)

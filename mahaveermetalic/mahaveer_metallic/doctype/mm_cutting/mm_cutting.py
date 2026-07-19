@@ -51,12 +51,34 @@ class MMCutting(Document):
 	def _consume_source_roll(self, sign: int):
 		"""Reduce (on submit) / restore (on cancel) source roll stock by total net weight.
 		MM Roll Inventory.validate blocks stock going below reserved+issued, so over-cutting
-		is rejected automatically."""
+		is rejected automatically. Each move is mirrored to the stock ledger as an OUT
+		(submit) / reversing IN (cancel)."""
 		if not self.source_roll:
 			return
 		delta = round(float(self.total_net_weight or 0) * sign, 3)
 		if not delta:
 			return
+		from mahaveermetalic.mahaveer_metallic import stock_ledger
+
 		roll = frappe.get_doc("MM Roll Inventory", self.source_roll)
 		roll.stock_weight = round((roll.stock_weight or 0) + delta, 3)
 		roll.save(ignore_permissions=True)
+
+		mag_w = round(float(self.total_net_weight or 0), 3)
+		stock_ledger.post_movement(
+			voucher_type="Cutting",
+			voucher_no=self.name,
+			branch=roll.branch,
+			location=roll.location,
+			lot_number=roll.lot_number,
+			color_name=roll.color_name,
+			roll_no=roll.roll_no,
+			item_type=roll.item_type,
+			# submit (sign<0) = material leaves stock → OUT; cancel (sign>0) = restore → IN
+			out_weight=mag_w if sign < 0 else 0,
+			in_weight=mag_w if sign > 0 else 0,
+			balance_weight=roll.stock_weight,
+			balance_box=roll.stock_box,
+			customer_order=self.get("customer_order"),
+			remarks="Cutting cancelled" if sign > 0 else None,
+		)

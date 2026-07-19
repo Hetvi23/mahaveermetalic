@@ -22,6 +22,9 @@
     "closed",
     "released",
     "reverted",
+    "unfinished",
+    "roll_inventory",
+    "remark",
     "job_work_flag",
     "production",
     "section_qty",
@@ -145,6 +148,29 @@
       "read_only": 1,
       "allow_on_submit": 1,
       "description": "Program was reverted — taken off the machine; batches can no longer be completed on it."
+    },
+    {
+      "fieldname": "unfinished",
+      "fieldtype": "Check",
+      "label": "Unfinished (roll not yet cut)",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "default": "0",
+      "description": "Planned straight from an inventory colour before the physical cut. Shows red in Cutting and highlighted in Program until the operator picks the actual roll (weight is fetched) and finishes it."
+    },
+    {
+      "fieldname": "roll_inventory",
+      "fieldtype": "Link",
+      "label": "Roll (from inventory)",
+      "options": "MM Roll Inventory",
+      "read_only": 1,
+      "allow_on_submit": 1,
+      "description": "The inventory roll bound at finish — its weight is pulled onto the program and consumed from stock."
+    },
+    {
+      "fieldname": "remark",
+      "fieldtype": "Small Text",
+      "label": "Remark"
     },
     {
       "fieldname": "job_work_flag",

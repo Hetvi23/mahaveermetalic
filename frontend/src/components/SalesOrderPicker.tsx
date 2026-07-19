@@ -1,0 +1,118 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFrappeGetCall } from "frappe-react-sdk";
+import { ChevronDown } from "lucide-react";
+
+export type SOOption = {
+  sales_order: string;
+  party?: string;
+  party_name?: string;
+  delivery_date?: string | null;
+  transaction_date?: string | null;
+  ordered_weight?: number;
+  required_weight?: number;
+  colours?: string[];
+  cuts?: string[];
+};
+
+type Props = {
+  label: string;
+  value: string;
+  onChange: (v: string, opt?: SOOption) => void;
+  required?: boolean;
+  disabled?: boolean;
+};
+
+/**
+ * Searchable Sales Order dropdown for the Inward screen. Unlike a plain Link field it
+ * shows customer name, colours and the order date on every row and filters across all
+ * of them, so shop-floor users can find an order by any of those, not just its number.
+ */
+export default function SalesOrderPicker({ label, value, onChange, required, disabled }: Props) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const wrap = useRef<HTMLDivElement>(null);
+
+  const { data, isLoading } = useFrappeGetCall<{ message: SOOption[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.sales_order_options",
+    undefined,
+    "mm-inward-so-options",
+  );
+  const options = useMemo(() => data?.message ?? [], [data]);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("click", onDoc);
+    return () => document.removeEventListener("click", onDoc);
+  }, []);
+
+  const selected = options.find((o) => o.sales_order === value);
+  const display = selected
+    ? `${selected.sales_order} · ${selected.party_name || selected.party || ""}`
+    : value;
+
+  const q = text.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!q) return options;
+    return options.filter((o) =>
+      [o.sales_order, o.party_name, o.party, (o.colours || []).join(" "), (o.cuts || []).join(" "), o.delivery_date]
+        .filter(Boolean)
+        .some((s) => String(s).toLowerCase().includes(q)),
+    );
+  }, [options, q]);
+
+  return (
+    <label className="mm-field">
+      <span className="mm-field-label">
+        {label}
+        {required ? " *" : ""}
+      </span>
+      <div className="mm-link-wrap" ref={wrap}>
+        <input
+          className="mm-input mm-link-input"
+          value={open ? text : display}
+          disabled={disabled}
+          required={required}
+          placeholder="Search order, customer, colour…"
+          onChange={(e) => {
+            setText(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => {
+            setText("");
+            setOpen(true);
+          }}
+          autoComplete="off"
+        />
+        <ChevronDown size={15} className="mm-link-caret" aria-hidden />
+        {open && (
+          <ul className="mm-suggest mm-suggest-rich">
+            {isLoading && <li className="mm-suggest-muted">Loading…</li>}
+            {!isLoading && filtered.length === 0 && <li className="mm-suggest-muted">No matching orders</li>}
+            {!isLoading &&
+              filtered.map((o) => (
+                <li
+                  key={o.sales_order}
+                  className="mm-suggest-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(o.sales_order, o);
+                    setText("");
+                    setOpen(false);
+                  }}
+                >
+                  <strong>{o.sales_order}</strong>
+                  <span className="mm-suggest-meta">
+                    {o.party_name || o.party || "—"}
+                    {o.colours?.length ? ` · ${o.colours.join(", ")}` : ""}
+                    {o.delivery_date ? ` · ${o.delivery_date}` : ""}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+      </div>
+    </label>
+  );
+}
