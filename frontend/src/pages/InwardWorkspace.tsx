@@ -110,12 +110,10 @@ export default function InwardWorkspace() {
     "mahaveermetalic.mahaveer_metallic.api.inward.sales_order_detail",
   );
 
-  // Picking a Sales Order sets it as the header order. In manual entry it also
-  // auto-forms the Material Received rows from the order's line items (colour, size and
-  // qty/weight) — roll numbers aren't on the order, so those stay blank; qty stays editable.
-  async function pickSalesOrder(v: string, opt?: SOOption) {
-    setSalesOrder(v);
-    if (!v || !manual) return;
+  // Fetch a Sales Order's lines and lay them out as Material Received rows (colour, size
+  // and qty/weight), each tagged with the order so the inward is registered against it.
+  // Roll numbers aren't on the order, so those stay blank; everything stays editable.
+  async function seedRowsFromSO(v: string) {
     setError(null);
     try {
       const r = await fetchSODetail({ sales_order: v });
@@ -134,7 +132,14 @@ export default function InwardWorkspace() {
     } catch (e) {
       setError(extractErrorMessage(e));
     }
+  }
+
+  // Picking a Sales Order registers it as the header order; in manual entry it also
+  // auto-forms the rows from the order (works whichever is chosen first — see startManual).
+  async function pickSalesOrder(v: string, opt?: SOOption) {
+    setSalesOrder(v);
     void opt;
+    if (v && manual) await seedRowsFromSO(v);
   }
 
   // Branch/Location default from the logged-in user's employee profile; editable here
@@ -249,12 +254,13 @@ export default function InwardWorkspace() {
     setFlash(done ? `Batch done — ${done} inward(s) posted.` : "Batch closed.");
   }
 
-  // Manual path: skip the Veermetlon fetch and enter received material by hand.
+  // Manual path: skip the Veermetlon fetch and enter received material by hand. If a Sales
+  // Order was already chosen, auto-form the rows from it now (so picking the order before
+  // OR after "Enter manually" both work); otherwise start with one blank row.
   function startManual() {
     setError(null);
     setFlash(null);
     setOrders([]);
-    setRows([blankRow()]);
     setChallanNo("");
     setLot("");
     setQIndex(-1);
@@ -263,6 +269,8 @@ export default function InwardWorkspace() {
     setVerify(null);
     setIsPartial(false);
     setFetched(true);
+    if (salesOrder.trim()) void seedRowsFromSO(salesOrder);
+    else setRows([blankRow()]);
   }
 
   function addRow() {
@@ -446,7 +454,10 @@ export default function InwardWorkspace() {
           {/* Rolls to receive */}
           <section className="mm-card mm-card-pad">
             <div className="mm-iw-sec-head">
-              <h2 className="mm-panel-title"><PackageCheck size={16} /> {manual ? "Material received" : "Rolls on this challan"}</h2>
+              <h2 className="mm-panel-title">
+                <PackageCheck size={16} /> {manual ? "Material received" : "Rolls on this challan"}
+                {manual && (salesOrder ? <span className="mm-state mm-state-cut" style={{ marginLeft: "0.5rem" }}>Registered to {salesOrder}</span> : <span className="mm-muted" style={{ marginLeft: "0.5rem", fontSize: "0.75rem", fontWeight: 400 }}>→ no order: goes to inventory</span>)}
+              </h2>
               <span className="mm-muted">Total: {totals.qty} box · {totals.weight.toLocaleString()} kg</span>
             </div>
 
