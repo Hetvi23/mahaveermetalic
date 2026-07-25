@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
-  Plus, Minus, X, Power, RotateCcw, Check, CheckCircle2, Undo2, Monitor, LayoutGrid, List, Search, Trash2,
+  Plus, Minus, X, Power, RotateCcw, Check, CheckCircle2, Undo2, Monitor, LayoutGrid, List, Search, Trash2, Scissors,
 } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
+const CUT_API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const today = () => new Date().toISOString().slice(0, 10);
+const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 const SHIFTS = ["Day", "Night"] as const;
 const DEFAULT_COLS = 1;
 
@@ -24,6 +27,8 @@ type Roll = {
 };
 type OrderOpt = { name: string };
 type OnMachine = { name: string; roll_no?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
+type StockGroup = { customer_order: string; party?: string; party_name?: string; roll_display?: string; entry_count: number; total_weight: number };
+type Patty = { cutting?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number };
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
 
@@ -50,10 +55,17 @@ export default function ProgramScreen() {
   const { call: complete } = useFrappePostCall(`${API}.complete_batches`);
   const { call: free } = useFrappePostCall(`${API}.free_program`);
 
+  const nav = useNavigate();
+  // Feeder shelves shown under the board: rolls waiting to be cut, and finished patties.
+  const stockCall = useFrappeGetCall<{ message: StockGroup[] }>(`${CUT_API}.inward_stock_by_order`, undefined, "pg-stock");
+  const pattyCall = useFrappeGetCall<{ message: Patty[] }>(`${API}.available_rolls`, { finished_only: 1 }, "pg-patties");
+
   const machines = machinesCall.data?.message ?? [];
   const programs = progCall.data?.message ?? [];
+  const stock = stockCall.data?.message ?? [];
+  const patties = pattyCall.data?.message ?? [];
 
-  const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); };
+  const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void stockCall.mutate(); void pattyCall.mutate(); };
   const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { alert(extractErrorMessage(e)); } };
 
   // Programs grouped per machine, in column order.
@@ -185,6 +197,45 @@ export default function ProgramScreen() {
           <div className="mm-add-row">
             <button className="mm-btn-secondary" onClick={guard(() => addMachine({}))}><Plus size={15} /> Add machine</button>
           </div>
+
+          {/* Feeders: what's ready to program (patties) and what's still to be cut. */}
+          <div className="mm-flow-shelf-head" style={{ marginTop: "1.6rem" }}>
+            <span className="mm-flow-num">✓</span><h2>Finished patties</h2>
+            <span className="mm-flow-count">{patties.length} ready</span>
+          </div>
+          {patties.length === 0 ? (
+            <p className="mm-flow-empty-state">No finished patties waiting — send a roll through cutting first.</p>
+          ) : (
+            <div className="mm-flow-shelf">
+              {patties.map((p, i) => (
+                <article key={p.cutting || i} className="mm-flow-card mm-flow-card-patty">
+                  <div className="mm-prog-card-top"><span className="mm-flow-card-name">{p.roll_no || p.shade || "—"}</span><span className="mm-state mm-state-cut">cut</span></div>
+                  <div className="mm-prog-card-meta">Cut {p.cut || "—"} · {p.batches ?? 0} patty · <strong>{kg(p.weight)} kg</strong></div>
+                  {p.party && <div className="mm-prog-card-meta">{p.party}</div>}
+                  <div className="mm-prog-actions"><button className="mm-btn-primary mm-btn-compact" onClick={() => setAdding({})}>→ Program it</button></div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          <div className="mm-flow-shelf-head" style={{ marginTop: "1.2rem" }}>
+            <span className="mm-flow-num"><Scissors size={12} /></span><h2>Rolls to cut</h2>
+            <span className="mm-flow-count">{stock.length}</span>
+          </div>
+          {stock.length === 0 ? (
+            <p className="mm-flow-empty-state">No in-stock rolls waiting to be cut.</p>
+          ) : (
+            <div className="mm-flow-shelf">
+              {stock.map((g) => (
+                <article key={g.customer_order} className="mm-flow-card mm-flow-card-cut">
+                  <div className="mm-prog-card-top"><span className="mm-flow-card-name">{g.party_name || g.party || "—"}</span><span className="mm-state mm-state-inventory">stock</span></div>
+                  <div className="mm-prog-card-meta">{g.roll_display || "—"}</div>
+                  <div className="mm-prog-card-meta">Order {g.customer_order} · {g.entry_count} roll(s) · <strong>{kg(g.total_weight)} kg</strong></div>
+                  <div className="mm-prog-actions"><button className="mm-btn-primary mm-btn-compact" onClick={() => nav("/cutting")}>→ Send to cutting</button></div>
+                </article>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -450,18 +501,15 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
 
           {mode === "patty" ? (
             <>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.4rem" }}>
-                <p className="mm-field-label" style={{ margin: 0 }}>Pick a finished patty</p>
-                <div style={{ position: "relative", flex: "0 1 240px" }}>
-                  <Search size={14} style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", opacity: 0.5, pointerEvents: "none" }} />
-                  <input
-                    className="mm-input mm-input-compact"
-                    style={{ width: "100%", paddingLeft: "1.9rem" }}
-                    placeholder="Search roll / shade / cut / party…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
+              <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Pick a finished patty</p>
+              <div className="mm-search-box" style={{ marginBottom: "0.55rem" }}>
+                <Search size={15} />
+                <input
+                  className="mm-input mm-input-compact"
+                  placeholder="Search roll / shade / cut / party…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
               </div>
               {rollsCall.isLoading ? (
                 <p className="mm-muted">Loading…</p>
@@ -488,9 +536,9 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
           ) : (
             <>
               <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Search a colour in inventory</p>
-              <div style={{ position: "relative", marginBottom: "0.5rem" }}>
-                <Search size={14} style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", opacity: 0.5, pointerEvents: "none" }} />
-                <input className="mm-input" style={{ paddingLeft: "1.9rem" }} placeholder="Type a colour, e.g. LKBCH GOLD…" value={invColor} onChange={(e) => { setInvColor(e.target.value); setInvRoll(null); }} />
+              <div className="mm-search-box" style={{ marginBottom: "0.5rem" }}>
+                <Search size={15} />
+                <input className="mm-input mm-input-compact" placeholder="Type a colour, e.g. LKBCH GOLD…" value={invColor} onChange={(e) => { setInvColor(e.target.value); setInvRoll(null); }} />
               </div>
               {!invColor.trim() ? (
                 <p className="mm-muted" style={{ fontSize: "0.8rem" }}>Type a colour to see its rolls in stock. You’ll pick the exact roll later, at Finish.</p>

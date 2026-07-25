@@ -1468,8 +1468,9 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-inv-kpis { margin-bottom: 1rem; }
 .mm-inv-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.7rem; margin-bottom: 0.8rem; }
 .mm-search-box { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 260px; min-width: 200px; padding: 0 0.6rem; border: 1.5px solid var(--mm-border); border-radius: var(--mm-radius-sm); background: #fff; color: var(--mm-text-sec); }
-.mm-search-box .mm-input { border: none; padding-left: 0; background: transparent; }
+.mm-search-box .mm-input { border: none; padding-left: 0; background: transparent; flex: 1; min-width: 0; }
 .mm-search-box .mm-input:focus { outline: none; box-shadow: none; }
+.mm-search-box svg { flex: none; opacity: 0.55; }
 .mm-check { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--mm-text-sec); cursor: pointer; white-space: nowrap; }
 .mm-check input { width: 15px; height: 15px; accent-color: var(--mm-blue, #2563eb); }
 .mm-check-partial { margin-left: auto; padding: 0.35rem 0.6rem; border-radius: var(--mm-radius-sm); background: #fff7ed; color: #b45309; font-weight: 600; }
