@@ -17,6 +17,7 @@ import InventoryScreen from "./pages/InventoryScreen";
 import StockLedgerScreen from "./pages/StockLedgerScreen";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
+import Toaster from "./components/Toaster";
 import { DOC_REGISTRY } from "@/config/registry";
 
 function AuthedShell() {
@@ -40,9 +41,9 @@ function AuthedShell() {
     return <Navigate to="/supplier-pending" replace />;
   }
 
-  const isHome = location.pathname === "/";
-  // Full-width screens (workspaces / multi-pane) break out of the centered column.
-  const wide = isHome || WIDE_PATHS.includes(location.pathname);
+  // Every screen uses the full width now; forms self-center via their own .mm-page cap,
+  // so the app fills the screen consistently instead of a narrow centered column.
+  const wide = true;
 
   return (
     <div className="mm-app">
@@ -53,18 +54,6 @@ function AuthedShell() {
     </div>
   );
 }
-
-// Masters use the combined form+list workspace; cutting is a two-panel worklist.
-const WIDE_PATHS = [
-  ...DOC_REGISTRY.filter((m) => m.navGroup === "masters").map((m) => m.routeBase),
-  "/cutting",
-  "/program",
-  "/production",
-  "/sales-order",
-  "/inward",
-  "/inventory",
-  "/stock-ledger",
-];
 
 export default function App() {
   // Faster number entry everywhere: focusing a number field selects its value (type to
@@ -129,6 +118,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      <Toaster />
     </FrappeProvider>
   );
 }

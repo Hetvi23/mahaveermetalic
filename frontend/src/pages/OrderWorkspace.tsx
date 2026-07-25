@@ -11,6 +11,7 @@ import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import PartyPicker from "@/components/PartyPicker";
 import SalesOrderStockPanel from "@/components/SalesOrderStockPanel";
+import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -238,6 +239,7 @@ export default function OrderWorkspace() {
         await updateDoc("MM Sales Order", selected, payload);
         hydrated.current = null;
         setFlash("Saved.");
+        toast(`Order ${selected} saved`);
       } else {
         // One Sales Order per item (mirrors how Purchase Orders are one-per-line):
         // each item becomes its own SO with a single-line items table. Created
@@ -277,15 +279,19 @@ export default function OrderWorkspace() {
           setItems(skippedItems);
           setDraft(blankItem());
           setFlash(`Created ${created.join(", ")}. ${skippedItems.length} item(s) need attention — ${skippedMsgs.join("; ")}`);
+          toast(`Created ${created.length}; ${skippedItems.length} need attention`, "info");
           return;
         }
         resetNew();
         setFlash(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")} — form cleared for the next one.`);
+        toast(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}`);
         return;
       }
       await mutate();
     } catch (e) {
-      setFormError(extractErrorMessage(e));
+      const msg = extractErrorMessage(e);
+      setFormError(msg);
+      toast(msg, "error");
     }
   }
 

@@ -77,8 +77,8 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   max-width: 860px;
   margin: 0 auto;
 }
-/* Wide screens (home, workspaces) use the full width. */
-.mm-app-content-wide { max-width: 1180px; }
+/* Wide screens (home, workspaces, lists) use the full width. */
+.mm-app-content-wide { max-width: none; }
 
 /* Page header used at the top of screens (app-style). */
 .mm-app-header {
@@ -205,8 +205,8 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
     width: auto;
     padding: 1.4rem 1.6rem 2.4rem;
   }
-  .mm-app-content > .mm-page { max-width: 860px; margin-left: auto; margin-right: auto; }
-  .mm-app-content-wide { max-width: 1640px; padding-left: 2rem; padding-right: 2rem; }
+  .mm-app-content > .mm-page { max-width: 960px; margin-left: auto; margin-right: auto; }
+  .mm-app-content-wide { max-width: none; padding-left: 2rem; padding-right: 2rem; }
 }
 
 /* ── App shell (legacy, still used by Login) ───────────── */
@@ -1601,3 +1601,19 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 
 /* keyboard hint chip */
 .mm-kbd-hint { font-size: 0.68rem; font-weight: 600; color: var(--mm-text-sec); background: var(--mm-surface2); border: 1px solid var(--mm-border); padding: 0.1rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; text-transform: none; letter-spacing: 0; }
+
+/* ── Toasts (2026-07-25) ─────────────────────────────────────────────────── */
+.mm-toaster { position: fixed; bottom: 1.1rem; right: 1.1rem; z-index: 1200; display: flex; flex-direction: column; gap: 0.55rem; max-width: min(92vw, 400px); }
+.mm-toast { display: flex; align-items: center; gap: 0.55rem; padding: 0.75rem 0.9rem; border-radius: var(--mm-radius-sm); background: var(--mm-card); border: 1px solid var(--mm-border); box-shadow: var(--mm-shadow-lg); font-size: 0.86rem; color: var(--mm-text); animation: mm-toast-in 0.18s ease; }
+.mm-toast-ico { flex: none; }
+.mm-toast-success { border-left: 4px solid var(--mm-green); } .mm-toast-success .mm-toast-ico { color: var(--mm-green); }
+.mm-toast-error { border-left: 4px solid var(--mm-danger); } .mm-toast-error .mm-toast-ico { color: var(--mm-danger); }
+.mm-toast-info { border-left: 4px solid var(--mm-blue); } .mm-toast-info .mm-toast-ico { color: var(--mm-blue); }
+.mm-toast-msg { flex: 1; line-height: 1.35; }
+.mm-toast-x { background: none; border: none; color: var(--mm-text-sec); cursor: pointer; padding: 2px; border-radius: 6px; display: grid; place-items: center; }
+.mm-toast-x:hover { background: var(--mm-surface2); color: var(--mm-text); }
+@keyframes mm-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (max-width: 700px) { .mm-toaster { bottom: 78px; left: 1rem; right: 1rem; max-width: none; } }
+@media (prefers-reduced-motion: reduce) { .mm-toast { animation: none; } }
+/* Empty states — a touch more presence */
+.mm-empty, .mm-flow-empty-state { text-align: center; color: var(--mm-text-sec); padding: 1.6rem 1rem; font-size: 0.86rem; }

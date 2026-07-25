@@ -30,7 +30,7 @@ export default function DocListPage({ meta }: { meta: DocRegistryEntry }) {
 	const count = rows.length;
 
 	return (
-		<div className="mm-page mm-page-enter">
+		<div className="mm-screen mm-page-enter">
 			<header className="mm-list-hero">
 				<div className="mm-list-hero-text">
 					<h1 className="mm-page-title">{meta.title}</h1>

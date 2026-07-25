@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Download, ListChecks, PackageCheck, Pencil, Plus, RefreshCw, SkipForward, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import SalesOrderPicker, { type SOOption } from "@/components/SalesOrderPicker";
+import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -287,6 +288,15 @@ export default function InwardWorkspace() {
     setRows((prev) => [...prev, blankRow()]);
   }
 
+  // Keyboard: Enter in a roll input adds another row so material can be keyed in without
+  // reaching for the mouse (ignored on the colour dropdown / while awaiting the next challan).
+  function onRowsKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Enter") return;
+    if ((e.target as HTMLElement).tagName !== "INPUT" || awaitingNext) return;
+    e.preventDefault();
+    addRow();
+  }
+
   function setRow(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
@@ -354,6 +364,7 @@ export default function InwardWorkspace() {
       const status = res?.message?.receipt_status;
       const tag = status === "Partial" ? " (Partial — challan still open)" : status === "Complete" ? " (Complete)" : "";
       void refreshRecent();
+      toast(`Inward ${name} posted${tag}`);
       if (processing) {
         // Queue mode: keep the rolls on screen and wait for the user to hit "Next".
         setPostedCount((c) => c + 1);
@@ -373,7 +384,9 @@ export default function InwardWorkspace() {
         setManual(false);
       }
     } catch (e) {
-      setError(extractErrorMessage(e));
+      const msg = extractErrorMessage(e);
+      setError(msg);
+      toast(msg, "error");
     }
   }
 
@@ -492,7 +505,7 @@ export default function InwardWorkspace() {
               </div>
             )}
 
-            <div className="mm-table-scroll">
+            <div className="mm-table-scroll" onKeyDown={onRowsKeyDown}>
               <table className="mm-table mm-table-dense">
                 <thead>
                   <tr>
