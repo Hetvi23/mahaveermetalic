@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { FrappeProvider, useFrappeAuth } from "frappe-react-sdk";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import AppNav, { isSupplierOnly } from "./components/AppNav";
@@ -14,7 +15,6 @@ import OrderWorkspace from "./pages/OrderWorkspace";
 import InwardWorkspace from "./pages/InwardWorkspace";
 import InventoryScreen from "./pages/InventoryScreen";
 import StockLedgerScreen from "./pages/StockLedgerScreen";
-import FlowScreen from "./pages/FlowScreen";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
@@ -64,10 +64,23 @@ const WIDE_PATHS = [
   "/inward",
   "/inventory",
   "/stock-ledger",
-  "/flow",
 ];
 
 export default function App() {
+  // Faster number entry everywhere: focusing a number field selects its value (type to
+  // overwrite) and asks phones/tablets for a numeric keypad. One listener covers all forms.
+  useEffect(() => {
+    function onFocusIn(e: FocusEvent) {
+      const t = e.target as HTMLInputElement | null;
+      if (t && t.tagName === "INPUT" && t.type === "number") {
+        if (!t.getAttribute("inputmode")) t.setAttribute("inputmode", "decimal");
+        setTimeout(() => { try { t.select(); } catch { /* ignore */ } }, 0);
+      }
+    }
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+
   const url = import.meta.env.DEV ? "" : window.location.origin;
   return (
     <FrappeProvider
@@ -91,7 +104,6 @@ export default function App() {
             <Route path="/inward" element={<InwardWorkspace />} />
             <Route path="/inventory" element={<InventoryScreen />} />
             <Route path="/stock-ledger" element={<StockLedgerScreen />} />
-            <Route path="/flow" element={<FlowScreen />} />
             {DOC_REGISTRY.filter((meta) => !["/cutting", "/sales-order", "/inward"].includes(meta.routeBase)).map((meta) => (
               <Route
                 key={meta.slug}

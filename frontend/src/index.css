@@ -1522,3 +1522,43 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* ── Customer picker "New customer" row (2026-07-25) ────────────────────── */
 .mm-suggest-add { display: flex; align-items: center; gap: 0.4rem; color: var(--mm-blue, #2563eb); font-weight: 650; border-top: 1px solid var(--mm-border); position: sticky; bottom: 0; background: #fff; }
 .mm-suggest-add:hover { background: var(--mm-blue-bg, #eff6ff); }
+
+/* ══ Design-system polish pass (2026-07-25) ═══════════════════════════════ */
+/* Numbers — consistent tabular figures, right-aligned numeric columns/inputs */
+.mm-num, .mm-kpi-value, .mm-kpi-val, .mm-prog-card-meta, input[type="number"] { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.mm-table td.mm-num, .mm-table th.mm-num { text-align: right; }
+
+/* Tables — sticky header so column labels stay while scrolling, smoother rows */
+.mm-table thead th { position: sticky; top: 0; z-index: 2; }
+.mm-table tbody tr { transition: background 0.12s ease; }
+.mm-table tbody tr:hover td { background: var(--mm-blue-bg); }
+
+/* Inputs & selects — clearer focus ring, comfortable touch height */
+.mm-input:focus, select.mm-input:focus, textarea.mm-input:focus { outline: none; border-color: var(--mm-blue); box-shadow: 0 0 0 3px var(--mm-blue-bg); }
+.mm-search-box:focus-within { border-color: var(--mm-blue); box-shadow: 0 0 0 3px var(--mm-blue-bg); }
+
+/* Buttons — press feedback + smooth transitions everywhere */
+.mm-btn-primary, .mm-btn-secondary, .mm-btn-ghost, .mm-mini, .mm-seg-btn, .mm-icon-btn, .mm-btn-compact {
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, transform 0.06s ease, color 0.14s ease;
+}
+.mm-btn-primary:active, .mm-btn-secondary:active, .mm-mini:active, .mm-btn-compact:active { transform: translateY(1px); }
+.mm-btn-primary:hover { box-shadow: var(--mm-shadow-md); }
+
+/* Keyboard accessibility — visible focus for keyboard users */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--mm-blue); outline-offset: 2px; border-radius: 8px; }
+
+/* Cards — subtle lift on interactive rows/cards */
+.mm-row-click { transition: background 0.12s ease, box-shadow 0.12s ease; }
+
+/* Status chips — unified shape/weight across every screen */
+[class^="mm-state-"], [class*=" mm-state-"] { border-radius: 999px; font-weight: 700; letter-spacing: 0.02em; }
+
+/* Scrollbars — quieter, consistent */
+.mm-table-scroll::-webkit-scrollbar, .mm-flow-shelf::-webkit-scrollbar, .lane-body::-webkit-scrollbar { height: 9px; width: 9px; }
+.mm-table-scroll::-webkit-scrollbar-thumb, .mm-flow-shelf::-webkit-scrollbar-thumb { background: var(--mm-border-dark); border-radius: 8px; }
+.mm-table-scroll::-webkit-scrollbar-track, .mm-flow-shelf::-webkit-scrollbar-track { background: transparent; }
+
+/* Respect reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .mm-table tbody tr, .mm-btn-primary, .mm-btn-secondary, .mm-mini, .mm-btn-compact, .mm-row-click, .mm-seg-btn { transition: none; }
+}
