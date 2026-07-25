@@ -671,6 +671,8 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 		fields=["name", "program_date", "customer_order", "roll_no", "shade", "machine_no", "shift", "cut",
 			"status", "is_running", "closed", "released", "reverted", "unfinished", "remark",
 			"roll_inventory", "total_batches", "completed_batches", "patti_qty", "net_weight"],
-		order_by="machine_no asc, shift asc, modified desc",
+		# Stable insertion order (creation asc), so an earlier program keeps its slot and a
+		# newly added one goes AFTER it — not the "modified desc" that reshuffled them.
+		order_by="machine_no asc, shift asc, creation asc",
 		limit_page_length=500,
 	)

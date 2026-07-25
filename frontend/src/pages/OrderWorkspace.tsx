@@ -42,7 +42,7 @@ const F: Record<string, FieldSchema> = {
   delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   party: { fieldname: "party", label: "Company / Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
   color_name: { fieldname: "color_name", label: "Color", fieldtype: "Link", options: "MM Item Master", reqd: true },
-  cut: { fieldname: "cut", label: "Size", fieldtype: "Data" },
+  cut: { fieldname: "cut", label: "Size", fieldtype: "Data", reqd: true },
   item_delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float" },
   qty_box: { fieldname: "qty_box", label: "Box", fieldtype: "Float" },
@@ -155,12 +155,23 @@ export default function OrderWorkspace() {
     setFormError(null);
   }
 
+  // Shared item rules (also enforced server-side in mm_sales_order._validate_lines).
+  function itemError(d: Item): string | null {
+    if (!d.color_name.trim()) return "Pick a colour for the item.";
+    if (!d.cut.trim()) return "Enter the size (required) for the item.";
+    if (/[A-Za-z]/.test(d.cut)) return "Size must not contain letters (digits only, e.g. 50/85).";
+    const w = Number(d.qty_weight) || 0;
+    const b = Number(d.qty_box) || 0;
+    if (w < 0 || b < 0) return "Weight and box cannot be negative.";
+    if (!(w > 0) && !(b > 0)) return "Enter a weight or a box quantity (at least one).";
+    if (d.sale_rate === "" || Number(d.sale_rate) < 0) return "Enter a valid (non-negative) sale rate.";
+    if (d.purchase_rate !== "" && Number(d.purchase_rate) < 0) return "Purchase rate cannot be negative.";
+    return null;
+  }
+
   function addItem() {
-    if (!draft.color_name.trim()) return setFormError("Pick a colour for the item.");
-    const hasWeight = !!draft.qty_weight && Number(draft.qty_weight) > 0;
-    const hasBox = !!draft.qty_box && Number(draft.qty_box) > 0;
-    if (!hasWeight && !hasBox) return setFormError("Enter a weight or a box quantity (at least one).");
-    if (draft.sale_rate === "" || Number(draft.sale_rate) < 0) return setFormError("Enter the sale rate.");
+    const err = itemError(draft);
+    if (err) return setFormError(err);
     setFormError(null);
     setItems((prev) => [...prev, draft]);
     setDraft(blankItem());
@@ -174,19 +185,23 @@ export default function OrderWorkspace() {
     setFormError(null);
     setFlash(null);
     if (!header.party) return setFormError("Choose the company / party.");
+    if (header.delivery_date && header.transaction_date && header.delivery_date < header.transaction_date)
+      return setFormError("Delivery date cannot be before the order date.");
     // Fold in an item that was typed into the builder but not yet "Added", so it
     // isn't silently dropped on save.
     let effectiveItems = items;
     if (draft.color_name.trim()) {
-      const hasWeight = !!draft.qty_weight && Number(draft.qty_weight) > 0;
-      const hasBox = !!draft.qty_box && Number(draft.qty_box) > 0;
-      if (!hasWeight && !hasBox) return setFormError("The item you're adding needs a weight or a box quantity.");
-      if (draft.sale_rate === "" || Number(draft.sale_rate) < 0) return setFormError("The item you're adding needs a sale rate.");
+      const err = itemError(draft);
+      if (err) return setFormError(err);
       effectiveItems = [...items, draft];
       setItems(effectiveItems);
       setDraft(blankItem());
     }
     if (effectiveItems.length === 0) return setFormError("Add at least one item.");
+    for (const it of effectiveItems) {
+      if (it.delivery_date && header.transaction_date && it.delivery_date < header.transaction_date)
+        return setFormError("An item's delivery date is before the order date.");
+    }
     const payload: Record<string, unknown> = {
       doctype: "MM Sales Order",
       naming_series: "MM-SO-.YYYY.-",

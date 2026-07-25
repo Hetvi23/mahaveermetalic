@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
+import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Download, ListChecks, PackageCheck, Pencil, Plus, RefreshCw, SkipForward, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
@@ -162,6 +162,16 @@ export default function InwardWorkspace() {
     message: RecentInward[];
   }>("mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards", { limit: 30 }, "mm-inward-recent");
   const recent = recentData?.message ?? [];
+
+  // Colours come from the Colors/Items master so manual entry is a dropdown (no typos
+  // creating phantom colours). A value not in the master (e.g. fetched from a VM challan)
+  // is still shown as its own option so it isn't lost.
+  const { data: colorData } = useFrappeGetDocList<{ name: string }>(
+    "MM Item Master",
+    { fields: ["name"], limit: 0, orderBy: { field: "name", order: "asc" } },
+    "mm-inward-colors",
+  );
+  const colorOptions = useMemo(() => (colorData ?? []).map((c) => c.name), [colorData]);
 
   const processing = qIndex >= 0; // stepping through the challan queue
   const isLast = qIndex >= queue.length - 1;
@@ -488,7 +498,6 @@ export default function InwardWorkspace() {
                   <tr>
                     <th>Roll</th>
                     <th>Color</th>
-                    <th>Size</th>
                     <th className="mm-num">Qty</th>
                     <th className="mm-num">Weight</th>
                     {!manual && <th>Allocate to order</th>}
@@ -502,10 +511,11 @@ export default function InwardWorkspace() {
                         <input className="mm-input mm-input-compact" value={r.roll} placeholder="Roll" disabled={awaitingNext} onChange={(e) => setRow(i, { roll: e.target.value })} />
                       </td>
                       <td>
-                        <input className="mm-input mm-input-compact" value={r.color} placeholder="Colour" disabled={awaitingNext} onChange={(e) => setRow(i, { color: e.target.value })} />
-                      </td>
-                      <td>
-                        <input className="mm-input mm-input-compact" value={r.cut} placeholder="Size" disabled={awaitingNext} onChange={(e) => setRow(i, { cut: e.target.value })} />
+                        <select className="mm-input mm-input-compact" value={r.color} disabled={awaitingNext} onChange={(e) => setRow(i, { color: e.target.value })}>
+                          <option value="">— colour —</option>
+                          {r.color && !colorOptions.includes(r.color) && <option value={r.color}>{r.color}</option>}
+                          {colorOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
                       </td>
                       <td className="mm-num">
                         <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.qty} disabled={awaitingNext} onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />

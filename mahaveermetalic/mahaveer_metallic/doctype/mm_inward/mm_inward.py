@@ -79,12 +79,16 @@ class MMInward(Document):
 		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
 			recalculate_order_fulfilment,
 		)
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_purchase_order.mm_purchase_order import (
+			recompute_po_status_for_order,
+		)
 
 		orders = {row.customer_order for row in self.items if row.customer_order}
 		if self.sales_order:
 			orders.add(self.sales_order)
 		for order in orders:
 			recalculate_order_fulfilment(order)
+			recompute_po_status_for_order(order)
 
 	def _find_roll(self, color_name):
 		"""Match the Roll Inventory row by the same key Roll Inventory dedups on

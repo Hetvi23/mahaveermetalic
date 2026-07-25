@@ -28,6 +28,8 @@ import {
   Bell,
   ListChecks,
   Boxes,
+  Network,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +58,7 @@ const SECTIONS: Section[] = [
       { label: "Order Stock", icon: Search, to: "/sales-order/stock" },
       { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
       { label: "Supplier Pending", icon: ArrowUpFromLine, to: "/supplier-pending" },
+      { label: "Sales Challan", icon: FileText, to: "/sales-challan" },
     ],
   },
   {
@@ -81,6 +84,7 @@ const SECTIONS: Section[] = [
       { label: "Bobbin Master", icon: Disc3, to: "/masters/bobbin" },
       { label: "Vendors", icon: Building2, to: "/masters/vendor" },
       { label: "Locations", icon: Truck, to: "/masters/location" },
+      { label: "Branches", icon: Network, to: "/masters/branch" },
       { label: "Staff", icon: HardHat, to: "/masters/employee" },
     ],
   },

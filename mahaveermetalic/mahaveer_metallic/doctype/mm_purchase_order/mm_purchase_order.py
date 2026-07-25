@@ -1,9 +1,57 @@
 # Copyright (c) 2026, Mahaveer and contributors
 # License: MIT
 
+import re
+
 import frappe
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+
+
+def _norm(s):
+	return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def recompute_po_status(po_name):
+	"""A PO closes once the inwards received against its Sales Order line (matched on
+	colour, plus cut when the inward carries one) meet the PO weight. Recomputed whenever
+	an inward for the order is posted or cancelled."""
+	po = frappe.db.get_value(
+		"MM Purchase Order", po_name, ["sales_order", "color", "cut", "qty_kg"], as_dict=True
+	)
+	if not po or not po.sales_order:
+		return None
+	rows = frappe.db.sql(
+		"""
+		select ii.color_name, ii.cut, ii.weight
+		from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+		where i.docstatus = 1 and ii.customer_order = %s
+		""",
+		(po.sales_order,),
+		as_dict=True,
+	)
+	want_c = _norm(po.color)
+	want_cut = (po.cut or "").strip()
+	received = 0.0
+	for r in rows:
+		if _norm(r.color_name) != want_c:
+			continue
+		# Only enforce cut when BOTH sides carry one (inward may not capture size).
+		if want_cut and (r.cut or "").strip() and (r.cut or "").strip() != want_cut:
+			continue
+		received += float(r.weight or 0)
+	qty = float(po.qty_kg or 0)
+	status = "Closed" if (qty > 0 and received + 0.001 >= qty) else "Open"
+	frappe.db.set_value("MM Purchase Order", po_name, "status", status, update_modified=False)
+	return status
+
+
+def recompute_po_status_for_order(sales_order):
+	"""Recompute status for every PO tied to a Sales Order."""
+	if not sales_order:
+		return
+	for name in frappe.get_all("MM Purchase Order", filters={"sales_order": sales_order}, pluck="name"):
+		recompute_po_status(name)
 
 
 class MMPurchaseOrder(Document):

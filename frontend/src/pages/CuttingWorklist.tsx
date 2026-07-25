@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List } from "lucide-react";
+import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
@@ -60,6 +60,7 @@ export default function CuttingWorklist() {
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "list" ? "list" : "worklist",
   );
   const [active, setActive] = useState<Group | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const stock = useFrappeGetCall<{ message: Group[] }>(`${API}.inward_stock_by_order`, undefined, "cut-stock");
   const board = useFrappeGetCall<{ message: BoardCard[] }>(`${API}.cutting_board`, undefined, "cut-board");
@@ -106,6 +107,9 @@ export default function CuttingWorklist() {
               <List size={15} /> List
             </button>
           </div>
+          <button className="mm-btn-primary mm-btn-compact" onClick={() => setAdding(true)}>
+            <Plus size={15} /> New cutting
+          </button>
         </div>
       </header>
 
@@ -186,6 +190,83 @@ export default function CuttingWorklist() {
       {active && (
         <CuttingModal group={active} onClose={() => setActive(null)} onDone={() => { setActive(null); refreshAll(); }} />
       )}
+      {adding && (
+        <NewCuttingModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); refreshAll(); }} />
+      )}
+    </div>
+  );
+}
+
+/* ── New cutting (manual add) ───────────────────────────── */
+function NewCuttingModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { call, loading } = useFrappePostCall(`${API}.create_manual_cutting`);
+  const colors = useFrappeGetDocList<{ name: string }>("MM Item Master", { fields: ["name"], limit: 0, orderBy: { field: "name", order: "asc" } }, "cut-colors");
+  const colorOptions = (colors.data ?? []).map((c) => c.name);
+  const [shade, setShade] = useState("");
+  const [cut, setCut] = useState("");
+  const [rollNo, setRollNo] = useState("");
+  const [patti, setPatti] = useState<number | "">(1);
+  const [weight, setWeight] = useState<number | "">("");
+  const [jobWork, setJobWork] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    if (!shade.trim()) return setErr("Pick a colour / shade.");
+    if (patti === "" || Number(patti) <= 0) return setErr("Enter the number of patty.");
+    if (weight === "" || Number(weight) <= 0) return setErr("Enter the weight.");
+    try {
+      await call({ shade, cut, roll_no: rollNo, patti_qty: patti, weight, cutting_date: today(), job_work: jobWork ? 1 : 0 });
+      onDone();
+    } catch (e) {
+      setErr(extractErrorMessage(e));
+    }
+  }
+
+  return (
+    <div className="mm-modal-scrim" onClick={onClose}>
+      <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="mm-modal-head">
+          <span className="mm-modal-title">New cutting</span>
+          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="mm-modal-body">
+          <div className="mm-form-grid">
+            <label className="mm-field">
+              <span className="mm-field-label">Colour *</span>
+              <select className="mm-input" value={shade} onChange={(e) => setShade(e.target.value)}>
+                <option value="">— colour —</option>
+                {shade && !colorOptions.includes(shade) && <option value={shade}>{shade}</option>}
+                {colorOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Cut</span>
+              <input className="mm-input" value={cut} placeholder="e.g. 50/85" onChange={(e) => setCut(e.target.value)} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Roll no</span>
+              <input className="mm-input" value={rollNo} onChange={(e) => setRollNo(e.target.value)} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">No of Patty *</span>
+              <input className="mm-input" type="number" min={1} value={patti} onChange={(e) => setPatti(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Weight (Kg) *</span>
+              <input className="mm-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+            </label>
+            <label className="mm-field mm-field-inline">
+              <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
+            </label>
+          </div>
+          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+        </div>
+        <div className="mm-modal-foot">
+          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Create cutting"}</button>
+        </div>
+      </div>
     </div>
   );
 }

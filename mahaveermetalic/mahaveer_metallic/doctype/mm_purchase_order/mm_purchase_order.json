@@ -9,6 +9,7 @@
     "branch",
     "location",
     "transaction_date",
+    "status",
     "supplier",
     "sales_order",
     "po_number",
@@ -41,6 +42,16 @@
       "fieldtype": "Link",
       "label": "Location",
       "options": "MM Location Master"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Status",
+      "options": "Open\nClosed",
+      "default": "Open",
+      "read_only": 1,
+      "description": "Closes automatically once the inwards received against this order line meet the PO weight."
     },
     {
       "fieldname": "supplier",

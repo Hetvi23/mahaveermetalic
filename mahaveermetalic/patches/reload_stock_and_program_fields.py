@@ -14,7 +14,10 @@ import frappe
 
 
 def execute():
-	for name in ("mm_stock_ledger_entry", "mm_program", "mm_inward"):
+	for name in (
+		"mm_stock_ledger_entry", "mm_program", "mm_inward", "mm_purchase_order",
+		"mm_cutting", "mm_production", "mm_roll_inventory", "mm_bobbin_box_tracking",
+	):
 		try:
 			frappe.reload_doc("mahaveer_metallic", "doctype", name, force=True)
 		except Exception:

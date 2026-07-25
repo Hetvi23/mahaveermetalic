@@ -1,10 +1,13 @@
 # Copyright (c) 2026, Mahaveer and contributors
 # License: MIT
 
+import re
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+from frappe.utils import getdate
 
 def is_mm_admin() -> bool:
 	roles = frappe.get_roles()
@@ -20,13 +23,42 @@ class MMSalesOrder(Document):
 		self.name = str(int(raw[len("MMSO"):]))  # → 1
 
 	def validate(self):
+		self._validate_lines()
 		self._require_weight_or_box()
 		self._compute_ordered_weight()
 		self._prevent_duplicate_order()
 		self._enforce_lock_rules()
 
-	def on_update(self):
-		self._sync_purchase_orders()
+	def _validate_lines(self):
+		"""Field-level order rules (mirrored in the Order screen):
+		- delivery date (header + per line) not before the order date
+		- weight / box / sale rate / purchase rate never negative
+		- size (cut) required and digits-only (no letters, e.g. 50/85)
+		"""
+		order_date = getdate(self.transaction_date) if self.transaction_date else None
+		if order_date and self.delivery_date and getdate(self.delivery_date) < order_date:
+			frappe.throw(_("Delivery date cannot be before the order date."))
+		for it in self.items:
+			if order_date and it.delivery_date and getdate(it.delivery_date) < order_date:
+				frappe.throw(_("Row #{0}: delivery date cannot be before the order date.").format(it.idx))
+			if (it.qty_weight or 0) < 0:
+				frappe.throw(_("Row #{0}: weight cannot be negative.").format(it.idx))
+			if (it.qty_box or 0) < 0:
+				frappe.throw(_("Row #{0}: box quantity cannot be negative.").format(it.idx))
+			if (it.sale_rate or 0) < 0:
+				frappe.throw(_("Row #{0}: sale rate cannot be negative.").format(it.idx))
+			if (it.purchase_rate or 0) < 0:
+				frappe.throw(_("Row #{0}: purchase rate cannot be negative.").format(it.idx))
+			cut = (it.cut or "").strip()
+			if not cut:
+				frappe.throw(_("Row #{0}: size is required.").format(it.idx))
+			if re.search(r"[A-Za-z]", cut):
+				frappe.throw(_("Row #{0}: size must not contain letters (digits only, e.g. 50/85).").format(it.idx))
+
+	# NOTE: Purchase Orders are NO LONGER auto-generated on save. A PO is created only
+	# on demand, for lines that are short on stock, via the "Create PO for shortfall"
+	# action (api.stock.create_purchase_order_from_so). This is the requested behaviour:
+	# no stock shortfall → no PO.
 
 	def _require_weight_or_box(self):
 		"""Each line must carry a Weight or a Box quantity (at least one, both allowed)."""
@@ -35,34 +67,6 @@ class MMSalesOrder(Document):
 				frappe.throw(
 					_("Row #{0}: enter a Weight or a Box quantity (at least one is required).").format(it.idx)
 				)
-
-	def _sync_purchase_orders(self):
-		"""One Purchase Order per order line (every item gets one; the supplier is
-		optional and can be filled later). Idempotent: a PO is matched back by its
-		so_item ref, so re-saving the order updates the existing PO instead of
-		creating a duplicate."""
-		for it in self.items:
-			existing = frappe.db.get_value("MM Purchase Order", {"so_item": it.name}, "name")
-			po = frappe.get_doc("MM Purchase Order", existing) if existing else frappe.new_doc("MM Purchase Order")
-			self._fill_po(po, it)
-			if existing:
-				po.save(ignore_permissions=True)
-			else:
-				po.insert(ignore_permissions=True)
-
-	def _fill_po(self, po, it):
-		po.supplier = it.purchase_party
-		po.sales_order = self.name
-		po.so_item = it.name
-		po.transaction_date = self.transaction_date
-		po.branch = self.branch
-		po.location = self.location
-		po.color = it.color_name
-		po.cut = it.cut
-		po.qty_kg = it.qty_weight or 0
-		po.qty_box = it.qty_box or 0
-		po.rate = it.purchase_rate
-		po.delivery_date = it.delivery_date
 
 	def _prevent_duplicate_order(self):
 		"""SRS rule (non-negotiable): don't create a new order that duplicates an

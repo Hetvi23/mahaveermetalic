@@ -239,6 +239,42 @@ def create_cutting(
 
 
 @frappe.whitelist()
+def create_manual_cutting(
+	customer_order=None, shade=None, cut=None, roll_no=None,
+	patti_qty=None, weight=None, cutting_date=None, job_work=0,
+):
+	"""Add a cutting by hand (the Cutting screen's "New cutting" button) — not tied to a
+	specific inward entry. Creates a submitted In-Progress cutting with one patty row."""
+	shade = (shade or "").strip()
+	if not shade:
+		frappe.throw(_("Enter the colour / shade."))
+	pq = float(patti_qty) if patti_qty not in (None, "") else 1.0
+	if pq <= 0:
+		frappe.throw(_("No of Patty must be greater than 0."))
+	wt = float(weight) if weight not in (None, "") else 0.0
+	if wt <= 0:
+		frappe.throw(_("Enter the weight."))
+	resolved_cut = (cut or "").strip() or None
+	cutting = frappe.get_doc(
+		{
+			"doctype": "MM Cutting",
+			"posting_date": cutting_date or frappe.utils.nowdate(),
+			"customer_order": customer_order or None,
+			"roll_no": roll_no or shade,
+			"shade": shade,
+			"cut": resolved_cut,
+			"status": "In Progress",
+			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
+			"roll_qty": 1,
+			"patti_entries": [{"shade": shade, "cut": resolved_cut, "patti_qty": pq, "net_weight": wt}],
+		}
+	)
+	cutting.insert(ignore_permissions=True)
+	cutting.submit()
+	return {"cutting": cutting.name}
+
+
+@frappe.whitelist()
 def complete_cutting(cutting):
 	"""Mark a cutting finished. A finished cutting becomes an available 'patty' on the
 	Program screen's left list. Idempotent."""
