@@ -9,6 +9,7 @@ import {
 import { Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
+import PartyPicker from "@/components/PartyPicker";
 import SalesOrderStockPanel from "@/components/SalesOrderStockPanel";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -322,7 +323,7 @@ export default function OrderWorkspace() {
             <FieldInput field={F.transaction_date} value={header.transaction_date} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, transaction_date: String(v ?? "") }))} />
             <FieldInput field={F.delivery_date} value={header.delivery_date} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, delivery_date: String(v ?? "") }))} />
           </div>
-          <FieldInput field={F.party} value={header.party} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: String(v ?? "") }))} />
+          <PartyPicker value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v }))} />
 
           {/* Item builder */}
           {!ro && (
