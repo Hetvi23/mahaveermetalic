@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   useFrappeCreateDoc,
   useFrappeDeleteDoc,
@@ -178,6 +178,17 @@ export default function OrderWorkspace() {
     setDraft(blankItem());
   }
 
+  // Keyboard: Enter anywhere in the item builder adds the item (no mouse needed) — but
+  // leave Enter alone while a colour/supplier dropdown is open so it can pick a suggestion.
+  function onBuilderKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Enter") return;
+    const el = e.target as HTMLElement;
+    if (el.tagName === "TEXTAREA") return;
+    if (el.closest(".mm-link-wrap")?.querySelector(".mm-suggest")) return;
+    e.preventDefault();
+    addItem();
+  }
+
   function removeItem(i: number) {
     setItems((prev) => prev.filter((_, j) => j !== i));
   }
@@ -327,8 +338,8 @@ export default function OrderWorkspace() {
 
           {/* Item builder */}
           {!ro && (
-            <div className="mm-ow-builder">
-              <div className="mm-ow-builder-title">Add item</div>
+            <div className="mm-ow-builder" onKeyDown={onBuilderKeyDown}>
+              <div className="mm-ow-builder-title">Add item <span className="mm-kbd-hint">press Enter to add</span></div>
               <div className="mm-form-grid">
                 <FieldInput field={F.color_name} value={draft.color_name} onChange={(v) => setDraft((d) => ({ ...d, color_name: String(v ?? "") }))} />
                 <FieldInput field={F.cut} value={draft.cut} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />

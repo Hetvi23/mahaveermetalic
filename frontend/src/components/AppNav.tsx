@@ -30,7 +30,8 @@ import {
   Boxes,
   Network,
   FileText,
-  Workflow,
+  Sun,
+  Moon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -66,7 +67,6 @@ const SECTIONS: Section[] = [
     key: "floor",
     label: "Shop Floor",
     items: [
-      { label: "Flow", icon: Workflow, to: "/flow" },
       { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
       { label: "Cutting", icon: Scissors, to: "/cutting" },
       { label: "Program", icon: Monitor, to: "/program" },
@@ -129,7 +129,20 @@ export default function AppNav() {
   const nav = useNavigate();
   const { currentUser, logout } = useFrappeAuth();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [theme, setTheme] = useState<string>(
+    () => (typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") : "") || "",
+  );
   const supplier = isSupplierOnly();
+
+  function toggleTheme() {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const prefersDark = typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = cur ? (cur === "dark" ? "light" : "dark") : prefersDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("mm-theme", next); } catch { /* ignore */ }
+    setTheme(next);
+  }
+  const isDark = theme === "dark" || (!theme && typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches);
 
   // Close the More sheet on navigation.
   useEffect(() => setMoreOpen(false), [loc.pathname]);
@@ -180,6 +193,9 @@ export default function AppNav() {
 
         <div className="mm-rail-footer">
           <span className="mm-rail-user" title={currentUser || ""}>{displayName}</span>
+          <button type="button" className="mm-rail-logout" title={isDark ? "Switch to light" : "Switch to dark"} onClick={toggleTheme}>
+            {isDark ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <button type="button" className="mm-rail-logout" title="Log out" onClick={() => void doLogout()}>
             <LogOut size={16} />
           </button>

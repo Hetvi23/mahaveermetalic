@@ -3,6 +3,12 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 
+// Apply the saved theme before first paint so there's no light→dark flash.
+try {
+	const saved = localStorage.getItem("mm-theme");
+	if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+} catch { /* ignore */ }
+
 function initApp() {
 	const win = window as Window & { frappe?: Record<string, unknown> };
 	if (!win.frappe) win.frappe = {};
