@@ -429,6 +429,20 @@ def create_unfinished_program(
 	if batches <= 0:
 		frappe.throw(_("Total Batches must be greater than 0."))
 
+	# Guard against junk colours: a plan must reference stock that actually exists — either
+	# a specific inventory roll, or a colour that has some stock. Prevents phantom plans
+	# like a stray "s" colour with no roll behind it.
+	if not roll_inventory:
+		has_stock = frappe.db.sql(
+			"""select 1 from `tabMM Roll Inventory`
+			where color_name = %s and (ifnull(stock_weight, 0) > 0 or ifnull(stock_box, 0) > 0) limit 1""",
+			(color,),
+		)
+		if not has_stock:
+			frappe.throw(
+				_("No inventory stock for colour '{0}'. Search and pick a colour/roll that exists in stock.").format(color)
+			)
+
 	# Placeholder Open cutting — the planned cut. Zero weight until the roll is bound.
 	cutting = frappe.get_doc(
 		{

@@ -30,6 +30,7 @@ import {
   Boxes,
   Network,
   FileText,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -65,6 +66,7 @@ const SECTIONS: Section[] = [
     key: "floor",
     label: "Shop Floor",
     items: [
+      { label: "Flow", icon: Workflow, to: "/flow" },
       { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
       { label: "Cutting", icon: Scissors, to: "/cutting" },
       { label: "Program", icon: Monitor, to: "/program" },

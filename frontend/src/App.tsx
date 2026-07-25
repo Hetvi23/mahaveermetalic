@@ -14,6 +14,7 @@ import OrderWorkspace from "./pages/OrderWorkspace";
 import InwardWorkspace from "./pages/InwardWorkspace";
 import InventoryScreen from "./pages/InventoryScreen";
 import StockLedgerScreen from "./pages/StockLedgerScreen";
+import FlowScreen from "./pages/FlowScreen";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
 import { DOC_REGISTRY } from "@/config/registry";
@@ -63,6 +64,7 @@ const WIDE_PATHS = [
   "/inward",
   "/inventory",
   "/stock-ledger",
+  "/flow",
 ];
 
 export default function App() {
@@ -89,6 +91,7 @@ export default function App() {
             <Route path="/inward" element={<InwardWorkspace />} />
             <Route path="/inventory" element={<InventoryScreen />} />
             <Route path="/stock-ledger" element={<StockLedgerScreen />} />
+            <Route path="/flow" element={<FlowScreen />} />
             {DOC_REGISTRY.filter((meta) => !["/cutting", "/sales-order", "/inward"].includes(meta.routeBase)).map((meta) => (
               <Route
                 key={meta.slug}

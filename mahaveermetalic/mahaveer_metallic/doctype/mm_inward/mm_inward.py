@@ -12,6 +12,8 @@ class MMInward(Document):
 		if not self.items:
 			frappe.throw(_("Add at least one inward item."))
 		for row in self.items:
+			if (row.weight or 0) < 0 or (row.qty_box or 0) < 0:
+				frappe.throw(_("Row #{0}: weight and box cannot be negative.").format(row.idx))
 			if (row.weight or 0) <= 0 and (row.qty_box or 0) <= 0:
 				frappe.throw(_("Row #{0}: enter a Weight or Box quantity.").format(row.idx))
 		# is_partial (a user-facing checkbox) must win even though receipt_status carries a

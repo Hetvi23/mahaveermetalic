@@ -1500,3 +1500,20 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-prog-card-unfinished { border: 1.5px solid #f87171; background: #fef2f2; box-shadow: 0 0 0 1px #fecaca inset; }
 .mm-prog-card-unfinished .mm-prog-card-name { color: #b91c1c; }
 .mm-prog-card-remark { font-size: 0.72rem; color: var(--mm-text-sec); font-style: italic; margin-top: 0.1rem; }
+
+/* ── SO picker party filter + Flow page (2026-07-25) ────────────────────── */
+.mm-suggest-filter { position: sticky; top: 0; background: #fff; padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--mm-border); z-index: 2; }
+.mm-suggest-filter select { width: 100%; }
+.mm-flow-shelf-head { display: flex; align-items: center; gap: 0.6rem; margin: 0.2rem 0.1rem 0.7rem; }
+.mm-flow-shelf-head h2 { font-size: 1rem; font-weight: 700; margin: 0; }
+.mm-flow-num { width: 22px; height: 22px; border-radius: 50%; background: var(--mm-head, #0f1a2a); color: #fff; display: grid; place-items: center; font-size: 0.72rem; font-weight: 800; }
+.mm-flow-count { font-size: 0.72rem; font-weight: 700; color: var(--mm-text-sec); background: #fff; border: 1px solid var(--mm-border); padding: 0.15rem 0.6rem; border-radius: 999px; }
+.mm-flow-shelf { display: flex; gap: 0.75rem; overflow-x: auto; padding: 0.2rem 0.1rem 0.9rem; scroll-snap-type: x proximity; }
+.mm-flow-shelf .mm-flow-card { min-width: 240px; scroll-snap-align: start; }
+.mm-flow-card { background: #fff; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm, 12px); padding: 0.75rem 0.8rem; box-shadow: var(--mm-shadow-sm); display: flex; flex-direction: column; gap: 0.5rem; }
+.mm-flow-card-cut { border-left: 4px solid var(--mm-blue, #2563eb); }
+.mm-flow-card-patty { border-left: 4px solid #15803d; }
+.mm-flow-card-red { border: 1.5px solid #fca5a5; background: #fef2f2; }
+.mm-flow-card-name { font-weight: 700; font-size: 0.92rem; }
+.mm-flow-mach-cell { display: flex; flex-direction: column; gap: 0.5rem; min-width: 150px; }
+.mm-flow-empty-state { padding: 1.4rem; text-align: center; color: var(--mm-text-sec); font-size: 0.85rem; }

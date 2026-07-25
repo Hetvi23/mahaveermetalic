@@ -52,15 +52,22 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
     ? `${selected.sales_order} · ${selected.party_name || selected.party || ""}`
     : value;
 
+  const [partyFilter, setPartyFilter] = useState("");
+  const parties = useMemo(
+    () => Array.from(new Set(options.map((o) => o.party_name || o.party).filter(Boolean))).sort() as string[],
+    [options],
+  );
+
   const q = text.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (!q) return options;
-    return options.filter((o) =>
-      [o.sales_order, o.party_name, o.party, (o.colours || []).join(" "), (o.cuts || []).join(" "), o.delivery_date]
+    return options.filter((o) => {
+      if (partyFilter && (o.party_name || o.party) !== partyFilter) return false;
+      if (!q) return true;
+      return [o.sales_order, o.party_name, o.party, (o.colours || []).join(" "), (o.cuts || []).join(" "), o.delivery_date]
         .filter(Boolean)
-        .some((s) => String(s).toLowerCase().includes(q)),
-    );
-  }, [options, q]);
+        .some((s) => String(s).toLowerCase().includes(q));
+    });
+  }, [options, q, partyFilter]);
 
   return (
     <label className="mm-field">
@@ -88,6 +95,14 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
         <ChevronDown size={15} className="mm-link-caret" aria-hidden />
         {open && (
           <ul className="mm-suggest mm-suggest-rich">
+            {parties.length > 1 && (
+              <li className="mm-suggest-filter" onMouseDown={(e) => e.preventDefault()}>
+                <select className="mm-input mm-input-compact" value={partyFilter} onChange={(e) => setPartyFilter(e.target.value)}>
+                  <option value="">All parties ({parties.length})</option>
+                  {parties.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </li>
+            )}
             {isLoading && <li className="mm-suggest-muted">Loading…</li>}
             {!isLoading && filtered.length === 0 && <li className="mm-suggest-muted">No matching orders</li>}
             {!isLoading &&

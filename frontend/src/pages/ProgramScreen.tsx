@@ -8,7 +8,7 @@ import { extractErrorMessage } from "@/utils/frappeError";
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = () => new Date().toISOString().slice(0, 10);
 const SHIFTS = ["Day", "Night"] as const;
-const DEFAULT_COLS = 2;
+const DEFAULT_COLS = 1;
 
 type Machine = { name: string; machine_no: string; machine_name?: string; cut?: string; closed?: number; active_programs?: number };
 type Program = {
@@ -404,12 +404,11 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
     if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     try {
       if (mode === "inventory") {
-        const color = invRoll?.color_name || invColor.trim();
-        if (!color) return setErr("Search and pick a colour / roll from inventory.");
+        if (!invRoll) return setErr("Search a colour, then pick its actual roll from inventory.");
         await createUnfinished({
           machine_no: machine,
-          color,
-          roll_inventory: invRoll?.name,
+          color: invRoll.color_name,
+          roll_inventory: invRoll.name,
           total_batches: batches,
           remark: remark || undefined,
           customer_order: order || undefined,
