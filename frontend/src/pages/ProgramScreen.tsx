@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
@@ -268,8 +268,8 @@ export default function ProgramScreen() {
           presetColour={adding.colour}
           dayDate={dayDate}
           nightDate={nightDate}
-          onClose={() => setAdding(null)}
-          onDone={() => { setAdding(null); refresh(); }}
+          onClose={() => { setAdding(null); refresh(); }}
+          onAdded={refresh}
         />
       )}
       {closing && <CloseMachineModal machine={closing} onClose={() => setClosing(null)} onDone={() => { setClosing(null); refresh(); }} />}
@@ -348,9 +348,9 @@ function MachineCutInput({ machine, value, onSaved }: { machine: string; value?:
 }
 
 /* ── Add program — colour-first picker ──────────────────────────── */
-function AddProgramModal({ machines, presetMachine, presetShift, presetColour, dayDate, nightDate, onClose, onDone }: {
+function AddProgramModal({ machines, presetMachine, presetShift, presetColour, dayDate, nightDate, onClose, onAdded }: {
   machines: Machine[]; presetMachine?: string; presetShift?: string; presetColour?: string;
-  dayDate: string; nightDate: string; onClose: () => void; onDone: () => void;
+  dayDate: string; nightDate: string; onClose: () => void; onAdded: () => void;
 }) {
   const coloursCall = useFrappeGetCall<{ message: Colour[] }>(`${API}.available_colours`, undefined, "pg-colours");
   const { call: create, loading: creating } = useFrappePostCall(`${API}.create_program`);
@@ -367,7 +367,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const [err, setErr] = useState<string | null>(null);
 
   // pre-select a colour passed in from a feeder card
-  useMemo(() => {
+  useEffect(() => {
     if (presetColour && !sel) {
       const g = colours.find((c) => c.colour === presetColour);
       if (g) setSel(g);
@@ -401,27 +401,26 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     try {
       if (bestRow.source_type === "cutting" && bestRow.cutting) {
+        // A finished patty / in-progress cutting → program it directly.
         await create({
           source_cutting: bestRow.cutting, machine_no: machine, shift,
           customer_order: order || bestRow.customer_order, total_batches: batches,
           weight: bestRow.weight, program_date: date, job_work: jobWork ? 1 : 0,
         });
-      } else if (bestRow.source_type === "inward" && bestRow.inward_item) {
-        await create({
-          source_inward_item: bestRow.inward_item, machine_no: machine, shift,
-          customer_order: order || bestRow.customer_order, total_batches: batches,
-          weight: bestRow.weight, program_date: date, job_work: jobWork ? 1 : 0,
-        });
       } else {
-        // colour with no concrete source row → plan it (finish the cut later on Cutting)
+        // An inventory roll not yet cut → plan it as a "to cut" program. It shows up RED
+        // on the Cutting board and is finished (roll picked) from the Cutting page.
         await createUnfinished({
           machine_no: machine, color: sel.colour, total_batches: batches,
-          remark: remark || undefined, customer_order: order || undefined,
+          remark: remark || undefined, customer_order: order || bestRow.customer_order || undefined,
           program_date: date, shift, job_work: jobWork ? 1 : 0,
         });
       }
       toast("Program added");
-      onDone();
+      onAdded();
+      // Keep the modal open so several programs can be added in a row.
+      setSel(null); setSearch(""); setBatches(1); setRemark(""); setOrder("");
+      void coloursCall.mutate();
     } catch (e) { setErr(extractErrorMessage(e)); }
   }
 
@@ -494,7 +493,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
-          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-ghost" onClick={onClose}>Done</button>
           <button className="mm-btn-primary" disabled={creating || creatingU} onClick={() => void submit()}>{(creating || creatingU) ? "Saving…" : "Add program"}</button>
         </div>
       </div>
