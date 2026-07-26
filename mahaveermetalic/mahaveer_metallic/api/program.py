@@ -583,15 +583,29 @@ def _save_batches(program, completed, is_running):
 
 
 @frappe.whitelist()
-def complete_batches(program, count=1):
-	"""Mark `count` more batches finished (caps at total). Drives Partially Done → Completed.
-	A reverted program is off the machine — completing on it is blocked for good."""
-	doc = frappe.db.get_value("MM Program", program, ["completed_batches", "reverted"], as_dict=True)
+def complete_batches(program, completed=None, count=None):
+	"""Record how many batches are completed (via the Complete dialog). Sets the count
+	directly. When ALL batches are done the program auto-frees to Production — no manual
+	Free step. A reverted program is off the machine — completing on it is blocked.
+	(`count` kept for backward-compat: increments by that many.)"""
+	doc = frappe.db.get_value(
+		"MM Program", program, ["completed_batches", "total_batches", "reverted"], as_dict=True
+	)
 	if not doc:
 		frappe.throw(_("Program {0} not found.").format(program))
 	if doc.reverted:
 		frappe.throw(_("Program {0} was reverted — its batches can no longer be completed.").format(program))
-	return _save_batches(program, (doc.completed_batches or 0) + int(count), is_running=True)
+	total = int(doc.total_batches or 0)
+	if completed not in (None, ""):
+		comp = max(0, min(int(completed), total))
+	else:
+		comp = max(0, min((doc.completed_batches or 0) + int(count or 1), total))
+	res = _save_batches(program, comp, is_running=True)
+	if total > 0 and comp >= total:
+		# All done → free off the machine to Production automatically.
+		frappe.db.set_value("MM Program", program, "released", 1, update_modified=False)
+		res["released"] = True
+	return res
 
 
 def _clear_cutting_link(doc):
@@ -617,22 +631,23 @@ def _unwind_inventory_cutting(doc):
 
 @frappe.whitelist()
 def revert_batches(program, completed=None):
-	"""Revert: you report how many batches were actually completed. Reverting ALWAYS
-	takes the program OFF the machine (its slot frees up) and hands the roll/patty back
-	to the Add-Program picker so it can be planned again:
-	  · completed = 0 → the program is cancelled outright; an inventory pick's
-	    auto-created cutting is unwound so the roll returns to In Inventory,
-	    otherwise the patty returns to the Cut / In Cutting list.
-	  · completed ≥ 1 (up to total) → the done batches stay on record (flagged
-	    `reverted` — no further completes allowed), the program leaves the machine,
-	    and the patty returns to the picker for the remaining (total − completed).
-	    Even a fully-completed program is released and returned when reverted.
+	"""Revert the UNCOMPLETED batches. By default keeps whatever is already completed on
+	record and returns the rest to the Add-Program picker; the program leaves the machine.
+	  · nothing completed yet → the program is cancelled outright; an inventory pick's
+	    auto-created cutting is unwound so the roll returns to In Inventory, otherwise the
+	    patty returns to the Cut / In Cutting list.
+	  · some completed → the done batches stay on record (flagged `reverted` — no further
+	    completes), the program leaves the machine, and the remainder returns to the picker.
+	(`completed` may be passed to override; when omitted the current completed count is used.)
 	"""
 	doc = frappe.get_doc("MM Program", program)
 	if doc.closed:
 		frappe.throw(_("Program {0} is closed and cannot be changed.").format(program))
 	total = int(doc.total_batches or 0)
-	comp = 0 if completed in (None, "") else max(0, min(int(completed), total))
+	if completed in (None, ""):
+		comp = max(0, min(int(doc.completed_batches or 0), total))
+	else:
+		comp = max(0, min(int(completed), total))
 
 	if comp == 0:
 		# Nothing produced — the program never happened. Clear the cutting's link

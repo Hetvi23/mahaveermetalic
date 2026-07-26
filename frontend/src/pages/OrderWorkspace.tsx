@@ -44,7 +44,7 @@ const F: Record<string, FieldSchema> = {
   delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   party: { fieldname: "party", label: "Company / Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
   color_name: { fieldname: "color_name", label: "Color", fieldtype: "Link", options: "MM Item Master", reqd: true },
-  cut: { fieldname: "cut", label: "Size", fieldtype: "Data", reqd: true },
+  cut: { fieldname: "cut", label: "Size", fieldtype: "Data" },
   item_delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float" },
   qty_box: { fieldname: "qty_box", label: "Box", fieldtype: "Float" },
@@ -160,8 +160,7 @@ export default function OrderWorkspace() {
   // Shared item rules (also enforced server-side in mm_sales_order._validate_lines).
   function itemError(d: Item): string | null {
     if (!d.color_name.trim()) return "Pick a colour for the item.";
-    if (!d.cut.trim()) return "Enter the size (required) for the item.";
-    if (/[A-Za-z]/.test(d.cut)) return "Size must not contain letters (digits only, e.g. 50/85).";
+    if (d.cut.trim() && /[A-Za-z]/.test(d.cut)) return "Size must not contain letters (digits only, e.g. 50/85).";
     const w = Number(d.qty_weight) || 0;
     const b = Number(d.qty_box) || 0;
     if (w < 0 || b < 0) return "Weight and box cannot be negative.";

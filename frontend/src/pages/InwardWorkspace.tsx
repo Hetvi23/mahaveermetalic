@@ -483,7 +483,7 @@ export default function InwardWorkspace() {
                 <PackageCheck size={16} /> {manual ? "Material received" : "Rolls on this challan"}
                 {manual && (salesOrder ? <span className="mm-state mm-state-cut" style={{ marginLeft: "0.5rem" }}>Registered to {salesOrder}</span> : <span className="mm-muted" style={{ marginLeft: "0.5rem", fontSize: "0.75rem", fontWeight: 400 }}>→ no order: goes to inventory</span>)}
               </h2>
-              <span className="mm-muted">Total: {totals.qty} box · {totals.weight.toLocaleString()} kg</span>
+              <span className="mm-muted">Total: {totals.qty} qty · {totals.weight.toLocaleString()} kg</span>
             </div>
 
             {/* Verify panel — challan expected vs entered, from Veermetlon */}

@@ -49,10 +49,9 @@ class MMSalesOrder(Document):
 				frappe.throw(_("Row #{0}: sale rate cannot be negative.").format(it.idx))
 			if (it.purchase_rate or 0) < 0:
 				frappe.throw(_("Row #{0}: purchase rate cannot be negative.").format(it.idx))
+			# Size (cut) is optional; only validate the format when one is entered.
 			cut = (it.cut or "").strip()
-			if not cut:
-				frappe.throw(_("Row #{0}: size is required.").format(it.idx))
-			if re.search(r"[A-Za-z]", cut):
+			if cut and re.search(r"[A-Za-z]", cut):
 				frappe.throw(_("Row #{0}: size must not contain letters (digits only, e.g. 50/85).").format(it.idx))
 
 	# NOTE: Purchase Orders are NO LONGER auto-generated on save. A PO is created only
