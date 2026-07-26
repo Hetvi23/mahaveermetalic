@@ -381,6 +381,34 @@ def create_program(
 
 
 @frappe.whitelist()
+def available_colours(branch=None, location=None):
+	"""Colour-first picker for Add-program: the colours available to program right now,
+	aggregated across finished patties (Cut), in-progress cuttings (In Cutting) and
+	inventory rolls (In Inventory). Each colour lists its underlying source rows (so the
+	UI can show only the colour up front, then create from the right source)."""
+	rows = available_rolls(branch=branch, location=location)
+	groups = {}
+	order = []
+	for r in rows:
+		key = (r.get("shade") or "").strip() or "—"
+		g = groups.get(key)
+		if not g:
+			g = groups[key] = {"colour": key, "rows": [], "states": [], "total_weight": 0.0}
+			order.append(key)
+		g["rows"].append(r)
+		if r.get("state") and r["state"] not in g["states"]:
+			g["states"].append(r["state"])
+		g["total_weight"] += float(r.get("weight") or 0)
+	out = [groups[k] for k in order]
+	for g in out:
+		g["total_weight"] = round(g["total_weight"], 3)
+		g["count"] = len(g["rows"])
+	# Colours with a finished patty first (readiest to program), then the rest.
+	out.sort(key=lambda g: (0 if "Cut" in g["states"] else 1, g["colour"]))
+	return out
+
+
+@frappe.whitelist()
 def program_inventory_search(color=None, branch=None, location=None):
 	"""'Search a roll from inventory' for the Add-program modal — inventory rolls of a
 	colour that still have stock. If a colour has no stock, nothing comes back."""

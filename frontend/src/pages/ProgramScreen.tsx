@@ -2,16 +2,18 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
-  Plus, Minus, X, Power, RotateCcw, Check, CheckCircle2, Undo2, Monitor, LayoutGrid, List, Search, Trash2, Scissors,
+  Plus, X, Power, RotateCcw, Check, Undo2, Monitor, LayoutGrid, List, Search, Trash2, Scissors,
 } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { toast } from "@/components/Toaster";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const CUT_API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const today = () => new Date().toISOString().slice(0, 10);
+const tomorrow = () => new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 const SHIFTS = ["Day", "Night"] as const;
-const DEFAULT_COLS = 1;
+type ShiftView = "Day" | "Night" | "Combined";
 
 type Machine = { name: string; machine_no: string; machine_name?: string; cut?: string; closed?: number; active_programs?: number };
 type Program = {
@@ -20,76 +22,131 @@ type Program = {
   released?: number; reverted?: number; total_batches?: number; completed_batches?: number; net_weight?: number;
   unfinished?: number; remark?: string; roll_inventory?: string;
 };
-type InvRoll = { name: string; roll_no?: string; lot_number?: string; location?: string; color_name?: string; available_weight?: number; stock_weight?: number };
 type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
   customer_order?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number;
 };
+type Colour = { colour: string; rows: Roll[]; states: string[]; total_weight: number; count: number };
+type BoardCard = { name: string; roll_no?: string; shade?: string; cut?: string; status?: string; unfinished?: number; total_net_weight?: number; program_name?: string };
 type OrderOpt = { name: string };
 type OnMachine = { name: string; roll_no?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
-type StockGroup = { customer_order: string; party?: string; party_name?: string; roll_display?: string; entry_count: number; total_weight: number };
-type Patty = { cutting?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number };
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
+const shiftIcon = (s: string) => (s === "Night" ? "🌙" : "☀");
 
 export default function ProgramScreen() {
   const [view, setView] = useState<"grid" | "list">(
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "list" ? "list" : "grid",
   );
-  const [date, setDate] = useState(today());
-  const [cols, setCols] = useState(DEFAULT_COLS);
-  const [adding, setAdding] = useState<{ machine?: string } | null>(null);
+  const [shiftView, setShiftView] = useState<ShiftView>("Combined");
+  const [dayDate, setDayDate] = useState(tomorrow());
+  const [nightDate, setNightDate] = useState(today());
+  const [adding, setAdding] = useState<{ machine?: string; shift?: string; colour?: string } | null>(null);
   const [closing, setClosing] = useState<Machine | null>(null);
-  const [reverting, setReverting] = useState<Program | null>(null);
-  const [finishing, setFinishing] = useState<Program | null>(null);
+  const [completing, setCompleting] = useState<Program | null>(null);
 
+  const nav = useNavigate();
   const machinesCall = useFrappeGetCall<{ message: Machine[] }>(`${API}.list_machines`, undefined, "pg-machines");
-  // Board = every program still ON a machine (not freed → Production, not reverted →
-  // Cutting), regardless of the date it was planned. The Date selector only stamps the
-  // plan-date on NEW programs (passed to the Add-program modal), it doesn't filter here.
   const progCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "pg-threads");
+  const pattyCall = useFrappeGetCall<{ message: Roll[] }>(`${API}.available_rolls`, { finished_only: 1 }, "pg-patties");
+  const cutCall = useFrappeGetCall<{ message: BoardCard[] }>(`${CUT_API}.cutting_board`, undefined, "pg-cutboard");
 
   const { call: addMachine } = useFrappePostCall(`${API}.add_machine`);
   const { call: removeMachine } = useFrappePostCall(`${API}.remove_machine`);
   const { call: reopen } = useFrappePostCall(`${API}.reopen_machine`);
-  const { call: complete } = useFrappePostCall(`${API}.complete_batches`);
-  const { call: free } = useFrappePostCall(`${API}.free_program`);
-
-  const nav = useNavigate();
-  // Feeder shelves shown under the board: rolls waiting to be cut, and finished patties.
-  const stockCall = useFrappeGetCall<{ message: StockGroup[] }>(`${CUT_API}.inward_stock_by_order`, undefined, "pg-stock");
-  const pattyCall = useFrappeGetCall<{ message: Patty[] }>(`${API}.available_rolls`, { finished_only: 1 }, "pg-patties");
+  const { call: revert } = useFrappePostCall(`${API}.revert_batches`);
 
   const machines = machinesCall.data?.message ?? [];
-  const programs = progCall.data?.message ?? [];
-  const stock = stockCall.data?.message ?? [];
+  const programs = useMemo(() => progCall.data?.message ?? [], [progCall.data]);
   const patties = pattyCall.data?.message ?? [];
+  const cuttings = cutCall.data?.message ?? [];
 
-  const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void stockCall.mutate(); void pattyCall.mutate(); };
-  const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { alert(extractErrorMessage(e)); } };
+  const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void pattyCall.mutate(); void cutCall.mutate(); };
+  const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { const m = extractErrorMessage(e); toast(m, "error"); } };
 
-  // Programs grouped per machine, in column order.
-  const byMachine = useMemo(() => {
-    const m: Record<string, Program[]> = {};
-    for (const p of programs) (m[p.machine_no || "—"] ||= []).push(p);
+  // programs[machine][shift]
+  const byMachineShift = useMemo(() => {
+    const m: Record<string, Record<string, Program[]>> = {};
+    for (const p of programs) {
+      const mk = p.machine_no || "—";
+      const sk = p.shift || "Day";
+      ((m[mk] ||= {})[sk] ||= []).push(p);
+    }
     return m;
   }, [programs]);
 
-  const colCount = Math.max(cols, ...machines.map((m) => (byMachine[m.name]?.length ?? 0)), 1);
-  const columns = Array.from({ length: colCount }, (_, i) => i);
+  // Feeder: colours by state (in-cutting / to-cut) from the cutting board.
+  const inCuttingColours = useMemo(() => {
+    const g: Record<string, { colour: string; toCut: boolean; inCutting: boolean; weight: number }> = {};
+    for (const c of cuttings) {
+      const k = (c.shade || c.roll_no || "—");
+      const e = (g[k] ||= { colour: k, toCut: false, inCutting: false, weight: 0 });
+      if (c.unfinished) e.toCut = true; else e.inCutting = true;
+      e.weight += Number(c.total_net_weight || 0);
+    }
+    return Object.values(g);
+  }, [cuttings]);
+
+  // Feeder: finished patties by colour.
+  const pattyColours = useMemo(() => {
+    const g: Record<string, { colour: string; weight: number; count: number }> = {};
+    for (const p of patties) {
+      const k = p.shade || p.roll_no || "—";
+      const e = (g[k] ||= { colour: k, weight: 0, count: 0 });
+      e.weight += Number(p.weight || 0);
+      e.count += 1;
+    }
+    return Object.values(g);
+  }, [patties]);
+
+  const shiftCols: string[] = shiftView === "Combined" ? ["Day", "Night"] : [shiftView];
+  const shiftDate = (s: string) => (s === "Night" ? nightDate : dayDate);
+
+  function ProgCard({ p }: { p: Program }) {
+    return (
+      <div className={`mm-prog-card ${p.unfinished ? "mm-prog-card-unfinished" : ""}`}>
+        <div className="mm-prog-card-top">
+          <span className="mm-prog-card-name">{p.shade || p.roll_no || "—"}</span>
+          {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : <span className={stateClass(p.status)}>{p.status}</span>}
+        </div>
+        <div className="mm-prog-card-meta">
+          {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches · {p.unfinished ? "roll not yet picked" : `${kg(p.net_weight)} kg`}
+        </div>
+        {p.remark && <div className="mm-prog-card-remark">“{p.remark}”</div>}
+        <div className="mm-prog-actions">
+          {p.unfinished ? (
+            <>
+              <button className="mm-mini mm-mini-ok" title="Cut this on the Cutting screen (pick the roll there)" onClick={() => nav("/cutting")}><Scissors size={13} /> Finish in Cutting</button>
+              <button className="mm-mini mm-mini-warn" onClick={guard(() => revert({ program: p.name }))}><Undo2 size={13} /> Cancel plan</button>
+            </>
+          ) : (
+            <>
+              <button className="mm-mini" disabled={!!p.reverted} onClick={() => setCompleting(p)}><Check size={13} /> Complete</button>
+              <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={guard(() => revert({ program: p.name }))}><Undo2 size={13} /> Revert</button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mm-screen mm-page-enter">
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Program</h1>
-          <p className="mm-page-sub">Machines run down the rows; each column is a program slot. Finished cuttings &amp; inventory rolls feed the picker.</p>
+          <p className="mm-page-sub">Colours in cutting &amp; finished patties feed the machines. Plan Day and Night side by side.</p>
         </div>
         <div className="mm-ws-toolbar-right">
-          <label className="mm-field-inline">
-            <span className="mm-field-label-inline">Date</span>
-            <input className="mm-input mm-input-compact" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </label>
+          <label className="mm-field-inline"><span className="mm-field-label-inline">☀ Day</span>
+            <input className="mm-input mm-input-compact" type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} /></label>
+          <label className="mm-field-inline"><span className="mm-field-label-inline">🌙 Night</span>
+            <input className="mm-input mm-input-compact" type="date" value={nightDate} onChange={(e) => setNightDate(e.target.value)} /></label>
+          <div className="mm-seg">
+            {(["Combined", "Day", "Night"] as ShiftView[]).map((s) => (
+              <button key={s} className={`mm-seg-btn ${shiftView === s ? "mm-seg-btn-active" : ""}`} onClick={() => setShiftView(s)}>{s}</button>
+            ))}
+          </div>
           <div className="mm-seg">
             <button className={`mm-seg-btn ${view === "grid" ? "mm-seg-btn-active" : ""}`} onClick={() => setView("grid")}><LayoutGrid size={15} /> Board</button>
             <button className={`mm-seg-btn ${view === "list" ? "mm-seg-btn-active" : ""}`} onClick={() => setView("list")}><List size={15} /> List</button>
@@ -102,243 +159,155 @@ export default function ProgramScreen() {
         <ProgramList />
       ) : (
         <>
+          {/* ── Feeders: in-cutting + finished patties, side by side (colour-first) ── */}
+          <div className="mm-feeders">
+            <section className="mm-card mm-card-pad">
+              <div className="mm-flow-shelf-head" style={{ margin: 0, marginBottom: "0.7rem" }}>
+                <span className="mm-flow-num"><Scissors size={12} /></span><h2>In cutting</h2>
+                <span className="mm-flow-count">{inCuttingColours.length}</span>
+              </div>
+              {inCuttingColours.length === 0 ? (
+                <p className="mm-flow-empty-state">Nothing in cutting.</p>
+              ) : (
+                <div className="mm-colour-list">
+                  {inCuttingColours.map((c) => (
+                    <div key={c.colour} className={`mm-colour-row ${c.toCut ? "mm-colour-row-red" : ""}`}>
+                      <span className="mm-colour-name">{c.colour}</span>
+                      {c.toCut && <span className="mm-state mm-state-unfinished">to cut</span>}
+                      {c.inCutting && <span className="mm-state mm-state-incutting">in cutting</span>}
+                      <span className="mm-colour-wt">{kg(c.weight)} kg</span>
+                      <button className="mm-mini" onClick={() => nav("/cutting")}>Open Cutting →</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="mm-card mm-card-pad">
+              <div className="mm-flow-shelf-head" style={{ margin: 0, marginBottom: "0.7rem" }}>
+                <span className="mm-flow-num">✓</span><h2>Finished patties</h2>
+                <span className="mm-flow-count">{pattyColours.length}</span>
+              </div>
+              {pattyColours.length === 0 ? (
+                <p className="mm-flow-empty-state">No finished patties yet.</p>
+              ) : (
+                <div className="mm-colour-list">
+                  {pattyColours.map((c) => (
+                    <div key={c.colour} className="mm-colour-row mm-colour-row-green">
+                      <span className="mm-colour-name">{c.colour}</span>
+                      <span className="mm-state mm-state-cut">patty</span>
+                      <span className="mm-colour-wt">{c.count} · {kg(c.weight)} kg</span>
+                      <button className="mm-mini mm-mini-ok" onClick={() => setAdding({ colour: c.colour })}>→ Program</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* ── Machine board (Day / Night / Combined) ── */}
           <div className="mm-table-scroll">
             <table className="mm-prog-table">
               <thead>
                 <tr>
                   <th className="mm-prog-mcell">Machine</th>
-                  {columns.map((c) => <th key={c} className="mm-prog-col">Program {c + 1}</th>)}
-                  <th className="mm-prog-addcol">
-                    <button className="mm-prog-addcol-btn" title="Add program column" onClick={() => setCols((n) => Math.max(colCount, n) + 1)}><Plus size={16} /></button>
-                    <button
-                      className="mm-prog-addcol-btn"
-                      title="Remove empty program column"
-                      disabled={colCount <= 1 || machines.some((m) => (byMachine[m.name]?.length ?? 0) >= colCount)}
-                      onClick={() => setCols(() => Math.max(1, colCount - 1))}
-                    ><Minus size={16} /></button>
-                  </th>
+                  {shiftCols.map((s) => <th key={s} className="mm-prog-col">{shiftIcon(s)} {s} · {shiftDate(s)}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {machines.map((m) => {
-                  const list = byMachine[m.name] ?? [];
-                  return (
-                    <tr key={m.name} className={m.closed ? "mm-prog-row-closed" : ""}>
-                      <td className="mm-prog-mcell">
-                        <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
-                        <MachineCutInput machine={m.name} value={m.cut} onSaved={refresh} />
-                        {m.closed ? (
-                          <>
-                            <span className="mm-state mm-state-open">Not working</span>
-                            <div style={{ marginTop: "0.5rem" }}>
-                              <button className="mm-mini mm-mini-ok" onClick={guard(() => reopen({ machine: m.name }))}><Power size={13} /> Reopen</button>
-                            </div>
-                          </>
-                        ) : (
-                          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                            <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
-                            {list.length === 0 && (
-                              <button className="mm-mini" title="Remove this machine"
-                                onClick={guard(() => removeMachine({ machine: m.name }))}><Trash2 size={13} /></button>
+                {machines.map((m) => (
+                  <tr key={m.name} className={m.closed ? "mm-prog-row-closed" : ""}>
+                    <td className="mm-prog-mcell">
+                      <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
+                      <MachineCutInput machine={m.name} value={m.cut} onSaved={refresh} />
+                      {m.closed ? (
+                        <>
+                          <span className="mm-state mm-state-open">Not working</span>
+                          <div style={{ marginTop: "0.5rem" }}>
+                            <button className="mm-mini mm-mini-ok" onClick={guard(() => reopen({ machine: m.name }))}><Power size={13} /> Reopen</button>
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                          <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
+                          {Object.values(byMachineShift[m.name] || {}).flat().length === 0 && (
+                            <button className="mm-mini" title="Remove this machine" onClick={guard(() => removeMachine({ machine: m.name }))}><Trash2 size={13} /></button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    {shiftCols.map((s) => {
+                      const list = byMachineShift[m.name]?.[s] ?? [];
+                      return (
+                        <td key={s} className="mm-prog-col">
+                          <div className="mm-prog-shiftcell">
+                            {list.map((p) => <ProgCard key={p.name} p={p} />)}
+                            {!m.closed && (
+                              <button className="mm-mini mm-prog-add" onClick={() => setAdding({ machine: m.name, shift: s })}><Plus size={13} /> Add program</button>
                             )}
                           </div>
-                        )}
-                      </td>
-                      {columns.map((c) => {
-                        const p = list[c];
-                        return (
-                          <td key={c} className="mm-prog-col">
-                            {p ? (
-                              <div className={`mm-prog-card ${p.unfinished ? "mm-prog-card-unfinished" : ""}`}>
-                                <div className="mm-prog-card-top">
-                                  <span className="mm-prog-card-name">{p.roll_no || p.shade || "—"}</span>
-                                  {p.unfinished ? <span className="mm-state mm-state-unfinished">Unfinished</span> : <span className={stateClass(p.status)}>{p.status}</span>}
-                                </div>
-                                <div className="mm-prog-card-meta">
-                                  {p.shift || "—"} · {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches · {p.unfinished ? "roll not yet picked" : `${(p.net_weight ?? 0).toLocaleString()} kg`}
-                                </div>
-                                {p.remark && <div className="mm-prog-card-remark">“{p.remark}”</div>}
-                                <div className="mm-prog-actions">
-                                  {p.unfinished ? (
-                                    <>
-                                      <button className="mm-mini mm-mini-ok" title="Pick the roll from inventory — its weight is fetched — then finish" onClick={() => setFinishing(p)}><CheckCircle2 size={13} /> Finish (pick roll)</button>
-                                      <button className="mm-mini mm-mini-warn" onClick={() => setReverting(p)}><Undo2 size={13} /> Cancel plan</button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button className="mm-mini" disabled={!!p.reverted || (p.completed_batches ?? 0) >= (p.total_batches ?? 0)}
-                                        title={p.reverted ? "Reverted — completing is locked" : undefined}
-                                        onClick={guard(() => complete({ program: p.name, count: 1 }))}><Check size={13} /> Complete</button>
-                                      <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={() => setReverting(p)}><Undo2 size={13} /> Revert</button>
-                                      {p.status === "Completed" && (
-                                        <button className="mm-mini mm-mini-ok" onClick={guard(() => free({ program: p.name }))}><CheckCircle2 size={13} /> Free</button>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="mm-prog-cell-empty">
-                                {m.closed ? <span className="mm-muted" style={{ fontSize: "0.78rem" }}>—</span> : (
-                                  <button className="mm-mini" onClick={() => setAdding({ machine: m.name })}><Plus size={13} /> Add program</button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td />
-                    </tr>
-                  );
-                })}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
           <div className="mm-add-row">
             <button className="mm-btn-secondary" onClick={guard(() => addMachine({}))}><Plus size={15} /> Add machine</button>
           </div>
-
-          {/* Feeders: what's ready to program (patties) and what's still to be cut. */}
-          <div className="mm-flow-shelf-head" style={{ marginTop: "1.6rem" }}>
-            <span className="mm-flow-num">✓</span><h2>Finished patties</h2>
-            <span className="mm-flow-count">{patties.length} ready</span>
-          </div>
-          {patties.length === 0 ? (
-            <p className="mm-flow-empty-state">No finished patties waiting — send a roll through cutting first.</p>
-          ) : (
-            <div className="mm-flow-shelf">
-              {patties.map((p, i) => (
-                <article key={p.cutting || i} className="mm-flow-card mm-flow-card-patty">
-                  <div className="mm-prog-card-top"><span className="mm-flow-card-name">{p.roll_no || p.shade || "—"}</span><span className="mm-state mm-state-cut">cut</span></div>
-                  <div className="mm-prog-card-meta">Cut {p.cut || "—"} · {p.batches ?? 0} patty · <strong>{kg(p.weight)} kg</strong></div>
-                  {p.party && <div className="mm-prog-card-meta">{p.party}</div>}
-                  <div className="mm-prog-actions"><button className="mm-btn-primary mm-btn-compact" onClick={() => setAdding({})}>→ Program it</button></div>
-                </article>
-              ))}
-            </div>
-          )}
-
-          <div className="mm-flow-shelf-head" style={{ marginTop: "1.2rem" }}>
-            <span className="mm-flow-num"><Scissors size={12} /></span><h2>Rolls to cut</h2>
-            <span className="mm-flow-count">{stock.length}</span>
-          </div>
-          {stock.length === 0 ? (
-            <p className="mm-flow-empty-state">No in-stock rolls waiting to be cut.</p>
-          ) : (
-            <div className="mm-flow-shelf">
-              {stock.map((g) => (
-                <article key={g.customer_order} className="mm-flow-card mm-flow-card-cut">
-                  <div className="mm-prog-card-top"><span className="mm-flow-card-name">{g.party_name || g.party || "—"}</span><span className="mm-state mm-state-inventory">stock</span></div>
-                  <div className="mm-prog-card-meta">{g.roll_display || "—"}</div>
-                  <div className="mm-prog-card-meta">Order {g.customer_order} · {g.entry_count} roll(s) · <strong>{kg(g.total_weight)} kg</strong></div>
-                  <div className="mm-prog-actions"><button className="mm-btn-primary mm-btn-compact" onClick={() => nav("/cutting")}>→ Send to cutting</button></div>
-                </article>
-              ))}
-            </div>
-          )}
         </>
       )}
 
-      {adding && <AddProgramModal date={date} machines={machines} presetMachine={adding.machine} onClose={() => setAdding(null)} onDone={() => { setAdding(null); refresh(); }} />}
+      {adding && (
+        <AddProgramModal
+          machines={machines}
+          presetMachine={adding.machine}
+          presetShift={adding.shift}
+          presetColour={adding.colour}
+          dayDate={dayDate}
+          nightDate={nightDate}
+          onClose={() => setAdding(null)}
+          onDone={() => { setAdding(null); refresh(); }}
+        />
+      )}
       {closing && <CloseMachineModal machine={closing} onClose={() => setClosing(null)} onDone={() => { setClosing(null); refresh(); }} />}
-      {reverting && <RevertDialog program={reverting} onClose={() => setReverting(null)} onDone={() => { setReverting(null); refresh(); }} />}
-      {finishing && <FinishModal program={finishing} onClose={() => setFinishing(null)} onDone={() => { setFinishing(null); refresh(); }} />}
+      {completing && <CompleteDialog program={completing} onClose={() => setCompleting(null)} onDone={() => { setCompleting(null); refresh(); }} />}
     </div>
   );
 }
 
-/* ── Finish an unfinished program: pick the actual roll from inventory (matched by the
-      planned colour); its weight is fetched and consumed, then the program is finished ── */
-function FinishModal({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
-  const color = program.shade || "";
-  const rollsCall = useFrappeGetCall<{ message: InvRoll[] }>(
-    `${API}.program_inventory_search`,
-    { color },
-    `pg-finish-${color}`,
-  );
-  const { call: finish, loading } = useFrappePostCall(`${API}.finish_unfinished`);
-  const rolls = rollsCall.data?.message ?? [];
-  const [roll, setRoll] = useState<InvRoll | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit() {
-    setErr(null);
-    if (!roll) return setErr("Pick the roll from inventory to finish.");
-    try {
-      await finish({ program: program.name, roll_inventory: roll.name });
-      onDone();
-    } catch (e) {
-      setErr(extractErrorMessage(e));
-    }
-  }
-
-  return (
-    <div className="mm-modal-scrim" onClick={onClose}>
-      <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
-        <div className="mm-modal-head">
-          <span className="mm-modal-title">Finish — pick the {color || "roll"} roll</span>
-          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </div>
-        <div className="mm-modal-body">
-          <p className="mm-muted" style={{ marginTop: 0, fontSize: "0.8rem" }}>
-            Choose the roll physically going onto the machine — its full weight is fetched onto the program and taken out of stock.
-          </p>
-          {rollsCall.isLoading ? (
-            <p className="mm-muted">Loading…</p>
-          ) : rolls.length === 0 ? (
-            <p className="mm-empty">No {color} rolls in stock. Inward one first.</p>
-          ) : (
-            <div style={{ maxHeight: "260px", overflow: "auto" }}>
-              {rolls.map((r) => (
-                <div key={r.name} className={`mm-pick-row ${roll?.name === r.name ? "mm-pick-row-active" : ""}`} onClick={() => setRoll(r)}>
-                  <span>{r.roll_no || r.color_name || "—"}{r.lot_number ? ` · ${r.lot_number}` : ""}{r.location ? ` · ${r.location}` : ""}</span>
-                  <span className="mm-prog-card-meta">{(r.available_weight ?? r.stock_weight ?? 0).toLocaleString()} kg</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
-        </div>
-        <div className="mm-modal-foot">
-          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading || !roll} onClick={() => void submit()}>
-            {loading ? "Finishing…" : roll ? `Finish · ${(roll.available_weight ?? roll.stock_weight ?? 0).toLocaleString()} kg` : "Finish"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Revert: report how many batches completed; the program leaves the machine and
-      the roll goes back where it came from (cutting / inward → Add-program list) ── */
-function RevertDialog({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
+/* ── Complete: report how many batches are done; full → auto-frees to Production ── */
+function CompleteDialog({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
   const total = program.total_batches ?? 0;
-  const [completed, setCompleted] = useState<number | "">(program.completed_batches ?? 0);
-  const { call, loading } = useFrappePostCall(`${API}.revert_batches`);
+  const [completed, setCompleted] = useState<number | "">(total);
+  const { call, loading } = useFrappePostCall(`${API}.complete_batches`);
   const [err, setErr] = useState<string | null>(null);
   const comp = completed === "" ? null : completed;
-  const remaining = comp === null ? null : Math.max(0, total - comp);
 
   async function submit() {
-    if (comp === null) return setErr("Enter how many batches were completed.");
+    if (comp === null) return setErr("Enter how many batches are completed.");
     setErr(null);
-    try { await call({ program: program.name, completed: comp }); onDone(); }
-    catch (e) { setErr(extractErrorMessage(e)); }
+    try {
+      const res = await call({ program: program.name, completed: comp });
+      toast(comp >= total ? "All batches done — sent to Production" : `${comp}/${total} batches completed`);
+      void res;
+      onDone();
+    } catch (e) { setErr(extractErrorMessage(e)); }
   }
 
   return (
     <div className="mm-modal-scrim" onClick={onClose}>
       <div className="mm-modal" style={{ width: "min(440px, 100%)" }} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
-          <span className="mm-modal-title">Revert — {program.roll_no || "program"}</span>
+          <span className="mm-modal-title">Complete — {program.shade || program.roll_no || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
           <p className="mm-page-sub" style={{ marginTop: 0 }}>
-            How many of the {total} batches were actually completed? The program is taken off the
-            machine and the roll returns to where it came from — it will show again in the
-            Add-program list. A reverted program cannot be completed later.
+            How many of the {total} batches are completed? When all are done the program is sent to
+            Production automatically.
           </p>
           <label className="mm-field">
             <span className="mm-field-label">Batches completed</span>
@@ -347,17 +316,14 @@ function RevertDialog({ program, onClose, onDone }: { program: Program; onClose:
           </label>
           {comp !== null && (
             <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
-              {comp} completed · <strong>{remaining} go back to the pool</strong>
-              {comp === 0
-                ? " (program removed; roll returns to inventory / cutting)"
-                : " (done batches stay on record; program off the machine, patty back in the picker)"}
+              {comp >= total ? <strong>All done → goes to Production</strong> : `${comp}/${total} done · stays running`}
             </p>
           )}
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading || comp === null} onClick={() => void submit()}>{loading ? "Saving…" : "Revert"}</button>
+          <button className="mm-btn-primary" disabled={loading || comp === null} onClick={() => void submit()}>{loading ? "Saving…" : "Save"}</button>
         </div>
       </div>
     </div>
@@ -368,123 +334,99 @@ function RevertDialog({ program, onClose, onDone }: { program: Program; onClose:
 function MachineCutInput({ machine, value, onSaved }: { machine: string; value?: string; onSaved: () => void }) {
   const [v, setV] = useState(value ?? "");
   const { call } = useFrappePostCall(`${API}.set_machine_cut`);
-  // keep in sync if the machine's saved cut changes elsewhere
   const saved = value ?? "";
   async function save() {
     if (v.trim() === saved.trim()) return;
     try { await call({ machine, cut: v.trim() }); onSaved(); } catch { /* ignore */ }
   }
   return (
-    <input
-      className="mm-input mm-input-compact mm-mach-cut"
-      placeholder="Cut id"
+    <input className="mm-input mm-input-compact mm-mach-cut" placeholder="Cut id"
       title="Default cut for this machine — all its programs use this"
-      value={v}
-      onChange={(e) => setV(e.target.value)}
-      onBlur={() => void save()}
-      onKeyDown={(e) => e.key === "Enter" && void save()}
-    />
+      value={v} onChange={(e) => setV(e.target.value)} onBlur={() => void save()}
+      onKeyDown={(e) => e.key === "Enter" && void save()} />
   );
 }
 
-/* ── Add program (chip picker) ──────────────────────────── */
-function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { date: string; machines: Machine[]; presetMachine?: string; onClose: () => void; onDone: () => void }) {
-  const [mode, setMode] = useState<"patty" | "inventory">("patty");
-  // Default list shows ONLY finished cuttings (patties); "From inventory" covers the rest.
-  const rollsCall = useFrappeGetCall<{ message: Roll[] }>(`${API}.available_rolls`, { finished_only: 1 }, "pg-rolls-finished");
-  const { call: create, loading } = useFrappePostCall(`${API}.create_program`);
-  const { call: createUnfinished, loading: loadingUnf } = useFrappePostCall(`${API}.create_unfinished_program`);
-  const rolls = rollsCall.data?.message ?? [];
+/* ── Add program — colour-first picker ──────────────────────────── */
+function AddProgramModal({ machines, presetMachine, presetShift, presetColour, dayDate, nightDate, onClose, onDone }: {
+  machines: Machine[]; presetMachine?: string; presetShift?: string; presetColour?: string;
+  dayDate: string; nightDate: string; onClose: () => void; onDone: () => void;
+}) {
+  const coloursCall = useFrappeGetCall<{ message: Colour[] }>(`${API}.available_colours`, undefined, "pg-colours");
+  const { call: create, loading: creating } = useFrappePostCall(`${API}.create_program`);
+  const { call: createUnfinished, loading: creatingU } = useFrappePostCall(`${API}.create_unfinished_program`);
+  const colours = coloursCall.data?.message ?? [];
 
-  const [sel, setSel] = useState<Roll | null>(null);
-  const [machine, setMachine] = useState(presetMachine ?? machines.find((m) => !m.closed)?.name ?? "");
-  const [shift, setShift] = useState<string>("Day");
-  const [order, setOrder] = useState("");
-  const [batches, setBatches] = useState<number | "">(1);
-  const [weight, setWeight] = useState<number | "">("");
-  const [jobWork, setJobWork] = useState(false);
-  const [remark, setRemark] = useState("");
-  const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [cutFilter, setCutFilter] = useState("");
+  const [sel, setSel] = useState<Colour | null>(null);
+  const [machine, setMachine] = useState(presetMachine ?? machines.find((m) => !m.closed)?.name ?? "");
+  const [shift, setShift] = useState<string>(presetShift ?? "Day");
+  const [batches, setBatches] = useState<number | "">(1);
+  const [remark, setRemark] = useState("");
+  const [jobWork, setJobWork] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  // Inventory mode: search a colour, fetch its in-stock rolls, plan an unfinished program.
-  const [invColor, setInvColor] = useState("");
-  const [invRoll, setInvRoll] = useState<InvRoll | null>(null);
-  const invCall = useFrappeGetCall<{ message: InvRoll[] }>(
-    `${API}.program_inventory_search`,
-    invColor.trim() ? { color: invColor.trim() } : undefined,
-    invColor.trim() ? `pg-inv-${invColor.trim()}` : undefined,
-  );
-  const invRolls = invCall.data?.message ?? [];
+  // pre-select a colour passed in from a feeder card
+  useMemo(() => {
+    if (presetColour && !sel) {
+      const g = colours.find((c) => c.colour === presetColour);
+      if (g) setSel(g);
+    }
+  }, [presetColour, colours, sel]);
 
-  // Picker shows ALL available rolls — the machine applies its own Cut on submit
-  // (machine cut wins), so any roll can be programmed onto any machine. Only the
-  // search box narrows the list.
   const q = search.trim().toLowerCase();
-  const visibleRolls = q
-    ? rolls.filter((r) =>
-        [r.roll_no, r.shade, r.cut, r.party, r.customer_order, r.state, r.cutting, r.inward_item]
-          .some((v) => (v || "").toLowerCase().includes(q)))
-    : rolls;
-
-  // Cut-ID filter for the machine list (machines carry a default Cut).
-  const machineCuts = Array.from(new Set(machines.map((m) => (m.cut || "").trim()).filter(Boolean))).sort();
-  const visibleMachines = cutFilter
-    ? machines.filter((m) => (m.cut || "").trim() === cutFilter || m.name === machine)
-    : machines;
-
+  const shown = q ? colours.filter((c) => c.colour.toLowerCase().includes(q)) : colours;
+  const orderCtx = sel?.rows[0]?.customer_order || "";
   const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
     `${API}.order_options_for_party`,
-    sel ? { party: sel.party ?? "", customer_order: sel.customer_order ?? "" } : undefined,
-    sel ? `pg-orders-${sel.customer_order}` : undefined,
+    sel ? { customer_order: orderCtx } : undefined,
+    sel ? `pg-orders-${orderCtx}` : undefined,
   );
   const orders = orderOpts.data?.message ?? [];
+  const [order, setOrder] = useState("");
 
-  function pick(r: Roll) {
-    setSel(r);
-    setOrder(r.customer_order || "");
-    setBatches(r.batches || 1);
-    setWeight(r.weight ?? "");
-    setErr(null);
-  }
+  // best available source row for the chosen colour: patty > in-cutting > inventory
+  const bestRow = useMemo(() => {
+    if (!sel) return null;
+    const rank = (s: string) => (s === "Cut" ? 0 : s === "In Cutting" ? 1 : 2);
+    return [...sel.rows].sort((a, b) => rank(a.state) - rank(b.state))[0] ?? null;
+  }, [sel]);
+
+  const date = shift === "Night" ? nightDate : dayDate;
 
   async function submit() {
     setErr(null);
+    if (!sel || !bestRow) return setErr("Pick a colour to program.");
     if (!machine) return setErr("Choose a machine.");
     if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     try {
-      if (mode === "inventory") {
-        if (!invRoll) return setErr("Search a colour, then pick its actual roll from inventory.");
-        await createUnfinished({
-          machine_no: machine,
-          color: invRoll.color_name,
-          roll_inventory: invRoll.name,
-          total_batches: batches,
-          remark: remark || undefined,
-          customer_order: order || undefined,
-          program_date: date,
-          shift,
-          job_work: jobWork ? 1 : 0,
+      if (bestRow.source_type === "cutting" && bestRow.cutting) {
+        await create({
+          source_cutting: bestRow.cutting, machine_no: machine, shift,
+          customer_order: order || bestRow.customer_order, total_batches: batches,
+          weight: bestRow.weight, program_date: date, job_work: jobWork ? 1 : 0,
+        });
+      } else if (bestRow.source_type === "inward" && bestRow.inward_item) {
+        await create({
+          source_inward_item: bestRow.inward_item, machine_no: machine, shift,
+          customer_order: order || bestRow.customer_order, total_batches: batches,
+          weight: bestRow.weight, program_date: date, job_work: jobWork ? 1 : 0,
         });
       } else {
-        if (!sel) return setErr("Pick a finished patty from the list.");
-        await create({
-          source_cutting: sel.source_type === "cutting" ? sel.cutting : undefined,
-          source_inward_item: sel.source_type === "inward" ? sel.inward_item : undefined,
-          machine_no: machine, shift,
-          customer_order: order || sel.customer_order,
-          total_batches: batches,
-          weight: weight === "" ? sel.weight : weight,
-          program_date: date,
-          job_work: jobWork ? 1 : 0,
+        // colour with no concrete source row → plan it (finish the cut later on Cutting)
+        await createUnfinished({
+          machine_no: machine, color: sel.colour, total_batches: batches,
+          remark: remark || undefined, customer_order: order || undefined,
+          program_date: date, shift, job_work: jobWork ? 1 : 0,
         });
       }
+      toast("Program added");
       onDone();
-    } catch (e) {
-      setErr(extractErrorMessage(e));
-    }
+    } catch (e) { setErr(extractErrorMessage(e)); }
   }
+
+  const sourceLabel = (states: string[]) =>
+    states.map((s) => (s === "Cut" ? "patty" : s === "In Cutting" ? "in cutting" : "inventory")).join(" · ");
 
   return (
     <div className="mm-modal-scrim" onClick={onClose}>
@@ -494,103 +436,44 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <div className="mm-seg" style={{ marginBottom: "0.7rem" }}>
-            <button className={`mm-seg-btn ${mode === "patty" ? "mm-seg-btn-active" : ""}`} onClick={() => setMode("patty")}>Finished patty</button>
-            <button className={`mm-seg-btn ${mode === "inventory" ? "mm-seg-btn-active" : ""}`} onClick={() => setMode("inventory")}>From inventory</button>
+          <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Pick a colour</p>
+          <div className="mm-search-box" style={{ marginBottom: "0.55rem" }}>
+            <Search size={15} />
+            <input className="mm-input mm-input-compact" placeholder="Search colour…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-
-          {mode === "patty" ? (
-            <>
-              <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Pick a finished patty</p>
-              <div className="mm-search-box" style={{ marginBottom: "0.55rem" }}>
-                <Search size={15} />
-                <input
-                  className="mm-input mm-input-compact"
-                  placeholder="Search roll / shade / cut / party…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              {rollsCall.isLoading ? (
-                <p className="mm-muted">Loading…</p>
-              ) : rolls.length === 0 ? (
-                <p className="mm-empty">No finished patties. Use “From inventory” to plan a roll ahead of the cut.</p>
-              ) : visibleRolls.length === 0 ? (
-                <p className="mm-empty">No patties match “{search}”.</p>
-              ) : (
-                <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
-                  {visibleRolls.map((r, i) => {
-                    const id = r.cutting || r.inward_item || String(i);
-                    const isSel = sel && (sel.cutting || sel.inward_item) === (r.cutting || r.inward_item);
-                    return (
-                      <div key={id} className={`mm-pick-row ${isSel ? "mm-pick-row-active" : ""}`} onClick={() => pick(r)}>
-                        <span className={stateClass(r.state)}>{r.state}</span>
-                        <span>{(r.roll_no || r.shade || "—")} · {r.cut || "—"}{r.party ? ` · ${r.party}` : ""}</span>
-                        <span className="mm-prog-card-meta">{r.batches ?? 0} btch · {(r.weight ?? 0).toLocaleString()} kg</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+          {coloursCall.isLoading ? (
+            <p className="mm-muted">Loading…</p>
+          ) : shown.length === 0 ? (
+            <p className="mm-empty">No colours available to program.</p>
           ) : (
-            <>
-              <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Search a colour in inventory</p>
-              <div className="mm-search-box" style={{ marginBottom: "0.5rem" }}>
-                <Search size={15} />
-                <input className="mm-input mm-input-compact" placeholder="Type a colour, e.g. LKBCH GOLD…" value={invColor} onChange={(e) => { setInvColor(e.target.value); setInvRoll(null); }} />
-              </div>
-              {!invColor.trim() ? (
-                <p className="mm-muted" style={{ fontSize: "0.8rem" }}>Type a colour to see its rolls in stock. You’ll pick the exact roll later, at Finish.</p>
-              ) : invCall.isLoading ? (
-                <p className="mm-muted">Searching…</p>
-              ) : invRolls.length === 0 ? (
-                <p className="mm-empty">No “{invColor}” rolls in stock.</p>
-              ) : (
-                <div style={{ maxHeight: "200px", overflow: "auto", marginBottom: "0.8rem" }}>
-                  {invRolls.map((r) => (
-                    <div key={r.name} className={`mm-pick-row ${invRoll?.name === r.name ? "mm-pick-row-active" : ""}`} onClick={() => setInvRoll(r)}>
-                      <span className="mm-state mm-state-ininventory">Inventory</span>
-                      <span>{r.color_name || "—"}{r.lot_number ? ` · ${r.lot_number}` : ""}{r.location ? ` · ${r.location}` : ""}</span>
-                      <span className="mm-prog-card-meta">{(r.available_weight ?? r.stock_weight ?? 0).toLocaleString()} kg</span>
-                    </div>
-                  ))}
+            <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
+              {shown.map((c) => (
+                <div key={c.colour} className={`mm-pick-row ${sel?.colour === c.colour ? "mm-pick-row-active" : ""}`} onClick={() => { setSel(c); setOrder(""); }}>
+                  <span className="mm-colour-name">{c.colour}</span>
+                  <span className="mm-prog-card-meta">{sourceLabel(c.states)} · {kg(c.total_weight)} kg</span>
                 </div>
-              )}
-              <p className="mm-muted" style={{ fontSize: "0.75rem", marginTop: 0 }}>Planned rolls show <strong style={{ color: "#b91c1c" }}>red in Cutting</strong> and highlighted here until you Finish (pick the roll → weight fetched).</p>
-            </>
+              ))}
+            </div>
           )}
 
           <div className="mm-form-grid">
             <label className="mm-field">
               <span className="mm-field-label">Machine *</span>
-              {machineCuts.length > 0 && (
-                <select
-                  className="mm-input mm-input-compact"
-                  style={{ marginBottom: "0.35rem" }}
-                  title="Filter machines by their Cut id"
-                  value={cutFilter}
-                  onChange={(e) => setCutFilter(e.target.value)}
-                >
-                  <option value="">All cuts</option>
-                  {machineCuts.map((c) => <option key={c} value={c}>Cut {c}</option>)}
-                </select>
-              )}
               <select className="mm-input" value={machine} onChange={(e) => setMachine(e.target.value)}>
                 <option value="">— choose —</option>
-                {visibleMachines.map((m) => <option key={m.name} value={m.name} disabled={!!m.closed}>Machine {m.machine_no}{m.cut ? ` · ${m.cut}` : ""}{m.closed ? " (closed)" : ""}</option>)}
+                {machines.map((m) => <option key={m.name} value={m.name} disabled={!!m.closed}>Machine {m.machine_no}{m.cut ? ` · ${m.cut}` : ""}{m.closed ? " (closed)" : ""}</option>)}
               </select>
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Shift</span>
               <select className="mm-input" value={shift} onChange={(e) => setShift(e.target.value)}>
-                {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                {SHIFTS.map((s) => <option key={s} value={s}>{shiftIcon(s)} {s} · {s === "Night" ? nightDate : dayDate}</option>)}
               </select>
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Customer Order</span>
               <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)}>
-                <option value="">{sel?.customer_order || "—"}</option>
+                <option value="">{sel?.rows[0]?.customer_order || "—"}</option>
                 {orders.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
               </select>
             </label>
@@ -599,17 +482,6 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
               <input className="mm-input" type="number" min={1} value={batches}
                 onChange={(e) => setBatches(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1))} />
             </label>
-            {mode === "patty" ? (
-              <label className="mm-field">
-                <span className="mm-field-label">Weight (Kg) *</span>
-                <input className="mm-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
-              </label>
-            ) : (
-              <label className="mm-field">
-                <span className="mm-field-label">Weight (Kg)</span>
-                <input className="mm-input" value="Fetched at Finish" disabled />
-              </label>
-            )}
             <label className="mm-field">
               <span className="mm-field-label">Remark</span>
               <input className="mm-input" value={remark} placeholder="Optional note" onChange={(e) => setRemark(e.target.value)} />
@@ -618,11 +490,12 @@ function AddProgramModal({ date, machines, presetMachine, onClose, onDone }: { d
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
             </label>
           </div>
+          {sel && bestRow && <p className="mm-muted" style={{ marginTop: "0.5rem", fontSize: "0.78rem" }}>Programming <strong>{sel.colour}</strong> from {sourceLabel(bestRow.state ? [bestRow.state] : [])} · {kg(bestRow.weight)} kg</p>}
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading || loadingUnf} onClick={() => void submit()}>{(loading || loadingUnf) ? "Saving…" : mode === "inventory" ? "Plan (unfinished)" : "Submit"}</button>
+          <button className="mm-btn-primary" disabled={creating || creatingU} onClick={() => void submit()}>{(creating || creatingU) ? "Saving…" : "Add program"}</button>
         </div>
       </div>
     </div>
@@ -645,9 +518,7 @@ function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onC
         reverts: rows.filter((r) => (reverts[r.name] || 0) > 0).map((r) => ({ program: r.name, batches: reverts[r.name] })),
       });
       onDone();
-    } catch (e) {
-      setErr(extractErrorMessage(e));
-    }
+    } catch (e) { setErr(extractErrorMessage(e)); }
   }
 
   return (
@@ -704,13 +575,8 @@ type ListRow = {
 };
 
 function ProgramList() {
-  // Only actual programs (added to a machine). The available pool (finished cuttings,
-  // in-cutting patties, inventory rolls) lives in the Add-program picker — not here —
-  // so this list is exactly the programs you created, nothing you didn't add.
-  // Same set as the Board: programs still at the program stage. released=1 means it
-  // was Freed (→ Production) or Reverted (→ Cutting), so it's no longer here.
   const progsCall = useFrappeGetDocList<Program>("MM Program", {
-    fields: ["name", "program_date", "customer_order", "roll_no", "machine_no", "shift", "cut", "status", "total_batches", "completed_batches", "net_weight"],
+    fields: ["name", "program_date", "customer_order", "roll_no", "shade", "machine_no", "shift", "cut", "status", "total_batches", "completed_batches", "net_weight"],
     filters: [["docstatus", "=", 1], ["released", "=", 0]],
     orderBy: { field: "modified", order: "desc" },
     limit: 200,
@@ -718,7 +584,7 @@ function ProgramList() {
 
   const isLoading = progsCall.isLoading;
   const rows: ListRow[] = (progsCall.data ?? []).map((p) => ({
-    key: `p-${p.name}`, date: p.program_date, order: p.customer_order, roll: p.roll_no, cut: p.cut,
+    key: `p-${p.name}`, date: p.program_date, order: p.customer_order, roll: p.shade || p.roll_no, cut: p.cut,
     source: "Program", machine: p.machine_no || "—", shift: p.shift || "—",
     batches: `${p.completed_batches ?? 0}/${p.total_batches ?? 0}`, weight: p.net_weight, status: p.status || "—",
   }));
@@ -730,7 +596,7 @@ function ProgramList() {
       {rows.length > 0 && (
         <div className="mm-table-scroll">
           <table className="mm-table mm-table-hover">
-            <thead><tr><th>Date</th><th>Order</th><th>Roll</th><th>Cut</th><th>Source</th><th>Machine</th><th>Shift</th><th className="mm-num">Batches</th><th className="mm-num">Wt</th><th>Status</th></tr></thead>
+            <thead><tr><th>Date</th><th>Order</th><th>Colour</th><th>Cut</th><th>Machine</th><th>Shift</th><th className="mm-num">Batches</th><th className="mm-num">Wt</th><th>Status</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.key}>
@@ -738,7 +604,6 @@ function ProgramList() {
                   <td>{r.order || "—"}</td>
                   <td>{r.roll || "—"}</td>
                   <td>{r.cut || "—"}</td>
-                  <td><span className={`mm-state mm-state-${r.source.toLowerCase()}`}>{r.source}</span></td>
                   <td>{r.machine}</td>
                   <td>{r.shift}</td>
                   <td className="mm-num">{r.batches}</td>
