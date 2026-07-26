@@ -292,6 +292,8 @@ export default function InwardWorkspace() {
   // reaching for the mouse (ignored on the colour dropdown / while awaiting the next challan).
   function onRowsKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "Enter") return;
+    // Cmd/Ctrl+Enter posts the inward from anywhere in the rows.
+    if (e.metaKey || e.ctrlKey) { e.preventDefault(); if (!awaitingNext && !busy) void onSubmit(); return; }
     if ((e.target as HTMLElement).tagName !== "INPUT" || awaitingNext) return;
     e.preventDefault();
     addRow();

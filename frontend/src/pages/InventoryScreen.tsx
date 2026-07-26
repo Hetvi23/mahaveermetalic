@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { useNavigate } from "react-router-dom";
 import { Boxes, RefreshCw, Search, ScrollText, TriangleAlert } from "lucide-react";
+import { TableSkeleton } from "@/components/Skeleton";
 
 type Balance = {
   name: string;
@@ -117,7 +118,7 @@ export default function InventoryScreen() {
         </div>
 
         {isLoading ? (
-          <p className="mm-empty">Loading…</p>
+          <TableSkeleton rows={8} cols={8} />
         ) : shown.length === 0 ? (
           <p className="mm-empty">No stock matches.</p>
         ) : (

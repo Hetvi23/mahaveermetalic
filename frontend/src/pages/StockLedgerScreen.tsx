@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { useSearchParams } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, RefreshCw, ScrollText, Search, X } from "lucide-react";
+import { TableSkeleton } from "@/components/Skeleton";
 
 type Entry = {
   name: string;
@@ -112,7 +113,7 @@ export default function StockLedgerScreen() {
         </div>
 
         {isLoading ? (
-          <p className="mm-empty">Loading…</p>
+          <TableSkeleton rows={8} cols={10} />
         ) : shown.length === 0 ? (
           <p className="mm-empty">No movements.</p>
         ) : (

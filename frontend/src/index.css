@@ -1617,3 +1617,17 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 @media (prefers-reduced-motion: reduce) { .mm-toast { animation: none; } }
 /* Empty states — a touch more presence */
 .mm-empty, .mm-flow-empty-state { text-align: center; color: var(--mm-text-sec); padding: 1.6rem 1rem; font-size: 0.86rem; }
+
+/* ── Loading skeletons v2 (2026-07-25, unique names to avoid clashes) ─────── */
+.mm-sk { position: relative; overflow: hidden; display: block; background: var(--mm-surface2); border-radius: 6px; height: 14px; }
+.mm-sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent); animation: mm-sk-shimmer 1.3s infinite; }
+:root[data-theme="dark"] .mm-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .mm-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); } }
+@keyframes mm-sk-shimmer { 100% { transform: translateX(100%); } }
+.mm-sk-table { border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); overflow: hidden; }
+.mm-sk-row { display: flex; align-items: center; gap: 1.2rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--mm-border); }
+.mm-sk-row:last-child { border-bottom: 0; }
+.mm-sk-row .mm-sk { flex: 1; }
+.mm-sk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.75rem; }
+.mm-sk-card { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.9rem; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); background: var(--mm-card); }
+@media (prefers-reduced-motion: reduce) { .mm-sk::after { animation: none; } }

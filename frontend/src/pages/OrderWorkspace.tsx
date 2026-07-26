@@ -183,6 +183,8 @@ export default function OrderWorkspace() {
   // leave Enter alone while a colour/supplier dropdown is open so it can pick a suggestion.
   function onBuilderKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "Enter") return;
+    // Cmd/Ctrl+Enter saves the whole order from anywhere in the builder.
+    if (e.metaKey || e.ctrlKey) { e.preventDefault(); void onSave(); return; }
     const el = e.target as HTMLElement;
     if (el.tagName === "TEXTAREA") return;
     if (el.closest(".mm-link-wrap")?.querySelector(".mm-suggest")) return;
