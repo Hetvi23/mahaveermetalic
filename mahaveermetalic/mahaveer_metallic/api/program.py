@@ -82,42 +82,46 @@ def available_rolls(branch=None, location=None, finished_only=0):
 				"weight": c.total_net_weight or 0,
 			})
 
-	# --- In Inventory: submitted inward rolls not yet sent to cutting ---
-	inv_conditions = ["inw.docstatus = 1", "item.cutting is null", "item.customer_order is not null"]
-	values = {}
-	if branch:
-		inv_conditions.append("inw.branch = %(branch)s")
-		values["branch"] = branch
-	if location:
-		inv_conditions.append("inw.location = %(location)s")
-		values["location"] = location
-	for it in frappe.db.sql(
-		f"""
-		select item.name as inward_item, inw.posting_date as date, item.customer_order as customer_order,
-			item.roll_name as roll_no, item.color_name as shade, item.cut as cut,
-			item.job_work as job_work, item.qty_box as qty_box, item.weight as weight
-		from `tabMM Inward Item` item
-		join `tabMM Inward` inw on inw.name = item.parent
-		where {" and ".join(inv_conditions)}
-		order by inw.posting_date desc, item.idx asc
-		""",
-		values,
-		as_dict=True,
-	):
-		rows.append({
-			"state": "In Inventory",
-			"source_type": "inward",
-			"cutting": None,
-			"inward_item": it.inward_item,
-			"date": it.date,
-			"customer_order": it.customer_order,
-			"roll_no": it.roll_no,
-			"shade": it.shade,
-			"cut": it.cut,
-			"job_work": it.job_work,
-			"batches": int(round(it.qty_box or 0)) or 1,
-			"weight": it.weight or 0,
-		})
+	# --- In Inventory: rolls physically in stock (MM Roll Inventory) — the same balances the
+	# Inventory screen shows, allocated to an order or not. Skipped for finished_only (that's the
+	# finished-patty feeder, which is cuttings only). Picking one plans a "to cut" program; the
+	# actual roll is bound (weight fetched) at finish. ---
+	if not finished_only:
+		inv_conditions = ["(ifnull(ri.stock_weight, 0) > 0 or ifnull(ri.stock_box, 0) > 0)"]
+		values = {}
+		if branch:
+			inv_conditions.append("ri.branch = %(branch)s")
+			values["branch"] = branch
+		if location:
+			inv_conditions.append("ri.location = %(location)s")
+			values["location"] = location
+		for ri in frappe.db.sql(
+			f"""
+			select ri.name as roll_inventory, ri.color_name as shade, ri.roll_no as roll_no,
+				ri.lot_number as lot_number, ri.stock_weight as weight, ri.stock_box as qty_box,
+				ri.location as location, ri.branch as branch
+			from `tabMM Roll Inventory` ri
+			where {" and ".join(inv_conditions)}
+			order by ri.modified desc
+			""",
+			values,
+			as_dict=True,
+		):
+			rows.append({
+				"state": "In Inventory",
+				"source_type": "inventory",
+				"cutting": None,
+				"inward_item": None,
+				"roll_inventory": ri.roll_inventory,
+				"date": None,
+				"customer_order": None,
+				"roll_no": ri.roll_no or ri.lot_number,
+				"shade": ri.shade,
+				"cut": None,
+				"job_work": 0,
+				"batches": int(round(ri.qty_box or 0)) or 1,
+				"weight": ri.weight or 0,
+			})
 
 	parties = _party_map([r["customer_order"] for r in rows])
 	for r in rows:
