@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus } from "lucide-react";
+import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus, Search, PackageSearch } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
+const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = () => new Date().toISOString().slice(0, 10);
 
 type Group = {
@@ -61,6 +62,7 @@ export default function CuttingWorklist() {
   );
   const [active, setActive] = useState<Group | null>(null);
   const [adding, setAdding] = useState(false);
+  const [finishing, setFinishing] = useState<BoardCard | null>(null);
 
   const stock = useFrappeGetCall<{ message: Group[] }>(`${API}.inward_stock_by_order`, undefined, "cut-stock");
   const board = useFrappeGetCall<{ message: BoardCard[] }>(`${API}.cutting_board`, undefined, "cut-board");
@@ -168,7 +170,9 @@ export default function CuttingWorklist() {
                         </div>
                         <div className="mm-prog-actions">
                           {c.unfinished ? (
-                            <span className="mm-muted" style={{ fontSize: "0.72rem" }}>Finish on the Program screen (pick the roll)</span>
+                            <button className="mm-mini mm-mini-ok" onClick={() => setFinishing(c)} title="Pick the roll from inventory and finish">
+                              <PackageSearch size={13} /> Pick roll &amp; finish
+                            </button>
                           ) : c.status !== "Completed" && (
                             <button className="mm-mini mm-mini-ok" onClick={() => void onFinish(c.name)} title="Mark finished (becomes a patty)">
                               <CheckCircle2 size={13} /> Finish
@@ -193,6 +197,98 @@ export default function CuttingWorklist() {
       {adding && (
         <NewCuttingModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); refreshAll(); }} />
       )}
+      {finishing && (
+        <FinishRollModal card={finishing} onClose={() => setFinishing(null)} onDone={() => { setFinishing(null); refreshAll(); }} />
+      )}
+    </div>
+  );
+}
+
+/* ── Finish a "to cut" (planned-from-inventory) card: pick the actual roll ───── */
+type InvRoll = {
+  name: string; roll_no?: string; lot_number?: string; location?: string;
+  color_name?: string; stock_weight?: number; stock_box?: number; available_weight?: number;
+};
+function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: () => void; onDone: () => void }) {
+  const colour = card.shade || card.roll_no || "";
+  const rollsCall = useFrappeGetCall<{ message: InvRoll[] }>(
+    `${PROGRAM_API}.program_inventory_search`,
+    { color: colour },
+    `finish-rolls-${card.name}`,
+  );
+  const { call: finishUnfinished, loading } = useFrappePostCall(`${PROGRAM_API}.finish_unfinished`);
+  const rolls = rollsCall.data?.message ?? [];
+
+  const [search, setSearch] = useState("");
+  const [sel, setSel] = useState<InvRoll | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const q = search.trim().toLowerCase();
+  const shown = q
+    ? rolls.filter((r) => `${r.roll_no || ""} ${r.lot_number || ""} ${r.location || ""}`.toLowerCase().includes(q))
+    : rolls;
+
+  async function submit() {
+    setErr(null);
+    if (!card.program) return setErr("This planned cut has no linked program.");
+    if (!sel) return setErr("Pick the roll to finish with.");
+    try {
+      await finishUnfinished({ program: card.program, roll_inventory: sel.name });
+      onDone();
+    } catch (e) {
+      setErr(extractErrorMessage(e));
+    }
+  }
+
+  return (
+    <div className="mm-modal-scrim" onClick={onClose}>
+      <div className="mm-modal mm-modal-wide" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="mm-modal-head">
+          <span className="mm-modal-title">Pick roll &amp; finish — {colour || "—"}</span>
+          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="mm-modal-body">
+          <p className="mm-muted" style={{ margin: "0 0 0.6rem", fontSize: "0.8rem" }}>
+            Select the actual roll from inventory. Its weight is fetched onto the program, the stock is consumed, and the cut is finished.
+          </p>
+          <div className="mm-search-box" style={{ marginBottom: "0.6rem" }}>
+            <Search size={15} />
+            <input className="mm-input mm-input-compact" placeholder="Search roll / lot / location…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          {rollsCall.isLoading ? (
+            <p className="mm-muted">Loading rolls…</p>
+          ) : shown.length === 0 ? (
+            <p className="mm-empty">No inventory rolls in stock for “{colour}”.</p>
+          ) : (
+            <div style={{ maxHeight: "300px", overflow: "auto" }}>
+              {shown.map((r) => (
+                <div
+                  key={r.name}
+                  className={`mm-pick-row ${sel?.name === r.name ? "mm-pick-row-active" : ""}`}
+                  onClick={() => setSel(r)}
+                >
+                  <span className="mm-colour-name">{r.roll_no || r.lot_number || r.name}</span>
+                  <span className="mm-prog-card-meta">
+                    {r.location || "—"}{r.lot_number ? ` · lot ${r.lot_number}` : ""} · {(r.stock_weight ?? 0).toLocaleString()} kg{r.stock_box ? ` · ${r.stock_box} box` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {sel && (
+            <p className="mm-muted" style={{ marginTop: "0.6rem", fontSize: "0.8rem" }}>
+              Finishing with <strong>{sel.roll_no || sel.lot_number || sel.name}</strong> — <strong>{(sel.stock_weight ?? 0).toLocaleString()} kg</strong> will be fetched.
+            </p>
+          )}
+          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+        </div>
+        <div className="mm-modal-foot">
+          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-primary" disabled={loading || !sel} onClick={() => void submit()}>
+            {loading ? "Finishing…" : "Finish"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

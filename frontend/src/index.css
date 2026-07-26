@@ -1642,5 +1642,8 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-colour-name { font-weight: 700; font-size: 0.9rem; }
 .mm-colour-wt { margin-left: auto; font-size: 0.78rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mm-colour-row .mm-mini { flex: none; }
-.mm-prog-shiftcell { display: flex; flex-direction: column; gap: 0.6rem; min-width: 220px; }
-.mm-prog-add { align-self: flex-start; }
+/* Multiple programs on one machine/shift sit side by side (wrap to next row when out
+   of width); the board scrolls horizontally via .mm-table-scroll. */
+.mm-prog-shiftcell { display: flex; flex-flow: row wrap; gap: 0.6rem; align-items: flex-start; min-width: 240px; }
+.mm-prog-shiftcell > .mm-prog-card { flex: 0 0 300px; width: 300px; max-width: 100%; }
+.mm-prog-add { align-self: flex-start; flex: none; }
