@@ -4,6 +4,7 @@ import {
   useFrappeDeleteDoc,
   useFrappeGetDoc,
   useFrappeGetDocList,
+  useFrappePostCall,
   useFrappeUpdateDoc,
 } from "frappe-react-sdk";
 import { Plus, Search, Trash2, X } from "lucide-react";
@@ -84,6 +85,7 @@ export default function OrderWorkspace() {
   const [flash, setFlash] = useState<string | null>(null);
   const [chip, setChip] = useState<Chip>("all");
   const [q, setQ] = useState("");
+  const [alsoRaisePO, setAlsoRaisePO] = useState(false);
   const hydrated = useRef<string | null>(null);
 
   const filters = useMemo(() => {
@@ -115,6 +117,9 @@ export default function OrderWorkspace() {
   const { createDoc, loading: creating } = useFrappeCreateDoc();
   const { updateDoc, loading: updating } = useFrappeUpdateDoc();
   const { deleteDoc, loading: deleting } = useFrappeDeleteDoc();
+  const { call: createPO } = useFrappePostCall<{ message: { created: string[]; updated: string[] } }>(
+    "mahaveermetalic.mahaveer_metallic.api.stock.create_purchase_order_from_so",
+  );
 
   useEffect(() => {
     if (!selected || !doc || String(doc.name) !== selected) return;
@@ -275,17 +280,33 @@ export default function OrderWorkspace() {
           setFormError(`No orders created. ${skippedMsgs.join("; ")}`);
           return;
         }
+        // Raise a Purchase Order (full ordered qty) for each created SO when requested.
+        let poNote = "";
+        if (alsoRaisePO) {
+          const poNames: string[] = [];
+          const poErrs: string[] = [];
+          for (const soName of created) {
+            try {
+              const res = await createPO({ sales_order: soName, full: 1 });
+              poNames.push(...(res?.message?.created ?? []), ...(res?.message?.updated ?? []));
+            } catch (e) {
+              poErrs.push(`${soName}: ${extractErrorMessage(e)}`);
+            }
+          }
+          if (poNames.length) poNote += ` PO ${poNames.join(", ")} raised.`;
+          if (poErrs.length) poNote += ` PO issues: ${poErrs.join("; ")}`;
+        }
         if (skippedItems.length > 0) {
           // Keep the rejected items in the builder so they can be fixed and retried.
           setItems(skippedItems);
           setDraft(blankItem());
-          setFlash(`Created ${created.join(", ")}. ${skippedItems.length} item(s) need attention — ${skippedMsgs.join("; ")}`);
+          setFlash(`Created ${created.join(", ")}.${poNote} ${skippedItems.length} item(s) need attention — ${skippedMsgs.join("; ")}`);
           toast(`Created ${created.length}; ${skippedItems.length} need attention`, "info");
           return;
         }
         resetNew();
-        setFlash(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")} — form cleared for the next one.`);
-        toast(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}`);
+        setFlash(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}.${poNote} — form cleared for the next one.`);
+        toast(`Created ${created.length} order${created.length > 1 ? "s" : ""}${poNote ? " + PO" : ""}: ${created.join(", ")}`);
         return;
       }
       await mutate();
@@ -418,10 +439,18 @@ export default function OrderWorkspace() {
             </>
           )}
 
+          {/* Always offer to raise a Purchase Order alongside a brand-new order. */}
+          {!selected && !ro && (
+            <label className="mm-inline-check" style={{ display: "flex", alignItems: "center", gap: "0.45rem", margin: "0.25rem 0 0.75rem", fontSize: "0.85rem" }}>
+              <input type="checkbox" checked={alsoRaisePO} onChange={(e) => setAlsoRaisePO(e.target.checked)} />
+              <span>Also raise a Purchase Order (full ordered qty) for {items.length > 1 ? "each order" : "this order"}</span>
+            </label>
+          )}
+
           <div className="mm-ws-form-actions">
             {!ro && (
               <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onSave()}>
-                {busy ? "Saving…" : selected ? "Save changes" : items.length > 1 ? `Create ${items.length} orders` : "Create order"}
+                {busy ? "Saving…" : selected ? "Save changes" : items.length > 1 ? `Create ${items.length} orders${alsoRaisePO ? " + POs" : ""}` : `Create order${alsoRaisePO ? " + PO" : ""}`}
               </button>
             )}
             {selected && !ro && (

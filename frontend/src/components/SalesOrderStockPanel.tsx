@@ -30,16 +30,16 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
 
   const s = data?.message;
 
-  async function onCreatePO() {
+  async function onCreatePO(full: boolean) {
     setMsg(null);
     setErr(null);
     try {
-      const res = await createPO({ sales_order: docname });
+      const res = await createPO({ sales_order: docname, full: full ? 1 : 0 });
       const created = res?.message?.created ?? [];
       const updated = res?.message?.updated ?? [];
       setMsg(created.length || updated.length
-        ? `PO ${[...created, ...updated].join(", ")} ${created.length ? "created" : "updated"} for short stock.`
-        : "All lines have enough stock — no PO needed.");
+        ? `PO ${[...created, ...updated].join(", ")} ${created.length ? "created" : "updated"}${full ? " for the full order" : " for short stock"}.`
+        : full ? "No lines to purchase (box-only or zero-weight)." : "All lines have enough stock — no PO needed.");
       void mutate();
     } catch (e) {
       setErr(extractErrorMessage(e));
@@ -50,7 +50,7 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
     <section className="mm-panel mm-panel-child">
       <header className="mm-panel-head">
         <h2 className="mm-panel-title">Stock &amp; purchase</h2>
-        <p className="mm-panel-desc">Available roll stock per line. A Purchase Order is created only for a shortfall, on request.</p>
+        <p className="mm-panel-desc">Available roll stock per line. Create a Purchase Order any time — it covers the full ordered weight; use “shortfall only” to order just what stock can’t cover.</p>
       </header>
 
       {isLoading && <p className="mm-muted">Checking stock…</p>}
@@ -84,15 +84,16 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
           </div>
 
           <div className="mm-so-stock-actions">
-            {s.any_short ? (
-              <>
-                <span className="mm-pill mm-pill-pending">Short stock on some lines</span>
-                <button type="button" className="mm-btn-primary mm-btn-compact" disabled={creating} onClick={() => void onCreatePO()}>
-                  {creating ? "Creating…" : "Create PO for shortfall"}
-                </button>
-              </>
-            ) : (
-              <span className="mm-pill mm-pill-ok">Enough stock for all lines — no PO needed</span>
+            <span className={`mm-pill ${s.any_short ? "mm-pill-pending" : "mm-pill-ok"}`}>
+              {s.any_short ? "Short stock on some lines" : "Enough stock for all lines"}
+            </span>
+            <button type="button" className="mm-btn-primary mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)}>
+              {creating ? "Creating…" : "Create Purchase Order"}
+            </button>
+            {s.any_short && (
+              <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(false)}>
+                PO for shortfall only
+              </button>
             )}
           </div>
           {msg && <p className="mm-banner mm-banner-ok" style={{ marginTop: "0.5rem" }}>{msg}</p>}
