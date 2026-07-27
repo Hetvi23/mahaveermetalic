@@ -85,7 +85,7 @@ export default function OrderWorkspace() {
   const [flash, setFlash] = useState<string | null>(null);
   const [chip, setChip] = useState<Chip>("all");
   const [q, setQ] = useState("");
-  const [alsoRaisePO, setAlsoRaisePO] = useState(false);
+  const [alsoRaisePO, setAlsoRaisePO] = useState(true);
   const hydrated = useRef<string | null>(null);
 
   const filters = useMemo(() => {
