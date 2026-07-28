@@ -16,6 +16,10 @@ def recompute_po_status(po_name):
 	"""A PO closes once the inwards received against its Sales Order line (matched on
 	colour, plus cut when the inward carries one) meet the PO weight. Recomputed whenever
 	an inward for the order is posted or cancelled."""
+	# On sites where the `status` column hasn't been synced yet (pre-migrate), skip rather
+	# than 500 the inward that triggered this recompute — the reload patch adds it on migrate.
+	if not frappe.db.has_column("MM Purchase Order", "status"):
+		return None
 	po = frappe.db.get_value(
 		"MM Purchase Order", po_name, ["sales_order", "color", "cut", "qty_kg"], as_dict=True
 	)

@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 mahaveermetalic.patches.create_supplier_role
 mahaveermetalic.patches.reload_stock_and_program_fields
+mahaveermetalic.patches.ensure_po_status_column
