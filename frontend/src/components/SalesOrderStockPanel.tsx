@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -10,7 +11,8 @@ type Line = {
   short: number;
   purchase_rate: number;
 };
-type Status = { sales_order: string; party: string; lines: Line[]; any_short: boolean };
+type PO = { name: string; status?: string; qty_kg?: number; supplier?: string };
+type Status = { sales_order: string; party: string; lines: Line[]; any_short: boolean; pos: PO[]; any_po: boolean };
 
 /**
  * Live stock visibility per order line. Purchase Orders are NOT auto-generated — a PO is
@@ -84,16 +86,32 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
           </div>
 
           <div className="mm-so-stock-actions">
-            <span className={`mm-pill ${s.any_short ? "mm-pill-pending" : "mm-pill-ok"}`}>
-              {s.any_short ? "Short stock on some lines" : "Enough stock for all lines"}
-            </span>
-            <button type="button" className="mm-btn-primary mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)}>
-              {creating ? "Creating…" : "Create Purchase Order"}
-            </button>
-            {s.any_short && (
-              <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(false)}>
-                PO for shortfall only
-              </button>
+            {s.any_po ? (
+              <>
+                <span className="mm-pill mm-pill-ok">Purchase Order raised</span>
+                {s.pos.map((p) => (
+                  <Link key={p.name} to={`/purchase-order/${encodeURIComponent(p.name)}`} className="mm-po-chip">
+                    {p.name}{p.status ? ` · ${p.status}` : ""}
+                  </Link>
+                ))}
+                <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)} title="Resync the PO quantity to the current order">
+                  {creating ? "Updating…" : "Update PO qty"}
+                </button>
+              </>
+            ) : (
+              <>
+                <span className={`mm-pill ${s.any_short ? "mm-pill-pending" : "mm-pill-ok"}`}>
+                  {s.any_short ? "Short stock on some lines" : "Enough stock for all lines"}
+                </span>
+                <button type="button" className="mm-btn-primary mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)}>
+                  {creating ? "Creating…" : "Create Purchase Order"}
+                </button>
+                {s.any_short && (
+                  <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(false)}>
+                    PO for shortfall only
+                  </button>
+                )}
+              </>
             )}
           </div>
           {msg && <p className="mm-banner mm-banner-ok" style={{ marginTop: "0.5rem" }}>{msg}</p>}

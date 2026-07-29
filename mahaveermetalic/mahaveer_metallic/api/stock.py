@@ -93,7 +93,22 @@ def get_so_stock_status(sales_order):
 				"purchase_rate": float(it.purchase_rate or 0),
 			}
 		)
-	return {"sales_order": so.name, "party": so.party, "lines": lines, "any_short": any_short}
+	# Purchase Orders already raised for this Sales Order — so the UI can show them
+	# instead of offering to create yet another. `status` may not be synced pre-migrate.
+	po_fields = ["name", "qty_kg", "supplier"]
+	if frappe.db.has_column("MM Purchase Order", "status"):
+		po_fields.append("status")
+	pos = frappe.get_all(
+		"MM Purchase Order", filters={"sales_order": so.name}, fields=po_fields, order_by="creation asc"
+	)
+	return {
+		"sales_order": so.name,
+		"party": so.party,
+		"lines": lines,
+		"any_short": any_short,
+		"pos": pos,
+		"any_po": bool(pos),
+	}
 
 
 @frappe.whitelist()

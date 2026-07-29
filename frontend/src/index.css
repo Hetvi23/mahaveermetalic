@@ -719,7 +719,9 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* Sales Order stock & purchase panel */
 .mm-row-short td { background: var(--mm-danger-bg); }
 .mm-row-short td.mm-num:last-child { color: var(--mm-danger); font-weight: 700; }
-.mm-so-stock-actions { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+.mm-so-stock-actions { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.mm-po-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.22rem 0.6rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; text-decoration: none; color: var(--mm-accent-fg); background: var(--mm-accent-bg); border: 1px solid var(--mm-accent-soft); }
+.mm-po-chip:hover { filter: brightness(0.97); text-decoration: underline; }
 .mm-pill-ok { background: var(--mm-green-bg); color: var(--mm-green); border: 1px solid rgba(22,163,74,0.2); padding: 0.25rem 0.6rem; border-radius: 99px; font-size: 0.78rem; font-weight: 700; }
 
 @media (max-width: 900px) {
