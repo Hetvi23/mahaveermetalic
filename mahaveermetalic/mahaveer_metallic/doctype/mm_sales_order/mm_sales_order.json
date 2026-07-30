@@ -19,7 +19,10 @@
     "inwarded_weight",
     "required_weight",
     "production_completed_percent",
-    "order_locked"
+    "order_locked",
+    "completed",
+    "completion_mode",
+    "completed_on"
   ],
   "fields": [
     {
@@ -116,11 +119,32 @@
       "label": "Order Locked",
       "read_only": 1,
       "default": "0"
+    },
+    {
+      "fieldname": "completed",
+      "fieldtype": "Check",
+      "label": "Completed",
+      "read_only": 1,
+      "default": "0",
+      "description": "Set when inward matches the ordered weight (within tolerance) or on a Force Complete."
+    },
+    {
+      "fieldname": "completion_mode",
+      "fieldtype": "Select",
+      "label": "Completion Mode",
+      "options": "\nInward\nForce",
+      "read_only": 1
+    },
+    {
+      "fieldname": "completed_on",
+      "fieldtype": "Datetime",
+      "label": "Completed On",
+      "read_only": 1
     }
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
+  "modified": "2026-07-29 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Sales Order",

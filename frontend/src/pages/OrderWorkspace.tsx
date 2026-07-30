@@ -66,7 +66,12 @@ type Row = {
   required_weight?: number;
   production_completed_percent?: number | null;
   order_locked?: number;
+  completed?: number;
+  completion_mode?: string;
 };
+
+/** An order is done when production hits 100% OR it was completed via inward/force. */
+const isDone = (o: Row) => Math.round(o.production_completed_percent ?? 0) >= 100 || !!o.completed;
 
 function isAdmin(): boolean {
   const roles =
@@ -88,13 +93,14 @@ export default function OrderWorkspace() {
   const [alsoRaisePO, setAlsoRaisePO] = useState(true);
   const hydrated = useRef<string | null>(null);
 
+  // Only search is server-side; the pending/completed chip is filtered client-side because
+  // "completed" now means production 100% OR the inward/force completed flag (an OR the
+  // list query can't express cleanly).
   const filters = useMemo(() => {
     const f: unknown[] = [];
     if (q.trim()) f.push(["party", "like", `%${q.trim()}%`]);
-    if (chip === "pending") f.push(["production_completed_percent", "<", 100]);
-    if (chip === "completed") f.push(["production_completed_percent", ">=", 100]);
     return f.length ? (f as unknown as undefined) : undefined;
-  }, [q, chip]);
+  }, [q]);
 
   const { data: rows, isLoading, mutate } = useFrappeGetDocList<Row>("MM Sales Order", {
     fields: [
@@ -107,6 +113,8 @@ export default function OrderWorkspace() {
       "required_weight",
       "production_completed_percent",
       "order_locked",
+      "completed",
+      "completion_mode",
     ],
     filters,
     limit: 200,
@@ -331,7 +339,11 @@ export default function OrderWorkspace() {
   }
 
   const busy = creating || updating || deleting;
-  const list = rows ?? [];
+  const list = (rows ?? []).filter((o) => {
+    if (chip === "completed") return isDone(o);
+    if (chip === "pending") return !isDone(o);
+    return true;
+  });
   const itemsTotal = items.reduce((s, it) => s + (Number(it.qty_weight) || 0), 0);
 
   return (
@@ -496,7 +508,7 @@ export default function OrderWorkspace() {
                   const inw = o.inwarded_weight ?? 0;
                   const req = o.required_weight ?? 0;
                   const pct = ordered > 0 ? Math.min(100, Math.round((inw / ordered) * 100)) : 0;
-                  const done = Math.round(o.production_completed_percent ?? 0) >= 100;
+                  const done = isDone(o);
                   const overdue = !!o.delivery_date && !done && o.delivery_date < today();
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>

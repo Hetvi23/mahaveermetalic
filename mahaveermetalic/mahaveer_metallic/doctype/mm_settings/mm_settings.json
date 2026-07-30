@@ -6,7 +6,8 @@
   "field_order": [
     "section_overrides",
     "admin_override_pin",
-    "production_tolerance_percent"
+    "production_tolerance_percent",
+    "inward_match_tolerance_percent"
   ],
   "fields": [
     {
@@ -27,12 +28,20 @@
       "precision": 2,
       "default": "4",
       "description": "Production net weight may differ from the input thread weight by up to this %. Beyond it, the Admin Override PIN is required."
+    },
+    {
+      "fieldname": "inward_match_tolerance_percent",
+      "fieldtype": "Float",
+      "label": "Inward Match Tolerance (%)",
+      "precision": 2,
+      "default": "2",
+      "description": "When an order's total inwarded weight reaches within this % of the ordered weight, the order auto-completes on inward. Force Complete (with the Admin PIN) closes it regardless."
     }
   ],
   "index_web_pages_for_search": 0,
   "issingle": 1,
   "links": [],
-  "modified": "2026-06-21 00:00:00.000000",
+  "modified": "2026-07-29 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Settings",

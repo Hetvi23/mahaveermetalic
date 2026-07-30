@@ -100,12 +100,17 @@ export default function InwardWorkspace() {
   const [flash, setFlash] = useState<string | null>(null);
   const [verify, setVerify] = useState<ChallanVerify | null>(null); // VM verification for the loaded challan
   const [isPartial, setIsPartial] = useState(false); // "more rolls to come on this challan"
+  const [forceOpen, setForceOpen] = useState(false); // force-complete PIN entry open
+  const [forcePin, setForcePin] = useState("");
 
   const { call: verifyCall, loading: fetching } = useFrappePostCall<{ message: ChallanVerify }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.verify_challan",
   );
   const { call: postInward, loading: posting } = useFrappePostCall<{ message: { name: string } }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.post_inward",
+  );
+  const { call: forceComplete, loading: forcing } = useFrappePostCall(
+    "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order.force_complete_order",
   );
   const { call: fetchSODetail } = useFrappePostCall<{ message: SODetail }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.sales_order_detail",
@@ -139,8 +144,25 @@ export default function InwardWorkspace() {
   // auto-forms the rows from the order (works whichever is chosen first — see startManual).
   async function pickSalesOrder(v: string, opt?: SOOption) {
     setSalesOrder(v);
+    setForceOpen(false);
+    setForcePin("");
     void opt;
     if (v && manual) await seedRowsFromSO(v);
+  }
+
+  // Force-complete the selected order regardless of inward weight, via the Admin PIN.
+  async function submitForceComplete() {
+    setError(null);
+    if (!salesOrder) return;
+    try {
+      await forceComplete({ order: salesOrder, pin: forcePin });
+      setForceOpen(false);
+      setForcePin("");
+      setFlash(`Order ${salesOrder} force-completed.`);
+      toast(`Order ${salesOrder} completed`);
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    }
   }
 
   // Branch/Location default from the logged-in user's employee profile; editable here
@@ -420,6 +442,37 @@ export default function InwardWorkspace() {
             </label>
           )}
         </div>
+
+        {/* When an order is registered: it auto-completes once inward matches the ordered
+            weight (within tolerance); this closes it early with the Admin PIN. */}
+        {salesOrder && (
+          <div className="mm-iw-force">
+            <span className="mm-muted" style={{ fontSize: "0.82rem" }}>
+              Order <strong>{salesOrder}</strong> completes automatically when inward matches the ordered weight.
+            </span>
+            {!forceOpen ? (
+              <button type="button" className="mm-mini" onClick={() => setForceOpen(true)}>
+                <PackageCheck size={13} /> Force complete order
+              </button>
+            ) : (
+              <span style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="password"
+                  className="mm-input mm-input-compact"
+                  style={{ maxWidth: 150 }}
+                  placeholder="Admin Override PIN"
+                  value={forcePin}
+                  onChange={(e) => setForcePin(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void submitForceComplete(); }}
+                />
+                <button type="button" className="mm-mini mm-mini-ok" disabled={forcing || !forcePin.trim()} onClick={() => void submitForceComplete()}>
+                  {forcing ? "…" : "Complete"}
+                </button>
+                <button type="button" className="mm-mini" onClick={() => { setForceOpen(false); setForcePin(""); }}>Cancel</button>
+              </span>
+            )}
+          </div>
+        )}
 
         {processing ? (
           <div className="mm-iw-progress">

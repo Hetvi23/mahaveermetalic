@@ -165,6 +165,55 @@ def recalculate_order_fulfilment(order: str):
 		},
 		update_modified=False,
 	)
+	_apply_inward_completion(order, float(inwarded), float(ordered))
+
+
+def _apply_inward_completion(order, inwarded, ordered):
+	"""Auto-complete an order once its inwarded weight reaches within the configured
+	tolerance of the ordered weight. Never touches an order completed by Force (that
+	stays closed); an auto (Inward) completion is released if a cancelled inward drops
+	the weight back below the threshold."""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+		get_inward_match_tolerance,
+	)
+
+	mode = frappe.db.get_value("MM Sales Order", order, "completion_mode")
+	if mode == "Force":
+		return  # a manual force-complete is sticky
+
+	tol = get_inward_match_tolerance()
+	# "Matched" = received has reached within tol% below the ordered weight (or more).
+	matched = ordered > 0 and inwarded >= ordered * (1 - tol / 100.0)
+	if matched:
+		frappe.db.set_value(
+			"MM Sales Order", order,
+			{"completed": 1, "completion_mode": "Inward", "completed_on": frappe.utils.now()},
+			update_modified=False,
+		)
+	elif mode == "Inward":
+		# was auto-completed, but a cancelled/amended inward pulled it back below tolerance
+		frappe.db.set_value(
+			"MM Sales Order", order,
+			{"completed": 0, "completion_mode": "", "completed_on": None},
+			update_modified=False,
+		)
+
+
+@frappe.whitelist()
+def force_complete_order(order, pin):
+	"""Close an order regardless of inward weight, gated by the Admin Override PIN."""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import verify_admin_pin
+
+	if not order or not frappe.db.exists("MM Sales Order", order):
+		frappe.throw(_("Order {0} not found.").format(order))
+	if not verify_admin_pin(pin):
+		frappe.throw(_("Invalid Admin Override PIN."))
+	frappe.db.set_value(
+		"MM Sales Order", order,
+		{"completed": 1, "completion_mode": "Force", "completed_on": frappe.utils.now()},
+		update_modified=False,
+	)
+	return {"order": order, "completed": True, "mode": "Force"}
 
 
 def recalculate_production_completed(order: str):
