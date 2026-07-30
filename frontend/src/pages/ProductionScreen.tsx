@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { Factory, Plus, Trash2, X, ArrowRight, ShieldAlert, Scale } from "lucide-react";
+import { Factory, Plus, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = () => new Date().toISOString().slice(0, 10);
 const SHIFTS = ["Day", "Night"] as const;
+const r3 = (n: number) => Math.round((Number(n) || 0) * 1000) / 1000;
 
 type Program = {
   name: string;
@@ -54,7 +55,7 @@ export default function ProductionScreen() {
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Production</h1>
-          <p className="mm-page-sub">Wind each program&apos;s threads onto bobbins. Net = Gross − Bobbin − Box; large variance needs an Admin PIN.</p>
+          <p className="mm-page-sub">Wind each program&apos;s threads into boxes. Each box: Net = Gross − Bobbin − Box; large variance needs an Admin PIN.</p>
         </div>
       </header>
 
@@ -102,9 +103,9 @@ export default function ProductionScreen() {
               <table className="mm-table mm-table-dense">
                 <thead>
                   <tr>
+                    <th>V.No</th>
                     <th>Date</th>
                     <th>Roll</th>
-                    <th>Machine</th>
                     <th>Operator</th>
                     <th className="mm-num">Net (kg)</th>
                     <th className="mm-num">Var %</th>
@@ -113,9 +114,9 @@ export default function ProductionScreen() {
                 <tbody>
                   {done.map((d) => (
                     <tr key={d.name}>
+                      <td>{d.name}</td>
                       <td>{d.posting_date || "—"}</td>
                       <td>{d.roll_no || "—"}</td>
-                      <td>{d.machine_no || "—"}</td>
                       <td>{d.operator || "—"}</td>
                       <td className="mm-num">{(d.net_weight ?? 0).toLocaleString()}</td>
                       <td className="mm-num">
@@ -140,8 +141,11 @@ export default function ProductionScreen() {
   );
 }
 
-/* ── Produce: input weight + gross/bobbin/box → net, variance gate ── */
-type BobbinRow = { bobbin: string; qty: number | ""; weight: number | "" };
+/* ── Produce voucher: header + many boxes; each box netted; variance gate ── */
+type BoxRow = {
+  item?: string; gross: number; qty: number; bobbin: string;
+  bobbinPcs: number; perPcsWeight: number; totalBobbin: number; boxWeight: number; net: number;
+};
 type Calc = { net_weight: number; variance_percent: number; tolerance: number; pin_required: boolean };
 
 function ProduceModal({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
@@ -155,78 +159,62 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     fields: ["name", "weight", "quality"],
     limit: 500,
   });
-  const tareMap = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const b of bobbinMasters.data ?? []) m[b.name] = Number(b.weight || 0);
-    return m;
-  }, [bobbinMasters.data]);
 
   const { call: preview } = useFrappePostCall<{ message: Calc }>(`${API}.preview_variance`);
   const { call: create, loading } = useFrappePostCall(`${API}.create_production`);
 
   const [operator, setOperator] = useState("");
   const [shift, setShift] = useState<string>(program.shift || "Day");
-  const [gross, setGross] = useState<number | "">("");
-  const [bobbins, setBobbins] = useState<BobbinRow[]>([{ bobbin: "", qty: "", weight: "" }]);
-  const [boxQty, setBoxQty] = useState<number | "">("");
-  const [boxWeight, setBoxWeight] = useState<number | "">("");
   const [jobWork, setJobWork] = useState<boolean>(!!program.job_work_flag);
+  const [batchNo, setBatchNo] = useState("");
+  const [boxReturn, setBoxReturn] = useState(false);
+  const [bobbinReturn, setBobbinReturn] = useState(false);
+  const [boxes, setBoxes] = useState<BoxRow[]>([]);
+  const [adding, setAdding] = useState(false);
   const [pin, setPin] = useState("");
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // Bobbin total — a blank row weight falls back to qty × master tare (mirrors controller).
-  const bobbinTotal = useMemo(
-    () =>
-      bobbins.reduce((s, r) => {
-        const eff = r.weight !== "" ? Number(r.weight) : (Number(r.qty) || 0) * (tareMap[r.bobbin] || 0);
-        return s + (Number(eff) || 0);
-      }, 0),
-    [bobbins, tareMap],
-  );
+  const totalNet = useMemo(() => r3(boxes.reduce((s, b) => s + b.net, 0)), [boxes]);
+  const totalGross = useMemo(() => r3(boxes.reduce((s, b) => s + b.gross, 0)), [boxes]);
+  const availableNet = r3(inputWeight - totalNet);
 
-  // Live Net + variance + PIN gate (debounced, authoritative from the server).
+  // Variance of the produced total (Σ box net) vs the program input — server tolerance.
   useEffect(() => {
     const handle = setTimeout(async () => {
       try {
-        const r = await preview({
-          input_weight: inputWeight,
-          gross_weight: Number(gross) || 0,
-          bobbin_weight: Number(bobbinTotal.toFixed(3)),
-          box_weight: Number(boxWeight) || 0,
-        });
+        const r = await preview({ input_weight: inputWeight, gross_weight: totalNet, bobbin_weight: 0, box_weight: 0 });
         setCalc(r.message);
       } catch {
         setCalc(null);
       }
-    }, 300);
+    }, 250);
     return () => clearTimeout(handle);
-  }, [gross, bobbinTotal, boxWeight, inputWeight, preview]);
+  }, [totalNet, inputWeight, preview]);
 
-  const setRow = (i: number, patch: Partial<BobbinRow>) =>
-    setBobbins((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const addRow = () => setBobbins((prev) => [...prev, { bobbin: "", qty: "", weight: "" }]);
-  const delRow = (i: number) => setBobbins((prev) => (prev.length === 1 ? prev : prev.filter((_, j) => j !== i)));
+  const overTol = !!calc?.pin_required && boxes.length > 0;
 
   async function submit() {
     setErr(null);
-    if (!(Number(gross) > 0)) return setErr("Enter the gross weight.");
-    if (calc?.pin_required && !pin.trim()) return setErr("Variance is over tolerance — an Admin Override PIN is required.");
+    if (boxes.length === 0) return setErr("Add at least one box.");
+    if (overTol && !pin.trim()) return setErr("Variance is over tolerance — an Admin Override PIN is required.");
     try {
       await create({
         source_program: program.name,
-        gross_weight: Number(gross) || 0,
-        bobbins: JSON.stringify(
-          bobbins
-            .filter((r) => r.bobbin)
-            .map((r) => ({ bobbin: r.bobbin, qty: Number(r.qty) || 0, weight: r.weight === "" ? 0 : Number(r.weight) })),
+        boxes: JSON.stringify(
+          boxes.map((b) => ({
+            item: b.item, gross_weight: b.gross, qty: b.qty, bobbin: b.bobbin || undefined,
+            bobbin_pcs: b.bobbinPcs, bobbin_pcs_weight: b.perPcsWeight,
+            total_bobbin_weight: b.totalBobbin, box_weight: b.boxWeight,
+          })),
         ),
-        box_qty: Number(boxQty) || 0,
-        box_weight: Number(boxWeight) || 0,
         operator: operator || undefined,
         shift,
         customer_order: program.customer_order,
         posting_date: today(),
+        batch_no: batchNo || undefined,
+        box_return: boxReturn ? 1 : 0,
+        bobbin_return: bobbinReturn ? 1 : 0,
         job_work: jobWork ? 1 : 0,
         pin: pin || undefined,
       });
@@ -236,24 +224,26 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     }
   }
 
-  const net = calc?.net_weight ?? 0;
-  const variance = calc?.variance_percent ?? 0;
-  const overTol = !!calc?.pin_required;
-
   return (
     <div className="mm-modal-scrim" onClick={onClose}>
       <div className="mm-modal mm-modal-wide" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
-          <span className="mm-modal-title">Produce — {program.roll_no || program.shade || "program"}</span>
+          <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <div className="mm-banner" style={{ marginBottom: "1rem" }}>
-            Input weight (from program): <strong>{inputWeight.toLocaleString()} kg</strong>
-            {program.cut ? ` · Cut ${program.cut}` : ""}{program.machine_no ? ` · Machine ${program.machine_no}` : ""}
+          <div className="mm-banner" style={{ marginBottom: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+            <span>Input: <strong>{inputWeight.toLocaleString()} kg</strong></span>
+            <span>Available net: <strong className={availableNet < 0 ? "mm-var-over" : undefined}>{availableNet.toLocaleString()} kg</strong></span>
+            {program.cut ? <span>Cut {program.cut}</span> : null}
+            {program.machine_no ? <span>Machine {program.machine_no}</span> : null}
           </div>
 
           <div className="mm-form-grid">
+            <label className="mm-field">
+              <span className="mm-field-label">Batch No</span>
+              <input className="mm-input" value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="Optional" />
+            </label>
             <label className="mm-field">
               <span className="mm-field-label">Operator</span>
               <select className="mm-input" value={operator} onChange={(e) => setOperator(e.target.value)}>
@@ -269,70 +259,60 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
-            <div className="mm-field mm-span-2">
-              <span className="mm-field-label">Gross weight (Kg) *</span>
-              <input className="mm-input" type="number" value={gross} placeholder="Capture from scale or type"
-                onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
-              <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
-            </div>
             <label className="mm-field mm-field-inline">
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
             </label>
+            <label className="mm-field mm-field-inline">
+              <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} /> <span className="mm-field-label">Box Return</span>
+            </label>
+            <label className="mm-field mm-field-inline">
+              <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} /> <span className="mm-field-label">Bobbin Return</span>
+            </label>
           </div>
 
-          {/* Bobbins */}
-          <p className="mm-field-label" style={{ margin: "1rem 0 0.4rem" }}>Bobbins (tare auto-fills from master when weight is blank)</p>
-          <div className="mm-table-scroll">
-            <table className="mm-table mm-table-dense">
-              <thead>
-                <tr><th>Bobbin</th><th className="mm-num">Qty</th><th className="mm-num">Weight (Kg)</th><th /></tr>
-              </thead>
-              <tbody>
-                {bobbins.map((r, i) => (
-                  <tr key={i}>
-                    <td>
-                      <select className="mm-input mm-input-compact" value={r.bobbin} onChange={(e) => setRow(i, { bobbin: e.target.value })}>
-                        <option value="">— choose —</option>
-                        {(bobbinMasters.data ?? []).map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-                      </select>
-                    </td>
-                    <td className="mm-num">
-                      <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.qty}
-                        onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />
-                    </td>
-                    <td className="mm-num">
-                      <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.weight}
-                        placeholder={r.bobbin && r.qty !== "" ? ((Number(r.qty) || 0) * (tareMap[r.bobbin] || 0)).toFixed(3) : "auto"}
-                        onChange={(e) => setRow(i, { weight: e.target.value === "" ? "" : Number(e.target.value) })} />
-                    </td>
-                    <td className="mm-num">
-                      <button className="mm-mini mm-mini-danger" onClick={() => delRow(i)} disabled={bobbins.length === 1} aria-label="Remove"><Trash2 size={13} /></button>
-                    </td>
+          {/* Boxes */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "1.1rem 0 0.5rem" }}>
+            <p className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</p>
+            <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Box</button>
+          </div>
+          {boxes.length === 0 ? (
+            <p className="mm-empty">No boxes yet. Click “Box” to add one.</p>
+          ) : (
+            <div className="mm-table-scroll">
+              <table className="mm-table mm-table-dense">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Item</th><th className="mm-num">Gross</th><th className="mm-num">Qty</th>
+                    <th>Bobbin</th><th className="mm-num">Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net</th><th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button className="mm-mini" style={{ marginTop: "0.5rem" }} onClick={addRow}><Plus size={13} /> Add bobbin</button>
+                </thead>
+                <tbody>
+                  {boxes.map((b, i) => (
+                    <tr key={i}>
+                      <td>{i + 1}</td>
+                      <td>{b.item || "—"}</td>
+                      <td className="mm-num">{b.gross.toLocaleString()}</td>
+                      <td className="mm-num">{b.qty || "—"}</td>
+                      <td>{b.bobbin ? `${b.bobbin} (${b.bobbinPcs}×${b.perPcsWeight})` : "—"}</td>
+                      <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
+                      <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
+                      <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
+                      <td className="mm-num">
+                        <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          {/* Box */}
-          <div className="mm-form-grid" style={{ marginTop: "1rem" }}>
-            <label className="mm-field">
-              <span className="mm-field-label">Box qty</span>
-              <input className="mm-input" type="number" value={boxQty} onChange={(e) => setBoxQty(e.target.value === "" ? "" : Number(e.target.value))} />
-            </label>
-            <label className="mm-field">
-              <span className="mm-field-label">Box weight (Kg)</span>
-              <input className="mm-input" type="number" value={boxWeight} onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
-            </label>
-          </div>
-
-          {/* Live result */}
+          {/* Totals + variance */}
           <div className="mm-banner" style={{ marginTop: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-            <span>Bobbin: <strong>{bobbinTotal.toFixed(3)} kg</strong></span>
-            <span>Net: <strong>{net.toLocaleString()} kg</strong></span>
+            <span>Total gross: <strong>{totalGross.toLocaleString()} kg</strong></span>
+            <span>Total net: <strong>{totalNet.toLocaleString()} kg</strong></span>
             <span className={overTol ? "mm-var-over" : undefined}>
-              Variance: <strong>{variance.toFixed(2)}%</strong>
+              Variance: <strong>{(calc?.variance_percent ?? 0).toFixed(2)}%</strong>
               {calc ? ` (tol ±${calc.tolerance}%)` : ""}
             </span>
           </div>
@@ -348,7 +328,124 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Produce"}</button>
+          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Submit voucher"}</button>
+        </div>
+      </div>
+
+      {adding && (
+        <BoxDialog
+          bobbinMasters={bobbinMasters.data ?? []}
+          availableNet={availableNet}
+          defaultItem={program.shade || program.roll_no || ""}
+          onClose={() => setAdding(false)}
+          onAdd={(b) => { setBoxes((p) => [...p, b]); setAdding(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Box Details popup: the per-box calculator (Net = Gross − Bobbin − Box) ── */
+function BoxDialog({
+  bobbinMasters, availableNet, defaultItem, onClose, onAdd,
+}: {
+  bobbinMasters: BobbinMaster[]; availableNet: number; defaultItem: string;
+  onClose: () => void; onAdd: (b: BoxRow) => void;
+}) {
+  const tareMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const b of bobbinMasters) m[b.name] = Number(b.weight || 0);
+    return m;
+  }, [bobbinMasters]);
+
+  const [gross, setGross] = useState<number | "">("");
+  const [qty, setQty] = useState<number | "">(1);
+  const [bobbin, setBobbin] = useState("");
+  const [pcs, setPcs] = useState<number | "">("");
+  const [perPcs, setPerPcs] = useState<number | "">("");
+  const [boxWeight, setBoxWeight] = useState<number | "">("");
+  const [err, setErr] = useState<string | null>(null);
+
+  // Selecting a bobbin fills the per-pcs weight from its master tare (editable after).
+  useEffect(() => {
+    if (bobbin && perPcs === "" && tareMap[bobbin]) setPerPcs(tareMap[bobbin]);
+  }, [bobbin, perPcs, tareMap]);
+
+  const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
+  const net = r3((Number(gross) || 0) - totalBobbin - (Number(boxWeight) || 0));
+
+  function add() {
+    setErr(null);
+    if (!(Number(gross) > 0)) return setErr("Enter the gross (total) weight.");
+    onAdd({
+      item: defaultItem,
+      gross: Number(gross) || 0,
+      qty: Number(qty) || 0,
+      bobbin,
+      bobbinPcs: Number(pcs) || 0,
+      perPcsWeight: Number(perPcs) || 0,
+      totalBobbin,
+      boxWeight: Number(boxWeight) || 0,
+      net,
+    });
+  }
+
+  return (
+    <div className="mm-modal-scrim" style={{ zIndex: 60 }} onClick={onClose}>
+      <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="mm-modal-head">
+          <span className="mm-modal-title"><Package size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />Box Details</span>
+          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="mm-modal-body">
+          <div className="mm-banner" style={{ marginBottom: "1rem" }}>
+            Available net weight: <strong>{availableNet.toLocaleString()} kg</strong>
+          </div>
+
+          <div className="mm-form-grid">
+            <div className="mm-field mm-span-2">
+              <span className="mm-field-label">Total (gross) weight (Kg) *</span>
+              <input className="mm-input" type="number" value={gross} placeholder="Capture from scale or type"
+                onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
+              <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
+            </div>
+            <label className="mm-field">
+              <span className="mm-field-label">Qty (pcs in box)</span>
+              <input className="mm-input" type="number" value={qty} onChange={(e) => setQty(e.target.value === "" ? "" : Number(e.target.value))} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Bobbin</span>
+              <select className="mm-input" value={bobbin} onChange={(e) => setBobbin(e.target.value)}>
+                <option value="">— none —</option>
+                {bobbinMasters.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+              </select>
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Bobbin pcs</span>
+              <input className="mm-input" type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Per-pcs weight (Kg)</span>
+              <input className="mm-input" type="number" value={perPcs}
+                placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "auto"}
+                onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Box weight (Kg)</span>
+              <input className="mm-input" type="number" value={boxWeight} onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+            </label>
+          </div>
+
+          <div className="mm-banner" style={{ marginTop: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+            <span>Total bobbin wt: <strong>{totalBobbin.toLocaleString()} kg</strong></span>
+            <span>Net weight: <strong>{net.toLocaleString()} kg</strong></span>
+          </div>
+
+          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+        </div>
+        <div className="mm-modal-foot">
+          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-primary" onClick={add}>Add box</button>
         </div>
       </div>
     </div>

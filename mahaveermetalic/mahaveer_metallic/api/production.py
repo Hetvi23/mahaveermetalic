@@ -89,6 +89,20 @@ def _coerce_bobbins(bobbins):
 	return bobbins or []
 
 
+def _coerce_boxes(boxes):
+	if isinstance(boxes, str):
+		boxes = json.loads(boxes or "[]")
+	return boxes or []
+
+
+def _box_net(b):
+	"""Net of a single box row = gross − (pcs × per-pcs wt, or explicit total) − box tare."""
+	tbw = float(b.get("total_bobbin_weight") or 0)
+	if not tbw:
+		tbw = round(float(b.get("bobbin_pcs") or 0) * float(b.get("bobbin_pcs_weight") or 0), 3)
+	return round(float(b.get("gross_weight") or 0) - tbw - float(b.get("box_weight") or 0), 3)
+
+
 @frappe.whitelist()
 def preview_variance(input_weight, gross_weight, bobbin_weight=0, box_weight=0):
 	"""Helper for the modal: compute Net + variance% live, and whether a PIN is needed."""
@@ -102,21 +116,27 @@ def preview_variance(input_weight, gross_weight, bobbin_weight=0, box_weight=0):
 @frappe.whitelist()
 def create_production(
 	source_program,
-	gross_weight,
+	gross_weight=0,
 	bobbins=None,
+	boxes=None,
 	box_qty=0,
 	box_weight=0,
 	operator=None,
 	shift=None,
 	customer_order=None,
 	posting_date=None,
+	batch_no=None,
+	box_return=0,
+	bobbin_return=0,
 	job_work=0,
 	pin=None,
 ):
-	"""Submit handler: wind a program's threads into a completed MM Production.
+	"""Submit handler: wind a program's threads into a completed MM Production voucher.
 
-	Computes Net = Gross − Bobbin − Box, enforces the variance tolerance (Admin PIN
-	beyond it), links/closes the program and advances the order's production %.
+	New model: `boxes` is a list of produced-box rows (gross, bobbin pcs × per-pcs wt,
+	box tare); voucher Net = sum of box nets. Legacy callers may still pass a whole-doc
+	`bobbins` table with gross_weight/box_weight. Either way it enforces the variance
+	tolerance (Admin PIN beyond it), links/closes the program and advances the order %.
 	"""
 	if not source_program:
 		frappe.throw(_("Select a program to produce."))
@@ -134,17 +154,26 @@ def create_production(
 	if prog.production:
 		frappe.throw(_("This program is already produced ({0}).").format(prog.production))
 
+	box_rows = _coerce_boxes(boxes)
 	bobbin_rows = _coerce_bobbins(bobbins)
 	input_weight = float(prog.net_weight or 0)
 
-	# Decide tolerance / PIN up front so we can set pin_override before the doc validates.
-	bobbin_total = sum(float(b.get("weight") or 0) for b in bobbin_rows)
-	# (rows with blank weight are auto-filled in the controller; approximate here for the gate)
-	for b in bobbin_rows:
-		if not b.get("weight") and b.get("bobbin"):
-			mwt = frappe.db.get_value("MM Bobbin Master", b["bobbin"], "weight") or 0
-			bobbin_total += round(float(b.get("qty") or 0) * float(mwt), 3)
-	net = round(float(gross_weight or 0) - bobbin_total - float(box_weight or 0), 3)
+	# Compute the produced Net up front (matches the controller) so we can gate on variance
+	# and set pin_override before the doc validates.
+	if box_rows:
+		if not any(float(b.get("gross_weight") or 0) > 0 for b in box_rows):
+			frappe.throw(_("Add at least one box with a gross weight."))
+		net = round(sum(_box_net(b) for b in box_rows), 3)
+	else:
+		bobbin_total = 0.0
+		for b in bobbin_rows:
+			w = float(b.get("weight") or 0)
+			if not w and b.get("bobbin"):
+				mwt = frappe.db.get_value("MM Bobbin Master", b["bobbin"], "weight") or 0
+				w = round(float(b.get("qty") or 0) * float(mwt), 3)
+			bobbin_total += w
+		net = round(float(gross_weight or 0) - bobbin_total - float(box_weight or 0), 3)
+
 	variance = round((net - input_weight) / input_weight * 100, 2) if input_weight else 0.0
 	tol = get_tolerance_percent()
 	pin_override = 0
@@ -168,6 +197,9 @@ def create_production(
 			"machine_no": prog.machine_no,
 			"operator": operator,
 			"shift": shift or None,
+			"batch_no": batch_no or None,
+			"box_return": 1 if frappe.utils.cint(box_return) else 0,
+			"bobbin_return": 1 if frappe.utils.cint(bobbin_return) else 0,
 			"status": "Completed",
 			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
 			"branch": prog.branch,
@@ -177,6 +209,19 @@ def create_production(
 			"box_qty": float(box_qty or 0),
 			"box_weight": float(box_weight or 0),
 			"pin_override": pin_override,
+			"boxes": [
+				{
+					"item": b.get("item") or prog.shade,
+					"gross_weight": float(b.get("gross_weight") or 0),
+					"qty": float(b.get("qty") or 0),
+					"bobbin": b.get("bobbin") or None,
+					"bobbin_pcs": float(b.get("bobbin_pcs") or 0),
+					"bobbin_pcs_weight": float(b.get("bobbin_pcs_weight") or 0),
+					"total_bobbin_weight": float(b.get("total_bobbin_weight") or 0),
+					"box_weight": float(b.get("box_weight") or 0),
+				}
+				for b in box_rows
+			],
 			"bobbins": [
 				{"bobbin": b.get("bobbin"), "qty": float(b.get("qty") or 0), "weight": float(b.get("weight") or 0)}
 				for b in bobbin_rows

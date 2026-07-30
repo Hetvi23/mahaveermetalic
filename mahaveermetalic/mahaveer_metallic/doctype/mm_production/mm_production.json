@@ -1,7 +1,7 @@
 {
   "actions": [],
   "allow_rename": 1,
-  "autoname": "hash",
+  "autoname": "MMPROD-.#####",
   "creation": "2026-06-21 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
@@ -16,9 +16,13 @@
     "machine_no",
     "operator",
     "shift",
+    "batch_no",
     "status",
     "job_work_flag",
+    "box_return",
+    "bobbin_return",
     "section_bobbins",
+    "boxes",
     "bobbins",
     "box_qty",
     "box_weight",
@@ -110,14 +114,36 @@
       "label": "Job Work"
     },
     {
+      "fieldname": "batch_no",
+      "fieldtype": "Data",
+      "label": "Batch No"
+    },
+    {
+      "fieldname": "box_return",
+      "fieldtype": "Check",
+      "label": "Box Return"
+    },
+    {
+      "fieldname": "bobbin_return",
+      "fieldtype": "Check",
+      "label": "Bobbin Return"
+    },
+    {
       "fieldname": "section_bobbins",
       "fieldtype": "Section Break",
       "label": "Box & Bobbin Details"
     },
     {
+      "fieldname": "boxes",
+      "fieldtype": "Table",
+      "label": "Boxes",
+      "options": "MM Production Box",
+      "description": "One row per produced box: gross, bobbin (pcs × per-pcs wt), box tare and net."
+    },
+    {
       "fieldname": "bobbins",
       "fieldtype": "Table",
-      "label": "Bobbins",
+      "label": "Bobbins (legacy)",
       "options": "MM Production Bobbin"
     },
     {
@@ -154,8 +180,9 @@
       "in_list_view": 1,
       "label": "Gross Weight (Kg)",
       "precision": 3,
-      "reqd": 1,
-      "default": "0"
+      "read_only": 1,
+      "default": "0",
+      "description": "Auto: sum of box gross weights."
     },
     {
       "fieldname": "bobbin_weight",
@@ -163,7 +190,7 @@
       "label": "Bobbin Weight (Kg)",
       "precision": 3,
       "read_only": 1,
-      "description": "Auto: sum of the bobbin rows."
+      "description": "Auto: sum of box bobbin weights."
     },
     {
       "fieldname": "net_weight",
@@ -172,7 +199,7 @@
       "label": "Net Weight (Kg)",
       "precision": 3,
       "read_only": 1,
-      "description": "Auto: Gross − Bobbin − Box."
+      "description": "Auto: Gross − Bobbin − Box (sum of boxes)."
     },
     {
       "fieldname": "section_variance",
@@ -198,7 +225,7 @@
   "index_web_pages_for_search": 1,
   "is_submittable": 1,
   "links": [],
-  "modified": "2026-06-21 00:00:00.000000",
+  "modified": "2026-07-29 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Production",
