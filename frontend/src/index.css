@@ -1084,6 +1084,24 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-pv-checks { display: flex; gap: 1.75rem; flex-wrap: wrap; margin-bottom: 0.4rem; padding-top: 0.55rem; border-top: 1px solid var(--mm-border); }
 .mm-pv-top .mm-input[readonly], .mm-pv-grid .mm-input[readonly] { background: var(--mm-bg); color: var(--mm-text-sec); cursor: default; }
 .mm-pv-grid .mm-input-warn { color: var(--mm-danger-fg); font-weight: 700; }
+
+/* Box Details popup — legacy label-left / value-right rows */
+.mm-bx { display: flex; flex-direction: column; gap: 0.7rem; }
+.mm-bx-row { display: grid; grid-template-columns: 175px 1fr; align-items: center; gap: 0.9rem; }
+.mm-bx-label { font-size: 0.86rem; font-weight: 600; color: var(--mm-text-sec); }
+.mm-bx-hi { background: var(--mm-accent); color: #fff; border-color: var(--mm-accent); font-weight: 700; }
+.mm-bx-hi::placeholder { color: rgba(255,255,255,0.7); }
+.mm-bx-ro { background: var(--mm-bg); color: var(--mm-text); }
+.mm-input-warn { color: var(--mm-danger-fg); font-weight: 700; }
+.mm-bx-bobbin { display: flex; gap: 0.4rem; align-items: stretch; }
+.mm-bx-bobbin select { flex: 1; }
+.mm-bx-add { flex: none; width: 38px; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); background: var(--mm-card); color: var(--mm-text-sec); display: grid; place-items: center; cursor: pointer; }
+.mm-bx-add:hover { border-color: var(--mm-accent); color: var(--mm-accent); }
+.mm-bx-pcs { display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: stretch; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); overflow: hidden; background: var(--mm-card); }
+.mm-bx-pcs .seg { display: flex; align-items: center; padding: 0 0.6rem; background: var(--mm-accent-bg); color: var(--mm-accent-fg); font-size: 0.78rem; font-weight: 700; }
+.mm-bx-pcs input { border: 0; border-radius: 0; background: transparent; color: var(--mm-text); padding: 0.5rem 0.55rem; min-width: 0; width: 100%; font-variant-numeric: tabular-nums; }
+.mm-bx-pcs input:focus { outline: 2px solid var(--mm-accent); outline-offset: -2px; }
+@media (max-width: 520px) { .mm-bx-row { grid-template-columns: 1fr; gap: 0.3rem; } }
 .mm-field-compact { margin: 0 !important; }
 .mm-form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--mm-border); }
 .mm-form-actions-sticky { margin: 0; padding: 0.85rem 1.15rem; border-top: 1px solid var(--mm-border); background: var(--mm-card); position: sticky; bottom: 0; display: flex; gap: 0.5rem; }

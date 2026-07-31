@@ -4,6 +4,8 @@ import { Factory, Plus, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } fro
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
 import PartyPicker from "@/components/PartyPicker";
+import QuickCreateMaster from "@/components/QuickCreateMaster";
+import { getMasterByDoctype } from "@/config/registry";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -411,18 +413,24 @@ function BoxDialog({
   bobbinMasters: BobbinMaster[]; availableNet: number; defaultItem: string;
   onClose: () => void; onAdd: (b: BoxRow) => void;
 }) {
+  const [extraBobbins, setExtraBobbins] = useState<BobbinMaster[]>([]);
+  const allBobbins = useMemo(() => [...bobbinMasters, ...extraBobbins], [bobbinMasters, extraBobbins]);
   const tareMap = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const b of bobbinMasters) m[b.name] = Number(b.weight || 0);
+    for (const b of allBobbins) m[b.name] = Number(b.weight || 0);
     return m;
-  }, [bobbinMasters]);
+  }, [allBobbins]);
+  const bobbinMaster = getMasterByDoctype("MM Bobbin Master");
 
+  const [printer, setPrinter] = useState<string>(
+    () => (typeof window !== "undefined" && window.localStorage.getItem("mm-box-printer")) || "TSC TE244",
+  );
   const [gross, setGross] = useState<number | "">("");
-  const [qty, setQty] = useState<number | "">(1);
   const [bobbin, setBobbin] = useState("");
   const [pcs, setPcs] = useState<number | "">("");
   const [perPcs, setPerPcs] = useState<number | "">("");
   const [boxWeight, setBoxWeight] = useState<number | "">("");
+  const [quick, setQuick] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   // Selecting a bobbin fills the per-pcs weight from its master tare (editable after).
@@ -435,11 +443,11 @@ function BoxDialog({
 
   function add() {
     setErr(null);
-    if (!(Number(gross) > 0)) return setErr("Enter the gross (total) weight.");
+    if (!(Number(gross) > 0)) return setErr("Enter the total (gross) weight.");
     onAdd({
       item: defaultItem,
       gross: Number(gross) || 0,
-      qty: Number(qty) || 0,
+      qty: Number(pcs) || 0,
       bobbin,
       bobbinPcs: Number(pcs) || 0,
       perPcsWeight: Number(perPcs) || 0,
@@ -457,56 +465,82 @@ function BoxDialog({
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <div className="mm-banner" style={{ marginBottom: "1rem" }}>
-            Available net weight: <strong>{availableNet.toLocaleString()} kg</strong>
-          </div>
-
-          <div className="mm-form-grid">
-            <div className="mm-field mm-span-2">
-              <span className="mm-field-label">Total (gross) weight (Kg) *</span>
-              <input className="mm-input" type="number" value={gross} placeholder="Capture from scale or type"
-                onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
-              <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
+          <div className="mm-bx">
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Box Sticker Printer</span>
+              <input className="mm-input mm-bx-hi" value={printer}
+                onChange={(e) => { setPrinter(e.target.value); window.localStorage.setItem("mm-box-printer", e.target.value); }} />
             </div>
-            <label className="mm-field">
-              <span className="mm-field-label">Qty (pcs in box)</span>
-              <input className="mm-input" type="number" value={qty} onChange={(e) => setQty(e.target.value === "" ? "" : Number(e.target.value))} />
-            </label>
-            <label className="mm-field">
-              <span className="mm-field-label">Bobbin</span>
-              <select className="mm-input" value={bobbin} onChange={(e) => setBobbin(e.target.value)}>
-                <option value="">— none —</option>
-                {bobbinMasters.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-              </select>
-            </label>
-            <label className="mm-field">
-              <span className="mm-field-label">Bobbin pcs</span>
-              <input className="mm-input" type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
-            </label>
-            <label className="mm-field">
-              <span className="mm-field-label">Per-pcs weight (Kg)</span>
-              <input className="mm-input" type="number" value={perPcs}
-                placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "auto"}
-                onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
-            </label>
-            <label className="mm-field">
-              <span className="mm-field-label">Box weight (Kg)</span>
-              <input className="mm-input" type="number" value={boxWeight} onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
-            </label>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Available Net Weight</span>
+              <input className="mm-input mm-bx-hi" value={availableNet.toLocaleString()} readOnly />
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Total Weight</span>
+              <div>
+                <input className="mm-input" type="number" value={gross} placeholder="0.000"
+                  onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
+                <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
+              </div>
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Bobbin</span>
+              <div className="mm-bx-bobbin">
+                <select className="mm-input" value={bobbin} onChange={(e) => setBobbin(e.target.value)}>
+                  <option value="">— none —</option>
+                  {allBobbins.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+                </select>
+                {bobbinMaster && (
+                  <button type="button" className="mm-link-add mm-bx-add" title="New bobbin" onClick={() => setQuick(true)}><Plus size={15} /></button>
+                )}
+              </div>
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Bobbin Weight</span>
+              <div className="mm-bx-pcs">
+                <span className="seg">Pcs</span>
+                <input type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+                <span className="seg">×</span>
+                <input type="number" value={perPcs} placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "0.000"}
+                  onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+                <span className="seg">Kg</span>
+              </div>
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Total Bobbin Weight</span>
+              <input className="mm-input mm-bx-ro" value={totalBobbin.toLocaleString()} readOnly />
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Box Weight</span>
+              <input className="mm-input" type="number" value={boxWeight}
+                onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Net Weight</span>
+              <input className={`mm-input mm-bx-ro ${net < 0 ? "mm-input-warn" : ""}`} value={net.toLocaleString()} readOnly />
+            </div>
           </div>
 
-          <div className="mm-banner" style={{ marginTop: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-            <span>Total bobbin wt: <strong>{totalBobbin.toLocaleString()} kg</strong></span>
-            <span>Net weight: <strong>{net.toLocaleString()} kg</strong></span>
-          </div>
-
-          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+          {err && <p className="mm-error" style={{ marginTop: "0.7rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" onClick={add}>Add box</button>
+          <button className="mm-btn-primary" onClick={add}>Submit</button>
         </div>
       </div>
+
+      {quick && bobbinMaster && (
+        <QuickCreateMaster
+          meta={bobbinMaster}
+          seed=""
+          onClose={() => setQuick(false)}
+          onCreated={(name) => {
+            setExtraBobbins((p) => [...p, { name, weight: 0 }]);
+            setBobbin(name);
+            setQuick(false);
+          }}
+        />
+      )}
     </div>
   );
 }
