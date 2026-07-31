@@ -9,3 +9,4 @@ mahaveermetalic.patches.reload_stock_and_program_fields
 mahaveermetalic.patches.ensure_po_status_column
 mahaveermetalic.patches.reload_production_box
 mahaveermetalic.patches.reload_inward_complete_fields
+mahaveermetalic.patches.reload_production_party_cut

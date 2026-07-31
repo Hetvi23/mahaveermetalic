@@ -10,9 +10,11 @@
     "location",
     "posting_date",
     "customer_order",
+    "party",
     "source_program",
     "roll_no",
     "shade",
+    "cut",
     "machine_no",
     "operator",
     "shift",
@@ -77,9 +79,20 @@
       "options": "MM Location Master"
     },
     {
+      "fieldname": "party",
+      "fieldtype": "Link",
+      "label": "Party",
+      "options": "MM Party Master"
+    },
+    {
       "fieldname": "shade",
       "fieldtype": "Data",
       "label": "Shade"
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "label": "Size / Cut"
     },
     {
       "fieldname": "machine_no",
@@ -225,7 +238,7 @@
   "index_web_pages_for_search": 1,
   "is_submittable": 1,
   "links": [],
-  "modified": "2026-07-29 00:00:00.000000",
+  "modified": "2026-07-29 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Production",

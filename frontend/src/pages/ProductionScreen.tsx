@@ -3,6 +3,7 @@ import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe
 import { Factory, Plus, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
+import PartyPicker from "@/components/PartyPicker";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -175,6 +176,18 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [pin, setPin] = useState("");
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [party, setParty] = useState<string>(program.party || "");
+  const [order, setOrder] = useState<string>(program.customer_order || "");
+  const [size, setSize] = useState<string>(program.cut || "");
+
+  // Select Order = this party's OPEN orders that include this item (colour).
+  const openOrdersCall = useFrappeGetCall<{ message: { name: string; required_weight?: number; delivery_date?: string }[] }>(
+    `${API}.open_orders_for_item`,
+    party ? { color: program.shade || undefined, party } : undefined,
+    party ? `prod-oo-${program.shade || ""}-${party}` : null,
+  );
+  const openOrders = openOrdersCall.data?.message ?? [];
+
   const totalNet = useMemo(() => r3(boxes.reduce((s, b) => s + b.net, 0)), [boxes]);
   const totalGross = useMemo(() => r3(boxes.reduce((s, b) => s + b.gross, 0)), [boxes]);
   const availableNet = r3(inputWeight - totalNet);
@@ -210,7 +223,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         ),
         operator: operator || undefined,
         shift,
-        customer_order: program.customer_order,
+        customer_order: order || undefined,
+        party: party || undefined,
+        cut: size || undefined,
         posting_date: vdate || today(),
         batch_no: batchNo || undefined,
         box_return: boxReturn ? 1 : 0,
@@ -249,13 +264,16 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <span className="mm-field-label">V.No</span>
               <input className="mm-input" value="Auto (MMPROD)" readOnly />
             </label>
+            <PartyPicker label="Party" value={party} onChange={(v) => { setParty(v); setOrder(""); }} />
             <label className="mm-field">
-              <span className="mm-field-label">Party</span>
-              <input className="mm-input" value={program.party || "—"} readOnly />
-            </label>
-            <label className="mm-field">
-              <span className="mm-field-label">Order</span>
-              <input className="mm-input" value={program.customer_order || "—"} readOnly />
+              <span className="mm-field-label">Select Order</span>
+              <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)} disabled={!party}>
+                <option value="">{!party ? "Pick a party first" : openOrdersCall.isLoading ? "Loading…" : "— none —"}</option>
+                {order && !openOrders.some((o) => o.name === order) && <option value={order}>{order}</option>}
+                {openOrders.map((o) => (
+                  <option key={o.name} value={o.name}>{o.name}{o.required_weight != null ? ` · req ${o.required_weight}` : ""}</option>
+                ))}
+              </select>
             </label>
             <label className="mm-field">
               <span className="mm-field-label">V.Date</span>
@@ -267,7 +285,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Size</span>
-              <input className="mm-input" value={program.cut || "—"} readOnly />
+              <input className="mm-input" value={size} onChange={(e) => setSize(e.target.value)} placeholder="e.g. 50/85" />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Operator</span>

@@ -83,6 +83,35 @@ def order_options_for_party(party=None, customer_order=None):
 	)
 
 
+@frappe.whitelist()
+def open_orders_for_item(color=None, party=None):
+	"""Production voucher 'Select Order' list: the OPEN Sales Orders of a party that
+	include this colour/item. Open = submitted-or-draft and not yet completed (production
+	< 100% and not force/inward-closed)."""
+	if not party:
+		return []
+	conditions = ["so.party = %(party)s", "so.docstatus < 2", "ifnull(so.production_completed_percent, 0) < 100"]
+	values = {"party": party}
+	if frappe.db.has_column("MM Sales Order", "completed"):
+		conditions.append("ifnull(so.completed, 0) = 0")
+	if color:
+		conditions.append("soi.color_name = %(color)s")
+		values["color"] = color
+	return frappe.db.sql(
+		f"""
+		select distinct so.name, so.transaction_date, so.delivery_date,
+			so.ordered_weight, so.required_weight
+		from `tabMM Sales Order` so
+		join `tabMM Sales Order Item` soi on soi.parent = so.name
+		where {" and ".join(conditions)}
+		order by so.delivery_date asc, so.modified desc
+		limit 100
+		""",
+		values,
+		as_dict=True,
+	)
+
+
 def _coerce_bobbins(bobbins):
 	if isinstance(bobbins, str):
 		bobbins = json.loads(bobbins or "[]")
@@ -124,6 +153,8 @@ def create_production(
 	operator=None,
 	shift=None,
 	customer_order=None,
+	party=None,
+	cut=None,
 	posting_date=None,
 	batch_no=None,
 	box_return=0,
@@ -191,9 +222,11 @@ def create_production(
 			"doctype": "MM Production",
 			"posting_date": posting_date or frappe.utils.nowdate(),
 			"customer_order": customer_order or prog.customer_order,
+			"party": party or (frappe.db.get_value("MM Sales Order", customer_order, "party") if customer_order else None),
 			"source_program": prog.name,
 			"roll_no": prog.roll_no,
 			"shade": prog.shade,
+			"cut": cut if cut not in (None, "") else prog.cut,
 			"machine_no": prog.machine_no,
 			"operator": operator,
 			"shift": shift or None,
