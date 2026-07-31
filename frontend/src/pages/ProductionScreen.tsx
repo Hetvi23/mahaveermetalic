@@ -175,16 +175,6 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [pin, setPin] = useState("");
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [order, setOrder] = useState<string>(program.customer_order || "");
-
-  // Orders for the same party (so the voucher's order can be picked/changed like legacy).
-  const orderOpts = useFrappeGetCall<{ message: { name: string }[] }>(
-    `${API}.order_options_for_party`,
-    program.customer_order ? { customer_order: program.customer_order } : undefined,
-    program.customer_order ? `prod-orders-${program.customer_order}` : undefined,
-  );
-  const orders = orderOpts.data?.message ?? [];
-
   const totalNet = useMemo(() => r3(boxes.reduce((s, b) => s + b.net, 0)), [boxes]);
   const totalGross = useMemo(() => r3(boxes.reduce((s, b) => s + b.gross, 0)), [boxes]);
   const availableNet = r3(inputWeight - totalNet);
