@@ -232,18 +232,31 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <div className="mm-banner" style={{ marginBottom: "1rem", display: "flex", gap: "1.25rem 1.5rem", flexWrap: "wrap" }}>
-            <span>V.No: <strong>auto (MMPROD)</strong></span>
-            <span>Item: <strong>{program.shade || program.roll_no || "—"}</strong></span>
-            <span>Size: <strong>{program.cut || "—"}</strong></span>
-            <span>Party: <strong>{program.party || "—"}</strong></span>
-            <span>Order: <strong>{program.customer_order || "—"}</strong></span>
-            {program.machine_no ? <span>Machine: <strong>{program.machine_no}</strong></span> : null}
-            <span>Input: <strong>{inputWeight.toLocaleString()} kg</strong></span>
-            <span>Available net: <strong className={availableNet < 0 ? "mm-var-over" : undefined}>{availableNet.toLocaleString()} kg</strong></span>
+          {/* Top: Item + Is Job Work (mirrors the legacy voucher header bar) */}
+          <div className="mm-pv-top">
+            <label className="mm-field" style={{ flex: 1, maxWidth: 360 }}>
+              <span className="mm-field-label">Item</span>
+              <input className="mm-input" value={program.shade || program.roll_no || "—"} readOnly />
+            </label>
+            <label className="mm-field mm-field-inline">
+              <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
+            </label>
           </div>
 
-          <div className="mm-form-grid">
+          {/* Voucher header — labelled fields in a grid, like the legacy form */}
+          <div className="mm-pv-grid">
+            <label className="mm-field">
+              <span className="mm-field-label">V.No</span>
+              <input className="mm-input" value="Auto (MMPROD)" readOnly />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Party</span>
+              <input className="mm-input" value={program.party || "—"} readOnly />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Order</span>
+              <input className="mm-input" value={program.customer_order || "—"} readOnly />
+            </label>
             <label className="mm-field">
               <span className="mm-field-label">V.Date</span>
               <input className="mm-input" type="date" value={vdate} onChange={(e) => setVdate(e.target.value)} />
@@ -251,6 +264,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             <label className="mm-field">
               <span className="mm-field-label">Batch No</span>
               <input className="mm-input" value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="Optional" />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Size</span>
+              <input className="mm-input" value={program.cut || "—"} readOnly />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Operator</span>
@@ -267,9 +284,21 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
-            <label className="mm-field mm-field-inline">
-              <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
+            <label className="mm-field">
+              <span className="mm-field-label">Machine</span>
+              <input className="mm-input" value={program.machine_no || "—"} readOnly />
             </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Input (Kg)</span>
+              <input className="mm-input" value={inputWeight.toLocaleString()} readOnly />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Available Net (Kg)</span>
+              <input className={`mm-input ${availableNet < 0 ? "mm-input-warn" : ""}`} value={availableNet.toLocaleString()} readOnly />
+            </label>
+          </div>
+
+          <div className="mm-pv-checks">
             <label className="mm-field mm-field-inline">
               <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} /> <span className="mm-field-label">Box Return</span>
             </label>

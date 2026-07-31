@@ -1075,6 +1075,15 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-span-2 { grid-column: span 2; }
 .mm-field { display: flex; flex-direction: column; gap: 0.25rem; }
 .mm-field-label { font-size: 0.72rem; font-weight: 650; color: var(--mm-text-sec); text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Production voucher — legacy-style labelled form grid */
+.mm-pv-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
+.mm-pv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.65rem 0.85rem; margin-bottom: 0.6rem; }
+@media (max-width: 860px) { .mm-pv-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .mm-pv-grid { grid-template-columns: 1fr; } }
+.mm-pv-checks { display: flex; gap: 1.75rem; flex-wrap: wrap; margin-bottom: 0.4rem; padding-top: 0.55rem; border-top: 1px solid var(--mm-border); }
+.mm-pv-top .mm-input[readonly], .mm-pv-grid .mm-input[readonly] { background: var(--mm-bg); color: var(--mm-text-sec); cursor: default; }
+.mm-pv-grid .mm-input-warn { color: var(--mm-danger-fg); font-weight: 700; }
 .mm-field-compact { margin: 0 !important; }
 .mm-form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--mm-border); }
 .mm-form-actions-sticky { margin: 0; padding: 0.85rem 1.15rem; border-top: 1px solid var(--mm-border); background: var(--mm-card); position: sticky; bottom: 0; display: flex; gap: 0.5rem; }
