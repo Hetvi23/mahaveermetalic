@@ -167,6 +167,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [shift, setShift] = useState<string>(program.shift || "Day");
   const [jobWork, setJobWork] = useState<boolean>(!!program.job_work_flag);
   const [batchNo, setBatchNo] = useState("");
+  const [vdate, setVdate] = useState<string>(today());
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
   const [boxes, setBoxes] = useState<BoxRow[]>([]);
@@ -174,6 +175,15 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [pin, setPin] = useState("");
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [order, setOrder] = useState<string>(program.customer_order || "");
+
+  // Orders for the same party (so the voucher's order can be picked/changed like legacy).
+  const orderOpts = useFrappeGetCall<{ message: { name: string }[] }>(
+    `${API}.order_options_for_party`,
+    program.customer_order ? { customer_order: program.customer_order } : undefined,
+    program.customer_order ? `prod-orders-${program.customer_order}` : undefined,
+  );
+  const orders = orderOpts.data?.message ?? [];
 
   const totalNet = useMemo(() => r3(boxes.reduce((s, b) => s + b.net, 0)), [boxes]);
   const totalGross = useMemo(() => r3(boxes.reduce((s, b) => s + b.gross, 0)), [boxes]);
@@ -211,7 +221,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         operator: operator || undefined,
         shift,
         customer_order: program.customer_order,
-        posting_date: today(),
+        posting_date: vdate || today(),
         batch_no: batchNo || undefined,
         box_return: boxReturn ? 1 : 0,
         bobbin_return: bobbinReturn ? 1 : 0,
@@ -232,14 +242,22 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <div className="mm-banner" style={{ marginBottom: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+          <div className="mm-banner" style={{ marginBottom: "1rem", display: "flex", gap: "1.25rem 1.5rem", flexWrap: "wrap" }}>
+            <span>V.No: <strong>auto (MMPROD)</strong></span>
+            <span>Item: <strong>{program.shade || program.roll_no || "—"}</strong></span>
+            <span>Size: <strong>{program.cut || "—"}</strong></span>
+            <span>Party: <strong>{program.party || "—"}</strong></span>
+            <span>Order: <strong>{program.customer_order || "—"}</strong></span>
+            {program.machine_no ? <span>Machine: <strong>{program.machine_no}</strong></span> : null}
             <span>Input: <strong>{inputWeight.toLocaleString()} kg</strong></span>
             <span>Available net: <strong className={availableNet < 0 ? "mm-var-over" : undefined}>{availableNet.toLocaleString()} kg</strong></span>
-            {program.cut ? <span>Cut {program.cut}</span> : null}
-            {program.machine_no ? <span>Machine {program.machine_no}</span> : null}
           </div>
 
           <div className="mm-form-grid">
+            <label className="mm-field">
+              <span className="mm-field-label">V.Date</span>
+              <input className="mm-input" type="date" value={vdate} onChange={(e) => setVdate(e.target.value)} />
+            </label>
             <label className="mm-field">
               <span className="mm-field-label">Batch No</span>
               <input className="mm-input" value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="Optional" />
@@ -282,8 +300,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <table className="mm-table mm-table-dense">
                 <thead>
                   <tr>
-                    <th>#</th><th>Item</th><th className="mm-num">Gross</th><th className="mm-num">Qty</th>
-                    <th>Bobbin</th><th className="mm-num">Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net</th><th />
+                    <th>#</th><th>Item</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
+                    <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
+                    <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -293,7 +312,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                       <td>{b.item || "—"}</td>
                       <td className="mm-num">{b.gross.toLocaleString()}</td>
                       <td className="mm-num">{b.qty || "—"}</td>
-                      <td>{b.bobbin ? `${b.bobbin} (${b.bobbinPcs}×${b.perPcsWeight})` : "—"}</td>
+                      <td>{b.bobbin || "—"}</td>
+                      <td className="mm-num">{b.bobbinPcs || "—"}</td>
+                      <td className="mm-num">{b.perPcsWeight || "—"}</td>
                       <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
                       <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
                       <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
@@ -309,6 +330,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
           {/* Totals + variance */}
           <div className="mm-banner" style={{ marginTop: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+            <span>Total box: <strong>{boxes.length}</strong></span>
             <span>Total gross: <strong>{totalGross.toLocaleString()} kg</strong></span>
             <span>Total net: <strong>{totalNet.toLocaleString()} kg</strong></span>
             <span className={overTol ? "mm-var-over" : undefined}>
