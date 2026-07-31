@@ -1429,6 +1429,14 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-modal-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: grid; place-items: center; z-index: 60; padding: 1rem; }
 .mm-modal { background: var(--mm-card); border-radius: var(--mm-radius-lg); box-shadow: var(--mm-shadow-lg); width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
 .mm-modal-wide { width: min(960px, 100%); }
+
+/* Right-docked full-height panel (drawer) — roomier than a centered popup */
+.mm-modal-scrim.mm-scrim-right { padding: 0; place-items: stretch end; }
+.mm-modal.mm-sheet { width: min(880px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; box-shadow: -12px 0 44px rgba(0,0,0,0.28); animation: mm-sheet-in 0.22s cubic-bezier(0.2,0.7,0.3,1); }
+.mm-modal.mm-sheet.mm-sheet-narrow { width: min(620px, 100vw); }
+.mm-sheet .mm-modal-body { flex: 1; min-height: 0; }
+@keyframes mm-sheet-in { from { transform: translateX(4%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mm-modal.mm-sheet { animation: none; } }
 .mm-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--mm-border); }
 .mm-modal-title { font-weight: 800; font-size: 1.05rem; }
 .mm-modal-body { padding: 1.1rem 1.25rem; overflow: auto; }

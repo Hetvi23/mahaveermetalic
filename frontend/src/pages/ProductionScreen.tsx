@@ -242,8 +242,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   }
 
   return (
-    <div className="mm-modal-scrim" onClick={onClose}>
-      <div className="mm-modal mm-modal-wide" onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="mm-modal-scrim mm-scrim-right" onClick={onClose}>
+      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -458,8 +458,8 @@ function BoxDialog({
   }
 
   return (
-    <div className="mm-modal-scrim" style={{ zIndex: 60 }} onClick={onClose}>
-      <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="mm-modal-scrim mm-scrim-right" style={{ zIndex: 70 }} onClick={onClose}>
+      <div className="mm-modal mm-sheet mm-sheet-narrow" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title"><Package size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />Box Details</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
