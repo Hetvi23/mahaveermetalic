@@ -100,7 +100,9 @@ def open_orders_for_item(color=None, party=None):
 	return frappe.db.sql(
 		f"""
 		select distinct so.name, so.transaction_date, so.delivery_date,
-			so.ordered_weight, so.required_weight
+			so.ordered_weight, so.required_weight,
+			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
+				from `tabMM Sales Order Item` x where x.parent = so.name) as colours
 		from `tabMM Sales Order` so
 		join `tabMM Sales Order Item` soi on soi.parent = so.name
 		where {" and ".join(conditions)}

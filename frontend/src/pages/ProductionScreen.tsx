@@ -183,7 +183,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [size, setSize] = useState<string>(program.cut || "");
 
   // Select Order = this party's OPEN orders that include this item (colour).
-  const openOrdersCall = useFrappeGetCall<{ message: { name: string; required_weight?: number; delivery_date?: string }[] }>(
+  const openOrdersCall = useFrappeGetCall<{ message: { name: string; required_weight?: number; delivery_date?: string; colours?: string }[] }>(
     `${API}.open_orders_for_item`,
     party ? { color: program.shade || undefined, party } : undefined,
     party ? `prod-oo-${program.shade || ""}-${party}` : null,
@@ -273,7 +273,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 <option value="">{!party ? "Pick a party first" : openOrdersCall.isLoading ? "Loading…" : "— none —"}</option>
                 {order && !openOrders.some((o) => o.name === order) && <option value={order}>{order}</option>}
                 {openOrders.map((o) => (
-                  <option key={o.name} value={o.name}>{o.name}{o.required_weight != null ? ` · req ${o.required_weight}` : ""}</option>
+                  <option key={o.name} value={o.name}>
+                    {o.name}{o.colours ? ` · ${o.colours}` : ""}{o.required_weight != null ? ` · req ${o.required_weight}` : ""}
+                  </option>
                 ))}
               </select>
             </label>
