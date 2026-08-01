@@ -63,7 +63,7 @@
       "fieldname": "branch",
       "fieldtype": "Link",
       "label": "Branch",
-      "options": "Branch",
+      "options": "MM Branch",
       "in_list_view": 1
     },
     {

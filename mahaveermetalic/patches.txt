@@ -11,3 +11,4 @@ mahaveermetalic.patches.reload_production_box
 mahaveermetalic.patches.reload_inward_complete_fields
 mahaveermetalic.patches.reload_production_party_cut
 mahaveermetalic.patches.make_orders_submittable
+mahaveermetalic.patches.introduce_mm_branch
