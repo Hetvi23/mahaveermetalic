@@ -197,6 +197,10 @@ def create_cutting(
 		frappe.throw(_("Some entries are already in cutting and can't be reassigned."))
 
 	order = customer_order or entries[0].customer_order
+	if order:
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import assert_order_submitted
+
+		assert_order_submitted(order)
 	total_weight = float(weight) if weight not in (None, "") else sum(float(e.weight or 0) for e in entries)
 	patti_qty = float(no_of_patty) if no_of_patty not in (None, "") else 1.0
 	if patti_qty <= 0:

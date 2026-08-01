@@ -130,6 +130,13 @@ def post_inward(payload):
 	this_box = round(sum(float(i.get("qty_box") or 0) for i in (data.get("items") or [])), 3)
 	data["challan_received_weight"] = this_weight
 
+	# Downstream gating: an inward may only be posted against a SUBMITTED order.
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import assert_order_submitted
+
+	orders_ref = {data.get("sales_order")} | {i.get("customer_order") for i in (data.get("items") or [])}
+	for o in filter(None, orders_ref):
+		assert_order_submitted(o)
+
 	if not (challan and verify):
 		# Manual / no VM verification: Complete unless flagged partial.
 		data["receipt_status"] = "Partial" if is_partial else "Complete"

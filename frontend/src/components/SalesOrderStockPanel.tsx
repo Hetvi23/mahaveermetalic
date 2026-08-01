@@ -18,7 +18,7 @@ type Status = { sales_order: string; party: string; lines: Line[]; any_short: bo
  * Live stock visibility per order line. Purchase Orders are NOT auto-generated — a PO is
  * raised only on demand, for lines that are short on stock, via the button here.
  */
-export default function SalesOrderStockPanel({ docname }: { docname: string }) {
+export default function SalesOrderStockPanel({ docname, readOnly }: { docname: string; readOnly?: boolean }) {
   const { data, isLoading, error, mutate } = useFrappeGetCall<{ message: Status }>(
     "mahaveermetalic.mahaveer_metallic.api.stock.get_so_stock_status",
     { sales_order: docname },
@@ -94,19 +94,23 @@ export default function SalesOrderStockPanel({ docname }: { docname: string }) {
                     {p.name}{p.status ? ` · ${p.status}` : ""}
                   </Link>
                 ))}
-                <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)} title="Resync the PO quantity to the current order">
-                  {creating ? "Updating…" : "Update PO qty"}
-                </button>
+                {!readOnly && (
+                  <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)} title="Resync the PO quantity to the current order">
+                    {creating ? "Updating…" : "Update PO qty"}
+                  </button>
+                )}
               </>
             ) : (
               <>
                 <span className={`mm-pill ${s.any_short ? "mm-pill-pending" : "mm-pill-ok"}`}>
                   {s.any_short ? "Short stock on some lines" : "Enough stock for all lines"}
                 </span>
-                <button type="button" className="mm-btn-primary mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)}>
-                  {creating ? "Creating…" : "Create Purchase Order"}
-                </button>
-                {s.any_short && (
+                {!readOnly && (
+                  <button type="button" className="mm-btn-primary mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(true)}>
+                    {creating ? "Creating…" : "Create Purchase Order"}
+                  </button>
+                )}
+                {!readOnly && s.any_short && (
                   <button type="button" className="mm-btn-ghost mm-btn-compact" disabled={creating} onClick={() => void onCreatePO(false)}>
                     PO for shortfall only
                   </button>

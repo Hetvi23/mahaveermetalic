@@ -90,7 +90,7 @@ def open_orders_for_item(color=None, party=None):
 	< 100% and not force/inward-closed)."""
 	if not party:
 		return []
-	conditions = ["so.party = %(party)s", "so.docstatus < 2", "ifnull(so.production_completed_percent, 0) < 100"]
+	conditions = ["so.party = %(party)s", "so.docstatus = 1", "ifnull(so.production_completed_percent, 0) < 100"]
 	values = {"party": party}
 	if frappe.db.has_column("MM Sales Order", "completed"):
 		conditions.append("ifnull(so.completed, 0) = 0")
@@ -186,6 +186,12 @@ def create_production(
 		frappe.throw(_("Only a program that is In Threads Processing can be produced."))
 	if prog.production:
 		frappe.throw(_("This program is already produced ({0}).").format(prog.production))
+
+	eff_order = customer_order or prog.customer_order
+	if eff_order:
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import assert_order_submitted
+
+		assert_order_submitted(eff_order)
 
 	box_rows = _coerce_boxes(boxes)
 	bobbin_rows = _coerce_bobbins(bobbins)

@@ -68,13 +68,15 @@ type Row = {
   order_locked?: number;
   completed?: number;
   completion_mode?: string;
+  docstatus?: number;
 };
 
 /** An order is done when production hits 100% OR it was completed via inward/force. */
 const isDone = (o: Row) => Math.round(o.production_completed_percent ?? 0) >= 100 || !!o.completed;
 
-/** Fulfilment status: Completed / Partially Completed (some inward or production) / Pending. */
+/** Status badge: Draft (unsubmitted) → then fulfilment: Completed / Partially Completed / Pending. */
 function orderStatus(o: Row): { label: string; cls: string } {
+  if (Number(o.docstatus) === 0) return { label: "Draft", cls: "mm-pill-muted" };
   if (isDone(o)) return { label: "Completed", cls: "mm-pill-ok" };
   if ((o.inwarded_weight ?? 0) > 0 || (o.production_completed_percent ?? 0) > 0)
     return { label: "Partially Completed", cls: "mm-pill-pending" };
@@ -98,7 +100,6 @@ export default function OrderWorkspace() {
   const [flash, setFlash] = useState<string | null>(null);
   const [chip, setChip] = useState<Chip>("all");
   const [q, setQ] = useState("");
-  const [alsoRaisePO, setAlsoRaisePO] = useState(true);
   const hydrated = useRef<string | null>(null);
 
   // Only search is server-side; the pending/completed chip is filtered client-side because
@@ -123,6 +124,7 @@ export default function OrderWorkspace() {
       "order_locked",
       "completed",
       "completion_mode",
+      "docstatus",
     ],
     filters,
     limit: 200,
@@ -133,8 +135,8 @@ export default function OrderWorkspace() {
   const { createDoc, loading: creating } = useFrappeCreateDoc();
   const { updateDoc, loading: updating } = useFrappeUpdateDoc();
   const { deleteDoc, loading: deleting } = useFrappeDeleteDoc();
-  const { call: createPO } = useFrappePostCall<{ message: { created: string[]; updated: string[] } }>(
-    "mahaveermetalic.mahaveer_metallic.api.stock.create_purchase_order_from_so",
+  const { call: submitOrder, loading: submitting } = useFrappePostCall<{ message: { docstatus: number } }>(
+    "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order.submit_order",
   );
 
   useEffect(() => {
@@ -165,7 +167,10 @@ export default function OrderWorkspace() {
     setProdPct(Math.round((doc.production_completed_percent as number) ?? 0));
   }, [doc, selected]);
 
-  const ro = locked && !isAdmin();
+  // A submitted order is final: read-only for everyone. A draft locked at 5% production
+  // is read-only for non-admins.
+  const submitted = !!selected && Number((doc as { docstatus?: number } | undefined)?.docstatus) === 1;
+  const ro = submitted || (locked && !isAdmin());
 
   function resetNew() {
     setSelected(null);
@@ -216,7 +221,7 @@ export default function OrderWorkspace() {
     setItems((prev) => prev.filter((_, j) => j !== i));
   }
 
-  async function onSave() {
+  async function onSave(submitAfter = false) {
     setFormError(null);
     setFlash(null);
     if (!header.party) return setFormError("Choose the company / party.");
@@ -256,76 +261,82 @@ export default function OrderWorkspace() {
         purchase_rate: it.purchase_rate || 0,
       })),
     };
+    async function submitAll(names: string[]) {
+      const errs: string[] = [];
+      for (const n of names) {
+        try { await submitOrder({ sales_order: n }); }
+        catch (e) { errs.push(`${n}: ${extractErrorMessage(e)}`); }
+      }
+      return errs;
+    }
+
     try {
       if (selected) {
+        // Editing an existing draft: save, then optionally submit (locks order + PO).
         await updateDoc("MM Sales Order", selected, payload);
         hydrated.current = null;
-        setFlash("Saved.");
-        toast(`Order ${selected} saved`);
-      } else {
-        // One Sales Order per item (mirrors how Purchase Orders are one-per-line):
-        // each item becomes its own SO with a single-line items table. Created
-        // sequentially so a rejected line (e.g. duplicate-order guard) only skips
-        // that item instead of failing the whole batch.
-        const created: string[] = [];
-        const skippedItems: Item[] = [];
-        const skippedMsgs: string[] = [];
-        for (const it of effectiveItems) {
-          const oneLine = {
-            idx: 1,
-            color_name: it.color_name,
-            cut: it.cut,
-            delivery_date: it.delivery_date || null,
-            qty_weight: it.qty_weight || 0,
-            qty_box: it.qty_box || 0,
-            sale_rate: it.sale_rate || 0,
-            purchase_party: it.purchase_party || null,
-            purchase_rate: it.purchase_rate || 0,
-          };
-          try {
-            const res = await createDoc("MM Sales Order", { ...payload, items: [oneLine] });
-            const name = (res as { name?: string }).name;
-            if (name) created.push(name);
-          } catch (e) {
-            skippedItems.push(it);
-            skippedMsgs.push(`${it.color_name}${it.cut ? "/" + it.cut : ""}: ${extractErrorMessage(e)}`);
-          }
+        if (submitAfter) {
+          const errs = await submitAll([selected]);
+          await mutate();
+          if (errs.length) return setFormError(`Submit failed: ${errs.join("; ")}`);
+          setFlash(`Order ${selected} submitted.`);
+          toast(`Order ${selected} submitted`);
+        } else {
+          await mutate();
+          setFlash("Saved as draft.");
+          toast(`Draft ${selected} saved`);
         }
-        await mutate();
-        if (created.length === 0) {
-          setFormError(`No orders created. ${skippedMsgs.join("; ")}`);
-          return;
-        }
-        // Raise a Purchase Order (full ordered qty) for each created SO when requested.
-        let poNote = "";
-        if (alsoRaisePO) {
-          const poNames: string[] = [];
-          const poErrs: string[] = [];
-          for (const soName of created) {
-            try {
-              const res = await createPO({ sales_order: soName, full: 1 });
-              poNames.push(...(res?.message?.created ?? []), ...(res?.message?.updated ?? []));
-            } catch (e) {
-              poErrs.push(`${soName}: ${extractErrorMessage(e)}`);
-            }
-          }
-          if (poNames.length) poNote += ` PO ${poNames.join(", ")} raised.`;
-          if (poErrs.length) poNote += ` PO issues: ${poErrs.join("; ")}`;
-        }
-        if (skippedItems.length > 0) {
-          // Keep the rejected items in the builder so they can be fixed and retried.
-          setItems(skippedItems);
-          setDraft(blankItem());
-          setFlash(`Created ${created.join(", ")}.${poNote} ${skippedItems.length} item(s) need attention — ${skippedMsgs.join("; ")}`);
-          toast(`Created ${created.length}; ${skippedItems.length} need attention`, "info");
-          return;
-        }
-        resetNew();
-        setFlash(`Created ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}.${poNote} — form cleared for the next one.`);
-        toast(`Created ${created.length} order${created.length > 1 ? "s" : ""}${poNote ? " + PO" : ""}: ${created.join(", ")}`);
         return;
       }
+
+      // New: one Sales Order per item (each item = its own SO + its own PO), created as
+      // drafts. A rejected line (e.g. duplicate-order guard) only skips that item.
+      const created: string[] = [];
+      const skippedItems: Item[] = [];
+      const skippedMsgs: string[] = [];
+      for (const it of effectiveItems) {
+        const oneLine = {
+          idx: 1,
+          color_name: it.color_name,
+          cut: it.cut,
+          delivery_date: it.delivery_date || null,
+          qty_weight: it.qty_weight || 0,
+          qty_box: it.qty_box || 0,
+          sale_rate: it.sale_rate || 0,
+          purchase_party: it.purchase_party || null,
+          purchase_rate: it.purchase_rate || 0,
+        };
+        try {
+          const res = await createDoc("MM Sales Order", { ...payload, items: [oneLine] });
+          const name = (res as { name?: string }).name;
+          if (name) created.push(name);
+        } catch (e) {
+          skippedItems.push(it);
+          skippedMsgs.push(`${it.color_name}${it.cut ? "/" + it.cut : ""}: ${extractErrorMessage(e)}`);
+        }
+      }
+      if (created.length === 0) {
+        await mutate();
+        setFormError(`No orders created. ${skippedMsgs.join("; ")}`);
+        return;
+      }
+      let subNote = "";
+      if (submitAfter) {
+        const errs = await submitAll(created);
+        if (errs.length) subNote = ` Submit issues: ${errs.join("; ")}`;
+      }
       await mutate();
+      const verb = submitAfter ? "Submitted" : "Saved draft";
+      if (skippedItems.length > 0) {
+        setItems(skippedItems);
+        setDraft(blankItem());
+        setFlash(`${verb} ${created.join(", ")}.${subNote} ${skippedItems.length} item(s) need attention — ${skippedMsgs.join("; ")}`);
+        toast(`${verb} ${created.length}; ${skippedItems.length} need attention`, "info");
+        return;
+      }
+      resetNew();
+      setFlash(`${verb} ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}.${subNote}`);
+      toast(`${verb} ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}`);
     } catch (e) {
       const msg = extractErrorMessage(e);
       setFormError(msg);
@@ -346,7 +357,7 @@ export default function OrderWorkspace() {
     }
   }
 
-  const busy = creating || updating || deleting;
+  const busy = creating || updating || deleting || submitting;
   const list = (rows ?? []).filter((o) => {
     if (chip === "completed") return isDone(o);
     if (chip === "pending") return !isDone(o);
@@ -375,7 +386,8 @@ export default function OrderWorkspace() {
             )}
           </div>
 
-          {ro && <div className="mm-banner mm-banner-warn">Locked (production started). Only an admin can edit.</div>}
+          {submitted && <div className="mm-banner mm-banner-ok">Submitted — this order and its purchase order are locked.</div>}
+          {!submitted && ro && <div className="mm-banner mm-banner-warn">Locked (production started). Only an admin can edit.</div>}
           {formError && <p className="mm-error">{formError}</p>}
 
           <div className="mm-form-grid">
@@ -455,23 +467,20 @@ export default function OrderWorkspace() {
           {selected && (
             <>
               <div className="mm-ow-prod">Production: <strong>{prodPct}%</strong></div>
-              <SalesOrderStockPanel docname={selected} />
+              <SalesOrderStockPanel docname={selected} readOnly={submitted} />
             </>
-          )}
-
-          {/* Always offer to raise a Purchase Order alongside a brand-new order. */}
-          {!selected && !ro && (
-            <label className="mm-inline-check" style={{ display: "flex", alignItems: "center", gap: "0.45rem", margin: "0.25rem 0 0.75rem", fontSize: "0.85rem" }}>
-              <input type="checkbox" checked={alsoRaisePO} onChange={(e) => setAlsoRaisePO(e.target.checked)} />
-              <span>Also raise a Purchase Order (full ordered qty) for {items.length > 1 ? "each order" : "this order"}</span>
-            </label>
           )}
 
           <div className="mm-ws-form-actions">
             {!ro && (
-              <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onSave()}>
-                {busy ? "Saving…" : selected ? "Save changes" : items.length > 1 ? `Create ${items.length} orders${alsoRaisePO ? " + POs" : ""}` : `Create order${alsoRaisePO ? " + PO" : ""}`}
-              </button>
+              <>
+                <button type="button" className="mm-btn-secondary" disabled={busy} onClick={() => void onSave(false)}>
+                  {busy ? "Saving…" : "Save Draft"}
+                </button>
+                <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onSave(true)}>
+                  {busy ? "Working…" : "Submit"}
+                </button>
+              </>
             )}
             {selected && !ro && (
               <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onDelete()}>

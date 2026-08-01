@@ -29,6 +29,39 @@ class MMSalesOrder(Document):
 		self._prevent_duplicate_order()
 		self._enforce_lock_rules()
 
+	def on_update(self):
+		# While a draft, keep the purchase order(s) in step with the order automatically —
+		# one action covers both, and edits reflect straight into the linked PO.
+		if self.docstatus == 0 and not self.flags.in_import:
+			self._sync_purchase_orders()
+
+	def on_submit(self):
+		# Submitting the order locks it AND its purchase order(s) — "on submit, no change".
+		self._sync_purchase_orders()
+		for po in self._linked_pos(docstatus=0):
+			frappe.get_doc("MM Purchase Order", po).submit()
+
+	def on_cancel(self):
+		# Cancelling the order cancels its purchase order(s) too.
+		self.ignore_linked_doctypes = ("MM Purchase Order",)
+		for po in self._linked_pos(docstatus=1):
+			frappe.get_doc("MM Purchase Order", po).cancel()
+
+	def _linked_pos(self, docstatus=None):
+		filters = {"sales_order": self.name}
+		if docstatus is not None:
+			filters["docstatus"] = docstatus
+		return frappe.get_all("MM Purchase Order", filters=filters, pluck="name")
+
+	def _sync_purchase_orders(self):
+		"""Keep the draft PO(s) in step with the order (full ordered qty) before submit."""
+		from mahaveermetalic.mahaveer_metallic.api.stock import create_purchase_order_from_so
+
+		try:
+			create_purchase_order_from_so(self.name, full=1)
+		except Exception:
+			frappe.log_error(title=f"PO sync failed for {self.name}")
+
 	def _validate_lines(self):
 		"""Field-level order rules (mirrored in the Order screen):
 		- delivery date (header + per line) not before the order date
@@ -214,6 +247,29 @@ def force_complete_order(order, pin):
 		update_modified=False,
 	)
 	return {"order": order, "completed": True, "mode": "Force"}
+
+
+@frappe.whitelist()
+def submit_order(sales_order):
+	"""Submit a draft order — locking it and (via on_submit) its purchase order(s)."""
+	doc = frappe.get_doc("MM Sales Order", sales_order)
+	if doc.docstatus == 0:
+		doc.submit()
+	return {"order": doc.name, "docstatus": doc.docstatus}
+
+
+def assert_order_submitted(order):
+	"""Guard for downstream flows (inward / cutting / production): the referenced order
+	must be submitted (a draft is still being edited; a cancelled order is closed)."""
+	if not order:
+		return
+	ds = frappe.db.get_value("MM Sales Order", order, "docstatus")
+	if ds is None:
+		return
+	if ds == 0:
+		frappe.throw(_("Order {0} is a draft — submit it before inward / cutting / production.").format(order))
+	if ds == 2:
+		frappe.throw(_("Order {0} is cancelled.").format(order))
 
 
 def recalculate_production_completed(order: str):
