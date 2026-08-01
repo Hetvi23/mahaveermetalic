@@ -440,6 +440,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "supplier", label: "Supplier" },
 			{ fieldname: "color", label: "Color" },
 			{ fieldname: "qty_kg", label: "Qty KG" },
+			{ fieldname: "status", label: "Status" },
 		],
 		searchField: "color",
 		fields: [
@@ -449,7 +450,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 			{ fieldname: "sales_order", label: "SO reference", fieldtype: "Link", options: "MM Sales Order" },
 			{ fieldname: "po_number", label: "PO number (= SO)", fieldtype: "Data", readOnly: true },
-			{ fieldname: "status", label: "Status", fieldtype: "Select", options: "Open\nClosed", readOnly: true },
+			{ fieldname: "status", label: "Status", fieldtype: "Select", options: "Pending\nPartially Received\nReceived", readOnly: true },
 			{ fieldname: "color", label: "Color", fieldtype: "Link", options: "MM Item Master", reqd: true },
 			{ fieldname: "cut", label: "Size", fieldtype: "Data" },
 			{ fieldname: "qty_kg", label: "Qty (KG)", fieldtype: "Float" },

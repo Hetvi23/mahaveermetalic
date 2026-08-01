@@ -48,10 +48,10 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Status",
-      "options": "Open\nClosed",
-      "default": "Open",
+      "options": "Pending\nPartially Received\nReceived",
+      "default": "Pending",
       "read_only": 1,
-      "description": "Closes automatically once the inwards received against this order line meet the PO weight."
+      "description": "Auto: Pending until any inward is received against this order line, Partially Received while short, Received once the inwards meet the PO weight."
     },
     {
       "fieldname": "supplier",
@@ -121,7 +121,7 @@
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2026-07-28 00:00:00.000000",
+  "modified": "2026-07-29 13:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Purchase Order",

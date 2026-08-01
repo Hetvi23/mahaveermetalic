@@ -45,7 +45,12 @@ def recompute_po_status(po_name):
 			continue
 		received += float(r.weight or 0)
 	qty = float(po.qty_kg or 0)
-	status = "Closed" if (qty > 0 and received + 0.001 >= qty) else "Open"
+	if received <= 0.001:
+		status = "Pending"
+	elif qty > 0 and received + 0.001 >= qty:
+		status = "Received"
+	else:
+		status = "Partially Received"
 	frappe.db.set_value("MM Purchase Order", po_name, "status", status, update_modified=False)
 	return status
 

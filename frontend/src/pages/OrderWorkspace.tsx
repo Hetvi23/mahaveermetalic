@@ -73,6 +73,14 @@ type Row = {
 /** An order is done when production hits 100% OR it was completed via inward/force. */
 const isDone = (o: Row) => Math.round(o.production_completed_percent ?? 0) >= 100 || !!o.completed;
 
+/** Fulfilment status: Completed / Partially Completed (some inward or production) / Pending. */
+function orderStatus(o: Row): { label: string; cls: string } {
+  if (isDone(o)) return { label: "Completed", cls: "mm-pill-ok" };
+  if ((o.inwarded_weight ?? 0) > 0 || (o.production_completed_percent ?? 0) > 0)
+    return { label: "Partially Completed", cls: "mm-pill-pending" };
+  return { label: "Pending", cls: "mm-pill-muted" };
+}
+
 function isAdmin(): boolean {
   const roles =
     (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot?.user?.roles ?? [];
@@ -509,6 +517,7 @@ export default function OrderWorkspace() {
                   const req = o.required_weight ?? 0;
                   const pct = ordered > 0 ? Math.min(100, Math.round((inw / ordered) * 100)) : 0;
                   const done = isDone(o);
+                  const st = orderStatus(o);
                   const overdue = !!o.delivery_date && !done && o.delivery_date < today();
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
@@ -522,7 +531,7 @@ export default function OrderWorkspace() {
                         </div>
                       </td>
                       <td>
-                        <span className={`mm-pill ${done ? "mm-pill-ok" : "mm-pill-pending"}`}>{done ? "Completed" : "Pending"}</span>
+                        <span className={`mm-pill ${st.cls}`}>{st.label}</span>
                       </td>
                     </tr>
                   );
