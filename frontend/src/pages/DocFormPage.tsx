@@ -520,7 +520,7 @@ export function DocFields({
 									const locked = ro || Boolean(sa?.checked && sa.targets.has(fn));
 									return (
 										<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
-											<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={locked} />
+											<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={locked} record={values} />
 										</div>
 									);
 								})}
@@ -576,7 +576,7 @@ export function DocFields({
 								const locked = ro || Boolean(sa?.checked && sa.targets.has(fn));
 								return (
 									<div key={fn} className={f.fieldtype === "Small Text" ? "mm-span-2" : undefined}>
-										<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={locked} />
+										<FieldInput field={f} value={values[f.fieldname]} onChange={(v) => setField(f.fieldname, v)} disabled={locked} record={values} />
 									</div>
 								);
 							})}

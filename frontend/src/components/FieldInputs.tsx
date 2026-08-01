@@ -8,9 +8,11 @@ type Props = {
 	onChange: (v: unknown) => void;
 	disabled?: boolean;
 	compact?: boolean;
+	/** Full record/row — lets Link fields with `linkFilters` filter by a sibling value. */
+	record?: Record<string, unknown>;
 };
 
-export function FieldInput({ field, value, onChange, disabled, compact }: Props) {
+export function FieldInput({ field, value, onChange, disabled, compact, record }: Props) {
 	const ro = disabled || field.readOnly;
 	const ic = compact ? "mm-input mm-input-compact" : "mm-input";
 
@@ -112,6 +114,12 @@ export function FieldInput({ field, value, onChange, disabled, compact }: Props)
 				/>,
 			);
 		}
+		const extraFilters = (field.linkFilters ?? [])
+			.map((lf) => {
+				const v = record?.[lf.fromField];
+				return v ? ([lf.field, "=", v] as [string, string, unknown]) : null;
+			})
+			.filter((f): f is [string, string, unknown] => f !== null);
 		return (
 			<LinkField
 				label={field.label}
@@ -120,6 +128,7 @@ export function FieldInput({ field, value, onChange, disabled, compact }: Props)
 				onChange={(v) => onChange(v)}
 				disabled={ro}
 				required={field.reqd}
+				extraFilters={extraFilters}
 			/>
 		);
 	}

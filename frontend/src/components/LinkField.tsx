@@ -11,9 +11,11 @@ type Props = {
 	onChange: (v: string) => void;
 	disabled?: boolean;
 	required?: boolean;
+	/** Extra get_list filters applied to the options, e.g. [["location", "=", "X"]]. */
+	extraFilters?: [string, string, unknown][];
 };
 
-export default function LinkField({ label, linkDoctype, value, onChange, disabled, required }: Props) {
+export default function LinkField({ label, linkDoctype, value, onChange, disabled, required, extraFilters }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState(value || "");
 	const [quickCreate, setQuickCreate] = useState(false);
@@ -37,11 +39,16 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 	// Show all options on focus; filter once the user actually types. Uses get_list
 	// (search_link is unreliable on some sites and returns nothing).
 	const typed = text.trim() !== "" && text.trim() !== (value || "");
+	const filters = [
+		...(extraFilters ?? []),
+		...(typed ? ([["name", "like", `%${text.trim()}%`]] as [string, string, unknown][]) : []),
+	];
 	const { data, isLoading } = useFrappeGetDocList<{ name: string }>(
 		linkDoctype,
 		{
 			fields: ["name"],
-			filters: typed ? [["name", "like", `%${text.trim()}%`]] : undefined,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			filters: filters.length ? (filters as any) : undefined,
 			limit: 20,
 			orderBy: { field: "modified", order: "desc" },
 		},

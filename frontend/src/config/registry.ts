@@ -23,6 +23,11 @@ export type FieldSchema = {
 	 * `field`'s current value is one of `in`. Evaluated against the record
 	 * (top-level fields) or the row (child-table columns). */
 	dependsOn?: { field: string; in: string[] };
+	/** For a Link field: filter the linked options so the target doc's `field`
+	 * equals the current record's `fromField` value (skipped when that value is
+	 * empty, so it shows everything until the source is chosen). e.g. Branch
+	 * filtered by the record's selected Location. */
+	linkFilters?: { field: string; fromField: string }[];
 };
 
 export type ChildTableSchema = {
@@ -252,7 +257,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "employee_name", label: "Name", fieldtype: "Data", reqd: true },
 			{ fieldname: "mobile_number", label: "Mobile Number", fieldtype: "Data" },
 			{ fieldname: "user", label: "Login User", fieldtype: "Link", options: "User" },
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "department", label: "Department", fieldtype: "Data" },
 		],
@@ -286,10 +291,16 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		title: "Branch",
 		listTagline: "Branches used across orders, inward and stock.",
 		navGroup: "masters",
-		formSections: [{ id: "b1", title: "Branch", fieldnames: ["branch_name"] }],
-		listColumns: [{ fieldname: "branch_name", label: "Branch" }],
+		formSections: [{ id: "b1", title: "Branch", fieldnames: ["branch_name", "location"] }],
+		listColumns: [
+			{ fieldname: "branch_name", label: "Branch" },
+			{ fieldname: "location", label: "Location" },
+		],
 		searchField: "branch_name",
-		fields: [{ fieldname: "branch_name", label: "Branch Name", fieldtype: "Data", reqd: true }],
+		fields: [
+			{ fieldname: "branch_name", label: "Branch Name", fieldtype: "Data", reqd: true },
+			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true },
+		],
 	},
 	{
 		slug: "roll",
@@ -322,7 +333,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		fields: [
 			{ fieldname: "roll_no", label: "Roll No", fieldtype: "Data" },
 			{ fieldname: "lot_number", label: "Lot Number", fieldtype: "Data" },
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true },
 			{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 			{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
@@ -384,7 +395,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 			{ fieldname: "transaction_date", label: "Date", fieldtype: "Date", reqd: true },
 			{ fieldname: "delivery_date", label: "Delivery Date", fieldtype: "Date" },
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
 			{ fieldname: "ordered_weight", label: "Order Weight (Kg)", fieldtype: "Float", readOnly: true },
@@ -445,7 +456,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		searchField: "color",
 		fields: [
 			{ fieldname: "transaction_date", label: "Date", fieldtype: "Date", reqd: true },
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 			{ fieldname: "sales_order", label: "SO reference", fieldtype: "Link", options: "MM Sales Order" },
@@ -485,7 +496,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "transaction_date", label: "Challan date", fieldtype: "Date", reqd: true },
 			{ fieldname: "party", label: "Company / Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
 			{ fieldname: "sales_order", label: "Sales Order", fieldtype: "Link", options: "MM Sales Order" },
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "challan_no", label: "Manual challan no", fieldtype: "Data" },
 			{ fieldname: "transport", label: "Transport / Courier", fieldtype: "Data" },
@@ -528,7 +539,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 		searchField: "challan_number",
 		fields: [
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "challan_number", label: "Challan number", fieldtype: "Data", reqd: true },
 			{ fieldname: "chalan_date", label: "Chalan Date", fieldtype: "Date", reqd: true },
@@ -587,7 +598,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 		searchField: "lot_number",
 		fields: [
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true },
 			{ fieldname: "posting_date", label: "Date", fieldtype: "Date", reqd: true },
 			{ fieldname: "sales_order", label: "SO number", fieldtype: "Link", options: "MM Sales Order" },
@@ -653,7 +664,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "customer_order", label: "Customer Order", fieldtype: "Link", options: "MM Sales Order" },
 			{ fieldname: "source_roll", label: "Source Roll (stock)", fieldtype: "Link", options: "MM Roll Inventory" },
 			{ fieldname: "roll_no", label: "Roll no", fieldtype: "Data", reqd: true },
-			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch" },
+			{ fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] },
 			{ fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master" },
 			{ fieldname: "shade", label: "Shade", fieldtype: "Data" },
 			{ fieldname: "cut", label: "Size", fieldtype: "Data" },

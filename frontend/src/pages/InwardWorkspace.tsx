@@ -10,7 +10,7 @@ import { extractErrorMessage } from "@/utils/frappeError";
 const today = () => new Date().toISOString().slice(0, 10);
 
 const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true };
-const F_BRANCH: FieldSchema = { fieldname: "branch", label: "Branch", fieldtype: "Link", options: "Branch" };
+const F_BRANCH: FieldSchema = { fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] };
 
 type SODetail = {
   sales_order: string;
@@ -433,7 +433,7 @@ export default function InwardWorkspace() {
             <input className="mm-input" type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} />
           </label>
           <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
-          <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} />
+          <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} record={{ location }} />
           <SalesOrderPicker label="Sales order (optional)" value={salesOrder} onChange={(v, opt) => void pickSalesOrder(v, opt)} />
           {fetched && (
             <label className="mm-field">

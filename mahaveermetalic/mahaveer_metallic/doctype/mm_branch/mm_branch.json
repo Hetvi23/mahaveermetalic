@@ -5,7 +5,7 @@
   "creation": "2026-07-29 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
-  "field_order": ["branch_name"],
+  "field_order": ["branch_name", "location"],
   "fields": [
     {
       "fieldname": "branch_name",
@@ -14,11 +14,18 @@
       "label": "Branch",
       "reqd": 1,
       "unique": 1
+    },
+    {
+      "fieldname": "location",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Location",
+      "options": "MM Location Master"
     }
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2026-07-29 00:00:00.000000",
+  "modified": "2026-08-01 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Branch",
