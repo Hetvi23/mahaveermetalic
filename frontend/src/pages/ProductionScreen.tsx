@@ -329,55 +329,50 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
           </div>
 
-          {/* Boxes */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "1.1rem 0 0.5rem" }}>
-            <p className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</p>
-            <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Box</button>
-          </div>
-          {boxes.length === 0 ? (
-            <p className="mm-empty">No boxes yet. Click “Box” to add one.</p>
-          ) : (
-            <div className="mm-table-scroll">
-              <table className="mm-table mm-table-dense">
-                <thead>
-                  <tr>
-                    <th>#</th><th>Item</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
-                    <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
-                    <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {boxes.map((b, i) => (
-                    <tr key={i}>
-                      <td>{i + 1}</td>
-                      <td>{b.item || "—"}</td>
-                      <td className="mm-num">{b.gross.toLocaleString()}</td>
-                      <td className="mm-num">{b.qty || "—"}</td>
-                      <td>{b.bobbin || "—"}</td>
-                      <td className="mm-num">{b.bobbinPcs || "—"}</td>
-                      <td className="mm-num">{b.perPcsWeight || "—"}</td>
-                      <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
-                      <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
-                      <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
-                      <td className="mm-num">
-                        <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Boxes — the main work area */}
+          <div className="mm-pv-boxes">
+            <div className="mm-pv-boxhead">
+              <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
+              <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Add box</button>
             </div>
-          )}
-
-          {/* Totals + variance */}
-          <div className="mm-banner" style={{ marginTop: "1rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-            <span>Total box: <strong>{boxes.length}</strong></span>
-            <span>Total gross: <strong>{totalGross.toLocaleString()} kg</strong></span>
-            <span>Total net: <strong>{totalNet.toLocaleString()} kg</strong></span>
-            <span className={overTol ? "mm-var-over" : undefined}>
-              Variance: <strong>{(calc?.variance_percent ?? 0).toFixed(2)}%</strong>
-              {calc ? ` (tol ±${calc.tolerance}%)` : ""}
-            </span>
+            {boxes.length === 0 ? (
+              <button type="button" className="mm-box-zone" onClick={() => setAdding(true)}>
+                <span><Package size={22} /></span>
+                <span>No boxes yet — weigh each box as you pack it.</span>
+                <span className="mm-box-zone-cta"><Plus size={14} /> Add box</span>
+              </button>
+            ) : (
+              <div className="mm-table-scroll mm-pv-boxtable">
+                <table className="mm-table mm-table-dense">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Item</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
+                      <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
+                      <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th><th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boxes.map((b, i) => (
+                      <tr key={i}>
+                        <td>{i + 1}</td>
+                        <td>{b.item || "—"}</td>
+                        <td className="mm-num">{b.gross.toLocaleString()}</td>
+                        <td className="mm-num">{b.qty || "—"}</td>
+                        <td>{b.bobbin || "—"}</td>
+                        <td className="mm-num">{b.bobbinPcs || "—"}</td>
+                        <td className="mm-num">{b.perPcsWeight || "—"}</td>
+                        <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
+                        <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
+                        <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
+                        <td className="mm-num">
+                          <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {overTol && (
@@ -389,9 +384,17 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
-        <div className="mm-modal-foot">
-          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Submit voucher"}</button>
+        <div className="mm-modal-foot mm-foot-split">
+          <div className="mm-pv-totals">
+            <span>Boxes <strong>{boxes.length}</strong></span>
+            <span>Gross <strong>{totalGross.toLocaleString()}</strong></span>
+            <span>Net <strong>{totalNet.toLocaleString()} kg</strong></span>
+            <span className={overTol ? "mm-var-over" : undefined}>Var <strong>{(calc?.variance_percent ?? 0).toFixed(2)}%</strong>{calc ? ` (±${calc.tolerance}%)` : ""}</span>
+          </div>
+          <div className="mm-foot-actions">
+            <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Submit voucher"}</button>
+          </div>
         </div>
       </div>
 
