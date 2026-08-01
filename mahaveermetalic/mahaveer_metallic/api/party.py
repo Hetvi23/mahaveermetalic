@@ -21,3 +21,18 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 	"""
 	rows = frappe.db.sql(sql, {"txt": txt, "like": like, "limit": limit}, as_dict=True)
 	return rows
+
+
+@frappe.whitelist()
+def companies_for_party(party: str = ""):
+	"""The company names filed under a party (its MM Party Company rows) — for the
+	'first pick party, then its company' selector on the order."""
+	if not party:
+		return []
+	return frappe.get_all(
+		"MM Party Company",
+		filters={"parent": party, "parenttype": "MM Party Master"},
+		fields=["company_name"],
+		order_by="idx asc",
+		pluck="company_name",
+	)

@@ -2,6 +2,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import {
   useFrappeCreateDoc,
   useFrappeDeleteDoc,
+  useFrappeGetCall,
   useFrappeGetDoc,
   useFrappeGetDocList,
   useFrappePostCall,
@@ -91,7 +92,7 @@ function isAdmin(): boolean {
 
 export default function OrderWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [header, setHeader] = useState({ transaction_date: today(), delivery_date: "", party: "" });
+  const [header, setHeader] = useState({ transaction_date: today(), delivery_date: "", party: "", company: "" });
   const [items, setItems] = useState<Item[]>([]);
   const [draft, setDraft] = useState<Item>(blankItem());
   const [locked, setLocked] = useState(false);
@@ -138,6 +139,13 @@ export default function OrderWorkspace() {
   const { call: submitOrder, loading: submitting } = useFrappePostCall<{ message: { docstatus: number } }>(
     "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order.submit_order",
   );
+  // Companies of the chosen party (first pick party, then its company).
+  const companiesCall = useFrappeGetCall<{ message: string[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.companies_for_party",
+    header.party ? { party: header.party } : undefined,
+    header.party ? `party-companies-${header.party}` : null,
+  );
+  const companies = companiesCall.data?.message ?? [];
 
   useEffect(() => {
     if (!selected || !doc || String(doc.name) !== selected) return;
@@ -148,6 +156,7 @@ export default function OrderWorkspace() {
       transaction_date: String(doc.transaction_date || today()),
       delivery_date: doc.delivery_date ? String(doc.delivery_date) : "",
       party: String(doc.party || ""),
+      company: String(doc.company_name || ""),
     });
     const docItems = (doc.items as Record<string, unknown>[] | undefined) || [];
     setItems(
@@ -175,7 +184,7 @@ export default function OrderWorkspace() {
   function resetNew() {
     setSelected(null);
     hydrated.current = null;
-    setHeader({ transaction_date: today(), delivery_date: "", party: "" });
+    setHeader({ transaction_date: today(), delivery_date: "", party: "", company: "" });
     setItems([]);
     setDraft(blankItem());
     setLocked(false);
@@ -248,6 +257,7 @@ export default function OrderWorkspace() {
       transaction_date: header.transaction_date,
       delivery_date: header.delivery_date || null,
       party: header.party,
+      company_name: header.company || null,
       items: effectiveItems.map((it, idx) => ({
         ...(it.name ? { name: it.name } : {}),
         idx: idx + 1,
@@ -394,7 +404,18 @@ export default function OrderWorkspace() {
             <FieldInput field={F.transaction_date} value={header.transaction_date} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, transaction_date: String(v ?? "") }))} />
             <FieldInput field={F.delivery_date} value={header.delivery_date} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, delivery_date: String(v ?? "") }))} />
           </div>
-          <PartyPicker value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v }))} />
+          <div className="mm-form-grid">
+            <PartyPicker value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v, company: "" }))} />
+            <label className="mm-field">
+              <span className="mm-field-label">Company</span>
+              <select className="mm-input" value={header.company} disabled={ro || !header.party}
+                onChange={(e) => setHeader((h) => ({ ...h, company: e.target.value }))}>
+                <option value="">{!header.party ? "Pick a party first" : companiesCall.isLoading ? "Loading…" : "— select company —"}</option>
+                {header.company && !companies.includes(header.company) && <option value={header.company}>{header.company}</option>}
+                {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          </div>
 
           {/* Item builder */}
           {!ro && (
