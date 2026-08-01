@@ -3,6 +3,7 @@ import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe
 import { ArrowRight, Download, ListChecks, PackageCheck, Pencil, Plus, RefreshCw, SkipForward, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
+import LinkField from "@/components/LinkField";
 import SalesOrderPicker, { type SOOption } from "@/components/SalesOrderPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -185,16 +186,6 @@ export default function InwardWorkspace() {
     message: RecentInward[];
   }>("mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards", { limit: 30 }, "mm-inward-recent");
   const recent = recentData?.message ?? [];
-
-  // Colours come from the Colors/Items master so manual entry is a dropdown (no typos
-  // creating phantom colours). A value not in the master (e.g. fetched from a VM challan)
-  // is still shown as its own option so it isn't lost.
-  const { data: colorData } = useFrappeGetDocList<{ name: string }>(
-    "MM Item Master",
-    { fields: ["name"], limit: 0, orderBy: { field: "name", order: "asc" } },
-    "mm-inward-colors",
-  );
-  const colorOptions = useMemo(() => (colorData ?? []).map((c) => c.name), [colorData]);
 
   const processing = qIndex >= 0; // stepping through the challan queue
   const isLast = qIndex >= queue.length - 1;
@@ -434,7 +425,7 @@ export default function InwardWorkspace() {
           </label>
           <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
           <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} record={{ location }} />
-          <SalesOrderPicker label="Sales order (optional)" value={salesOrder} onChange={(v, opt) => void pickSalesOrder(v, opt)} />
+          <SalesOrderPicker wide label="Sales order (optional)" value={salesOrder} onChange={(v, opt) => void pickSalesOrder(v, opt)} />
           {fetched && (
             <label className="mm-field">
               <span className="mm-field-label">Lot number</span>
@@ -579,11 +570,16 @@ export default function InwardWorkspace() {
                         <input className="mm-input mm-input-compact" value={r.roll} placeholder="Roll" disabled={awaitingNext} onChange={(e) => setRow(i, { roll: e.target.value })} />
                       </td>
                       <td>
-                        <select className="mm-input mm-input-compact" value={r.color} disabled={awaitingNext} onChange={(e) => setRow(i, { color: e.target.value })}>
-                          <option value="">— colour —</option>
-                          {r.color && !colorOptions.includes(r.color) && <option value={r.color}>{r.color}</option>}
-                          {colorOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                        </select>
+                        <LinkField
+                          compact
+                          label=""
+                          linkDoctype="MM Item Master"
+                          value={r.color}
+                          disabled={awaitingNext}
+                          placeholder="colour"
+                          createDefaults={{ item_type: "Roll" }}
+                          onChange={(v) => setRow(i, { color: v })}
+                        />
                       </td>
                       <td className="mm-num">
                         <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.qty} disabled={awaitingNext} onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />

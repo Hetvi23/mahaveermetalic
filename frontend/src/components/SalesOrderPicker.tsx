@@ -20,6 +20,8 @@ type Props = {
   onChange: (v: string, opt?: SOOption) => void;
   required?: boolean;
   disabled?: boolean;
+  /** Span the full width of the parent grid. */
+  wide?: boolean;
 };
 
 /**
@@ -27,7 +29,7 @@ type Props = {
  * shows customer name, colours and the order date on every row and filters across all
  * of them, so shop-floor users can find an order by any of those, not just its number.
  */
-export default function SalesOrderPicker({ label, value, onChange, required, disabled }: Props) {
+export default function SalesOrderPicker({ label, value, onChange, required, disabled, wide }: Props) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
@@ -70,7 +72,7 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
   }, [options, q, partyFilter]);
 
   return (
-    <label className="mm-field">
+    <label className={`mm-field${wide ? " mm-so-field-wide" : ""}`}>
       <span className="mm-field-label">
         {label}
         {required ? " *" : ""}
@@ -106,25 +108,34 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
             {isLoading && <li className="mm-suggest-muted">Loading…</li>}
             {!isLoading && filtered.length === 0 && <li className="mm-suggest-muted">No matching orders</li>}
             {!isLoading &&
-              filtered.map((o) => (
-                <li
-                  key={o.sales_order}
-                  className="mm-suggest-item"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onChange(o.sales_order, o);
-                    setText("");
-                    setOpen(false);
-                  }}
-                >
-                  <strong>{o.sales_order}</strong>
-                  <span className="mm-suggest-meta">
-                    {o.party_name || o.party || "—"}
-                    {o.colours?.length ? ` · ${o.colours.join(", ")}` : ""}
-                    {o.delivery_date ? ` · ${o.delivery_date}` : ""}
-                  </span>
-                </li>
-              ))}
+              filtered.map((o) => {
+                const total = Number(o.ordered_weight || 0);
+                const remaining = Number(o.required_weight || 0);
+                const received = Math.round((total - remaining) * 1000) / 1000;
+                return (
+                  <li
+                    key={o.sales_order}
+                    className="mm-suggest-item mm-so-opt"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onChange(o.sales_order, o);
+                      setText("");
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="mm-so-opt-top">
+                      <strong>{o.sales_order}</strong>
+                      <span className="mm-so-opt-party">{o.party_name || o.party || "—"}</span>
+                      {o.colours?.length ? <span className="mm-so-opt-color">{o.colours.join(", ")}</span> : null}
+                    </span>
+                    <span className="mm-so-opt-nums">
+                      <span>Total <strong>{total.toLocaleString()}</strong></span>
+                      <span>Received <strong>{received.toLocaleString()}</strong></span>
+                      <span className={remaining > 0 ? "mm-so-opt-rem" : undefined}>Remaining <strong>{remaining.toLocaleString()}</strong></span>
+                    </span>
+                  </li>
+                );
+              })}
           </ul>
         )}
       </div>

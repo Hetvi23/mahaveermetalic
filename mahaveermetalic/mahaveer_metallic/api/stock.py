@@ -71,6 +71,75 @@ def _line_available(color_name, cut):
 
 
 @frappe.whitelist()
+def availability_for_lines(lines):
+	"""Available roll weight per (colour, cut) — lets the order builder compute the
+	shortage (order weight − available) live, before the order is saved."""
+	import json as _json
+
+	if isinstance(lines, str):
+		lines = _json.loads(lines or "[]")
+	out = []
+	for ln in lines or []:
+		color = ln.get("color") or ln.get("color_name")
+		cut = ln.get("cut")
+		out.append({"color": color, "cut": cut, "available": round(_line_available(color, cut), 3)})
+	return out
+
+
+@frappe.whitelist()
+def create_po_for_order(sales_order, qty_kg=0, rate=0, supplier=None, clamp_to_shortage=1):
+	"""Create / update / remove the ONE draft shortage Purchase Order for a Sales Order
+	(this app is one-SO-per-item, so one line → one PO). qty_kg ≤ 0 removes any existing
+	draft PO. The PO stays a draft until the order is approved, then it submits with it.
+
+	`clamp_to_shortage` (default on) recomputes the real shortage server-side and caps the
+	requested qty to it — so a client working from stale/never-fetched availability can't
+	raise a PO for stock that is actually covered."""
+	so = frappe.get_doc("MM Sales Order", sales_order)
+	qty = round(float(qty_kg or 0), 3)
+	it = so.items[0] if so.items else None
+
+	if qty > 0 and frappe.utils.cint(clamp_to_shortage) and it:
+		short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut)), 3)
+		qty = min(qty, short)
+	existing = frappe.db.get_value("MM Purchase Order", {"sales_order": so.name, "docstatus": 0}, "name")
+
+	if qty <= 0:
+		if existing:
+			frappe.delete_doc("MM Purchase Order", existing, ignore_permissions=True)
+		return {"po": None, "qty": 0}
+
+	if existing:
+		po = frappe.get_doc("MM Purchase Order", existing)
+		po.qty_kg = qty
+		po.rate = float(rate or 0)
+		po.supplier = supplier or None
+		if it:
+			po.color, po.cut, po.so_item = it.color_name, it.cut, it.name
+		po.save(ignore_permissions=True)
+		return {"po": po.name, "qty": qty}
+
+	po = frappe.get_doc(
+		{
+			"doctype": "MM Purchase Order",
+			"transaction_date": frappe.utils.today(),
+			"branch": so.branch,
+			"location": so.location,
+			"sales_order": so.name,
+			"so_item": it.name if it else None,
+			"supplier": supplier or None,
+			"color": it.color_name if it else None,
+			"cut": it.cut if it else None,
+			"qty_kg": qty,
+			"rate": float(rate or 0),
+			"delivery_date": (it.delivery_date if it else None) or so.get("delivery_date"),
+		}
+	)
+	po.insert(ignore_permissions=True)
+	return {"po": po.name, "qty": qty}
+
+
+@frappe.whitelist()
 def get_so_stock_status(sales_order):
 	"""SRS 5.1: per-line stock visibility for a Sales Order, flagging shortfalls
 	that should trigger a Purchase Order."""

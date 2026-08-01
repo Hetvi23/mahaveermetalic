@@ -14,12 +14,15 @@ import { useEffect, useMemo, useState } from "react";
 export default function QuickCreateMaster({
 	meta,
 	seed,
+	defaults,
 	onCreated,
 	onClose,
 }: {
 	meta: DocRegistryEntry;
 	/** Text already typed in the link field — seeds the master's primary field. */
 	seed?: string;
+	/** Pre-set other fields, e.g. { item_type: "Roll" } for a new colour. */
+	defaults?: Record<string, unknown>;
 	onCreated: (name: string) => void;
 	onClose: () => void;
 }) {
@@ -40,11 +43,12 @@ export default function QuickCreateMaster({
 		if (seed && seedField && (init[seedField] === "" || init[seedField] == null)) {
 			init[seedField] = seed;
 		}
+		if (defaults) Object.assign(init, defaults);
 		const cinit: Record<string, ChildRow[]> = {};
 		for (const t of meta.childTables || []) cinit[t.fieldname] = [emptyChildRow(t.columns)];
 		setValues(init);
 		setChildren(cinit);
-	}, [meta, seed]);
+	}, [meta, seed, defaults]);
 
 	function setField(fn: string, v: unknown) {
 		setValues((prev) => ({ ...prev, [fn]: v }));

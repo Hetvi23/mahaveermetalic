@@ -204,9 +204,9 @@ def sales_order_options(search=None, limit=200):
 
 	Returns one row per order enriched with customer name, colours, cuts and dates so
 	the dropdown can be searched by any of them (order no / customer / colour / date).
-	Only orders still open for inward are offered — docstatus < 2, production < 100%,
-	and NOT fully inwarded. An order is fully inwarded once its required weight drops to
-	≤ 0; box-only orders (no weight target, ordered_weight = 0) are always kept.
+	Only APPROVED orders still open for inward are offered — docstatus = 1 (admin-approved),
+	production < 100%, and NOT fully inwarded. An order is fully inwarded once its required
+	weight drops to ≤ 0; box-only orders (no weight target, ordered_weight = 0) are kept.
 	"""
 	limit = int(limit or 200)
 	rows = frappe.db.sql(
@@ -218,7 +218,7 @@ def sales_order_options(search=None, limit=200):
 		from `tabMM Sales Order` so
 		left join `tabMM Party Master` pm on pm.name = so.party
 		left join `tabMM Sales Order Item` soi on soi.parent = so.name
-		where so.docstatus < 2
+		where so.docstatus = 1
 			and ifnull(so.production_completed_percent, 0) < 100
 			and not (ifnull(so.ordered_weight, 0) > 0 and ifnull(so.required_weight, 0) <= 0)
 		order by so.transaction_date desc, so.modified desc

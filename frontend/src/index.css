@@ -860,6 +860,9 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 }
 .mm-icon-btn:hover { background: var(--mm-danger-bg); }
 .mm-ow-prod { margin-top: 1rem; font-size: 0.85rem; color: var(--mm-text-sec); }
+.mm-ow-po { margin-top: 1rem; border: 1px solid var(--mm-accent-soft); background: var(--mm-accent-bg); border-radius: var(--mm-radius); padding: 0.8rem 0.9rem; }
+.mm-ow-po-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.mm-ow-po table { width: 100%; background: var(--mm-card); }
 
 .mm-ow-list { padding: 0.85rem 1rem 1rem; }
 .mm-ow-list-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
@@ -899,6 +902,16 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-iw-challan-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.2rem; }
 .mm-iw-progress { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px solid var(--mm-border); }
 .mm-iw-force { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px solid var(--mm-border); }
+
+/* Wider Sales Order picker on Inward + its richer dropdown rows */
+.mm-so-field-wide { grid-column: 1 / -1; }
+.mm-so-opt { display: flex; flex-direction: column; gap: 0.2rem; }
+.mm-so-opt-top { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.mm-so-opt-party { color: var(--mm-text-sec); font-size: 0.85rem; }
+.mm-so-opt-color { color: var(--mm-accent-fg); font-size: 0.8rem; }
+.mm-so-opt-nums { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.76rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; }
+.mm-so-opt-nums strong { color: var(--mm-text); }
+.mm-so-opt-rem strong { color: var(--mm-danger-fg); }
 .mm-iw-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.25rem; align-items: start; }
 .mm-iw-grid-single { grid-template-columns: 1fr; }
 .mm-iw-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }

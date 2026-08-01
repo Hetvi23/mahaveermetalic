@@ -29,38 +29,28 @@ class MMSalesOrder(Document):
 		self._prevent_duplicate_order()
 		self._enforce_lock_rules()
 
-	def on_update(self):
-		# While a draft, keep the purchase order(s) in step with the order automatically —
-		# one action covers both, and edits reflect straight into the linked PO.
-		if self.docstatus == 0 and not self.flags.in_import:
-			self._sync_purchase_orders()
-
 	def on_submit(self):
-		# Submitting the order locks it AND its purchase order(s) — "on submit, no change".
-		self._sync_purchase_orders()
+		# Approving the order (submit) locks it AND submits its shortage purchase order(s).
 		for po in self._linked_pos(docstatus=0):
 			frappe.get_doc("MM Purchase Order", po).submit()
 
 	def on_cancel(self):
-		# Cancelling the order cancels its purchase order(s) too.
+		# Rejecting/cancelling the order cancels its purchase order(s) too.
 		self.ignore_linked_doctypes = ("MM Purchase Order",)
 		for po in self._linked_pos(docstatus=1):
 			frappe.get_doc("MM Purchase Order", po).cancel()
+
+	def on_trash(self):
+		# Delete the linked purchase order(s) first — otherwise Frappe's link check blocks
+		# deleting the order ("linked with MM Purchase Order").
+		for po in self._linked_pos():
+			frappe.delete_doc("MM Purchase Order", po, ignore_permissions=True, force=True)
 
 	def _linked_pos(self, docstatus=None):
 		filters = {"sales_order": self.name}
 		if docstatus is not None:
 			filters["docstatus"] = docstatus
 		return frappe.get_all("MM Purchase Order", filters=filters, pluck="name")
-
-	def _sync_purchase_orders(self):
-		"""Keep the draft PO(s) in step with the order (full ordered qty) before submit."""
-		from mahaveermetalic.mahaveer_metallic.api.stock import create_purchase_order_from_so
-
-		try:
-			create_purchase_order_from_so(self.name, full=1)
-		except Exception:
-			frappe.log_error(title=f"PO sync failed for {self.name}")
 
 	def _validate_lines(self):
 		"""Field-level order rules (mirrored in the Order screen):
@@ -250,26 +240,52 @@ def force_complete_order(order, pin):
 
 
 @frappe.whitelist()
-def submit_order(sales_order):
-	"""Submit a draft order — locking it and (via on_submit) its purchase order(s)."""
+def approve_order(sales_order):
+	"""Admin approval: submit the order (docstatus 1 = Approved), which locks it and its
+	shortage purchase order(s). Only after approval can the order be used in inward /
+	cutting / production. Restricted to MM Admin (submit permission)."""
+	if not is_mm_admin() and "MM Admin" not in frappe.get_roles():
+		frappe.throw(_("Only an admin can approve orders."))
 	doc = frappe.get_doc("MM Sales Order", sales_order)
 	if doc.docstatus == 0:
 		doc.submit()
-	return {"order": doc.name, "docstatus": doc.docstatus}
+	return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Approved"}
+
+
+@frappe.whitelist()
+def reject_order(sales_order):
+	"""Admin rejection of a PENDING order.
+
+	Frappe forbids a direct 0 -> 2 (draft -> cancelled) docstatus transition, so a pending
+	order is rejected by deleting it (with its draft shortage PO first, otherwise the link
+	check blocks the delete). An already-approved order is cancelled normally."""
+	if not is_mm_admin() and "MM Admin" not in frappe.get_roles():
+		frappe.throw(_("Only an admin can reject orders."))
+	doc = frappe.get_doc("MM Sales Order", sales_order)
+	if doc.docstatus == 1:
+		doc.cancel()
+		return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Rejected"}
+	if doc.docstatus == 0:
+		for po in frappe.get_all("MM Purchase Order", filters={"sales_order": doc.name, "docstatus": 0}, pluck="name"):
+			frappe.delete_doc("MM Purchase Order", po, ignore_permissions=True, force=True)
+		frappe.delete_doc("MM Sales Order", doc.name, ignore_permissions=True)
+		return {"order": sales_order, "docstatus": None, "approval_status": "Rejected", "deleted": True}
+	return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Rejected"}
 
 
 def assert_order_submitted(order):
 	"""Guard for downstream flows (inward / cutting / production): the referenced order
-	must be submitted (a draft is still being edited; a cancelled order is closed)."""
+	must be APPROVED (submitted). A pending (draft) order isn't usable yet; a rejected
+	(cancelled) order is closed."""
 	if not order:
 		return
 	ds = frappe.db.get_value("MM Sales Order", order, "docstatus")
 	if ds is None:
 		return
 	if ds == 0:
-		frappe.throw(_("Order {0} is a draft — submit it before inward / cutting / production.").format(order))
+		frappe.throw(_("Order {0} is pending admin approval — it can't be used until approved.").format(order))
 	if ds == 2:
-		frappe.throw(_("Order {0} is cancelled.").format(order))
+		frappe.throw(_("Order {0} is rejected/cancelled.").format(order))
 
 
 def recalculate_production_completed(order: str):

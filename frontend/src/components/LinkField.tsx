@@ -13,9 +13,14 @@ type Props = {
 	required?: boolean;
 	/** Extra get_list filters applied to the options, e.g. [["location", "=", "X"]]. */
 	extraFilters?: [string, string, unknown][];
+	/** Inline mode for table cells — no field label wrapper. */
+	compact?: boolean;
+	/** Pre-set fields on the quick-create dialog, e.g. { item_type: "Roll" }. */
+	createDefaults?: Record<string, unknown>;
+	placeholder?: string;
 };
 
-export default function LinkField({ label, linkDoctype, value, onChange, disabled, required, extraFilters }: Props) {
+export default function LinkField({ label, linkDoctype, value, onChange, disabled, required, extraFilters, compact, createDefaults, placeholder }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState(value || "");
 	const [quickCreate, setQuickCreate] = useState(false);
@@ -63,72 +68,81 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 		setOpen(false);
 	}
 
+	const body = (
+		<div className={`mm-link-wrap${master && !disabled ? " mm-link-wrap-addable" : ""}`} ref={wrap}>
+			<input
+				className={`mm-input mm-link-input${compact ? " mm-input-compact" : ""}`}
+				value={text}
+				disabled={disabled}
+				required={required}
+				placeholder={placeholder || "Select…"}
+				onChange={(e) => {
+					setText(e.target.value);
+					onChange(e.target.value);
+					setOpen(true);
+				}}
+				onFocus={() => setOpen(true)}
+				autoComplete="off"
+			/>
+			<ChevronDown size={15} className="mm-link-caret" aria-hidden />
+			{master && !disabled && (
+				<button
+					type="button"
+					className="mm-link-add"
+					title={`Create new ${master.title}`}
+					aria-label={`Create new ${master.title}`}
+					onClick={() => setQuickCreate(true)}
+				>
+					<Plus size={15} />
+				</button>
+			)}
+			{open && (
+				<ul className="mm-suggest">
+					{isLoading && <li className="mm-suggest-muted">Loading…</li>}
+					{!isLoading &&
+						suggestions.map((s) => (
+							<li
+								key={s.name}
+								className="mm-suggest-item"
+								onMouseDown={(e) => {
+									e.preventDefault();
+									pick(s.name);
+								}}
+							>
+								<strong>{s.name}</strong>
+							</li>
+						))}
+					{!isLoading && suggestions.length === 0 && <li className="mm-suggest-muted">No matches</li>}
+				</ul>
+			)}
+		</div>
+	);
+
 	return (
 		<>
-		<label className="mm-field">
-			<span className="mm-field-label">
-				{label}
-				{required ? " *" : ""}
-			</span>
-			<div className={`mm-link-wrap${master && !disabled ? " mm-link-wrap-addable" : ""}`} ref={wrap}>
-				<input
-					className="mm-input mm-link-input"
-					value={text}
-					disabled={disabled}
-					required={required}
-					placeholder="Select…"
-					onChange={(e) => {
-						setText(e.target.value);
-						onChange(e.target.value);
-						setOpen(true);
+			{compact ? (
+				body
+			) : (
+				<label className="mm-field">
+					<span className="mm-field-label">
+						{label}
+						{required ? " *" : ""}
+					</span>
+					{body}
+				</label>
+			)}
+			{quickCreate && master && (
+				<QuickCreateMaster
+					meta={master}
+					seed={text.trim()}
+					defaults={createDefaults}
+					onClose={() => setQuickCreate(false)}
+					onCreated={(name) => {
+						pick(name);
+						setQuickCreate(false);
 					}}
-					onFocus={() => setOpen(true)}
-					autoComplete="off"
 				/>
-				<ChevronDown size={15} className="mm-link-caret" aria-hidden />
-				{master && !disabled && (
-					<button
-						type="button"
-						className="mm-link-add"
-						title={`Create new ${master.title}`}
-						aria-label={`Create new ${master.title}`}
-						onClick={() => setQuickCreate(true)}
-					>
-						<Plus size={15} />
-					</button>
-				)}
-				{open && (
-					<ul className="mm-suggest">
-						{isLoading && <li className="mm-suggest-muted">Loading…</li>}
-						{!isLoading &&
-							suggestions.map((s) => (
-								<li
-									key={s.name}
-									className="mm-suggest-item"
-									onMouseDown={(e) => {
-										e.preventDefault();
-										pick(s.name);
-									}}
-								>
-									<strong>{s.name}</strong>
-								</li>
-							))}
-						{!isLoading && suggestions.length === 0 && <li className="mm-suggest-muted">No matches</li>}
-					</ul>
-				)}
-			</div>
-		</label>
-		{quickCreate && master && (
-			<QuickCreateMaster
-				meta={master}
-				seed={text.trim()}
-				onClose={() => setQuickCreate(false)}
-				onCreated={(name) => {
-					pick(name);
-					setQuickCreate(false);
-				}}
-			/>
-		)}
+			)}
 		</>
 	);
 }

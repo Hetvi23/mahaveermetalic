@@ -141,9 +141,10 @@ def order_options_for_party(party, customer_order=None):
 		party = frappe.db.get_value("MM Sales Order", customer_order, "party")
 	if not party:
 		return []
+	# Only APPROVED (submitted) orders — a pending order can't be worked downstream.
 	return frappe.get_all(
 		"MM Sales Order",
-		filters={"party": party, "docstatus": ["<", 2]},
+		filters={"party": party, "docstatus": 1},
 		fields=["name", "transaction_date", "delivery_date", "ordered_weight", "required_weight"],
 		order_by="delivery_date asc, modified desc",
 		limit_page_length=100,
