@@ -405,7 +405,7 @@ export default function OrderWorkspace() {
             <FieldInput field={F.delivery_date} value={header.delivery_date} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, delivery_date: String(v ?? "") }))} />
           </div>
           <div className="mm-form-grid">
-            <PartyPicker value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v, company: "" }))} />
+            <PartyPicker label="Party" value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v, company: "" }))} />
             <label className="mm-field">
               <span className="mm-field-label">Company</span>
               <select className="mm-input" value={header.company} disabled={ro || !header.party}
