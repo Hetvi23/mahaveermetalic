@@ -1,0 +1,74 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-08-01 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": ["lot_id", "color", "challan_number", "lot_no", "financial_year", "source"],
+  "fields": [
+    {
+      "fieldname": "lot_id",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Lot ID",
+      "read_only": 1,
+      "description": "Display id, numbered per colour per financial year — e.g. LT1/26-27."
+    },
+    {
+      "fieldname": "color",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Color",
+      "options": "MM Item Master",
+      "reqd": 1
+    },
+    {
+      "fieldname": "challan_number",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Challan No",
+      "description": "Set when the lot came from a Veermetlon challan fetch; blank for manual inward."
+    },
+    {
+      "fieldname": "lot_no",
+      "fieldtype": "Int",
+      "label": "Lot No",
+      "read_only": 1,
+      "description": "Running number within the colour + financial year."
+    },
+    {
+      "fieldname": "financial_year",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Financial Year",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source",
+      "fieldtype": "Select",
+      "label": "Source",
+      "options": "Veermetlon\nManual",
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-08-01 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Lot",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "lot_id"
+}

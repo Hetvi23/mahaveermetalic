@@ -285,6 +285,28 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 	},
 	{
+		slug: "lot",
+		routeBase: "/masters/lot",
+		doctype: "MM Lot",
+		title: "Lots",
+		listTagline: "Lot ids per colour (LT1/26-27), linked to their Veermetlon challan.",
+		navGroup: "masters",
+		formSections: [{ id: "l1", title: "Lot", fieldnames: ["lot_id", "color", "challan_number", "financial_year"] }],
+		listColumns: [
+			{ fieldname: "lot_id", label: "Lot ID" },
+			{ fieldname: "color", label: "Color" },
+			{ fieldname: "challan_number", label: "Challan No" },
+			{ fieldname: "financial_year", label: "FY" },
+		],
+		searchField: "lot_id",
+		fields: [
+			{ fieldname: "lot_id", label: "Lot ID", fieldtype: "Data", readOnly: true },
+			{ fieldname: "color", label: "Color", fieldtype: "Link", options: "MM Item Master", reqd: true },
+			{ fieldname: "challan_number", label: "Challan No", fieldtype: "Data" },
+			{ fieldname: "financial_year", label: "Financial Year", fieldtype: "Data", readOnly: true },
+		],
+	},
+	{
 		slug: "branch",
 		routeBase: "/masters/branch",
 		doctype: "MM Branch",
