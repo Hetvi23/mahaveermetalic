@@ -1,64 +1,154 @@
 {
-  "actions": [],
-  "creation": "2026-07-20 00:00:00.000000",
-  "doctype": "DocType",
-  "editable_grid": 1,
-  "engine": "InnoDB",
-  "field_order": [
-    "color_name",
-    "cut",
-    "qty_box",
-    "weight",
-    "sales_order"
-  ],
-  "fields": [
-    {
-      "fieldname": "color_name",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Color",
-      "options": "MM Item Master",
-      "reqd": 1
-    },
-    {
-      "fieldname": "cut",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Size"
-    },
-    {
-      "fieldname": "qty_box",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Qty (Box)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "weight",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Weight (Kg)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "sales_order",
-      "fieldtype": "Link",
-      "label": "Sales Order",
-      "options": "MM Sales Order"
-    }
-  ],
-  "index_web_pages_for_search": 0,
-  "istable": 1,
-  "links": [],
-  "modified": "2026-07-20 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Sales Challan Item",
-  "owner": "Administrator",
-  "permissions": [],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "creation": "2026-07-20 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "color_name",
+  "cut",
+  "qty_box",
+  "weight",
+  "sales_order",
+  "barcode",
+  "gross_weight",
+  "bobbin",
+  "bobbin_pcs",
+  "bobbin_pcs_weight",
+  "total_bobbin_weight",
+  "box_weight",
+  "net_weight",
+  "r_box",
+  "r_bobbin",
+  "production",
+  "roll_inventory"
+ ],
+ "fields": [
+  {
+   "fieldname": "color_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Color",
+   "options": "MM Item Master",
+   "description": "Links to Colors/Items when the shade exists there; blank for a legacy free-text shade."
+  },
+  {
+   "fieldname": "cut",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Size"
+  },
+  {
+   "fieldname": "qty_box",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty (Box)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Weight (Kg)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "MM Sales Order"
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "Barcode",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "label": "Gr.Wt",
+   "precision": 3,
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "bobbin",
+   "fieldtype": "Link",
+   "label": "Bobbin",
+   "options": "MM Bobbin Master"
+  },
+  {
+   "fieldname": "bobbin_pcs",
+   "fieldtype": "Float",
+   "label": "Bobbin Pcs",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "bobbin_pcs_weight",
+   "fieldtype": "Float",
+   "label": "Bobbin/Pcs Wt",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "total_bobbin_weight",
+   "fieldtype": "Float",
+   "label": "Total Bobbin Wt",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "box_weight",
+   "fieldtype": "Float",
+   "label": "Box Wt",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "label": "Net Wt",
+   "precision": 3,
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "r_box",
+   "fieldtype": "Check",
+   "label": "R.Box"
+  },
+  {
+   "fieldname": "r_bobbin",
+   "fieldtype": "Check",
+   "label": "R.Bobbin"
+  },
+  {
+   "fieldname": "production",
+   "fieldtype": "Link",
+   "label": "Production",
+   "options": "MM Production"
+  },
+  {
+   "fieldname": "roll_inventory",
+   "fieldtype": "Link",
+   "label": "Roll",
+   "options": "MM Roll Inventory"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-02 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Sales Challan Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

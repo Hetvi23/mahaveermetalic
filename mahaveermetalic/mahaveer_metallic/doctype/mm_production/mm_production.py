@@ -74,6 +74,22 @@ class MMProduction(Document):
 	def on_submit(self):
 		self._sync_source_program(link=True)
 		self._refresh_order_production()
+		self._raise_sales_challan()
+
+	def _raise_sales_challan(self):
+		"""Production is where boxes/bobbins are entered — the dispatch challan is raised
+		from it. With a Sales Order the challan is created (as a draft, so it can be
+		checked); without one the boxes simply stay in hand for a later challan."""
+		if not self.customer_order:
+			return
+		from mahaveermetalic.mahaveer_metallic.api.challan import create_challan_from_production
+
+		try:
+			name = create_challan_from_production(self.name)
+			if name:
+				frappe.msgprint(_("Sales Challan {0} created from this production.").format(name), alert=True)
+		except Exception:
+			frappe.log_error(title=f"challan from production {self.name} failed")
 
 	def on_cancel(self):
 		self._sync_source_program(link=False)

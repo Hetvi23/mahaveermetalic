@@ -1740,3 +1740,10 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-pvw-table { width: 100%; }
 .mm-pvw-done td { opacity: 0.55; text-decoration: line-through; }
 .mm-pvw-empty { color: var(--mm-text-sec); font-size: 0.85rem; padding: 0.5rem 0; }
+
+/* Sales Challan voucher: header grid, action row, sticky totals footer */
+.mm-scv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.7rem 0.9rem; align-items: end; }
+.mm-scv-actions { display: flex; align-items: flex-end; gap: 0.6rem; margin-top: 0.8rem; flex-wrap: wrap; }
+.mm-scv-foot { display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--mm-border); font-size: 0.85rem; color: var(--mm-text-sec); }
+.mm-scv-foot strong { color: var(--mm-text); font-variant-numeric: tabular-nums; }
+.mm-scv-foot .mm-btn-primary { margin-left: auto; }

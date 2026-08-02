@@ -1,0 +1,297 @@
+import { useMemo, useState } from "react";
+import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
+import { X, Search, PackageSearch, Boxes } from "lucide-react";
+import PartyPicker from "@/components/PartyPicker";
+import { toast } from "@/components/Toaster";
+import { extractErrorMessage } from "@/utils/frappeError";
+
+const API = "mahaveermetalic.mahaveer_metallic.api.challan";
+const PROD_API = "mahaveermetalic.mahaveer_metallic.api.production";
+const today = () => new Date().toISOString().slice(0, 10);
+
+type BoxRow = {
+  box: string; production: string; posting_date?: string; item?: string; cut?: string;
+  customer_order?: string; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
+  bobbin_pcs_weight?: number; total_bobbin_weight?: number; box_weight?: number; net_weight?: number;
+};
+type RollRow = {
+  name: string; roll_no?: string; lot_number?: string; location?: string;
+  color_name?: string; stock_weight?: number; stock_box?: number;
+};
+type Line = {
+  key: string; kind: "box" | "roll"; ref: string; barcode?: string; item?: string; size?: string;
+  gross: number; qty: number; bobbin?: string; bobbinPcs: number; perPcs: number;
+  totalBobbin: number; boxWeight: number; net: number; rBox: boolean; rBobbin: boolean;
+};
+
+/**
+ * Sales Challan voucher: dispatch document built from produced boxes (SELECT BOX) or
+ * straight from inventory rolls (SELECT ROLL). Production raises its own challan on
+ * submit when it carries an order; this screen covers everything else.
+ */
+export default function SalesChallanVoucher() {
+  const [party, setParty] = useState("");
+  const [order, setOrder] = useState("");
+  const [challanNo, setChallanNo] = useState("");
+  const [date, setDate] = useState(today());
+  const [remark, setRemark] = useState("");
+  const [jobWork, setJobWork] = useState(false);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [picker, setPicker] = useState<"box" | "roll" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const { call: createChallan, loading } = useFrappePostCall(`${API}.create_challan`);
+  const ordersCall = useFrappeGetCall<{ message: { name: string; colours?: string }[] }>(
+    `${PROD_API}.orders_for_production`,
+    party ? { party } : undefined,
+    party ? `chal-orders-${party}` : null,
+  );
+
+  const totals = useMemo(() => {
+    const boxes = lines.filter((l) => l.kind === "box").length;
+    const rolls = lines.filter((l) => l.kind === "roll").length;
+    const net = lines.reduce((s, l) => s + l.net, 0);
+    const gross = lines.reduce((s, l) => s + l.gross, 0);
+    return { boxes, rolls, net: Math.round(net * 1000) / 1000, gross: Math.round(gross * 1000) / 1000 };
+  }, [lines]);
+
+  function addBoxes(rows: BoxRow[]) {
+    setLines((p) => [
+      ...p,
+      ...rows
+        .filter((r) => !p.some((l) => l.kind === "box" && l.ref === r.box))
+        .map<Line>((r) => ({
+          key: `box-${r.box}`, kind: "box", ref: r.box, item: r.item, size: r.cut,
+          gross: Number(r.gross_weight || 0), qty: 1, bobbin: r.bobbin,
+          bobbinPcs: Number(r.bobbin_pcs || 0), perPcs: Number(r.bobbin_pcs_weight || 0),
+          totalBobbin: Number(r.total_bobbin_weight || 0), boxWeight: Number(r.box_weight || 0),
+          net: Number(r.net_weight || 0), rBox: false, rBobbin: false,
+        })),
+    ]);
+    setPicker(null);
+  }
+  function addRolls(rows: RollRow[]) {
+    setLines((p) => [
+      ...p,
+      ...rows
+        .filter((r) => !p.some((l) => l.kind === "roll" && l.ref === r.name))
+        .map<Line>((r) => ({
+          key: `roll-${r.name}`, kind: "roll", ref: r.name, item: r.color_name,
+          size: r.lot_number, gross: Number(r.stock_weight || 0), qty: Number(r.stock_box || 1),
+          bobbinPcs: 0, perPcs: 0, totalBobbin: 0, boxWeight: 0,
+          net: Number(r.stock_weight || 0), rBox: false, rBobbin: false,
+        })),
+    ]);
+    setPicker(null);
+  }
+
+  async function submit() {
+    setErr(null);
+    if (!party) return setErr("Choose the customer.");
+    if (lines.length === 0) return setErr("Add at least one box or roll.");
+    try {
+      const res = await createChallan({
+        party, sales_order: order || undefined, challan_date: date, remark: remark || undefined,
+        job_work: jobWork ? 1 : 0, challan_no: challanNo || undefined,
+        boxes: JSON.stringify(lines.filter((l) => l.kind === "box").map((l) => l.ref)),
+        rolls: JSON.stringify(lines.filter((l) => l.kind === "roll").map((l) => l.ref)),
+      });
+      const name = (res as { message?: { challan?: string } })?.message?.challan;
+      toast(`Sales Challan ${name || ""} created`);
+      setLines([]); setChallanNo(""); setRemark("");
+    } catch (e) {
+      setErr(extractErrorMessage(e));
+    }
+  }
+
+  return (
+    <div className="mm-screen mm-page-enter">
+      <header className="mm-ws-toolbar">
+        <div>
+          <h1 className="mm-page-title">Sales Challan Voucher</h1>
+          <p className="mm-page-sub">Dispatch produced boxes or inventory rolls. Production with an order raises its own challan automatically.</p>
+        </div>
+      </header>
+
+      <section className="mm-card mm-card-pad">
+        <div className="mm-scv-grid">
+          <label className="mm-field">
+            <span className="mm-field-label">Sale Chalan *</span>
+            <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)} placeholder="Auto / number" />
+          </label>
+          <PartyPicker label="Customer *" value={party} required onChange={(v) => { setParty(v); setOrder(""); }} />
+          <label className="mm-field">
+            <span className="mm-field-label">Order</span>
+            <select className="mm-input" value={order} disabled={!party} onChange={(e) => setOrder(e.target.value)}>
+              <option value="">{!party ? "Pick a customer first" : "— none (from stock) —"}</option>
+              {(ordersCall.data?.message ?? []).map((o) => (
+                <option key={o.name} value={o.name}>{o.name}{o.colours ? ` · ${o.colours}` : ""}</option>
+              ))}
+            </select>
+          </label>
+          <label className="mm-field">
+            <span className="mm-field-label">Chalan Date *</span>
+            <input className="mm-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <label className="mm-field mm-field-inline">
+            <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
+          </label>
+        </div>
+
+        <div className="mm-scv-actions">
+          <label className="mm-field" style={{ flex: 1 }}>
+            <span className="mm-field-label">Remark</span>
+            <input className="mm-input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Remark" />
+          </label>
+          <button type="button" className="mm-btn-secondary" onClick={() => setPicker("box")}><Boxes size={15} /> Select box</button>
+          <button type="button" className="mm-btn-secondary" onClick={() => setPicker("roll")}><PackageSearch size={15} /> Select roll</button>
+        </div>
+
+        <div className="mm-table-scroll" style={{ marginTop: "0.9rem" }}>
+          <table className="mm-table mm-table-dense">
+            <thead>
+              <tr>
+                <th>Barcode</th><th>Item</th><th>Size</th><th className="mm-num">Gr.Wt | Qty</th>
+                <th className="mm-num">Bobbin | Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
+                <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th>
+                <th className="mm-num">Net Wt</th><th className="mm-num">R.Box</th><th className="mm-num">R.Bobbin</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.length === 0 ? (
+                <tr><td colSpan={12} className="mm-empty">No boxes or rolls added yet.</td></tr>
+              ) : (
+                lines.map((l, i) => (
+                  <tr key={l.key}>
+                    <td>{l.barcode || "—"}</td>
+                    <td>{l.item || "—"}</td>
+                    <td>{l.size || "—"}</td>
+                    <td className="mm-num">{l.gross.toLocaleString()} | {l.qty}</td>
+                    <td className="mm-num">{l.bobbin ? `${l.bobbin} | ${l.bobbinPcs}` : "—"}</td>
+                    <td className="mm-num">{l.perPcs || "—"}</td>
+                    <td className="mm-num">{l.totalBobbin.toLocaleString()}</td>
+                    <td className="mm-num">{l.boxWeight.toLocaleString()}</td>
+                    <td className="mm-num"><strong>{l.net.toLocaleString()}</strong></td>
+                    <td className="mm-num"><input type="checkbox" checked={l.rBox} onChange={(e) => setLines((p) => p.map((x, j) => j === i ? { ...x, rBox: e.target.checked } : x))} /></td>
+                    <td className="mm-num"><input type="checkbox" checked={l.rBobbin} onChange={(e) => setLines((p) => p.map((x, j) => j === i ? { ...x, rBobbin: e.target.checked } : x))} /></td>
+                    <td className="mm-num"><button className="mm-icon-btn" onClick={() => setLines((p) => p.filter((_, j) => j !== i))}><X size={14} /></button></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+
+        <div className="mm-scv-foot">
+          <span>Total Box: <strong>{totals.boxes}</strong></span>
+          <span>Total Roll: <strong>{totals.rolls}</strong></span>
+          <span>Total Net Weight: <strong>{totals.net.toLocaleString()}</strong></span>
+          <span>Total Weight: <strong>{totals.gross.toLocaleString()}</strong></span>
+          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>
+            {loading ? "Saving…" : "Submit"}
+          </button>
+        </div>
+      </section>
+
+      {picker === "box" && <BoxPicker party={party} order={order} onClose={() => setPicker(null)} onAdd={addBoxes} />}
+      {picker === "roll" && <RollPicker onClose={() => setPicker(null)} onAdd={addRolls} />}
+    </div>
+  );
+}
+
+/* ── SELECT BOX: produced boxes not yet dispatched ── */
+function BoxPicker({ party, order, onClose, onAdd }: { party: string; order: string; onClose: () => void; onAdd: (r: BoxRow[]) => void }) {
+  const { data, isLoading } = useFrappeGetCall<{ message: BoxRow[] }>(
+    `${API}.available_boxes`,
+    { party: party || undefined, sales_order: order || undefined },
+    `chal-boxes-${party}-${order}`,
+  );
+  const rows = data?.message ?? [];
+  const [sel, setSel] = useState<Record<string, BoxRow>>({});
+  return (
+    <PickerSheet title="Select box" isLoading={isLoading} empty={rows.length === 0} emptyText="No produced boxes available."
+      onClose={onClose} onAdd={() => onAdd(Object.values(sel))} count={Object.keys(sel).length}>
+      <table className="mm-table mm-table-dense">
+        <thead><tr><th /><th>Date</th><th>Item</th><th>Cut</th><th>Order</th><th className="mm-num">Net Wt</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.box} className={sel[r.box] ? "mm-ws-row-active" : undefined}
+              onClick={() => setSel((p) => { const n = { ...p }; if (n[r.box]) delete n[r.box]; else n[r.box] = r; return n; })}
+              style={{ cursor: "pointer" }}>
+              <td><input type="checkbox" checked={!!sel[r.box]} readOnly /></td>
+              <td>{r.posting_date || "—"}</td>
+              <td>{r.item || "—"}</td>
+              <td>{r.cut || "—"}</td>
+              <td>{r.customer_order || "—"}</td>
+              <td className="mm-num">{(r.net_weight ?? 0).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </PickerSheet>
+  );
+}
+
+/* ── SELECT ROLL: straight from inventory ── */
+function RollPicker({ onClose, onAdd }: { onClose: () => void; onAdd: (r: RollRow[]) => void }) {
+  const [q, setQ] = useState("");
+  const { data, isLoading } = useFrappeGetCall<{ message: RollRow[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.program.program_inventory_search", {}, "chal-rolls",
+  );
+  const rows = (data?.message ?? []).filter((r) =>
+    !q.trim() || `${r.roll_no || ""} ${r.color_name || ""} ${r.lot_number || ""} ${r.location || ""}`.toLowerCase().includes(q.toLowerCase()),
+  );
+  const [sel, setSel] = useState<Record<string, RollRow>>({});
+  return (
+    <PickerSheet title="Select roll" isLoading={isLoading} empty={rows.length === 0} emptyText="No rolls in stock."
+      onClose={onClose} onAdd={() => onAdd(Object.values(sel))} count={Object.keys(sel).length}
+      search={<div className="mm-search-box"><Search size={15} />
+        <input className="mm-input mm-input-compact" placeholder="Search roll / colour / lot…" value={q} onChange={(e) => setQ(e.target.value)} /></div>}>
+      <table className="mm-table mm-table-dense">
+        <thead><tr><th /><th>Roll</th><th>Colour</th><th>Lot</th><th>Location</th><th className="mm-num">Weight</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name} className={sel[r.name] ? "mm-ws-row-active" : undefined}
+              onClick={() => setSel((p) => { const n = { ...p }; if (n[r.name]) delete n[r.name]; else n[r.name] = r; return n; })}
+              style={{ cursor: "pointer" }}>
+              <td><input type="checkbox" checked={!!sel[r.name]} readOnly /></td>
+              <td>{r.roll_no || r.name}</td>
+              <td>{r.color_name || "—"}</td>
+              <td>{r.lot_number || "—"}</td>
+              <td>{r.location || "—"}</td>
+              <td className="mm-num">{(r.stock_weight ?? 0).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </PickerSheet>
+  );
+}
+
+function PickerSheet({ title, isLoading, empty, emptyText, onClose, onAdd, count, search, children }: {
+  title: string; isLoading: boolean; empty: boolean; emptyText: string;
+  onClose: () => void; onAdd: () => void; count: number; search?: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <div className="mm-modal-scrim mm-scrim-right" onClick={onClose}>
+      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="mm-modal-head">
+          <span className="mm-modal-title">{title}</span>
+          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="mm-modal-body">
+          {search}
+          {isLoading ? <p className="mm-muted">Loading…</p> : empty ? <p className="mm-empty">{emptyText}</p> : (
+            <div className="mm-table-scroll" style={{ marginTop: search ? "0.6rem" : 0 }}>{children}</div>
+          )}
+        </div>
+        <div className="mm-modal-foot">
+          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-primary" disabled={count === 0} onClick={onAdd}>Add {count || ""}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
