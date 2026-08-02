@@ -1,0 +1,170 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-08-02 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "posting_date",
+  "voucher_type",
+  "voucher_no",
+  "party",
+  "bobbin",
+  "note",
+  "in_qty",
+  "out_qty",
+  "box_in",
+  "box_out"
+ ],
+ "fields": [
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "voucher_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "in_list_view": 1,
+   "options": "Opening\nBobbin Challan\nProduction\nAdjustment"
+  },
+  {
+   "fieldname": "voucher_no",
+   "fieldtype": "Data",
+   "label": "Vch.No",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Link",
+   "label": "Party",
+   "in_list_view": 1,
+   "options": "MM Party Master"
+  },
+  {
+   "fieldname": "bobbin",
+   "fieldtype": "Link",
+   "label": "Bobbin",
+   "in_list_view": 1,
+   "options": "MM Bobbin Master"
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "in_qty",
+   "fieldtype": "Float",
+   "label": "Bobbin In",
+   "in_list_view": 1,
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "out_qty",
+   "fieldtype": "Float",
+   "label": "Bobbin Out",
+   "in_list_view": 1,
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "box_in",
+   "fieldtype": "Float",
+   "label": "Box In",
+   "in_list_view": 1,
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "box_out",
+   "fieldtype": "Float",
+   "label": "Box Out",
+   "in_list_view": 1,
+   "precision": 3,
+   "default": "0"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-02 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Bobbin Ledger Entry",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "posting_date",
+ "sort_order": "DESC",
+ "states": []
+}

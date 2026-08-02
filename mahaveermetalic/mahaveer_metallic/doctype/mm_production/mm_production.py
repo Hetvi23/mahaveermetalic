@@ -2,6 +2,7 @@
 # License: MIT
 
 import frappe
+import frappe.model.naming
 from frappe import _
 from frappe.model.document import Document
 
@@ -12,6 +13,16 @@ class MMProduction(Document):
 	def validate(self):
 		self._compute_weights()
 		self._enforce_tolerance()
+		self._assign_box_barcodes()
+
+	def _assign_box_barcodes(self):
+		"""Every produced box gets its own barcode — printed on the sticker and used by
+		Scan Box on the challan. Format: MM + yymmdd + a running number."""
+		stamp = frappe.utils.getdate(self.posting_date or frappe.utils.nowdate()).strftime("%y%m%d")
+		for b in self.boxes or []:
+			if b.barcode:
+				continue
+			b.barcode = frappe.model.naming.make_autoname(f"MM{stamp}.######")
 
 	def _compute_weights(self):
 		"""SRS 5.7: Net = Gross − Bobbin − Box, per box and rolled up to the voucher.
@@ -74,12 +85,76 @@ class MMProduction(Document):
 	def on_submit(self):
 		self._sync_source_program(link=True)
 		self._refresh_order_production()
+		self._post_bobbin_usage()
+		self._add_to_inventory()
 		self._raise_sales_challan()
+
+	def _post_bobbin_usage(self):
+		"""Bobbins entered on the boxes are consumed out of bobbin stock."""
+		from mahaveermetalic.mahaveer_metallic.api.bobbin import post_production
+
+		try:
+			post_production(self)
+		except Exception:
+			frappe.log_error(title=f"bobbin ledger for {self.name} failed")
+
+	def _add_to_inventory(self):
+		"""Produced boxes become finished-goods stock (SRS 5.10 step 10). Weight lands in
+		roll inventory + the stock ledger so it shows on Inventory / Stock Ledger and can
+		be dispatched later."""
+		from mahaveermetalic.mahaveer_metallic import stock_ledger
+
+		net = round(float(self.net_weight or 0), 3)
+		if net <= 0:
+			return
+		# Roll inventory is keyed by location — without one there's nowhere to stock it.
+		if not self.location:
+			frappe.msgprint(
+				_("No location on this production, so its output wasn't added to inventory."), alert=True
+			)
+			return
+		lot_no = frappe.db.get_value("MM Lot", self.lot, "lot_id") if self.lot else None
+		key = {
+			"branch": self.branch,
+			"location": self.location,
+			"lot_number": lot_no,
+			"color_name": self.shade,
+		}
+		existing = None
+		for cand in frappe.get_all("MM Roll Inventory", filters={"color_name": self.shade}, fields=["name", "branch", "location", "lot_number"]):
+			if (cand.branch or "") == (self.branch or "") and (cand.location or "") == (self.location or "") \
+				and (cand.lot_number or "") == (lot_no or ""):
+				existing = cand.name
+				break
+		boxes = float(self.box_qty or 0) or len(self.boxes or [])
+		if existing:
+			row = frappe.get_doc("MM Roll Inventory", existing)
+			row.stock_weight = round(float(row.stock_weight or 0) + net, 3)
+			row.stock_box = round(float(row.stock_box or 0) + boxes, 3)
+			row.save(ignore_permissions=True)
+		else:
+			row = frappe.get_doc(dict({"doctype": "MM Roll Inventory", "roll_no": self.roll_no or self.shade,
+				"stock_weight": net, "stock_box": boxes}, **key))
+			row.insert(ignore_permissions=True)
+		stock_ledger.post_movement(
+			voucher_type="Adjustment",
+			voucher_no=self.name,
+			branch=self.branch,
+			location=self.location,
+			lot_number=lot_no,
+			color_name=self.shade,
+			roll_no=self.roll_no,
+			in_weight=net,
+			in_box=boxes,
+			balance_weight=row.stock_weight,
+			balance_box=row.stock_box,
+			customer_order=self.customer_order,
+			remarks=_("Produced in {0}").format(self.name),
+		)
 
 	def _raise_sales_challan(self):
 		"""Production is where boxes/bobbins are entered — the dispatch challan is raised
-		from it. With a Sales Order the challan is created (as a draft, so it can be
-		checked); without one the boxes simply stay in hand for a later challan."""
+		from it. With a Sales Order the challan is raised and submitted; without one the boxes simply stay in hand for a later challan."""
 		if not self.customer_order:
 			return
 		from mahaveermetalic.mahaveer_metallic.api.challan import create_challan_from_production

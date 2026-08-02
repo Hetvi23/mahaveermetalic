@@ -10,6 +10,18 @@ class MMBobbinBoxTracking(Document):
 	def validate(self):
 		self._require_bobbin_or_box()
 
+	def on_update(self):
+		# Receive = bobbins in, Give = bobbins out. Re-posted on every save so an edit
+		# keeps the bobbin ledger in step.
+		from mahaveermetalic.mahaveer_metallic.api.bobbin import post_bobbin_challan
+
+		post_bobbin_challan(self)
+
+	def on_trash(self):
+		from mahaveermetalic.mahaveer_metallic.api.bobbin import clear_voucher
+
+		clear_voucher(self.name)
+
 	def _require_bobbin_or_box(self):
 		"""SRS 5.3: each line must carry a bobbin OR a box quantity (at least one),
 		and the challan must have at least one such line."""

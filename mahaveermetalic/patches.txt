@@ -14,3 +14,4 @@ mahaveermetalic.patches.make_orders_submittable
 mahaveermetalic.patches.introduce_mm_branch
 mahaveermetalic.patches.create_mm_lot
 mahaveermetalic.patches.add_lot_links
+mahaveermetalic.patches.add_bobbin_ledger_and_barcode

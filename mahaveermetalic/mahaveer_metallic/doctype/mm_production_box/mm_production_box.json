@@ -1,100 +1,110 @@
 {
-  "actions": [],
-  "creation": "2026-07-29 00:00:00.000000",
-  "doctype": "DocType",
-  "editable_grid": 1,
-  "engine": "InnoDB",
-  "field_order": [
-    "item",
-    "gross_weight",
-    "qty",
-    "bobbin",
-    "bobbin_pcs",
-    "bobbin_pcs_weight",
-    "total_bobbin_weight",
-    "box_weight",
-    "net_weight"
-  ],
-  "fields": [
-    {
-      "fieldname": "item",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Item"
-    },
-    {
-      "fieldname": "gross_weight",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Gross Wt (Kg)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "qty",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Qty",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "bobbin",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Bobbin",
-      "options": "MM Bobbin Master"
-    },
-    {
-      "fieldname": "bobbin_pcs",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Bobbin Pcs",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "bobbin_pcs_weight",
-      "fieldtype": "Float",
-      "label": "Per-pcs Wt (Kg)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "total_bobbin_weight",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Total Bobbin Wt (Kg)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "box_weight",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Box Wt (Kg)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "net_weight",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Net Wt (Kg)",
-      "precision": 3,
-      "default": "0"
-    }
-  ],
-  "index_web_pages_for_search": 0,
-  "istable": 1,
-  "links": [],
-  "modified": "2026-07-29 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Production Box",
-  "owner": "Administrator",
-  "permissions": [],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "creation": "2026-07-29 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "barcode",
+  "item",
+  "gross_weight",
+  "qty",
+  "bobbin",
+  "bobbin_pcs",
+  "bobbin_pcs_weight",
+  "total_bobbin_weight",
+  "box_weight",
+  "net_weight"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item"
+  },
+  {
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Gross Wt (Kg)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "bobbin",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Bobbin",
+   "options": "MM Bobbin Master"
+  },
+  {
+   "fieldname": "bobbin_pcs",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Bobbin Pcs",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "bobbin_pcs_weight",
+   "fieldtype": "Float",
+   "label": "Per-pcs Wt (Kg)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "total_bobbin_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total Bobbin Wt (Kg)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "box_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Box Wt (Kg)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "net_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Net Wt (Kg)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "Barcode",
+   "read_only": 1,
+   "in_list_view": 1,
+   "unique": 1,
+   "description": "Per-box barcode printed on the sticker and used by Scan Box."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-02 19:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Production Box",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

@@ -4,7 +4,7 @@
 
 Production is where boxes and bobbins are entered; the challan is the dispatch document
 built from them. A production voucher that carries a Sales Order auto-raises its challan
-on submit (as a draft, so it can be checked before it counts as dispatched). Without an
+on submit and submits it straight away (it counts as dispatched). Without an
 order the produced boxes simply stay available, and a challan can be built later here by
 picking boxes (SELECT BOX) or rolls straight from inventory (SELECT ROLL).
 """
@@ -58,7 +58,7 @@ def create_challan_from_production(production):
 		rows.append(
 			_box_row(
 				{
-					"barcode": None,
+					"barcode": b.barcode,
 					"item": b.item or prod.shade,
 					"cut": prod.cut,
 					"gross_weight": b.gross_weight,
@@ -90,6 +90,7 @@ def create_challan_from_production(production):
 		}
 	)
 	challan.insert(ignore_permissions=True)
+	challan.submit()   # dispatched straight away
 	return challan.name
 
 
@@ -144,7 +145,7 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	for name in box_list:
 		b = frappe.db.get_value(
 			"MM Production Box", name,
-			["parent", "item", "gross_weight", "bobbin", "bobbin_pcs", "bobbin_pcs_weight",
+			["parent", "item", "barcode", "gross_weight", "bobbin", "bobbin_pcs", "bobbin_pcs_weight",
 			 "total_bobbin_weight", "box_weight", "net_weight"],
 			as_dict=True,
 		)
@@ -184,3 +185,28 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	)
 	challan.insert(ignore_permissions=True)
 	return {"challan": challan.name, "lines": len(rows)}
+
+
+@frappe.whitelist()
+def scan_box(barcode):
+	"""SCAN BOX: resolve a sticker barcode to its produced box."""
+	code = (barcode or "").strip()
+	if not code:
+		frappe.throw(_("Scan or type a barcode."))
+	b = frappe.db.get_value(
+		"MM Production Box", {"barcode": code},
+		["name as box", "parent as production", "item", "barcode", "gross_weight", "bobbin",
+		 "bobbin_pcs", "bobbin_pcs_weight", "total_bobbin_weight", "box_weight", "net_weight"],
+		as_dict=True,
+	)
+	if not b:
+		frappe.throw(_("No box found for barcode {0}.").format(code))
+	p = frappe.db.get_value("MM Production", b.production, ["cut", "customer_order", "docstatus"], as_dict=True)
+	if p and p.docstatus != 1:
+		frappe.throw(_("Box {0} belongs to a production that isn't submitted.").format(code))
+	b["cut"] = p.cut if p else None
+	b["customer_order"] = p.customer_order if p else None
+	used = frappe.db.exists("MM Sales Challan Item", {"barcode": code})
+	if used:
+		frappe.throw(_("Box {0} is already on a challan.").format(code))
+	return b
