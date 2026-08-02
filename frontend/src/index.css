@@ -1761,3 +1761,15 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
   .mm-screen { padding: 0; }
   .mm-card { border: 0; box-shadow: none; }
 }
+
+/* Link dropdowns were being clipped by the form shell's overflow (Purchase Order,
+   new-supplier, etc.) — let the suggestion list escape its container. */
+.mm-card-form-shell { overflow: visible; }
+.mm-card-form-shell .mm-form-body, .mm-ws-form, .mm-form-section { overflow: visible; }
+.mm-link-wrap { position: relative; }
+.mm-suggest { z-index: 80; }
+
+/* Box Details: keep the quick-add "+" beside the Bobbin select, not adrift. */
+.mm-bx-row > .mm-bx-bobbin { display: flex; gap: 0.4rem; align-items: stretch; width: 100%; }
+.mm-bx-row > .mm-bx-bobbin > select { flex: 1 1 auto; min-width: 0; }
+.mm-bx-row > .mm-bx-bobbin > .mm-bx-add { flex: 0 0 38px; }

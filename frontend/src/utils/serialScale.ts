@@ -85,6 +85,14 @@ export function useSerialScale() {
       setError(null);
       setConnecting(true);
       stopRef.current = false;
+      // Release anything we still hold — re-opening a port this tab already has open
+      // fails with the same "Failed to open serial port".
+      if (portRef.current) {
+        try { await readerRef.current?.cancel(); } catch { /* ignore */ }
+        try { await portRef.current.close(); } catch { /* ignore */ }
+        readerRef.current = null;
+        portRef.current = null;
+      }
       try {
         const port = await serial.requestPort();
         await port.open({ baudRate });
@@ -117,7 +125,19 @@ export function useSerialScale() {
         setConnecting(false);
         const msg = String((e as Error)?.message || e);
         // Cancelling the port picker throws — treat that quietly.
-        if (!/no port selected|cancelled|canceled|aborted/i.test(msg)) setError(msg);
+        if (/no port selected|cancelled|canceled|aborted/i.test(msg)) return;
+        // "Failed to open serial port" almost always means something else already holds
+        // the COM port (the old .exe, a driver tool, or a previous tab) — say so, since
+        // the raw message gives the operator nothing to act on.
+        if (/failed to open/i.test(msg)) {
+          setError(
+            "Couldn't open the port. It's usually held by another program — close the old " +
+              "Mahavir .exe / any scale or printer utility (and other browser tabs of this app), " +
+              "unplug-replug the USB cable, then Connect again.",
+          );
+          return;
+        }
+        setError(msg);
       }
     },
     [serial],

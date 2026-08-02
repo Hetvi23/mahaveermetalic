@@ -223,16 +223,20 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		title: "Bobbin Master",
 		listTagline: "Bobbin types used on challans and tracking.",
 		navGroup: "masters",
-		formSections: [{ id: "b1", title: "Bobbin specification", fieldnames: ["bobbin_name", "quality", "weight"] }],
+		formSections: [{ id: "b1", title: "Bobbin specification", fieldnames: ["bobbin_name", "quality", "weight", "owner_type", "party"] }],
 		listColumns: [
 			{ fieldname: "bobbin_name", label: "Name" },
 			{ fieldname: "quality", label: "Quality" },
+			{ fieldname: "weight", label: "Weight (Kg)" },
+			{ fieldname: "owner_type", label: "Whose" },
 		],
 		searchField: "bobbin_name",
 		fields: [
 			{ fieldname: "bobbin_name", label: "Name", fieldtype: "Data", reqd: true },
 			{ fieldname: "quality", label: "Quality", fieldtype: "Data" },
-			{ fieldname: "weight", label: "Weight", fieldtype: "Float" },
+			{ fieldname: "weight", label: "Weight (Kg)", fieldtype: "Float" },
+			{ fieldname: "owner_type", label: "Whose Bobbin", fieldtype: "Select", options: "MM\nParty", default: "MM" },
+			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", dependsOn: { field: "owner_type", in: ["Party"] } },
 		],
 	},
 	{
