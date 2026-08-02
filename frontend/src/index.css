@@ -1728,3 +1728,15 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-patty-step { display: flex; align-items: stretch; gap: 0.35rem; }
 .mm-patty-step input { text-align: center; }
 .mm-patty-step .mm-mini { flex: none; width: 34px; justify-content: center; font-size: 1rem; }
+
+/* Production day-sheet view: Day | Night columns, colour blocks with batch lines */
+.mm-pvw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; align-items: start; }
+@media (max-width: 900px) { .mm-pvw-grid { grid-template-columns: 1fr; } }
+.mm-pvw-col { background: var(--mm-card); border: 1px solid var(--mm-border); border-radius: var(--mm-radius); padding: 0.9rem 1rem; }
+.mm-pvw-col-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding-bottom: 0.5rem; margin-bottom: 0.7rem; border-bottom: 2px solid var(--mm-border-dark); }
+.mm-pvw-col-head h2 { margin: 0; font-size: 0.95rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.mm-pvw-colour { margin-bottom: 1rem; }
+.mm-pvw-colour-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.3rem; color: var(--mm-accent-fg); }
+.mm-pvw-table { width: 100%; }
+.mm-pvw-done td { opacity: 0.55; text-decoration: line-through; }
+.mm-pvw-empty { color: var(--mm-text-sec); font-size: 0.85rem; padding: 0.5rem 0; }

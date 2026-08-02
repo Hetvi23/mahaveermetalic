@@ -10,6 +10,7 @@ import SupplierPending from "./pages/SupplierPending";
 import CuttingWorklist from "./pages/CuttingWorklist";
 import ProgramScreen from "./pages/ProgramScreen";
 import ProductionScreen from "./pages/ProductionScreen";
+import ProductionViewPage from "./pages/ProductionViewPage";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
 import InwardWorkspace from "./pages/InwardWorkspace";
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/cutting" element={<CuttingWorklist />} />
             <Route path="/program" element={<ProgramScreen />} />
             <Route path="/production" element={<ProductionScreen />} />
+            <Route path="/production-view" element={<ProductionViewPage />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
             <Route path="/inward" element={<InwardWorkspace />} />
             <Route path="/inventory" element={<InventoryScreen />} />

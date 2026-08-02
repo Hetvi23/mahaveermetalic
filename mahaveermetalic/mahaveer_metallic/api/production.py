@@ -84,6 +84,87 @@ def order_options_for_party(party=None, customer_order=None):
 
 
 @frappe.whitelist()
+def production_view(date=None, branch=None):
+	"""Read-only production day sheet for one date.
+
+	Returns what's currently IN CUTTING, plus the Day and Night programs for that date
+	grouped by colour — each batch listed as its own line with the lot id and cut, the
+	way the shop floor reads it off the board.
+	"""
+	day = date or frappe.utils.nowdate()
+
+	def lot_id(lot):
+		return frappe.db.get_value("MM Lot", lot, "lot_id") if lot else None
+
+	# --- In cutting: submitted cuttings not yet finished ---
+	cut_filters = {"docstatus": 1, "status": ["!=", "Completed"]}
+	if branch:
+		cut_filters["branch"] = branch
+	in_cutting = []
+	for c in frappe.get_all(
+		"MM Cutting",
+		filters=cut_filters,
+		fields=["name", "shade", "roll_no", "cut", "lot", "total_patti_qty", "total_net_weight", "status", "customer_order"],
+		order_by="modified desc",
+		limit_page_length=200,
+	):
+		in_cutting.append(
+			{
+				"cutting": c.name,
+				"color": c.shade or c.roll_no or "—",
+				"cut": c.cut,
+				"lot_id": lot_id(c.lot),
+				"patty": int(round(c.total_patti_qty or 0)),
+				"weight": c.total_net_weight or 0,
+				"status": c.status,
+				"customer_order": c.customer_order,
+			}
+		)
+
+	# --- Programs planned for this date, split Day / Night and grouped by colour ---
+	prog_filters = {"docstatus": 1, "program_date": day}
+	if branch:
+		prog_filters["branch"] = branch
+	shifts = {"Day": {}, "Night": {}}
+	for p in frappe.get_all(
+		"MM Program",
+		filters=prog_filters,
+		fields=["name", "shade", "roll_no", "cut", "lot", "shift", "machine_no",
+			"total_batches", "completed_batches", "net_weight", "status", "unfinished"],
+		order_by="machine_no asc, creation asc",
+		limit_page_length=500,
+	):
+		sk = p.shift or "Day"
+		if sk not in shifts:
+			shifts[sk] = {}
+		colour = p.shade or p.roll_no or "—"
+		grp = shifts[sk].setdefault(colour, {"color": colour, "rows": []})
+		lid = lot_id(p.lot)
+		total = int(p.total_batches or 0) or 1
+		# One line per batch — one patty = one batch.
+		for i in range(1, total + 1):
+			grp["rows"].append(
+				{
+					"batch": i,
+					"lot_id": lid,
+					"cut": p.cut,
+					"machine_no": p.machine_no,
+					"program": p.name,
+					"status": p.status,
+					"done": i <= int(p.completed_batches or 0),
+					"unfinished": bool(p.unfinished),
+				}
+			)
+
+	return {
+		"date": day,
+		"in_cutting": in_cutting,
+		"day": list(shifts.get("Day", {}).values()),
+		"night": list(shifts.get("Night", {}).values()),
+	}
+
+
+@frappe.whitelist()
 def companies_for_item(color=None, show_all=0, pin=None):
 	"""Party/company picker for the production voucher.
 
