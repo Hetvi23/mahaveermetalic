@@ -84,6 +84,126 @@ def order_options_for_party(party=None, customer_order=None):
 
 
 @frappe.whitelist()
+def companies_for_item(color=None, show_all=0, pin=None):
+	"""Party/company picker for the production voucher.
+
+	By default only parties that have actually ORDERED this colour are offered (one row
+	per company under each party — searchable by party, selectable by company). `show_all`
+	lists every party/company even without an order, and is gated by the Admin Override
+	PIN (a direct voucher with no order behind it)."""
+	show_all = frappe.utils.cint(show_all)
+	if show_all:
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import verify_admin_pin
+
+		if not verify_admin_pin(pin):
+			frappe.throw(_("A valid Admin Override PIN is required to show parties without an order."))
+		rows = frappe.db.sql(
+			"""
+			select p.name as party, p.party_name, c.company_name
+			from `tabMM Party Master` p
+			left join `tabMM Party Company` c on c.parent = p.name
+			order by p.party_name asc, c.idx asc
+			""",
+			as_dict=True,
+		)
+	else:
+		if not color:
+			return []
+		rows = frappe.db.sql(
+			"""
+			select distinct p.name as party, p.party_name, c.company_name
+			from `tabMM Sales Order` so
+			join `tabMM Sales Order Item` soi on soi.parent = so.name
+			join `tabMM Party Master` p on p.name = so.party
+			left join `tabMM Party Company` c on c.parent = p.name
+			where so.docstatus = 1 and soi.color_name = %(color)s
+			order by p.party_name asc, c.idx asc
+			""",
+			{"color": color},
+			as_dict=True,
+		)
+	# One entry per selectable company; parties with no company fall back to the party name.
+	out = []
+	for r in rows:
+		out.append(
+			{
+				"party": r.party,
+				"party_name": r.party_name or r.party,
+				"company": r.company_name or r.party_name or r.party,
+			}
+		)
+	return out
+
+
+@frappe.whitelist()
+def orders_for_production(party=None, color=None):
+	"""Order picker on the production voucher: that party's APPROVED orders for this
+	colour that still have something left, each with its running figures —
+	ordered / inwarded / produced / dispatched / remaining."""
+	if not party:
+		return []
+	conds = ["so.party = %(party)s", "so.docstatus = 1"]
+	vals = {"party": party}
+	if color:
+		conds.append("soi.color_name = %(color)s")
+		vals["color"] = color
+	rows = frappe.db.sql(
+		f"""
+		select distinct so.name, so.transaction_date, so.delivery_date,
+			so.ordered_weight, so.inwarded_weight,
+			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
+				from `tabMM Sales Order Item` x where x.parent = so.name) as colours
+		from `tabMM Sales Order` so
+		join `tabMM Sales Order Item` soi on soi.parent = so.name
+		where {" and ".join(conds)}
+		order by so.transaction_date desc, so.modified desc
+		limit 200
+		""",
+		vals,
+		as_dict=True,
+	)
+	out = []
+	for r in rows:
+		produced = float(
+			frappe.db.sql(
+				"select coalesce(sum(net_weight), 0) from `tabMM Production` where customer_order=%s and docstatus=1",
+				(r.name,),
+			)[0][0]
+			or 0
+		)
+		# Already dispatched = weight that physically left on submitted Sales Challans for
+		# this order (the line's own order wins, else the challan header's).
+		dispatched = float(
+			frappe.db.sql(
+				"""select coalesce(sum(ci.weight), 0)
+				from `tabMM Sales Challan Item` ci join `tabMM Sales Challan` c on c.name = ci.parent
+				where c.docstatus = 1 and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %s""",
+				(r.name,),
+			)[0][0]
+			or 0
+		)
+		ordered = float(r.ordered_weight or 0)
+		remaining = round(ordered - produced, 3)
+		# Only orders that still have something left to produce.
+		if ordered > 0 and remaining <= 0:
+			continue
+		out.append(
+			{
+				"name": r.name,
+				"colours": r.colours,
+				"transaction_date": str(r.transaction_date) if r.transaction_date else None,
+				"delivery_date": str(r.delivery_date) if r.delivery_date else None,
+				"ordered_weight": round(ordered, 3),
+				"inwarded_weight": round(float(r.inwarded_weight or 0), 3),
+				"produced_weight": round(produced, 3),
+				"dispatched_weight": round(dispatched, 3),
+				"remaining_weight": remaining,
+			}
+		)
+	return out
+
+
+@frappe.whitelist()
 def open_orders_for_item(color=None, party=None):
 	"""Production voucher 'Select Order' list: the OPEN Sales Orders of a party that
 	include this colour/item. Open = submitted-or-draft and not yet completed (production
@@ -156,6 +276,7 @@ def create_production(
 	shift=None,
 	customer_order=None,
 	party=None,
+	company_name=None,
 	cut=None,
 	posting_date=None,
 	batch_no=None,
@@ -231,6 +352,7 @@ def create_production(
 			"posting_date": posting_date or frappe.utils.nowdate(),
 			"customer_order": customer_order or prog.customer_order,
 			"party": party or (frappe.db.get_value("MM Sales Order", customer_order, "party") if customer_order else None),
+			"company_name": company_name or None,
 			"source_program": prog.name,
 			"roll_no": prog.roll_no,
 			"shade": prog.shade,

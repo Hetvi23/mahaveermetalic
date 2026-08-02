@@ -3,7 +3,6 @@ import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe
 import { Factory, Plus, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
-import PartyPicker from "@/components/PartyPicker";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
 
@@ -179,14 +178,32 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [party, setParty] = useState<string>(program.party || "");
+  const [company, setCompany] = useState<string>("");
   const [order, setOrder] = useState<string>(program.customer_order || "");
   const [size, setSize] = useState<string>(program.cut || "");
+  const [showAll, setShowAll] = useState(false);
+  const [allPin, setAllPin] = useState("");
+  const [allPinOpen, setAllPinOpen] = useState(false);
 
-  // Select Order = this party's OPEN orders that include this item (colour).
-  const openOrdersCall = useFrappeGetCall<{ message: { name: string; required_weight?: number; delivery_date?: string; colours?: string }[] }>(
-    `${API}.open_orders_for_item`,
-    party ? { color: program.shade || undefined, party } : undefined,
-    party ? `prod-oo-${program.shade || ""}-${party}` : null,
+  // Party/company list: by default only parties who ORDERED this colour. "See all"
+  // (Admin PIN) opens every party for a direct voucher with no order behind it.
+  const partiesCall = useFrappeGetCall<{ message: { party: string; party_name: string; company: string }[] }>(
+    `${API}.companies_for_item`,
+    showAll ? { show_all: 1, pin: allPin } : { color: program.shade || undefined },
+    showAll ? `prod-parties-all-${allPin ? "y" : "n"}` : `prod-parties-${program.shade || ""}`,
+  );
+  const partyRows = partiesCall.data?.message ?? [];
+
+  // Orders for the chosen party: approved, this colour, still with something remaining.
+  const openOrdersCall = useFrappeGetCall<{
+    message: {
+      name: string; colours?: string; ordered_weight?: number; inwarded_weight?: number;
+      produced_weight?: number; dispatched_weight?: number; remaining_weight?: number;
+    }[];
+  }>(
+    `${API}.orders_for_production`,
+    party ? { party, color: program.shade || undefined } : undefined,
+    party ? `prod-orders-${program.shade || ""}-${party}` : null,
   );
   const openOrders = openOrdersCall.data?.message ?? [];
 
@@ -227,6 +244,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         shift,
         customer_order: order || undefined,
         party: party || undefined,
+        company_name: company || undefined,
         cut: size || undefined,
         posting_date: vdate || today(),
         batch_no: batchNo || undefined,
@@ -266,15 +284,46 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <span className="mm-field-label">V.No</span>
               <input className="mm-input" value="Auto (MMPROD)" readOnly />
             </label>
-            <PartyPicker label="Party" value={party} onChange={(v) => { setParty(v); setOrder(""); }} />
+            {/* Company is what gets saved; search by party, select the company. */}
             <label className="mm-field">
-              <span className="mm-field-label">Select Order</span>
+              <span className="mm-field-label">
+                Party / Company
+                <button type="button" className="mm-mini mm-pv-seeall"
+                  onClick={() => { if (showAll) { setShowAll(false); setAllPin(""); } else setAllPinOpen(true); }}>
+                  {showAll ? "ordered only" : "See all"}
+                </button>
+              </span>
+              {allPinOpen && !showAll && (
+                <span style={{ display: "flex", gap: "0.35rem", marginBottom: "0.35rem" }}>
+                  <input className="mm-input mm-input-compact" type="password" placeholder="Admin PIN" value={allPin}
+                    onChange={(e) => setAllPin(e.target.value)} />
+                  <button type="button" className="mm-mini mm-mini-ok" disabled={!allPin.trim()}
+                    onClick={() => { setShowAll(true); setAllPinOpen(false); }}>Show</button>
+                </span>
+              )}
+              <select className="mm-input" value={company}
+                onChange={(e) => {
+                  const row = partyRows.find((p) => p.company === e.target.value);
+                  setCompany(e.target.value);
+                  setParty(row?.party || "");
+                  setOrder("");
+                }}>
+                <option value="">{partiesCall.isLoading ? "Loading…" : "— select company —"}</option>
+                {partyRows.map((p) => (
+                  <option key={`${p.party}|${p.company}`} value={p.company}>
+                    {p.company}{p.party_name && p.party_name !== p.company ? ` — ${p.party_name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Select Order (remaining only)</span>
               <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)} disabled={!party}>
-                <option value="">{!party ? "Pick a party first" : openOrdersCall.isLoading ? "Loading…" : "— none —"}</option>
+                <option value="">{!party ? "Pick a company first" : openOrdersCall.isLoading ? "Loading…" : "— no order (direct voucher) —"}</option>
                 {order && !openOrders.some((o) => o.name === order) && <option value={order}>{order}</option>}
                 {openOrders.map((o) => (
                   <option key={o.name} value={o.name}>
-                    {o.name}{o.colours ? ` · ${o.colours}` : ""}{o.required_weight != null ? ` · req ${o.required_weight}` : ""}
+                    {o.name}{o.colours ? ` · ${o.colours}` : ""} · in {(o.inwarded_weight ?? 0).toLocaleString()} · out {(o.dispatched_weight ?? 0).toLocaleString()} · rem {(o.remaining_weight ?? 0).toLocaleString()}
                   </option>
                 ))}
               </select>

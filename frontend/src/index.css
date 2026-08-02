@@ -1714,3 +1714,6 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-prog-shiftcell { display: flex; flex-flow: row wrap; gap: 0.6rem; align-items: flex-start; min-width: 240px; }
 .mm-prog-shiftcell > .mm-prog-card { flex: 0 0 300px; width: 300px; max-width: 100%; }
 .mm-prog-add { align-self: flex-start; flex: none; }
+
+/* Production voucher: inline "See all parties" toggle next to the field label */
+.mm-pv-seeall { margin-left: 0.5rem; padding: 0.05rem 0.4rem; font-size: 0.65rem; text-transform: none; letter-spacing: 0; }
