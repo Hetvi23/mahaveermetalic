@@ -304,6 +304,7 @@ def cutting_board(branch=None):
 		"c.docstatus = 1",
 		"c.status in ('In Progress', 'Open')",
 		"(c.program is null or p.unfinished = 1)",
+		"ifnull(c.closed, 0) = 0",
 	]
 	values = {}
 	if branch:

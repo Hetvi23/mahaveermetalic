@@ -27,6 +27,22 @@ def get_tolerance_percent() -> float:
 	return _mm_setting_float("production_tolerance_percent", 4.0)
 
 
+def get_leftover_tolerance() -> float:
+	"""Leftover weight (Kg) at or below which a cutting/production counts as spent and
+	can auto-close. Defaults to 1 kg when unset."""
+	return _mm_setting_float("leftover_tolerance_kg", 1.0)
+
+
+def auto_close_enabled() -> bool:
+	"""Whether leftover cuttings/productions auto-close at all (default on)."""
+	rows = frappe.db.sql(
+		"select value from tabSingles where doctype='MM Settings' and field='auto_close_leftover'"
+	)
+	if rows and rows[0][0] not in (None, ""):
+		return bool(int(float(rows[0][0])))
+	return True
+
+
 def get_inward_match_tolerance() -> float:
 	"""Inward-to-order match tolerance (%). An order auto-completes once its inwarded
 	weight is within this % of the ordered weight. Defaults to 2 when unset."""

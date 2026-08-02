@@ -1,56 +1,91 @@
 {
-  "actions": [],
-  "creation": "2026-06-21 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "section_overrides",
-    "admin_override_pin",
-    "production_tolerance_percent",
-    "inward_match_tolerance_percent"
-  ],
-  "fields": [
-    {
-      "fieldname": "section_overrides",
-      "fieldtype": "Section Break",
-      "label": "Admin Overrides"
-    },
-    {
-      "fieldname": "admin_override_pin",
-      "fieldtype": "Password",
-      "label": "Admin Override PIN",
-      "description": "PIN required to override production tolerance (>4% variance) and other admin gates."
-    },
-    {
-      "fieldname": "production_tolerance_percent",
-      "fieldtype": "Float",
-      "label": "Production Tolerance (%)",
-      "precision": 2,
-      "default": "4",
-      "description": "Production net weight may differ from the input thread weight by up to this %. Beyond it, the Admin Override PIN is required."
-    },
-    {
-      "fieldname": "inward_match_tolerance_percent",
-      "fieldtype": "Float",
-      "label": "Inward Match Tolerance (%)",
-      "precision": 2,
-      "default": "2",
-      "description": "When an order's total inwarded weight reaches within this % of the ordered weight, the order auto-completes on inward. Force Complete (with the Admin PIN) closes it regardless."
-    }
-  ],
-  "index_web_pages_for_search": 0,
-  "issingle": 1,
-  "links": [],
-  "modified": "2026-07-29 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Settings",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "print": 1, "report": 1, "share": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "creation": "2026-06-21 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_overrides",
+  "admin_override_pin",
+  "production_tolerance_percent",
+  "inward_match_tolerance_percent",
+  "auto_close_leftover",
+  "leftover_tolerance_kg"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_overrides",
+   "fieldtype": "Section Break",
+   "label": "Admin Overrides"
+  },
+  {
+   "fieldname": "admin_override_pin",
+   "fieldtype": "Password",
+   "label": "Admin Override PIN",
+   "description": "PIN required to override production tolerance (>4% variance) and other admin gates."
+  },
+  {
+   "fieldname": "production_tolerance_percent",
+   "fieldtype": "Float",
+   "label": "Production Tolerance (%)",
+   "precision": 2,
+   "default": "4",
+   "description": "Production net weight may differ from the input thread weight by up to this %. Beyond it, the Admin Override PIN is required."
+  },
+  {
+   "fieldname": "inward_match_tolerance_percent",
+   "fieldtype": "Float",
+   "label": "Inward Match Tolerance (%)",
+   "precision": 2,
+   "default": "2",
+   "description": "When an order's total inwarded weight reaches within this % of the ordered weight, the order auto-completes on inward. Force Complete (with the Admin PIN) closes it regardless."
+  },
+  {
+   "fieldname": "auto_close_leftover",
+   "fieldtype": "Check",
+   "label": "Auto-close leftover cutting/production",
+   "default": "1",
+   "description": "When a program takes fewer batches than the cutting could yield, auto-close the leftover if it is within the tolerance below."
+  },
+  {
+   "fieldname": "leftover_tolerance_kg",
+   "fieldtype": "Float",
+   "label": "Leftover Tolerance (Kg)",
+   "default": "1",
+   "description": "Leftover at or below this weight counts as nothing left, so the cutting/production auto-closes.",
+   "precision": 3
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-02 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "print": 1,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

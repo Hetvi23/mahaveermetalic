@@ -50,9 +50,9 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	finished_only = int(finished_only or 0)
 
 	# --- Cut: finished cuttings (patties) not yet programmed ---
-	cut_filters = {"docstatus": 1, "status": "Completed", "program": ["is", "not set"]}
+	cut_filters = {"docstatus": 1, "status": "Completed", "program": ["is", "not set"], "closed": 0}
 	# --- In Cutting: cuttings still in progress (selectable — programming ahead of the cut is allowed) ---
-	prog_filters = {"docstatus": 1, "status": ["!=", "Completed"], "program": ["is", "not set"]}
+	prog_filters = {"docstatus": 1, "status": ["!=", "Completed"], "program": ["is", "not set"], "closed": 0}
 	states = (("Cut", cut_filters),) if finished_only else (("Cut", cut_filters), ("In Cutting", prog_filters))
 	for state, filters in states:
 		if branch:
@@ -394,6 +394,16 @@ def create_program(
 	program.insert(ignore_permissions=True)
 	program.submit()
 	frappe.db.set_value("MM Cutting", cut.name, "program", program.name, update_modified=False)
+
+	# The program may take fewer batches than this cutting could yield — the unused weight
+	# is a leftover. Close it out when it's within tolerance and no more of this colour+lot
+	# is on the way (otherwise it stays open so the next cutting adds onto it).
+	leftover = round(float(cut.total_net_weight or 0) - final_weight, 3)
+	if leftover > 0:
+		from mahaveermetalic.mahaveer_metallic.api.closeout import maybe_auto_close_cutting
+
+		frappe.db.set_value("MM Cutting", cut.name, "leftover_weight", leftover, update_modified=False)
+		maybe_auto_close_cutting(cut.name, leftover)
 	return {"program": program.name, "status": program.status, "total_batches": program.total_batches}
 
 

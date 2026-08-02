@@ -75,6 +75,7 @@ const SECTIONS: Section[] = [
       { label: "Bobbin In / Out", icon: Disc3, to: "/bobbin-tracking" },
       { label: "Inventory", icon: Boxes, to: "/inventory" },
       { label: "Stock Ledger", icon: ScrollText, to: "/stock-ledger" },
+      { label: "Close-out Stack", icon: ScrollText, to: "/closeout" },
     ],
   },
   {

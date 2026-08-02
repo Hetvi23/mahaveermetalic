@@ -24,7 +24,11 @@
   "total_patti_qty",
   "total_net_weight",
   "per_patty_weight",
-  "lot"
+  "lot",
+  "closed",
+  "close_mode",
+  "closed_on",
+  "leftover_weight"
  ],
  "fields": [
   {
@@ -158,12 +162,43 @@
    "read_only": 1,
    "in_list_view": 1,
    "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
+  },
+  {
+   "fieldname": "closed",
+   "fieldtype": "Check",
+   "label": "Closed",
+   "read_only": 1,
+   "default": "0",
+   "description": "Leftover closed out \u2014 no further material is added to this record."
+  },
+  {
+   "fieldname": "close_mode",
+   "fieldtype": "Select",
+   "label": "Close Mode",
+   "read_only": 1,
+   "description": "How it was closed.",
+   "options": "\nAuto\nForce"
+  },
+  {
+   "fieldname": "closed_on",
+   "fieldtype": "Datetime",
+   "label": "Closed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "leftover_weight",
+   "fieldtype": "Float",
+   "label": "Leftover (Kg)",
+   "read_only": 1,
+   "default": "0",
+   "description": "Weight left unused when the program took fewer batches than this could yield.",
+   "precision": 3
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-02 12:00:00.000000",
+ "modified": "2026-08-02 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Cutting",

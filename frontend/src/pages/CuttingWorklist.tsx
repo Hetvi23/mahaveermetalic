@@ -67,6 +67,7 @@ export default function CuttingWorklist() {
   const stock = useFrappeGetCall<{ message: Group[] }>(`${API}.inward_stock_by_order`, undefined, "cut-stock");
   const board = useFrappeGetCall<{ message: BoardCard[] }>(`${API}.cutting_board`, undefined, "cut-board");
   const { call: finish } = useFrappePostCall(`${API}.complete_cutting`);
+  const { call: forceClose } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.closeout.force_close");
 
   const groups = stock.data?.message ?? [];
   const cards = board.data?.message ?? [];
@@ -87,6 +88,17 @@ export default function CuttingWorklist() {
   async function onFinish(name: string) {
     try {
       await finish({ cutting: name });
+      refreshAll();
+    } catch (e) {
+      alert(extractErrorMessage(e));
+    }
+  }
+
+  // Close this cutting's leftover by hand — it moves to the Close-out stack, revertible.
+  async function onForceClose(name: string) {
+    if (!window.confirm(`Force close ${name}? Its leftover stops showing as available (revertible from the Close-out stack).`)) return;
+    try {
+      await forceClose({ doctype: "MM Cutting", name });
       refreshAll();
     } catch (e) {
       alert(extractErrorMessage(e));
@@ -178,6 +190,11 @@ export default function CuttingWorklist() {
                               <CheckCircle2 size={13} /> Finish
                             </button>
                           )}
+                          {/* Always available — closes this cutting's leftover out;
+                              it lands on the Close-out stack and can be reverted. */}
+                          <button className="mm-mini mm-mini-warn" onClick={() => void onForceClose(c.name)} title="Force close this leftover">
+                            Force close
+                          </button>
                         </div>
                       </div>
                     ))}
