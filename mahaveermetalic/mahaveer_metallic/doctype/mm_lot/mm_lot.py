@@ -42,6 +42,26 @@ def _next_lot_no(color: str, fy: str) -> int:
 
 
 @frappe.whitelist()
+def preview_lot(color=None, challan_number=None, posting_date=None):
+	"""What lot this inward WOULD get — without creating anything.
+
+	Lets the Inward screen show the lot id in its read-only field before posting: the
+	challan's existing lot if it already has one, otherwise the next colour-wise number.
+	"""
+	if not color:
+		return {"lot_id": None, "reused": False}
+	challan = (challan_number or "").strip()
+	fy = financial_year(posting_date)
+	if challan:
+		existing = frappe.db.get_value(
+			"MM Lot", {"challan_number": challan, "color": color}, ["name", "lot_id"], as_dict=True
+		)
+		if existing:
+			return {"lot": existing.name, "lot_id": existing.lot_id, "reused": True}
+	return {"lot": None, "lot_id": f"LT{_next_lot_no(color, fy)}/{fy}", "reused": False}
+
+
+@frappe.whitelist()
 def resolve_lot(color=None, challan_number=None, posting_date=None):
 	"""Return the lot for this colour — reusing the challan's existing lot when the same
 	challan is entered again, otherwise allocating the next colour-wise number.

@@ -192,6 +192,25 @@ export default function InwardWorkspace() {
     "mahaveermetalic.mahaveer_metallic.api.inward.cancel_inward",
   );
 
+  // Show which lot this inward will land in — the challan's existing lot, or the next
+  // colour-wise LT id. Preview only: the authoritative lot is assigned on post.
+  const { call: previewLot } = useFrappePostCall<{ message: { lot_id?: string } }>(
+    "mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot.preview_lot",
+  );
+  const [lotPreview, setLotPreview] = useState("");
+  const firstColour = rows.find((r) => r.color)?.color || "";
+  useEffect(() => {
+    if (!firstColour) { setLotPreview(""); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await previewLot({ color: firstColour, challan_number: challanNo.trim() || undefined, posting_date: postingDate });
+        if (!cancelled) setLotPreview(r?.message?.lot_id || "");
+      } catch { if (!cancelled) setLotPreview(""); }
+    })();
+    return () => { cancelled = true; };
+  }, [firstColour, challanNo, postingDate, previewLot]);
+
   // Cancelling an inward reverses its rolls out of inventory (and posts the OUT ledger
   // entries) server-side, so the Inventory + Stock Ledger screens self-correct.
   async function onCancelInward(name: string) {
@@ -446,12 +465,13 @@ export default function InwardWorkspace() {
           <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
           <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} record={{ location }} />
           <SalesOrderPicker wide label="Sales order (optional)" value={salesOrder} onChange={(v, opt) => void pickSalesOrder(v, opt)} />
-          {fetched && (
-            <label className="mm-field">
-              <span className="mm-field-label">Lot number</span>
-              <input className="mm-input" value={lot} onChange={(e) => setLot(e.target.value)} placeholder="Auto from challan coating" />
-            </label>
-          )}
+          {/* Lot is assigned automatically (colour-wise LT id, reused per challan) —
+              shown here read-only so the operator can see which lot this will land in. */}
+          <label className="mm-field">
+            <span className="mm-field-label">Lot number</span>
+            <input className="mm-input" value={lotPreview || lot} readOnly
+              placeholder={rows.some((r) => r.color) ? "Resolving…" : "Auto — pick a colour"} />
+          </label>
         </div>
 
         {/* When an order is registered: it auto-completes once inward matches the ordered
