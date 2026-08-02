@@ -304,10 +304,11 @@ def recent_inwards(limit=30):
 	"""
 	rows = frappe.get_all(
 		"MM Inward",
-		filters={"docstatus": 1},
+		# Posted AND cancelled — a cancelled inward stays visible (its stock was reversed).
+		filters={"docstatus": ["in", [1, 2]]},
 		fields=[
 			"name", "posting_date", "lot_number", "location", "branch",
-			"sales_order", "party", "challan_number", "receipt_status",
+			"sales_order", "party", "challan_number", "receipt_status", "docstatus",
 		],
 		order_by="creation desc",
 		limit_page_length=int(limit),
@@ -328,6 +329,21 @@ def recent_inwards(limit=30):
 		# Allocated when every line already points at an order.
 		r["allocated"] = bool(items) and all(i.customer_order for i in items)
 	return rows
+
+
+@frappe.whitelist()
+def cancel_inward(inward):
+	"""Cancel a posted inward. MM Inward.on_cancel reverses the roll inventory it added
+	and posts the matching OUT stock-ledger entries, so stock and ledger stay in step."""
+	if not inward or not frappe.db.exists("MM Inward", inward):
+		frappe.throw(_("Inward {0} not found.").format(inward or ""))
+	doc = frappe.get_doc("MM Inward", inward)
+	if doc.docstatus == 2:
+		frappe.throw(_("Inward {0} is already cancelled.").format(inward))
+	if doc.docstatus == 0:
+		frappe.throw(_("Inward {0} is a draft — nothing posted to reverse.").format(inward))
+	doc.cancel()
+	return {"inward": doc.name, "docstatus": doc.docstatus}
 
 
 @frappe.whitelist()

@@ -912,6 +912,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-so-opt-nums { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.76rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; }
 .mm-so-opt-nums strong { color: var(--mm-text); }
 .mm-so-opt-rem strong { color: var(--mm-danger-fg); }
+
+/* A cancelled inward stays listed (its stock was reversed) but reads as inactive. */
+.mm-row-cancelled { opacity: 0.62; }
+.mm-row-cancelled td:not(:last-child) { text-decoration: line-through; text-decoration-color: var(--mm-border-dark); }
 .mm-iw-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.25rem; align-items: start; }
 .mm-iw-grid-single { grid-template-columns: 1fr; }
 .mm-iw-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }

@@ -72,6 +72,7 @@ type RecentInward = {
   total_weight?: number;
   allocated?: boolean;
   receipt_status?: string;
+  docstatus?: number;
 };
 
 const blankRow = (): Row => ({ roll: "", color: "", cut: "", qty: "", weight: "", customer_order: "" });
@@ -186,6 +187,25 @@ export default function InwardWorkspace() {
     message: RecentInward[];
   }>("mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards", { limit: 30 }, "mm-inward-recent");
   const recent = recentData?.message ?? [];
+
+  const { call: cancelInwardCall, loading: cancelling } = useFrappePostCall(
+    "mahaveermetalic.mahaveer_metallic.api.inward.cancel_inward",
+  );
+
+  // Cancelling an inward reverses its rolls out of inventory (and posts the OUT ledger
+  // entries) server-side, so the Inventory + Stock Ledger screens self-correct.
+  async function onCancelInward(name: string) {
+    if (!window.confirm(`Cancel inward ${name}? Its stock will be reversed out of inventory.`)) return;
+    setError(null);
+    try {
+      await cancelInwardCall({ inward: name });
+      await refreshRecent();
+      setFlash(`Inward ${name} cancelled — inventory reverted.`);
+      toast(`Inward ${name} cancelled`, "info");
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    }
+  }
 
   const processing = qIndex >= 0; // stepping through the challan queue
   const isLast = qIndex >= queue.length - 1;
@@ -707,11 +727,12 @@ export default function InwardWorkspace() {
                   <th className="mm-num">Rolls</th>
                   <th className="mm-num">Box</th>
                   <th className="mm-num">Weight</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {recent.map((r) => (
-                  <tr key={r.name}>
+                  <tr key={r.name} className={r.docstatus === 2 ? "mm-row-cancelled" : undefined}>
                     <td>{r.posting_date || "—"}</td>
                     <td>{r.challan_number || "—"}</td>
                     <td>{r.lot_number || "—"}</td>
@@ -725,7 +746,9 @@ export default function InwardWorkspace() {
                       )}
                     </td>
                     <td>
-                      {r.receipt_status === "Partial" ? (
+                      {r.docstatus === 2 ? (
+                        <span className="mm-state-chip mm-state-open">Cancelled</span>
+                      ) : r.receipt_status === "Partial" ? (
                         <span className="mm-state-chip mm-state-inventory">Partial</span>
                       ) : (
                         <span className="mm-state-chip mm-state-cut">Complete</span>
@@ -735,6 +758,19 @@ export default function InwardWorkspace() {
                     <td className="mm-num">{r.rolls ?? 0}</td>
                     <td className="mm-num">{(r.total_box ?? 0).toLocaleString()}</td>
                     <td className="mm-num">{(r.total_weight ?? 0).toLocaleString()}</td>
+                    <td className="mm-num">
+                      {r.docstatus !== 2 && (
+                        <button
+                          type="button"
+                          className="mm-mini mm-mini-danger"
+                          disabled={cancelling}
+                          title="Cancel this inward — its stock is reversed out of inventory"
+                          onClick={() => void onCancelInward(r.name)}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

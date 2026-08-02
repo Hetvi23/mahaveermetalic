@@ -70,6 +70,7 @@ type Row = {
   completed?: number;
   completion_mode?: string;
   docstatus?: number;
+  company_name?: string;
 };
 
 /** An order is done when production hits 100% OR it was completed via inward/force. */
@@ -130,11 +131,27 @@ export default function OrderWorkspace() {
       "completed",
       "completion_mode",
       "docstatus",
+      "company_name",
     ],
     filters,
     limit: 200,
     orderBy: { field: "modified", order: "desc" },
   });
+
+  // Colour lives on the order's child items — pull them once and map order → colours so
+  // the list can show it alongside party/company.
+  const { data: itemRows } = useFrappeGetDocList<{ parent: string; color_name?: string }>("MM Sales Order Item", {
+    fields: ["parent", "color_name"],
+    limit: 0,
+  });
+  const coloursByOrder = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const r of itemRows ?? []) {
+      if (!r.parent || !r.color_name) continue;
+      (m[r.parent] ||= []).includes(r.color_name) || m[r.parent].push(r.color_name);
+    }
+    return m;
+  }, [itemRows]);
 
   const { data: doc, mutate: mutateDoc } = useFrappeGetDoc<Record<string, unknown>>("MM Sales Order", selected || undefined);
   const { createDoc, loading: creating } = useFrappeCreateDoc();
@@ -664,6 +681,8 @@ export default function OrderWorkspace() {
                 <tr>
                   <th>Order</th>
                   <th>Party</th>
+                  <th>Company</th>
+                  <th>Color</th>
                   <th>Delivery</th>
                   <th className="mm-ow-fulfil-col">Inwards / Required</th>
                   <th>Status</th>
@@ -682,6 +701,8 @@ export default function OrderWorkspace() {
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
                       <td className="mm-ow-cell-order">{o.name}</td>
                       <td>{o.party || "—"}</td>
+                      <td>{o.company_name || "—"}</td>
+                      <td>{coloursByOrder[o.name]?.join(", ") || "—"}</td>
                       <td className={overdue ? "mm-open-overdue" : undefined}>{o.delivery_date || "—"}{overdue ? " · overdue" : ""}</td>
                       <td>
                         <div className="mm-ow-fulfil">
@@ -696,7 +717,7 @@ export default function OrderWorkspace() {
                   );
                 })}
                 {!isLoading && list.length === 0 && (
-                  <tr><td colSpan={5} className="mm-empty">No orders.</td></tr>
+                  <tr><td colSpan={7} className="mm-empty">No orders.</td></tr>
                 )}
               </tbody>
             </table>
