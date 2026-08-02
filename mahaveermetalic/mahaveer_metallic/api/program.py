@@ -340,7 +340,7 @@ def create_program(
 		"MM Cutting",
 		source_cutting,
 		["name", "docstatus", "status", "program", "customer_order", "roll_no", "shade",
-		 "cut", "total_patti_qty", "total_net_weight", "branch", "location"],
+		 "cut", "total_patti_qty", "total_net_weight", "per_patty_weight", "branch", "location"],
 		as_dict=True,
 	)
 	if not cut:
@@ -353,7 +353,19 @@ def create_program(
 		frappe.throw(_("This patty is already in a program ({0}).").format(cut.program))
 
 	batches = int(total_batches) if total_batches not in (None, "") else int(round(cut.total_patti_qty or 0)) or 1
-	final_weight = float(weight) if weight not in (None, "") else float(cut.total_net_weight or 0)
+	# One patty = one batch: the program carries per-patty weight × batches, which is what
+	# Production then consumes. Falls back to the cutting's own per-patty (or whole) weight.
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
+
+	per_patty = float(cut.per_patty_weight or 0)
+	if not per_patty and cut.total_patti_qty:
+		per_patty = ceil2(float(cut.total_net_weight or 0) / float(cut.total_patti_qty))
+	if weight not in (None, ""):
+		final_weight = float(weight)
+	elif per_patty:
+		final_weight = round(per_patty * batches, 3)
+	else:
+		final_weight = float(cut.total_net_weight or 0)
 	final_cut = machine_cut or cut.cut  # machine cut wins, per spec
 
 	program = frappe.get_doc(

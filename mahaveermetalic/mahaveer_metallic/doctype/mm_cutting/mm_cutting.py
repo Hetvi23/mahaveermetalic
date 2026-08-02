@@ -1,9 +1,19 @@
 # Copyright (c) 2026, Mahaveer and contributors
 # License: MIT
 
+import math
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
+
+
+def ceil2(value) -> float:
+	"""Round UP to 2 decimals — 42.7285 → 42.73, 43.7211 → 43.73.
+
+	Per-patty weight is always rounded up so the weight planned into production is never
+	understated (one patty = one batch, and production consumes per-patty × batches)."""
+	return math.ceil(round(float(value or 0) * 100, 6)) / 100
 
 
 class MMCutting(Document):
@@ -11,7 +21,7 @@ class MMCutting(Document):
 		self._compute_patti_weights()
 
 	def _compute_patti_weights(self):
-		"""SRS 5.5: weight per patti = net weight of one patti (net ÷ qty)."""
+		"""SRS 5.5: weight per patti = net weight of one patti (net ÷ qty), rounded UP."""
 		if not self.patti_entries:
 			frappe.throw(_("Add at least one patti entry."))
 
@@ -22,12 +32,14 @@ class MMCutting(Document):
 			net = float(row.net_weight or 0)
 			if qty <= 0:
 				frappe.throw(_("Row #{0}: Patti Qty must be greater than 0.").format(row.idx))
-			row.weight_per_patti = round(net / qty, 4)
+			row.weight_per_patti = ceil2(net / qty)
 			total_qty += qty
 			total_net += net
 
 		self.total_patti_qty = round(total_qty, 3)
 		self.total_net_weight = round(total_net, 3)
+		# Roll weight ÷ patty count, rounded up — the per-batch weight Program/Production use.
+		self.per_patty_weight = ceil2(total_net / total_qty) if total_qty > 0 else 0.0
 
 	def on_submit(self):
 		self._consume_source_roll(sign=-1)

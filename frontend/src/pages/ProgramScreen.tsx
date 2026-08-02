@@ -65,15 +65,20 @@ export default function ProgramScreen() {
   const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { const m = extractErrorMessage(e); toast(m, "error"); } };
 
   // programs[machine][shift]
+  // Group by machine + shift, but ONLY for the date each shift column is showing —
+  // changing a date empties that column; programs planned for other dates stay on
+  // their own date and are untouched.
   const byMachineShift = useMemo(() => {
     const m: Record<string, Record<string, Program[]>> = {};
     for (const p of programs) {
-      const mk = p.machine_no || "—";
       const sk = p.shift || "Day";
+      const wantDate = sk === "Night" ? nightDate : dayDate;
+      if (wantDate && String(p.program_date || "") !== wantDate) continue;
+      const mk = p.machine_no || "—";
       ((m[mk] ||= {})[sk] ||= []).push(p);
     }
     return m;
-  }, [programs]);
+  }, [programs, dayDate, nightDate]);
 
   // Feeder: colours by state (in-cutting / to-cut) from the cutting board.
   const inCuttingColours = useMemo(() => {
@@ -402,10 +407,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     try {
       if (bestRow.source_type === "cutting" && bestRow.cutting) {
         // A finished patty / in-progress cutting → program it directly.
+        // No explicit weight — the server derives it as per-patty weight × batches
+        // (one patty = one batch), which is what Production then consumes.
         await create({
           source_cutting: bestRow.cutting, machine_no: machine, shift,
           customer_order: order || bestRow.customer_order, total_batches: batches,
-          weight: bestRow.weight, program_date: date, job_work: jobWork ? 1 : 0,
+          program_date: date, job_work: jobWork ? 1 : 0,
         });
       } else {
         // An inventory roll not yet cut → plan it as a "to cut" program. It shows up RED

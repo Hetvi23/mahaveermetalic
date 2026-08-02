@@ -131,7 +131,7 @@ export default function InventoryScreen() {
                   <th>Location</th>
                   <th>Branch</th>
                   <th className="mm-num">Stock (kg)</th>
-                  <th className="mm-num">Box</th>
+                  <th className="mm-num">Qty</th>
                   <th className="mm-num">Available (kg)</th>
                   <th></th>
                 </tr>

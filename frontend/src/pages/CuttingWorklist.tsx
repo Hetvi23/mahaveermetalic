@@ -269,7 +269,7 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
                 >
                   <span className="mm-colour-name">{r.roll_no || r.lot_number || r.name}</span>
                   <span className="mm-prog-card-meta">
-                    {r.location || "—"}{r.lot_number ? ` · lot ${r.lot_number}` : ""} · {(r.stock_weight ?? 0).toLocaleString()} kg{r.stock_box ? ` · ${r.stock_box} box` : ""}
+                    {r.location || "—"}{r.lot_number ? ` · lot ${r.lot_number}` : ""} · {(r.stock_weight ?? 0).toLocaleString()} kg{r.stock_box ? ` · ${r.stock_box} qty` : ""}
                   </span>
                 </div>
               ))}

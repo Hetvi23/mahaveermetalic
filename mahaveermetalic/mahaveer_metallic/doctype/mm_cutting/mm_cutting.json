@@ -1,163 +1,230 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "hash",
-  "creation": "2026-05-03 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "branch",
-    "location",
-    "posting_date",
-    "customer_order",
-    "source_roll",
-    "roll_no",
-    "shade",
-    "cut",
-    "status",
-    "job_work_flag",
-    "program",
-    "section_patti",
-    "patti_entries",
-    "section_totals",
-    "roll_qty",
-    "total_patti_qty",
-    "total_net_weight"
-  ],
-  "fields": [
-    {
-      "fieldname": "posting_date",
-      "fieldtype": "Date",
-      "in_list_view": 1,
-      "label": "Date",
-      "reqd": 1,
-      "default": "Today"
-    },
-    {
-      "fieldname": "customer_order",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Customer Order",
-      "options": "MM Sales Order"
-    },
-    {
-      "fieldname": "source_roll",
-      "fieldtype": "Link",
-      "label": "Source Roll (stock)",
-      "options": "MM Roll Inventory",
-      "description": "Roll inventory row being cut. Its stock is reduced by total net weight on submit."
-    },
-    {
-      "fieldname": "roll_no",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Roll No",
-      "reqd": 1
-    },
-    {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Branch",
-      "options": "MM Branch"
-    },
-    {
-      "fieldname": "location",
-      "fieldtype": "Link",
-      "label": "Location",
-      "options": "MM Location Master"
-    },
-    {
-      "fieldname": "shade",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Shade"
-    },
-    {
-      "fieldname": "cut",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Cut"
-    },
-    {
-      "fieldname": "status",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "label": "Status",
-      "options": "Draft\nOpen\nIn Progress\nCompleted",
-      "default": "Draft",
-      "reqd": 1
-    },
-    {
-      "fieldname": "job_work_flag",
-      "fieldtype": "Check",
-      "label": "Job Work"
-    },
-    {
-      "fieldname": "program",
-      "fieldtype": "Link",
-      "label": "Program",
-      "options": "MM Program",
-      "read_only": 1,
-      "allow_on_submit": 1,
-      "description": "The MM Program this finished cutting (patty) was sent into."
-    },
-    {
-      "fieldname": "section_patti",
-      "fieldtype": "Section Break",
-      "label": "Patti Entries"
-    },
-    {
-      "fieldname": "patti_entries",
-      "fieldtype": "Table",
-      "label": "Patti",
-      "options": "MM Cutting Patti",
-      "reqd": 1
-    },
-    {
-      "fieldname": "section_totals",
-      "fieldtype": "Section Break",
-      "label": "Totals"
-    },
-    {
-      "fieldname": "roll_qty",
-      "fieldtype": "Int",
-      "label": "Roll Qty",
-      "read_only": 1,
-      "description": "Number of inward roll entries assigned into this cutting."
-    },
-    {
-      "fieldname": "total_patti_qty",
-      "fieldtype": "Float",
-      "label": "Total Patti Qty",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_net_weight",
-      "fieldtype": "Float",
-      "label": "Total Net Weight (Kg)",
-      "precision": 3,
-      "read_only": 1
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "is_submittable": 1,
-  "links": [],
-  "modified": "2026-06-22 10:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Cutting",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Production", "read": 1, "write": 1, "create": 1, "delete": 0, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-05-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "location",
+  "posting_date",
+  "customer_order",
+  "source_roll",
+  "roll_no",
+  "shade",
+  "cut",
+  "status",
+  "job_work_flag",
+  "program",
+  "section_patti",
+  "patti_entries",
+  "section_totals",
+  "roll_qty",
+  "total_patti_qty",
+  "total_net_weight",
+  "per_patty_weight"
+ ],
+ "fields": [
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1,
+   "default": "Today"
+  },
+  {
+   "fieldname": "customer_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer Order",
+   "options": "MM Sales Order"
+  },
+  {
+   "fieldname": "source_roll",
+   "fieldtype": "Link",
+   "label": "Source Roll (stock)",
+   "options": "MM Roll Inventory",
+   "description": "Roll inventory row being cut. Its stock is reduced by total net weight on submit."
+  },
+  {
+   "fieldname": "roll_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Roll No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Branch",
+   "options": "MM Branch"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "label": "Location",
+   "options": "MM Location Master"
+  },
+  {
+   "fieldname": "shade",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Shade"
+  },
+  {
+   "fieldname": "cut",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cut"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nOpen\nIn Progress\nCompleted",
+   "default": "Draft",
+   "reqd": 1
+  },
+  {
+   "fieldname": "job_work_flag",
+   "fieldtype": "Check",
+   "label": "Job Work"
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "options": "MM Program",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "The MM Program this finished cutting (patty) was sent into."
+  },
+  {
+   "fieldname": "section_patti",
+   "fieldtype": "Section Break",
+   "label": "Patti Entries"
+  },
+  {
+   "fieldname": "patti_entries",
+   "fieldtype": "Table",
+   "label": "Patti",
+   "options": "MM Cutting Patti",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "roll_qty",
+   "fieldtype": "Int",
+   "label": "Roll Qty",
+   "read_only": 1,
+   "description": "Number of inward roll entries assigned into this cutting."
+  },
+  {
+   "fieldname": "total_patti_qty",
+   "fieldtype": "Float",
+   "label": "Total Patti Qty",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_net_weight",
+   "fieldtype": "Float",
+   "label": "Total Net Weight (Kg)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "per_patty_weight",
+   "fieldtype": "Float",
+   "label": "Per Patty Weight (Kg)",
+   "precision": 2,
+   "read_only": 1,
+   "description": "Auto: total net weight / patty count, rounded UP. One patty = one batch, so Production takes this x batches."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Cutting",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

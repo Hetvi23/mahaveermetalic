@@ -725,7 +725,7 @@ export default function InwardWorkspace() {
                   <th>Status</th>
                   <th>Location</th>
                   <th className="mm-num">Rolls</th>
-                  <th className="mm-num">Box</th>
+                  <th className="mm-num">Qty</th>
                   <th className="mm-num">Weight</th>
                   <th />
                 </tr>
