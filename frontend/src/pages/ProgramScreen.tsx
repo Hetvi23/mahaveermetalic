@@ -42,6 +42,8 @@ export default function ProgramScreen() {
   const [dayDate, setDayDate] = useState(tomorrow());
   const [nightDate, setNightDate] = useState(today());
   const [adding, setAdding] = useState<{ machine?: string; shift?: string; colour?: string } | null>(null);
+  const [pattyCutFilter, setPattyCutFilter] = useState("");
+  const [pattyColourFilter, setPattyColourFilter] = useState("");
   const [closing, setClosing] = useState<Machine | null>(null);
   const [completing, setCompleting] = useState<Program | null>(null);
 
@@ -92,17 +94,35 @@ export default function ProgramScreen() {
     return Object.values(g);
   }, [cuttings]);
 
-  // Feeder: finished patties by colour.
+  // Feeder: finished patties grouped by colour + cut + party, with Cut/Colour filters.
   const pattyColours = useMemo(() => {
-    const g: Record<string, { colour: string; weight: number; count: number }> = {};
+    const g: Record<string, { colour: string; cut: string; party: string; weight: number; count: number }> = {};
     for (const p of patties) {
-      const k = p.shade || p.roll_no || "—";
-      const e = (g[k] ||= { colour: k, weight: 0, count: 0 });
+      const colour = p.shade || p.roll_no || "—";
+      const cut = p.cut || "—";
+      const party = p.party || "—";
+      const k = `${colour}||${cut}||${party}`;
+      const e = (g[k] ||= { colour, cut, party, weight: 0, count: 0 });
       e.weight += Number(p.weight || 0);
-      e.count += 1;
+      // "No of patty" = the batches (patties) this cutting yielded.
+      e.count += Number(p.batches || 0) || 1;
     }
     return Object.values(g);
   }, [patties]);
+
+  const pattyCuts = useMemo(
+    () => Array.from(new Set(pattyColours.map((p) => p.cut).filter((c) => c && c !== "—"))).sort(),
+    [pattyColours],
+  );
+  const shownPatties = useMemo(
+    () =>
+      pattyColours.filter(
+        (p) =>
+          (!pattyCutFilter || p.cut === pattyCutFilter) &&
+          (!pattyColourFilter || p.colour.toLowerCase().includes(pattyColourFilter.trim().toLowerCase())),
+      ),
+    [pattyColours, pattyCutFilter, pattyColourFilter],
+  );
 
   const shiftCols: string[] = shiftView === "Combined" ? ["Day", "Night"] : [shiftView];
   const shiftDate = (s: string) => (s === "Night" ? nightDate : dayDate);
@@ -190,21 +210,39 @@ export default function ProgramScreen() {
 
             <section className="mm-card mm-card-pad">
               <div className="mm-flow-shelf-head" style={{ margin: 0, marginBottom: "0.7rem" }}>
-                <span className="mm-flow-num">✓</span><h2>Finished patties</h2>
-                <span className="mm-flow-count">{pattyColours.length}</span>
+                <span className="mm-flow-num">✓</span><h2>Finished patty</h2>
+                <span className="mm-flow-count">{shownPatties.length}</span>
               </div>
-              {pattyColours.length === 0 ? (
-                <p className="mm-flow-empty-state">No finished patties yet.</p>
+              <div className="mm-patty-filters">
+                <select className="mm-input mm-input-compact" value={pattyCutFilter} onChange={(e) => setPattyCutFilter(e.target.value)}>
+                  <option value="">All cuts</option>
+                  {pattyCuts.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input className="mm-input mm-input-compact" placeholder="Filter colour…" value={pattyColourFilter}
+                  onChange={(e) => setPattyColourFilter(e.target.value)} />
+              </div>
+              {shownPatties.length === 0 ? (
+                <p className="mm-flow-empty-state">{pattyColours.length === 0 ? "No finished patties yet." : "No patty matches these filters."}</p>
               ) : (
-                <div className="mm-colour-list">
-                  {pattyColours.map((c) => (
-                    <div key={c.colour} className="mm-colour-row mm-colour-row-green">
-                      <span className="mm-colour-name">{c.colour}</span>
-                      <span className="mm-state mm-state-cut">patty</span>
-                      <span className="mm-colour-wt">{c.count} · {kg(c.weight)} kg</span>
-                      <button className="mm-mini mm-mini-ok" onClick={() => setAdding({ colour: c.colour })}>→ Program</button>
-                    </div>
-                  ))}
+                <div className="mm-table-scroll">
+                  <table className="mm-table mm-table-dense">
+                    <thead>
+                      <tr><th>Color</th><th className="mm-num">No of patty</th><th>Cut</th><th>Party</th><th /></tr>
+                    </thead>
+                    <tbody>
+                      {shownPatties.map((c) => (
+                        <tr key={`${c.colour}|${c.cut}|${c.party}`}>
+                          <td><span className="mm-colour-name">{c.colour}</span></td>
+                          <td className="mm-num">{c.count}</td>
+                          <td>{c.cut}</td>
+                          <td>{c.party}</td>
+                          <td className="mm-num">
+                            <button className="mm-mini mm-mini-ok" onClick={() => setAdding({ colour: c.colour })}>→ Program</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>

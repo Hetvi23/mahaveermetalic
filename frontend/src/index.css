@@ -1717,3 +1717,7 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 
 /* Production voucher: inline "See all parties" toggle next to the field label */
 .mm-pv-seeall { margin-left: 0.5rem; padding: 0.05rem 0.4rem; font-size: 0.65rem; text-transform: none; letter-spacing: 0; }
+
+/* Finished-patty filters (Cut + Colour) above the patty list */
+.mm-patty-filters { display: flex; gap: 0.45rem; margin-bottom: 0.6rem; }
+.mm-patty-filters > * { flex: 1; min-width: 0; }
