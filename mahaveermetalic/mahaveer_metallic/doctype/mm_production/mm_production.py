@@ -107,7 +107,19 @@ class MMProduction(Document):
 		net = round(float(self.net_weight or 0), 3)
 		if net <= 0:
 			return
-		# Roll inventory is keyed by location — without one there's nowhere to stock it.
+		# Roll inventory is keyed by location. Fall back to the source program/cutting's
+		# location before giving up, so a colour-planned job still stocks its output.
+		if not self.location and self.source_program:
+			for dt, name in (("MM Program", self.source_program),
+				("MM Cutting", frappe.db.get_value("MM Program", self.source_program, "source_cutting"))):
+				if not name:
+					continue
+				loc, br = frappe.db.get_value(dt, name, ["location", "branch"]) or (None, None)
+				if loc:
+					self.db_set("location", loc, update_modified=False)
+					if br and not self.branch:
+						self.db_set("branch", br, update_modified=False)
+					break
 		if not self.location:
 			frappe.msgprint(
 				_("No location on this production, so its output wasn't added to inventory."), alert=True

@@ -609,6 +609,19 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 		)
 	weight = round(weight, 3)
 	ri = first_ri
+	# A colour-planned program has no branch/location until real rolls are bound — take
+	# them from the roll now, otherwise Production has nowhere to stock its output.
+	if ri is not None:
+		fills = {}
+		if not doc.branch and ri.branch:
+			fills["branch"] = ri.branch
+		if not doc.location and ri.location:
+			fills["location"] = ri.location
+		if fills:
+			frappe.db.set_value("MM Program", doc.name, fills, update_modified=False)
+			doc.reload()
+		if doc.source_cutting and fills:
+			frappe.db.set_value("MM Cutting", doc.source_cutting, fills, update_modified=False)
 
 	# Complete the placeholder cutting with the real weight + patty count, and store the
 	# per-patty weight (rounded up) that Production consumes as one batch.
