@@ -181,7 +181,7 @@ def create_cutting(
 	entries = frappe.db.sql(
 		"""
 		select item.name, item.parent, item.cutting, item.customer_order,
-			item.roll_name, item.color_name, item.cut, item.weight, inw.party
+			item.roll_name, item.color_name, item.cut, item.weight, inw.party, inw.lot as lot
 		from `tabMM Inward Item` item
 		join `tabMM Inward` inw on inw.name = item.parent
 		where item.name in %(names)s
@@ -215,6 +215,7 @@ def create_cutting(
 			"doctype": "MM Cutting",
 			"posting_date": cutting_date or frappe.utils.nowdate(),
 			"customer_order": order,
+			"lot": entries[0].get("lot"),
 			"roll_no": roll_no,
 			"shade": resolved_shade,
 			"cut": resolved_cut,

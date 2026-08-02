@@ -36,7 +36,8 @@
   "net_weight",
   "section_variance",
   "variance_percent",
-  "pin_override"
+  "pin_override",
+  "lot"
  ],
  "fields": [
   {
@@ -241,12 +242,21 @@
    "in_list_view": 1,
    "label": "Company",
    "description": "The selected company (saved identity); party holds the owning party record."
+  },
+  {
+   "fieldname": "lot",
+   "fieldtype": "Link",
+   "label": "Lot",
+   "options": "MM Lot",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-02 10:00:00.000000",
+ "modified": "2026-08-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Production",

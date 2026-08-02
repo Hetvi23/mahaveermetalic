@@ -83,6 +83,28 @@ def _release_challan_lock(challan_no: str):
 		pass
 
 
+def _assign_lot(data, challan):
+	"""Resolve (and stamp) the lot for an inward.
+
+	A Veermetlon challan carries one colour, so challan → one lot: re-entering the same
+	challan reuses the lot it already has. A manual inward allocates the next colour-wise
+	lot. Sets both `lot` (link) and `lot_number` (the LT display id) so the id flows into
+	roll inventory, the stock ledger and everything downstream."""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot import resolve_lot
+
+	items = data.get("items") or []
+	colour = next((i.get("color_name") for i in items if i.get("color_name")), None)
+	if not colour:
+		return
+	try:
+		res = resolve_lot(color=colour, challan_number=challan or None, posting_date=data.get("posting_date"))
+	except Exception:
+		frappe.log_error(title="lot resolve failed")
+		return
+	data["lot"] = res["lot"]
+	data["lot_number"] = res["lot_id"]
+
+
 @frappe.whitelist()
 def verify_challan(challan_no):
 	"""Verify a challan against Veermetlon and report expected vs already-received, so the
@@ -136,6 +158,11 @@ def post_inward(payload):
 	orders_ref = {data.get("sales_order")} | {i.get("customer_order") for i in (data.get("items") or [])}
 	for o in filter(None, orders_ref):
 		assert_order_submitted(o)
+
+	# Lot: colour-wise LT id. The same challan always resolves to the lot it already has;
+	# a manual inward gets the next lot for that colour. Drives lot_number downstream
+	# (roll inventory → cutting → program → production).
+	_assign_lot(data, challan)
 
 	if not (challan and verify):
 		# Manual / no VM verification: Complete unless flagged partial.

@@ -13,3 +13,4 @@ mahaveermetalic.patches.reload_production_party_cut
 mahaveermetalic.patches.make_orders_submittable
 mahaveermetalic.patches.introduce_mm_branch
 mahaveermetalic.patches.create_mm_lot
+mahaveermetalic.patches.add_lot_links

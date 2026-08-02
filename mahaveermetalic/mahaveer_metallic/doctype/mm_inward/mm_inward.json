@@ -1,191 +1,259 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "hash",
-  "creation": "2026-05-03 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "branch",
-    "location",
-    "posting_date",
-    "sales_order",
-    "party",
-    "challan_number",
-    "veermetlon_delivery_challan",
-    "veermetlon_job_card",
-    "item_type",
-    "rate",
-    "lot_number",
-    "section_receipt",
-    "receipt_status",
-    "is_partial",
-    "challan_received_weight",
-    "col_receipt",
-    "challan_expected_weight",
-    "challan_expected_box",
-    "challan_expected_rolls",
-    "section_items",
-    "items"
-  ],
-  "fields": [
-    {
-      "fieldname": "location",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Location",
-      "options": "MM Location Master",
-      "description": "Auto-set from the posting employee's branch/location."
-    },
-    {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "label": "Branch",
-      "options": "MM Branch",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "posting_date",
-      "fieldtype": "Date",
-      "in_list_view": 1,
-      "label": "Date",
-      "reqd": 1,
-      "default": "Today"
-    },
-    {
-      "fieldname": "sales_order",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "SO Number",
-      "options": "MM Sales Order"
-    },
-    {
-      "fieldname": "party",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Party",
-      "options": "MM Party Master"
-    },
-    {
-      "fieldname": "challan_number",
-      "fieldtype": "Data",
-      "label": "Challan Number"
-    },
-    {
-      "fieldname": "veermetlon_delivery_challan",
-      "fieldtype": "Link",
-      "label": "Veermetlon Delivery Challan",
-      "options": "Delivery Challan"
-    },
-    {
-      "fieldname": "veermetlon_job_card",
-      "fieldtype": "Link",
-      "label": "Veermetlon Job Card",
-      "options": "Job Card",
-      "description": "For multi-roll inward, one lot can map to one Job Card / Lot in Veermetlon."
-    },
-    {
-      "fieldname": "item_type",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Item Type",
-      "options": "MM Item Master"
-    },
-    {
-      "fieldname": "rate",
-      "fieldtype": "Currency",
-      "label": "Rate",
-      "precision": 2
-    },
-    {
-      "fieldname": "lot_number",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Lot Number",
-      "reqd": 1
-    },
-    {
-      "fieldname": "section_receipt",
-      "fieldtype": "Section Break",
-      "label": "Receipt & Verification"
-    },
-    {
-      "fieldname": "receipt_status",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "label": "Receipt Status",
-      "options": "Complete\nPartial",
-      "default": "Complete",
-      "read_only": 1,
-      "description": "Complete = challan fully received (closed to more inwards). Partial = more rolls expected on this challan."
-    },
-    {
-      "fieldname": "is_partial",
-      "fieldtype": "Check",
-      "label": "Partial receipt — more rolls to come",
-      "default": "0"
-    },
-    {
-      "fieldname": "challan_received_weight",
-      "fieldtype": "Float",
-      "label": "Received on this Inward (Kg)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "col_receipt",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "challan_expected_weight",
-      "fieldtype": "Float",
-      "label": "Challan Expected (Kg)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "challan_expected_box",
-      "fieldtype": "Float",
-      "label": "Challan Expected (Box)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "challan_expected_rolls",
-      "fieldtype": "Int",
-      "label": "Challan Expected (Rolls)",
-      "read_only": 1
-    },
-    {
-      "fieldname": "section_items",
-      "fieldtype": "Section Break",
-      "label": "Rolls Received"
-    },
-    {
-      "fieldname": "items",
-      "fieldtype": "Table",
-      "label": "Inward Items",
-      "options": "MM Inward Item",
-      "reqd": 1
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "is_submittable": 1,
-  "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Inward",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "delete": 0, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-05-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "location",
+  "posting_date",
+  "sales_order",
+  "party",
+  "challan_number",
+  "veermetlon_delivery_challan",
+  "veermetlon_job_card",
+  "item_type",
+  "rate",
+  "lot_number",
+  "lot",
+  "section_receipt",
+  "receipt_status",
+  "is_partial",
+  "challan_received_weight",
+  "col_receipt",
+  "challan_expected_weight",
+  "challan_expected_box",
+  "challan_expected_rolls",
+  "section_items",
+  "items"
+ ],
+ "fields": [
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Location",
+   "options": "MM Location Master",
+   "description": "Auto-set from the posting employee's branch/location."
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "MM Branch",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1,
+   "default": "Today"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SO Number",
+   "options": "MM Sales Order"
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Party",
+   "options": "MM Party Master"
+  },
+  {
+   "fieldname": "challan_number",
+   "fieldtype": "Data",
+   "label": "Challan Number"
+  },
+  {
+   "fieldname": "veermetlon_delivery_challan",
+   "fieldtype": "Link",
+   "label": "Veermetlon Delivery Challan",
+   "options": "Delivery Challan"
+  },
+  {
+   "fieldname": "veermetlon_job_card",
+   "fieldtype": "Link",
+   "label": "Veermetlon Job Card",
+   "options": "Job Card",
+   "description": "For multi-roll inward, one lot can map to one Job Card / Lot in Veermetlon."
+  },
+  {
+   "fieldname": "item_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Type",
+   "options": "MM Item Master"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Rate",
+   "precision": 2
+  },
+  {
+   "fieldname": "lot_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Lot Number",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_receipt",
+   "fieldtype": "Section Break",
+   "label": "Receipt & Verification"
+  },
+  {
+   "fieldname": "receipt_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Receipt Status",
+   "options": "Complete\nPartial",
+   "default": "Complete",
+   "read_only": 1,
+   "description": "Complete = challan fully received (closed to more inwards). Partial = more rolls expected on this challan."
+  },
+  {
+   "fieldname": "is_partial",
+   "fieldtype": "Check",
+   "label": "Partial receipt \u2014 more rolls to come",
+   "default": "0"
+  },
+  {
+   "fieldname": "challan_received_weight",
+   "fieldtype": "Float",
+   "label": "Received on this Inward (Kg)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_receipt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "challan_expected_weight",
+   "fieldtype": "Float",
+   "label": "Challan Expected (Kg)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "challan_expected_box",
+   "fieldtype": "Float",
+   "label": "Challan Expected (Box)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "challan_expected_rolls",
+   "fieldtype": "Int",
+   "label": "Challan Expected (Rolls)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Rolls Received"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Inward Items",
+   "options": "MM Inward Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "lot",
+   "fieldtype": "Link",
+   "label": "Lot",
+   "options": "MM Lot",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-02 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Inward",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

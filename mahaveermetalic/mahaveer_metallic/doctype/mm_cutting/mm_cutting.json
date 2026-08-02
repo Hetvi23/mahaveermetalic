@@ -23,7 +23,8 @@
   "roll_qty",
   "total_patti_qty",
   "total_net_weight",
-  "per_patty_weight"
+  "per_patty_weight",
+  "lot"
  ],
  "fields": [
   {
@@ -148,12 +149,21 @@
    "precision": 2,
    "read_only": 1,
    "description": "Auto: total net weight / patty count, rounded UP. One patty = one batch, so Production takes this x batches."
+  },
+  {
+   "fieldname": "lot",
+   "fieldtype": "Link",
+   "label": "Lot",
+   "options": "MM Lot",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-02 00:00:00.000000",
+ "modified": "2026-08-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Cutting",

@@ -340,7 +340,7 @@ def create_program(
 		"MM Cutting",
 		source_cutting,
 		["name", "docstatus", "status", "program", "customer_order", "roll_no", "shade",
-		 "cut", "total_patti_qty", "total_net_weight", "per_patty_weight", "branch", "location"],
+		 "cut", "total_patti_qty", "total_net_weight", "per_patty_weight", "lot", "branch", "location"],
 		as_dict=True,
 	)
 	if not cut:
@@ -374,6 +374,7 @@ def create_program(
 			"program_date": program_date or frappe.utils.nowdate(),
 			"customer_order": customer_order or cut.customer_order,
 			"source_cutting": cut.name,
+			"lot": cut.lot,
 			"source_inward_item": source_inward_item if from_inventory else None,
 			"roll_no": cut.roll_no,
 			"shade": cut.shade,
@@ -621,7 +622,16 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 			updates["customer_order"] = customer_order
 		if job_work is not None:
 			updates["job_work_flag"] = 1 if frappe.utils.cint(job_work) else 0
+		# Carry the lot from the roll being cut (roll inventory holds the LT display id).
+		if ri is not None and ri.lot_number:
+			lot_doc = frappe.db.get_value(
+				"MM Lot", {"lot_id": ri.lot_number, "color": ri.color_name}, "name"
+			) or frappe.db.get_value("MM Lot", {"lot_id": ri.lot_number}, "name")
+			if lot_doc:
+				updates["lot"] = lot_doc
 		frappe.db.set_value("MM Cutting", doc.source_cutting, updates, update_modified=False)
+		if updates.get("lot"):
+			frappe.db.set_value("MM Program", doc.name, "lot", updates["lot"], update_modified=False)
 		# Keep the patti child row in step so the cutting's own totals stay consistent.
 		child = frappe.db.get_value("MM Cutting Patti", {"parent": doc.source_cutting}, "name")
 		if child:

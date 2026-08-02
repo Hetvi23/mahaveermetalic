@@ -298,7 +298,7 @@ def create_production(
 		"MM Program",
 		source_program,
 		["name", "docstatus", "status", "production", "customer_order", "roll_no", "shade",
-		 "cut", "machine_no", "net_weight", "branch", "location"],
+		 "cut", "machine_no", "net_weight", "lot", "branch", "location"],
 		as_dict=True,
 	)
 	if not prog:
@@ -354,6 +354,7 @@ def create_production(
 			"party": party or (frappe.db.get_value("MM Sales Order", customer_order, "party") if customer_order else None),
 			"company_name": company_name or None,
 			"source_program": prog.name,
+			"lot": prog.lot,
 			"roll_no": prog.roll_no,
 			"shade": prog.shade,
 			"cut": cut if cut not in (None, "") else prog.cut,
