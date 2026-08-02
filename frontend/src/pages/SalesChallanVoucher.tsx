@@ -11,7 +11,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 type BoxRow = {
   box: string; production: string; posting_date?: string; item?: string; cut?: string;
-  customer_order?: string; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
+  customer_order?: string; barcode?: string; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
   bobbin_pcs_weight?: number; total_bobbin_weight?: number; box_weight?: number; net_weight?: number;
 };
 type RollRow = {
@@ -41,6 +41,24 @@ export default function SalesChallanVoucher() {
   const [err, setErr] = useState<string | null>(null);
 
   const { call: createChallan, loading } = useFrappePostCall(`${API}.create_challan`);
+  const { call: scanBox } = useFrappePostCall<{ message: BoxRow & { barcode?: string } }>(`${API}.scan_box`);
+  const [scan, setScan] = useState("");
+
+  // Scan gun types the barcode then hits Enter — resolve it and drop the box in.
+  async function onScan() {
+    const code = scan.trim();
+    if (!code) return;
+    setErr(null);
+    try {
+      const r = await scanBox({ barcode: code });
+      const b = r?.message;
+      if (b) addBoxes([b as BoxRow]);
+      setScan("");
+    } catch (e) {
+      setErr(extractErrorMessage(e));
+      setScan("");
+    }
+  }
   const ordersCall = useFrappeGetCall<{ message: { name: string; colours?: string }[] }>(
     `${PROD_API}.orders_for_production`,
     party ? { party } : undefined,
@@ -61,7 +79,7 @@ export default function SalesChallanVoucher() {
       ...rows
         .filter((r) => !p.some((l) => l.kind === "box" && l.ref === r.box))
         .map<Line>((r) => ({
-          key: `box-${r.box}`, kind: "box", ref: r.box, item: r.item, size: r.cut,
+          key: `box-${r.box}`, kind: "box", ref: r.box, barcode: r.barcode, item: r.item, size: r.cut,
           gross: Number(r.gross_weight || 0), qty: 1, bobbin: r.bobbin,
           bobbinPcs: Number(r.bobbin_pcs || 0), perPcs: Number(r.bobbin_pcs_weight || 0),
           totalBobbin: Number(r.total_bobbin_weight || 0), boxWeight: Number(r.box_weight || 0),
@@ -145,6 +163,13 @@ export default function SalesChallanVoucher() {
           </label>
           <button type="button" className="mm-btn-secondary" onClick={() => setPicker("box")}><Boxes size={15} /> Select box</button>
           <button type="button" className="mm-btn-secondary" onClick={() => setPicker("roll")}><PackageSearch size={15} /> Select roll</button>
+          {/* Scan the sticker barcode — the gun types the code then presses Enter. */}
+          <label className="mm-field" style={{ maxWidth: 210 }}>
+            <span className="mm-field-label">Scan box</span>
+            <input className="mm-input" value={scan} placeholder="Scan barcode…"
+              onChange={(e) => setScan(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onScan(); } }} />
+          </label>
         </div>
 
         <div className="mm-table-scroll" style={{ marginTop: "0.9rem" }}>

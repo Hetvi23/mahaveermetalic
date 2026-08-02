@@ -1747,3 +1747,17 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-scv-foot { display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--mm-border); font-size: 0.85rem; color: var(--mm-text-sec); }
 .mm-scv-foot strong { color: var(--mm-text); font-variant-numeric: tabular-nums; }
 .mm-scv-foot .mm-btn-primary { margin-left: auto; }
+
+/* Bobbin report: filter row, opening row, totals, and print-only header */
+.mm-brp-filters { display: flex; gap: 0.7rem; align-items: end; flex-wrap: wrap; }
+.mm-brp-filters .mm-field { min-width: 160px; }
+.mm-brp-opening td { background: var(--mm-bg); }
+.mm-brp-foot { display: flex; gap: 1.5rem; margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px solid var(--mm-border); font-size: 0.9rem; color: var(--mm-text-sec); }
+.mm-brp-foot strong { color: var(--mm-text); font-variant-numeric: tabular-nums; }
+.mm-print-head { display: none; }
+@media print {
+  .mm-no-print, .mm-nav, .mm-rail { display: none !important; }
+  .mm-print-head { display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 12pt; }
+  .mm-screen { padding: 0; }
+  .mm-card { border: 0; box-shadow: none; }
+}

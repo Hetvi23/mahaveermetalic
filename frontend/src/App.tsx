@@ -12,6 +12,7 @@ import ProgramScreen from "./pages/ProgramScreen";
 import ProductionScreen from "./pages/ProductionScreen";
 import ProductionViewPage from "./pages/ProductionViewPage";
 import CloseoutStackPage from "./pages/CloseoutStackPage";
+import BobbinReportPage from "./pages/BobbinReportPage";
 import SalesChallanVoucher from "./pages/SalesChallanVoucher";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
@@ -94,6 +95,7 @@ export default function App() {
             <Route path="/production" element={<ProductionScreen />} />
             <Route path="/production-view" element={<ProductionViewPage />} />
             <Route path="/closeout" element={<CloseoutStackPage />} />
+            <Route path="/bobbin-report" element={<BobbinReportPage />} />
             <Route path="/sales-challan-voucher" element={<SalesChallanVoucher />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
             <Route path="/inward" element={<InwardWorkspace />} />

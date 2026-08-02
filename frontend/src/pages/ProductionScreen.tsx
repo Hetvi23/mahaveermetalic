@@ -5,6 +5,7 @@ import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
+import { printBoxStickers } from "@/utils/boxSticker";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -434,6 +435,16 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot mm-foot-split">
+          {boxes.length > 0 && (
+            <button className="mm-btn-secondary mm-btn-compact" title="Print a sticker for each box"
+              onClick={() => printBoxStickers(boxes.map((b, i) => ({
+                barcode: `PREVIEW-${i + 1}`, item: b.item || program.shade, size: size || program.cut,
+                gross: b.gross, boxWeight: b.boxWeight, bobbinWeight: b.totalBobbin, net: b.net,
+                no: b.bobbinPcs, batch: batchNo, operator, date: vdate,
+              })))}>
+              Print stickers
+            </button>
+          )}
           <div className="mm-pv-totals">
             <span>Boxes <strong>{boxes.length}</strong></span>
             <span>Gross <strong>{totalGross.toLocaleString()}</strong></span>
