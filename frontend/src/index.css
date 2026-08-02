@@ -1721,3 +1721,10 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* Finished-patty filters (Cut + Colour) above the patty list */
 .mm-patty-filters { display: flex; gap: 0.45rem; margin-bottom: 0.6rem; }
 .mm-patty-filters > * { flex: 1; min-width: 0; }
+
+/* Cutting roll picker (finish a planned cut): search row, roll table, patty stepper */
+.mm-cutpick-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
+.mm-cutpick-table { max-height: 42vh; overflow: auto; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); }
+.mm-patty-step { display: flex; align-items: stretch; gap: 0.35rem; }
+.mm-patty-step input { text-align: center; }
+.mm-patty-step .mm-mini { flex: none; width: 34px; justify-content: center; font-size: 1rem; }

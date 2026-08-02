@@ -209,31 +209,66 @@ type InvRoll = {
   name: string; roll_no?: string; lot_number?: string; location?: string;
   color_name?: string; stock_weight?: number; stock_box?: number; available_weight?: number;
 };
+const ceil2 = (n: number) => Math.ceil(Math.round((Number(n) || 0) * 100 * 1e6) / 1e6) / 100;
+
 function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: () => void; onDone: () => void }) {
   const colour = card.shade || card.roll_no || "";
+  const [allColours, setAllColours] = useState(false);
+  // Inward is roll-wise, so list the individual rolls in stock — this colour by default,
+  // or every available roll when "all colours" is on.
   const rollsCall = useFrappeGetCall<{ message: InvRoll[] }>(
     `${PROGRAM_API}.program_inventory_search`,
-    { color: colour },
-    `finish-rolls-${card.name}`,
+    allColours ? {} : { color: colour },
+    `finish-rolls-${card.name}-${allColours ? "all" : "one"}`,
   );
   const { call: finishUnfinished, loading } = useFrappePostCall(`${PROGRAM_API}.finish_unfinished`);
+  const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
+    `${API}.order_options_for_party`,
+    card.customer_order ? { customer_order: card.customer_order } : undefined,
+    card.customer_order ? `finish-orders-${card.customer_order}` : null,
+  );
   const rolls = rollsCall.data?.message ?? [];
 
   const [search, setSearch] = useState("");
-  const [sel, setSel] = useState<InvRoll | null>(null);
+  const [picked, setPicked] = useState<Record<string, InvRoll>>({});
+  const [patty, setPatty] = useState<number>(1);
+  const [cut, setCut] = useState<string>(card.cut || "");
+  const [cuttingDate, setCuttingDate] = useState<string>(today());
+  const [order, setOrder] = useState<string>(card.customer_order || "");
+  const [jobWork, setJobWork] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const q = search.trim().toLowerCase();
   const shown = q
-    ? rolls.filter((r) => `${r.roll_no || ""} ${r.lot_number || ""} ${r.location || ""}`.toLowerCase().includes(q))
+    ? rolls.filter((r) => `${r.roll_no || ""} ${r.lot_number || ""} ${r.location || ""} ${r.color_name || ""}`.toLowerCase().includes(q))
     : rolls;
+
+  const chosen = Object.values(picked);
+  const totalWeight = chosen.reduce((s, r) => s + Number(r.stock_weight || 0), 0);
+  const perPatty = patty > 0 ? ceil2(totalWeight / patty) : 0;
+  const toggle = (r: InvRoll) =>
+    setPicked((p) => {
+      const n = { ...p };
+      if (n[r.name]) delete n[r.name];
+      else n[r.name] = r;
+      return n;
+    });
 
   async function submit() {
     setErr(null);
     if (!card.program) return setErr("This planned cut has no linked program.");
-    if (!sel) return setErr("Pick the roll to finish with.");
+    if (chosen.length === 0) return setErr("Select at least one roll.");
+    if (!(patty > 0)) return setErr("Enter the number of patty.");
     try {
-      await finishUnfinished({ program: card.program, roll_inventory: sel.name });
+      await finishUnfinished({
+        program: card.program,
+        rolls: JSON.stringify(chosen.map((r) => r.name)),
+        no_of_patty: patty,
+        cut: cut || undefined,
+        cutting_date: cuttingDate,
+        customer_order: order || undefined,
+        job_work: jobWork ? 1 : 0,
+      });
       onDone();
     } catch (e) {
       setErr(extractErrorMessage(e));
@@ -241,51 +276,97 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
   }
 
   return (
-    <div className="mm-modal-scrim" onClick={onClose}>
-      <div className="mm-modal mm-modal-wide" onClick={(e) => e.stopPropagation()} role="dialog">
+    <div className="mm-modal-scrim mm-scrim-right" onClick={onClose}>
+      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
-          <span className="mm-modal-title">Pick roll &amp; finish — {colour || "—"}</span>
+          <span className="mm-modal-title">Cutting — select rolls{colour ? ` · ${colour}` : ""}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <p className="mm-muted" style={{ margin: "0 0 0.6rem", fontSize: "0.8rem" }}>
-            Select the actual roll from inventory. Its weight is fetched onto the program, the stock is consumed, and the cut is finished.
-          </p>
-          <div className="mm-search-box" style={{ marginBottom: "0.6rem" }}>
-            <Search size={15} />
-            <input className="mm-input mm-input-compact" placeholder="Search roll / lot / location…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="mm-cutpick-head">
+            <div className="mm-search-box" style={{ flex: 1 }}>
+              <Search size={15} />
+              <input className="mm-input mm-input-compact" placeholder="Search roll / lot / location / colour…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <label className="mm-field mm-field-inline" style={{ whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={allColours} onChange={(e) => setAllColours(e.target.checked)} />
+              <span className="mm-field-label">All colours</span>
+            </label>
           </div>
+
           {rollsCall.isLoading ? (
             <p className="mm-muted">Loading rolls…</p>
           ) : shown.length === 0 ? (
-            <p className="mm-empty">No inventory rolls in stock for “{colour}”.</p>
+            <p className="mm-empty">No rolls in stock{allColours ? "" : ` for “${colour}”`}.</p>
           ) : (
-            <div style={{ maxHeight: "300px", overflow: "auto" }}>
-              {shown.map((r) => (
-                <div
-                  key={r.name}
-                  className={`mm-pick-row ${sel?.name === r.name ? "mm-pick-row-active" : ""}`}
-                  onClick={() => setSel(r)}
-                >
-                  <span className="mm-colour-name">{r.roll_no || r.lot_number || r.name}</span>
-                  <span className="mm-prog-card-meta">
-                    {r.location || "—"}{r.lot_number ? ` · lot ${r.lot_number}` : ""} · {(r.stock_weight ?? 0).toLocaleString()} kg{r.stock_box ? ` · ${r.stock_box} qty` : ""}
-                  </span>
-                </div>
-              ))}
+            <div className="mm-table-scroll mm-cutpick-table">
+              <table className="mm-table mm-table-dense">
+                <thead>
+                  <tr><th /><th>Roll</th><th>Colour</th><th>Lot</th><th>Location</th><th className="mm-num">Weight (Kg)</th></tr>
+                </thead>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr key={r.name} className={picked[r.name] ? "mm-ws-row-active" : undefined} onClick={() => toggle(r)} style={{ cursor: "pointer" }}>
+                      <td><input type="checkbox" checked={!!picked[r.name]} onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} /></td>
+                      <td>{r.roll_no || r.lot_number || r.name}</td>
+                      <td>{r.color_name || "—"}</td>
+                      <td>{r.lot_number || "—"}</td>
+                      <td>{r.location || "—"}</td>
+                      <td className="mm-num">{(r.stock_weight ?? 0).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-          {sel && (
-            <p className="mm-muted" style={{ marginTop: "0.6rem", fontSize: "0.8rem" }}>
-              Finishing with <strong>{sel.roll_no || sel.lot_number || sel.name}</strong> — <strong>{(sel.stock_weight ?? 0).toLocaleString()} kg</strong> will be fetched.
-            </p>
-          )}
+
+          {/* Cutting details — auto-filled from the planned cut, editable */}
+          <div className="mm-form-grid" style={{ marginTop: "1rem" }}>
+            <label className="mm-field">
+              <span className="mm-field-label">Customer Order</span>
+              <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)}>
+                <option value="">{card.customer_order || "— none —"}</option>
+                {(orderOpts.data?.message ?? []).map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+              </select>
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Cutting Date *</span>
+              <input className="mm-input" type="date" value={cuttingDate} onChange={(e) => setCuttingDate(e.target.value)} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Qty | Weight (Kg)</span>
+              <input className="mm-input" value={`${chosen.length} | ${totalWeight.toLocaleString()}`} readOnly />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">No of Patty *</span>
+              <span className="mm-patty-step">
+                <button type="button" className="mm-mini" onClick={() => setPatty((p) => Math.max(1, p - 1))}>−</button>
+                <input className="mm-input" type="number" min={1} value={patty}
+                  onChange={(e) => setPatty(Math.max(1, Number(e.target.value) || 1))} />
+                <button type="button" className="mm-mini" onClick={() => setPatty((p) => p + 1)}>+</button>
+              </span>
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Cut</span>
+              <input className="mm-input" value={cut} onChange={(e) => setCut(e.target.value)} placeholder="e.g. 50/85" />
+            </label>
+            <label className="mm-field mm-field-inline">
+              <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
+            </label>
+          </div>
+
+          <div className="mm-banner" style={{ marginTop: "0.9rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+            <span>Rolls: <strong>{chosen.length}</strong></span>
+            <span>Total weight: <strong>{totalWeight.toLocaleString()} kg</strong></span>
+            <span>Per patty: <strong>{perPatty.toLocaleString()} kg</strong></span>
+          </div>
+
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading || !sel} onClick={() => void submit()}>
-            {loading ? "Finishing…" : "Finish"}
+          <button className="mm-btn-primary" disabled={loading || chosen.length === 0} onClick={() => void submit()}>
+            {loading ? "Finishing…" : "Submit"}
           </button>
         </div>
       </div>

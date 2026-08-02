@@ -538,79 +538,126 @@ def create_unfinished_program(
 
 
 @frappe.whitelist()
-def finish_unfinished(program, roll_inventory=None):
-	"""Finish an unfinished (planned) program by binding the actual roll from inventory.
+def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None, cut=None,
+	cutting_date=None, customer_order=None, job_work=None):
+	"""Finish an unfinished (planned) program by binding the ACTUAL roll(s) from inventory.
 
-	Pulls the roll's weight onto the program, consumes it from stock (with an OUT ledger
-	entry), completes the placeholder cutting, and clears the unfinished flag — the
-	program then runs on its machine like any other.
+	Inward is roll-wise, so several rolls can be picked for one cut: their weights are
+	summed, each is consumed from stock with its own OUT ledger entry, and the placeholder
+	cutting is completed with the combined weight, the patty count and per-patty weight
+	(total ÷ patty, rounded up) that Program/Production then run on.
 	"""
 	doc = frappe.get_doc("MM Program", program)
 	if not doc.unfinished:
 		frappe.throw(_("Program {0} is already finished.").format(program))
-	roll_inventory = roll_inventory or doc.roll_inventory
-	if not roll_inventory or not frappe.db.exists("MM Roll Inventory", roll_inventory):
-		frappe.throw(_("Select the roll from inventory to finish this program."))
 
-	ri = frappe.get_doc("MM Roll Inventory", roll_inventory)
-	weight = round(float(ri.stock_weight or 0), 3)
-	box = round(float(ri.stock_box or 0), 3)
-	if weight <= 0:
-		frappe.throw(_("Roll {0} has no stock weight to consume.").format(roll_inventory))
+	picked = rolls
+	if isinstance(picked, str):
+		picked = json.loads(picked or "[]")
+	picked = [r for r in (picked or []) if r]
+	if not picked:
+		single = roll_inventory or doc.roll_inventory
+		picked = [single] if single else []
+	if not picked:
+		frappe.throw(_("Select at least one roll from inventory to finish this program."))
+	for r in picked:
+		if not frappe.db.exists("MM Roll Inventory", r):
+			frappe.throw(_("Roll {0} not found in inventory.").format(r))
 
 	from mahaveermetalic.mahaveer_metallic import stock_ledger
 
-	# Consume the whole roll (the weight is all fetched into the program) + OUT ledger.
-	ri.stock_weight = 0
-	ri.stock_box = 0
-	ri.save(ignore_permissions=True)
-	stock_ledger.post_movement(
-		voucher_type="Cutting",
-		voucher_no=doc.source_cutting or doc.name,
-		branch=ri.branch,
-		location=ri.location,
-		lot_number=ri.lot_number,
-		color_name=ri.color_name,
-		roll_no=ri.roll_no,
-		item_type=ri.item_type,
-		out_weight=weight,
-		out_box=box,
-		balance_weight=ri.stock_weight,
-		balance_box=ri.stock_box,
-		customer_order=doc.customer_order,
-		remarks=_("Program finish — roll cut into program {0}").format(doc.name),
-	)
-
-	# Complete the placeholder cutting with the real weight.
-	if doc.source_cutting and frappe.db.exists("MM Cutting", doc.source_cutting):
-		frappe.db.set_value(
-			"MM Cutting",
-			doc.source_cutting,
-			{"status": "Completed", "total_net_weight": weight, "roll_no": ri.roll_no or doc.roll_no},
-			update_modified=False,
+	weight = 0.0
+	first_ri = None
+	for name in picked:
+		ri = frappe.get_doc("MM Roll Inventory", name)
+		w = round(float(ri.stock_weight or 0), 3)
+		b = round(float(ri.stock_box or 0), 3)
+		if w <= 0:
+			frappe.throw(_("Roll {0} has no stock weight to consume.").format(name))
+		first_ri = first_ri or ri
+		weight += w
+		# Consume the whole roll (its weight is fetched into the program) + OUT ledger.
+		ri.stock_weight = 0
+		ri.stock_box = 0
+		ri.save(ignore_permissions=True)
+		stock_ledger.post_movement(
+			voucher_type="Cutting",
+			voucher_no=doc.source_cutting or doc.name,
+			branch=ri.branch,
+			location=ri.location,
+			lot_number=ri.lot_number,
+			color_name=ri.color_name,
+			roll_no=ri.roll_no,
+			item_type=ri.item_type,
+			out_weight=w,
+			out_box=b,
+			balance_weight=ri.stock_weight,
+			balance_box=ri.stock_box,
+			customer_order=customer_order or doc.customer_order,
+			remarks=_("Program finish — roll cut into program {0}").format(doc.name),
 		)
+	weight = round(weight, 3)
+	ri = first_ri
+
+	# Complete the placeholder cutting with the real weight + patty count, and store the
+	# per-patty weight (rounded up) that Production consumes as one batch.
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
+
+	patty = int(no_of_patty) if no_of_patty not in (None, "") else int(doc.total_batches or 1) or 1
+	per_patty = ceil2(weight / patty) if patty > 0 else weight
+	if doc.source_cutting and frappe.db.exists("MM Cutting", doc.source_cutting):
+		updates = {
+			"status": "Completed",
+			"total_net_weight": weight,
+			"total_patti_qty": patty,
+			"per_patty_weight": per_patty,
+			"roll_no": (ri.roll_no if ri else None) or doc.roll_no,
+		}
+		if cut:
+			updates["cut"] = cut
+		if cutting_date:
+			updates["posting_date"] = cutting_date
+		if customer_order:
+			updates["customer_order"] = customer_order
+		if job_work is not None:
+			updates["job_work_flag"] = 1 if frappe.utils.cint(job_work) else 0
+		frappe.db.set_value("MM Cutting", doc.source_cutting, updates, update_modified=False)
+		# Keep the patti child row in step so the cutting's own totals stay consistent.
+		child = frappe.db.get_value("MM Cutting Patti", {"parent": doc.source_cutting}, "name")
+		if child:
+			frappe.db.set_value(
+				"MM Cutting Patti", child,
+				{"patti_qty": patty, "net_weight": weight, "weight_per_patti": per_patty},
+				update_modified=False,
+			)
 
 	# Bind the roll, pull its weight onto the program, mark it finished/running. Written
 	# with db.set_value because net_weight / roll_no aren't allow_on_submit — a plain
 	# doc.save on the submitted program would raise UpdateAfterSubmitError. Status is
 	# re-derived here (same rule as MMProgram.derive_status) since we bypass validate.
-	total = int(doc.total_batches or 0)
+	# One patty = one batch: the actual cut decides how many batches run, and the program
+	# carries per-patty × batches (what Production consumes).
+	total = patty
 	done = max(0, min(int(doc.completed_batches or 0), total))
 	status = "Completed" if (total and done >= total) else ("Partially Done" if done > 0 else "Running")
+	prog_weight = round(per_patty * patty, 3)
 	frappe.db.set_value(
 		"MM Program",
 		doc.name,
 		{
-			"roll_inventory": roll_inventory,
-			"net_weight": weight,
-			"roll_no": ri.roll_no or doc.roll_no,
+			"roll_inventory": picked[0],
+			"net_weight": prog_weight,
+			"total_batches": total,
+			"patti_qty": total,
+			"roll_no": (ri.roll_no if ri else None) or doc.roll_no,
 			"unfinished": 0,
 			"is_running": 1,
 			"status": status,
 		},
 		update_modified=True,
 	)
-	return {"program": doc.name, "net_weight": weight, "unfinished": False, "status": status}
+	return {"program": doc.name, "net_weight": prog_weight, "per_patty_weight": per_patty,
+		"total_batches": total, "unfinished": False, "status": status}
 
 
 def _save_batches(program, completed, is_running):
