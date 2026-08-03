@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus, Search, PackageSearch } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
+import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
@@ -341,10 +342,8 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
           <div className="mm-form-grid" style={{ marginTop: "1rem" }}>
             <label className="mm-field">
               <span className="mm-field-label">Customer Order</span>
-              <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)}>
-                <option value="">{card.customer_order || "— none —"}</option>
-                {(orderOpts.data?.message ?? []).map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
-              </select>
+              <SearchSelect value={order} placeholder={card.customer_order || "— none —"}
+                options={(orderOpts.data?.message ?? []).map((o) => ({ value: o.name, label: o.name }))} onChange={setOrder} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Cutting Date *</span>
@@ -428,11 +427,8 @@ function NewCuttingModal({ onClose, onDone }: { onClose: () => void; onDone: () 
           <div className="mm-form-grid">
             <label className="mm-field">
               <span className="mm-field-label">Colour *</span>
-              <select className="mm-input" value={shade} onChange={(e) => setShade(e.target.value)}>
-                <option value="">— colour —</option>
-                {shade && !colorOptions.includes(shade) && <option value={shade}>{shade}</option>}
-                {colorOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <SearchSelect value={shade} placeholder="— colour —"
+                options={colorOptions.map((c) => ({ value: c, label: c }))} onChange={setShade} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Cut</span>
@@ -551,9 +547,7 @@ function CuttingModal({ group, onClose, onDone }: { group: Group; onClose: () =>
           <div className="mm-form-grid">
             <label className="mm-field">
               <span className="mm-field-label">Customer Order</span>
-              <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)}>
-                {orders.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
-              </select>
+              <SearchSelect value={order} options={orders.map((o) => ({ value: o.name, label: o.name }))} onChange={setOrder} />
             </label>
             <label className="mm-field mm-field-inline">
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>

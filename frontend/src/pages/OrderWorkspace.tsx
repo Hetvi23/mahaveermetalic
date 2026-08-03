@@ -12,6 +12,7 @@ import { Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import PartyPicker from "@/components/PartyPicker";
+import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -656,38 +657,40 @@ export default function OrderWorkspace() {
             <PartyPicker label="Party" value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v, company: "" }))} />
             <label className="mm-field">
               <span className="mm-field-label">Company</span>
-              <select className="mm-input" value={header.company} disabled={ro || !header.party}
-                onChange={(e) => setHeader((h) => ({ ...h, company: e.target.value }))}>
-                <option value="">{!header.party ? "Pick a party first" : companiesCall.isLoading ? "Loading…" : "— select company —"}</option>
-                {header.company && !companies.includes(header.company) && <option value={header.company}>{header.company}</option>}
-                {companies.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <SearchSelect
+                value={header.company}
+                disabled={ro || !header.party}
+                placeholder={!header.party ? "Pick a party first" : companiesCall.isLoading ? "Loading…" : "— select company —"}
+                options={companies.map((c) => ({ value: c, label: c }))}
+                onChange={(v) => setHeader((h) => ({ ...h, company: v }))}
+              />
             </label>
           </div>
 
-          {/* The order's item. Editing loads it right back into this same form; a new order
-              uses it to queue items (each queued item becomes its own order). */}
-          {!ro && (
+          {/* The order's item — always shown, so an approved (locked) order still displays
+              its sales data instead of just the header. Editing loads it right back into
+              this same form; a new order uses it to queue items. */}
+          {(!ro || draft.color_name.trim() !== "") && (
             <div className="mm-ow-builder" onKeyDown={onBuilderKeyDown}>
               <div className="mm-ow-builder-title">
-                {selected ? "Item" : <>Add item <span className="mm-kbd-hint">press Enter to add</span></>}
+                {ro ? "Item" : selected ? "Item" : <>Add item <span className="mm-kbd-hint">press Enter to add</span></>}
               </div>
               <div className="mm-form-grid">
-                <FieldInput field={F.color_name} value={draft.color_name} onChange={(v) => setDraft((d) => ({ ...d, color_name: String(v ?? "") }))} />
-                <FieldInput field={F.cut} value={draft.cut} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />
-                <FieldInput field={F.item_delivery_date} value={draft.delivery_date} onChange={(v) => setDraft((d) => ({ ...d, delivery_date: String(v ?? "") }))} />
-                <FieldInput field={F.qty_weight} value={draft.qty_weight} onChange={(v) => setDraft((d) => ({ ...d, qty_weight: v as number }))} />
-                <FieldInput field={F.qty_box} value={draft.qty_box} onChange={(v) => setDraft((d) => ({ ...d, qty_box: v as number }))} />
-                <FieldInput field={F.sale_rate} value={draft.sale_rate} onChange={(v) => setDraft((d) => ({ ...d, sale_rate: v as number }))} />
+                <FieldInput field={F.color_name} value={draft.color_name} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, color_name: String(v ?? "") }))} />
+                <FieldInput field={F.cut} value={draft.cut} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />
+                <FieldInput field={F.item_delivery_date} value={draft.delivery_date} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, delivery_date: String(v ?? "") }))} />
+                <FieldInput field={F.qty_weight} value={draft.qty_weight} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, qty_weight: v as number }))} />
+                <FieldInput field={F.qty_box} value={draft.qty_box} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, qty_box: v as number }))} />
+                <FieldInput field={F.sale_rate} value={draft.sale_rate} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, sale_rate: v as number }))} />
               </div>
               {/* One order = one item, so there is nothing to "add" onto a saved order. */}
-              {!selected && (
+              {!ro && !selected && (
                 <button type="button" className="mm-btn-secondary mm-ow-additem" onClick={addItem}>
                   <Plus size={15} /> Add item
                 </button>
               )}
               {/* Stock is informational here — the purchase decision happens on save. */}
-              {draft.color_name.trim() !== "" && (
+              {!ro && draft.color_name.trim() !== "" && (
                 <p className="mm-ow-stockinfo">
                   {!availKnown(draft) ? (
                     <>Checking stock…</>
@@ -990,10 +993,12 @@ function VendorSelect({ value, onChange }: { value: string; onChange: (v: string
   });
   const rows = data ?? [];
   return (
-    <select className="mm-input mm-input-compact" value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">— vendor —</option>
-      {value && !rows.some((v) => v.name === value) && <option value={value}>{value}</option>}
-      {rows.map((v) => <option key={v.name} value={v.name}>{v.vendor_name || v.name}</option>)}
-    </select>
+    <SearchSelect
+      compact
+      value={value}
+      onChange={onChange}
+      placeholder="— vendor —"
+      options={rows.map((v) => ({ value: v.name, label: v.vendor_name || v.name }))}
+    />
   );
 }

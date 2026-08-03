@@ -24,6 +24,8 @@ type Props = {
 export default function LinkField({ label, linkDoctype, value, onChange, disabled, required, extraFilters, compact, createDefaults, placeholder }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState(value || "");
+	/** True once the user types into an open field — see `typed` below. */
+	const [dirty, setDirty] = useState(false);
 	const [quickCreate, setQuickCreate] = useState(false);
 	const wrap = useRef<HTMLDivElement>(null);
 
@@ -46,7 +48,12 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 
 	// Show all options on focus; filter once the user actually types. Uses get_list
 	// (search_link is unreliable on some sites and returns nothing).
-	const typed = text.trim() !== "" && text.trim() !== (value || "");
+	//
+	// `dirty` — not a text-vs-value comparison — is what tells typing apart from opening.
+	// Every keystroke is pushed up via onChange, so `value` tracks `text` exactly and any
+	// such comparison is always false: the list never filtered. Set on typing, cleared on
+	// open and after a pick, so clicking a filled field still shows all the options.
+	const typed = dirty && text.trim() !== "";
 	const filters = [
 		...(extraFilters ?? []),
 		...(typed ? ([["name", "like", `%${text.trim()}%`]] as [string, string, unknown][]) : []),
@@ -68,12 +75,14 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 	function pick(v: string) {
 		setText(v);
 		onChange(v);
+		setDirty(false);
 		setOpen(false);
 	}
 
 	function clear() {
 		setText("");
 		onChange("");
+		setDirty(false);
 		setOpen(false);
 	}
 
@@ -93,12 +102,13 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 				onChange={(e) => {
 					setText(e.target.value);
 					onChange(e.target.value);
+					setDirty(true);
 					setOpen(true);
 				}}
 				// Clicking a field that already has a value must offer the other options, not
 				// just re-show the current one — opening on click (not only on focus) means a
 				// second click on an already-focused field re-opens the list.
-				onFocus={() => setOpen(true)}
+				onFocus={() => { setDirty(false); setOpen(true); }}
 				onClick={() => setOpen(true)}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") setOpen(false);

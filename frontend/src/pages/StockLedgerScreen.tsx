@@ -3,6 +3,7 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { useSearchParams } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, RefreshCw, ScrollText, Search, X } from "lucide-react";
 import { TableSkeleton } from "@/components/Skeleton";
+import SearchSelect from "@/components/SearchSelect";
 
 type Entry = {
   name: string;
@@ -105,10 +106,8 @@ export default function StockLedgerScreen() {
             <Search size={15} />
             <input className="mm-input" placeholder="Search colour, lot, voucher, order…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <select className="mm-input mm-input-compact" value={voucher} onChange={(e) => setVoucher(e.target.value)}>
-            <option value="">All movements</option>
-            {VOUCHERS.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
+          <SearchSelect compact value={voucher} placeholder="All movements"
+            options={VOUCHERS.map((v) => ({ value: v, label: v }))} onChange={setVoucher} />
           <span className="mm-pill mm-pill-muted">{shown.length}</span>
         </div>
 

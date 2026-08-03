@@ -4,6 +4,7 @@ import { X, Search, PackageSearch, Boxes } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const PROD_API = "mahaveermetalic.mahaveer_metallic.api.production";
@@ -140,12 +141,12 @@ export default function SalesChallanVoucher() {
           <PartyPicker label="Customer *" value={party} required onChange={(v) => { setParty(v); setOrder(""); }} />
           <label className="mm-field">
             <span className="mm-field-label">Order</span>
-            <select className="mm-input" value={order} disabled={!party} onChange={(e) => setOrder(e.target.value)}>
-              <option value="">{!party ? "Pick a customer first" : "— none (from stock) —"}</option>
-              {(ordersCall.data?.message ?? []).map((o) => (
-                <option key={o.name} value={o.name}>{o.name}{o.colours ? ` · ${o.colours}` : ""}</option>
-              ))}
-            </select>
+            <SearchSelect
+              value={order}
+              disabled={!party}
+              placeholder={!party ? "Pick a customer first" : "— none (from stock) —"}
+              options={(ordersCall.data?.message ?? []).map((o) => ({ value: o.name, label: `${o.name}${o.colours ? ` · ${o.colours}` : ""}` }))}
+              onChange={setOrder} />
           </label>
           <label className="mm-field">
             <span className="mm-field-label">Chalan Date *</span>

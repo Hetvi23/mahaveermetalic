@@ -1,6 +1,7 @@
 import type { FieldSchema } from "@/config/registry";
 import type { ReactNode } from "react";
 import LinkField from "./LinkField";
+import SearchSelect from "./SearchSelect";
 
 type Props = {
 	field: FieldSchema;
@@ -84,20 +85,15 @@ export function FieldInput({ field, value, onChange, disabled, compact, record }
 	if (field.fieldtype === "Select") {
 		const opts = (field.options || "").split("\n").filter(Boolean);
 		return lab(
-			<select
-				className={ic}
+			<SearchSelect
 				value={value == null ? "" : String(value)}
+				onChange={onChange}
+				options={opts.map((o) => ({ value: o, label: o }))}
 				disabled={ro}
 				required={field.reqd}
-				onChange={(e) => onChange(e.target.value)}
-			>
-				{!field.reqd && <option value="">—</option>}
-				{opts.map((o) => (
-					<option key={o} value={o}>
-						{o}
-					</option>
-				))}
-			</select>,
+				noClear={field.reqd}
+				placeholder="—"
+			/>,
 		);
 	}
 

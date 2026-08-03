@@ -7,6 +7,7 @@ import LinkField from "@/components/LinkField";
 import SalesOrderPicker, { type SOOption } from "@/components/SalesOrderPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import SearchSelect from "@/components/SearchSelect";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -635,14 +636,13 @@ export default function InwardWorkspace() {
                       </td>
                       {!manual && (
                         <td>
-                          <select className="mm-input mm-input-compact" value={r.customer_order} disabled={awaitingNext} onChange={(e) => allocate(i, e.target.value)}>
-                            <option value="">— none —</option>
-                            {orders.map((o, oi) => (
-                              <option key={`${o.sales_order}-${oi}`} value={o.sales_order}>
-                                {o.sales_order} · {o.party} · {o.color_name}
-                              </option>
-                            ))}
-                          </select>
+                          <SearchSelect
+                            compact
+                            value={r.customer_order}
+                            disabled={awaitingNext}
+                            placeholder="— none —"
+                            options={orders.map((o) => ({ value: o.sales_order, label: o.sales_order, meta: `${o.party} · ${o.color_name}` }))}
+                            onChange={(v) => allocate(i, v)} />
                         </td>
                       )}
                       <td className="mm-num">

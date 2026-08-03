@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { Printer, Disc3 } from "lucide-react";
+import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.bobbin";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -53,10 +54,8 @@ export default function BobbinReportPage() {
         <div className="mm-brp-filters">
           <label className="mm-field">
             <span className="mm-field-label">Party</span>
-            <select className="mm-input" value={party} onChange={(e) => setParty(e.target.value)}>
-              <option value="">All parties</option>
-              {(parties.data ?? []).map((p) => <option key={p.name} value={p.name}>{p.party_name || p.name}</option>)}
-            </select>
+            <SearchSelect value={party} placeholder="All parties"
+              options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))} onChange={setParty} />
           </label>
           <label className="mm-field">
             <span className="mm-field-label">From</span>

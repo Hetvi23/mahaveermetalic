@@ -6,6 +6,7 @@ import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
 import { printBoxStickers } from "@/utils/boxSticker";
+import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -302,32 +303,33 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                     onClick={() => { setShowAll(true); setAllPinOpen(false); }}>Show</button>
                 </span>
               )}
-              <select className="mm-input" value={company}
-                onChange={(e) => {
-                  const row = partyRows.find((p) => p.company === e.target.value);
-                  setCompany(e.target.value);
+              <SearchSelect
+                value={company}
+                placeholder={partiesCall.isLoading ? "Loading…" : "— select company —"}
+                options={partyRows.map((p) => ({
+                  value: p.company,
+                  label: p.company,
+                  meta: p.party_name && p.party_name !== p.company ? p.party_name : undefined,
+                }))}
+                onChange={(v) => {
+                  const row = partyRows.find((p) => p.company === v);
+                  setCompany(v);
                   setParty(row?.party || "");
                   setOrder("");
-                }}>
-                <option value="">{partiesCall.isLoading ? "Loading…" : "— select company —"}</option>
-                {partyRows.map((p) => (
-                  <option key={`${p.party}|${p.company}`} value={p.company}>
-                    {p.company}{p.party_name && p.party_name !== p.company ? ` — ${p.party_name}` : ""}
-                  </option>
-                ))}
-              </select>
+                }} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Select Order (remaining only)</span>
-              <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)} disabled={!party}>
-                <option value="">{!party ? "Pick a company first" : openOrdersCall.isLoading ? "Loading…" : "— no order (direct voucher) —"}</option>
-                {order && !openOrders.some((o) => o.name === order) && <option value={order}>{order}</option>}
-                {openOrders.map((o) => (
-                  <option key={o.name} value={o.name}>
-                    {o.name}{o.colours ? ` · ${o.colours}` : ""} · in {(o.inwarded_weight ?? 0).toLocaleString()} · out {(o.dispatched_weight ?? 0).toLocaleString()} · rem {(o.remaining_weight ?? 0).toLocaleString()}
-                  </option>
-                ))}
-              </select>
+              <SearchSelect
+                value={order}
+                disabled={!party}
+                placeholder={!party ? "Pick a company first" : openOrdersCall.isLoading ? "Loading…" : "— no order (direct voucher) —"}
+                options={openOrders.map((o) => ({
+                  value: o.name,
+                  label: `${o.name}${o.colours ? ` · ${o.colours}` : ""}`,
+                  meta: `in ${(o.inwarded_weight ?? 0).toLocaleString()} · out ${(o.dispatched_weight ?? 0).toLocaleString()} · rem ${(o.remaining_weight ?? 0).toLocaleString()}`,
+                }))}
+                onChange={setOrder} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">V.Date</span>
@@ -343,18 +345,15 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Operator</span>
-              <select className="mm-input" value={operator} onChange={(e) => setOperator(e.target.value)}>
-                <option value="">— none —</option>
-                {(employees.data ?? []).map((e) => (
-                  <option key={e.name} value={e.name}>{e.employee_name || e.name}</option>
-                ))}
-              </select>
+              <SearchSelect
+                value={operator}
+                placeholder="— none —"
+                options={(employees.data ?? []).map((e) => ({ value: e.name, label: e.employee_name || e.name }))}
+                onChange={setOperator} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Shift</span>
-              <select className="mm-input" value={shift} onChange={(e) => setShift(e.target.value)}>
-                {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <SearchSelect noClear value={shift} options={SHIFTS.map((s) => ({ value: s, label: s }))} onChange={setShift} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Machine</span>
@@ -551,10 +550,8 @@ function BoxDialog({
             <div className="mm-bx-row">
               <span className="mm-bx-label">Bobbin</span>
               <div className="mm-bx-bobbin">
-                <select className="mm-input" value={bobbin} onChange={(e) => setBobbin(e.target.value)}>
-                  <option value="">— none —</option>
-                  {allBobbins.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-                </select>
+                <SearchSelect value={bobbin} placeholder="— none —"
+                  options={allBobbins.map((b) => ({ value: b.name, label: b.name }))} onChange={setBobbin} />
                 {bobbinMaster && (
                   <button type="button" className="mm-link-add mm-bx-add" title="New bobbin" onClick={() => setQuick(true)}><Plus size={15} /></button>
                 )}

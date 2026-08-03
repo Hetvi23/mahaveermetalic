@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
+import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const CUT_API = "mahaveermetalic.mahaveer_metallic.api.cutting";
@@ -214,10 +215,8 @@ export default function ProgramScreen() {
                 <span className="mm-flow-count">{shownPatties.length}</span>
               </div>
               <div className="mm-patty-filters">
-                <select className="mm-input mm-input-compact" value={pattyCutFilter} onChange={(e) => setPattyCutFilter(e.target.value)}>
-                  <option value="">All cuts</option>
-                  {pattyCuts.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <SearchSelect compact value={pattyCutFilter} placeholder="All cuts"
+                  options={pattyCuts.map((c) => ({ value: c, label: c }))} onChange={setPattyCutFilter} />
                 <input className="mm-input mm-input-compact" placeholder="Filter colour…" value={pattyColourFilter}
                   onChange={(e) => setPattyColourFilter(e.target.value)} />
               </div>
@@ -503,23 +502,19 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
           <div className="mm-form-grid">
             <label className="mm-field">
               <span className="mm-field-label">Machine *</span>
-              <select className="mm-input" value={machine} onChange={(e) => setMachine(e.target.value)}>
-                <option value="">— choose —</option>
-                {machines.map((m) => <option key={m.name} value={m.name} disabled={!!m.closed}>Machine {m.machine_no}{m.cut ? ` · ${m.cut}` : ""}{m.closed ? " (closed)" : ""}</option>)}
-              </select>
+              <SearchSelect value={machine} placeholder="— choose —"
+                options={machines.filter((m) => !m.closed).map((m) => ({ value: m.name, label: `Machine ${m.machine_no}${m.cut ? ` · ${m.cut}` : ""}` }))}
+                onChange={setMachine} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Shift</span>
-              <select className="mm-input" value={shift} onChange={(e) => setShift(e.target.value)}>
-                {SHIFTS.map((s) => <option key={s} value={s}>{shiftIcon(s)} {s} · {s === "Night" ? nightDate : dayDate}</option>)}
-              </select>
+              <SearchSelect noClear value={shift}
+                options={SHIFTS.map((s) => ({ value: s, label: `${s} · ${s === "Night" ? nightDate : dayDate}` }))} onChange={setShift} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Customer Order</span>
-              <select className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)}>
-                <option value="">{sel?.rows[0]?.customer_order || "—"}</option>
-                {orders.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
-              </select>
+              <SearchSelect value={order} placeholder={sel?.rows[0]?.customer_order || "—"}
+                options={orders.map((o) => ({ value: o.name, label: o.name }))} onChange={setOrder} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Total Batches *</span>
