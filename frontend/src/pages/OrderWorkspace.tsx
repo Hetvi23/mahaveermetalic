@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useFrappeCreateDoc,
   useFrappeDeleteDoc,
@@ -179,24 +179,45 @@ export default function OrderWorkspace() {
   const companies = companiesCall.data?.message ?? [];
 
   const itemKey = (it: { color_name: string; cut: string }) => `${it.color_name}||${it.cut || ""}`;
-  const shortageOf = (it: Item) => Math.round(Math.max(0, (Number(it.qty_weight) || 0) - (availByKey[itemKey(it)] ?? 0)) * 1000) / 1000;
 
-  // Refresh available roll stock for the current items → drives the shortage → PO table.
-  useEffect(() => {
-    const lines = items.filter((it) => it.color_name).map((it) => ({ color: it.color_name, cut: it.cut || "" }));
-    if (lines.length === 0) { setAvailByKey({}); return; }
-    let cancelled = false;
-    void (async () => {
+  /**
+   * Shortage for a line against a known availability map.
+   *
+   * An UNKNOWN availability (not yet fetched — e.g. the size was just edited, which
+   * changes the lookup key) must never be read as "zero stock", or a well-stocked line
+   * looks fully short and wrongly triggers the purchase dialog. Unknown → no shortage;
+   * the save path re-fetches before it decides anything.
+   */
+  const shortageIn = (avail: Record<string, number>, it: Item) => {
+    const a = avail[itemKey(it)];
+    if (a === undefined) return 0;
+    return Math.round(Math.max(0, (Number(it.qty_weight) || 0) - a) * 1000) / 1000;
+  };
+  const shortageOf = (it: Item) => shortageIn(availByKey, it);
+  const availKnown = (it: Item) => availByKey[itemKey(it)] !== undefined;
+
+  /** Fetch availability for these lines, publish it to the table, and return the map. */
+  const loadAvailability = useCallback(
+    async (list: Item[]): Promise<Record<string, number>> => {
+      const lines = list.filter((it) => it.color_name).map((it) => ({ color: it.color_name, cut: it.cut || "" }));
+      if (lines.length === 0) { setAvailByKey({}); return {}; }
       try {
         const r = await fetchAvailability({ lines: JSON.stringify(lines) });
-        if (cancelled) return;
         const m: Record<string, number> = {};
         for (const row of r?.message ?? []) m[`${row.color}||${row.cut || ""}`] = Number(row.available || 0);
         setAvailByKey(m);
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-  }, [items, fetchAvailability]);
+        return m;
+      } catch {
+        return {};
+      }
+    },
+    [fetchAvailability],
+  );
+
+  // Keep the table's Available/Short columns live as items change.
+  useEffect(() => {
+    void loadAvailability(items);
+  }, [items, loadAvailability]);
 
   // Party → auto-select the first company.
   useEffect(() => {
@@ -352,16 +373,21 @@ export default function OrderWorkspace() {
    * is short on stock we open the purchase dialog first and let them choose "create the
    * PO too" or "just save the sales order".
    */
-  function onSave() {
+  async function onSave() {
     const prepared = prepareSave();
     if (!prepared) return;
-    if (prepared.some((it) => shortageOf(it) > 0)) {
+    // Decide on FRESHLY fetched stock, never on whatever is in state: an item added or
+    // re-sized a moment ago has no availability yet, and guessing "0" would pop the
+    // purchase dialog on a line that is fully in stock.
+    const avail = await loadAvailability(prepared);
+    const shorts = prepared.map((it) => shortageIn(avail, it));
+    if (shorts.some((s) => s > 0)) {
       // Seed the dialog with the shortfall as the default purchase weight, plus whatever
       // supplier/rate the line already carries.
       setPoDraft(
         Object.fromEntries(
           prepared.map((it, i) => [i, {
-            weight: shortageOf(it) > 0 ? shortageOf(it) : ("" as number | ""),
+            weight: shorts[i] > 0 ? shorts[i] : ("" as number | ""),
             rate: poByIndex[i]?.rate ?? it.purchase_rate ?? "",
             vendor: poByIndex[i]?.vendor || it.purchase_party || "",
           }]),
@@ -585,8 +611,8 @@ export default function OrderWorkspace() {
 
           {/* Items list */}
           {items.length > 0 && (
-            <div className="mm-ow-items">
-              <table className="mm-table mm-table-dense">
+            <div className="mm-ow-items mm-table-scroll">
+              <table className="mm-table mm-table-dense mm-ow-items-table">
                 <thead>
                   <tr>
                     <th>Color</th>
@@ -630,7 +656,9 @@ export default function OrderWorkspace() {
                         <td className="mm-num">{ro ? (Number(it.qty_box) || 0) : num("qty_box")}</td>
                         <td className="mm-num">{ro ? (Number(it.sale_rate) || 0) : num("sale_rate")}</td>
                         <td className="mm-num">{avail == null ? "…" : avail.toLocaleString()}</td>
-                        <td className="mm-num">{short > 0 ? <span className="mm-var-over">{short.toLocaleString()}</span> : "—"}</td>
+                        <td className="mm-num">
+                          {!availKnown(it) ? "…" : short > 0 ? <span className="mm-var-over">{short.toLocaleString()}</span> : "—"}
+                        </td>
                         {!ro && (
                           <td className="mm-num">
                             <button type="button" className="mm-icon-btn" title="Remove" onClick={() => removeItem(i)}>

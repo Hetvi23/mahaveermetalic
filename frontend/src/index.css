@@ -1244,9 +1244,21 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* Pre-save purchase dialog actions (create PO + save / save only / cancel). */
 .mm-ow-po-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
 .mm-ow-po-actions .mm-btn-primary, .mm-ow-po-actions .mm-btn-secondary { flex: 1 1 auto; }
-/* Editable colour cell in the order items table — the link field fills the cell. */
-.mm-ow-cell-link { min-width: 150px; }
+/* Editable order items table. Inline inputs are much wider than the text they replaced,
+   so the row used to spill past the card — keep every editor to a sane width and let the
+   table scroll sideways inside the card instead. (Safe now that link menus are portalled,
+   so the scroll container can't clip a dropdown.) */
+.mm-ow-items.mm-table-scroll { overflow-x: auto; max-width: 100%; }
+.mm-ow-items-table { width: 100%; }
+.mm-ow-items-table td, .mm-ow-items-table th { white-space: nowrap; }
+.mm-ow-items-table td .mm-input { min-width: 0; }
+.mm-ow-cell-link { min-width: 132px; }
 .mm-ow-cell-link .mm-link-wrap { width: 100%; }
+.mm-ow-items-table td input[type="number"] { width: 68px; }
+.mm-ow-items-table td input[type="date"] { width: 122px; }
+/* Size cell only — must not catch the colour LinkField's (typeless) input. */
+.mm-ow-items-table td:not(.mm-ow-cell-link) input[type="text"],
+.mm-ow-items-table td:not(.mm-ow-cell-link) input:not([type]) { width: 74px; }
 .mm-suggest-none { display: flex; flex-direction: column; gap: 0.1rem; border-bottom: 1px solid var(--mm-border); }
 .mm-suggest-rich { max-height: 280px; }
 .mm-suggest-rich .mm-suggest-item { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.7rem; }
