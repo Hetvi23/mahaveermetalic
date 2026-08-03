@@ -1205,10 +1205,14 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .mm-link-add:hover { background: rgba(217,119,6,0.12); border-color: rgba(217,119,6,0.4); }
-/* Clear button for optional pickers (e.g. Sales order) — the only way back to "none"
-   once a value is picked, since typing in the box only edits the search text. */
+/* Clear button on every picker — a selected value can always be blanked again, not only
+   swapped for another. Three affordances can share the right edge (clear, +, caret), so
+   position them per combination. */
 .mm-link-wrap-clearable .mm-link-input { padding-right: 3.4rem; }
 .mm-link-wrap-clearable .mm-link-caret { right: 2.1rem; }
+.mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-input { padding-right: 5.2rem; }
+.mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-clear { right: 2.3rem; }
+.mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-caret { right: 4.1rem; }
 .mm-link-clear {
 	position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
 	width: 22px; height: 22px; display: grid; place-items: center;
@@ -1237,6 +1241,12 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
    escape any scrolling ancestor that would otherwise clip them. Inline left/top/width win
    over the absolute defaults; `right`/`margin` must be cleared or they fight the width. */
 .mm-suggest-fixed { position: fixed; right: auto; margin: 0; z-index: 300; }
+/* Pre-save purchase dialog actions (create PO + save / save only / cancel). */
+.mm-ow-po-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.mm-ow-po-actions .mm-btn-primary, .mm-ow-po-actions .mm-btn-secondary { flex: 1 1 auto; }
+/* Editable colour cell in the order items table — the link field fills the cell. */
+.mm-ow-cell-link { min-width: 150px; }
+.mm-ow-cell-link .mm-link-wrap { width: 100%; }
 .mm-suggest-none { display: flex; flex-direction: column; gap: 0.1rem; border-bottom: 1px solid var(--mm-border); }
 .mm-suggest-rich { max-height: 280px; }
 .mm-suggest-rich .mm-suggest-item { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.7rem; }

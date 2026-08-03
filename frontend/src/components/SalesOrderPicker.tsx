@@ -102,10 +102,13 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
             setText(e.target.value);
             setOpen(true);
           }}
+          // Blank the search text on open so an already-picked order still shows the OTHER
+          // options; onClick as well as onFocus so a second click re-opens the list.
           onFocus={() => {
             setText("");
             setOpen(true);
           }}
+          onClick={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
             // Backspacing an already-empty search box clears the picked order.

@@ -140,6 +140,89 @@ def create_po_for_order(sales_order, qty_kg=0, rate=0, supplier=None, clamp_to_s
 
 
 @frappe.whitelist()
+def sync_shortage_pos(sales_order, lines=None):
+	"""Create / update / remove the draft shortage Purchase Orders for a Sales Order —
+	ONE PER SHORT ITEM, so a multi-item order can carry more than one PO.
+
+	`lines` is [{idx | so_item, qty_kg, rate, supplier}] — `idx` is the 1-based row number,
+	which lets the caller identify rows it has just created without knowing their child
+	names. Any draft PO for this order whose item is absent from the list (or listed with
+	qty <= 0) is deleted, so unticking a line or covering its shortage cleans up after
+	itself. Submitted POs are never touched.
+
+	Quantities are re-clamped to the real server-side shortage, so a client working from
+	stale availability can't raise a PO for stock that is actually covered.
+
+	Unlike `create_po_for_order` this never *implicitly* raises anything: the caller passes
+	exactly the lines the user chose in the purchase dialog, and nothing else is created.
+	"""
+	import json as _json
+
+	if isinstance(lines, str):
+		lines = _json.loads(lines or "[]")
+	so = frappe.get_doc("MM Sales Order", sales_order)
+	by_name = {it.name: it for it in so.items}
+	by_idx = {int(it.idx): it for it in so.items}
+
+	wanted = {}
+	for ln in lines or []:
+		it = by_name.get(ln.get("so_item"))
+		if not it and ln.get("idx") is not None:
+			it = by_idx.get(int(ln["idx"]))
+		if not it:
+			continue
+		qty = round(float(ln.get("qty_kg") or 0), 3)
+		if qty <= 0:
+			continue
+		short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut)), 3)
+		qty = min(qty, short)
+		if qty <= 0:
+			continue
+		wanted[it.name] = {"item": it, "qty": qty, "rate": float(ln.get("rate") or 0), "supplier": ln.get("supplier") or None}
+
+	created, removed = [], []
+	existing = frappe.get_all(
+		"MM Purchase Order", filters={"sales_order": so.name, "docstatus": 0}, fields=["name", "so_item"]
+	)
+	by_item = {e.so_item: e.name for e in existing}
+
+	# Drop drafts for lines the user no longer wants a PO on.
+	for e in existing:
+		if e.so_item not in wanted:
+			frappe.delete_doc("MM Purchase Order", e.name, ignore_permissions=True)
+			removed.append(e.name)
+
+	for so_item, w in wanted.items():
+		it = w["item"]
+		if so_item in by_item:
+			po = frappe.get_doc("MM Purchase Order", by_item[so_item])
+			po.qty_kg, po.rate, po.supplier = w["qty"], w["rate"], w["supplier"]
+			po.color, po.cut, po.so_item = it.color_name, it.cut, it.name
+			po.save(ignore_permissions=True)
+		else:
+			po = frappe.get_doc(
+				{
+					"doctype": "MM Purchase Order",
+					"transaction_date": frappe.utils.today(),
+					"branch": so.branch,
+					"location": so.location,
+					"sales_order": so.name,
+					"so_item": it.name,
+					"supplier": w["supplier"],
+					"color": it.color_name,
+					"cut": it.cut,
+					"qty_kg": w["qty"],
+					"rate": w["rate"],
+					"delivery_date": it.delivery_date or so.get("delivery_date"),
+				}
+			)
+			po.insert(ignore_permissions=True)
+		created.append(po.name)
+
+	return {"created": created, "removed": removed}
+
+
+@frappe.whitelist()
 def get_so_stock_status(sales_order):
 	"""SRS 5.1: per-line stock visibility for a Sales Order, flagging shortfalls
 	that should trigger a Purchase Order."""

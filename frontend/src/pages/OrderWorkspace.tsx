@@ -11,8 +11,8 @@ import {
 import { Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
+import LinkField from "@/components/LinkField";
 import PartyPicker from "@/components/PartyPicker";
-import SalesOrderStockPanel from "@/components/SalesOrderStockPanel";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -100,6 +100,10 @@ export default function OrderWorkspace() {
   // Available roll stock per "colour||cut" (for the shortage calc) + per-item PO overrides.
   const [availByKey, setAvailByKey] = useState<Record<string, number>>({});
   const [poByIndex, setPoByIndex] = useState<Record<number, { weight: number | ""; rate: number | ""; vendor: string }>>({});
+  // The pre-save purchase dialog: `poSheet` holds the items awaiting a decision (null =
+  // closed), `poDraft` the supplier/rate/weight being entered for them.
+  const [poSheet, setPoSheet] = useState<Item[] | null>(null);
+  const [poDraft, setPoDraft] = useState<Record<number, { weight: number | ""; rate: number | ""; vendor: string }>>({});
   const [locked, setLocked] = useState(false);
   const [prodPct, setProdPct] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
@@ -160,7 +164,9 @@ export default function OrderWorkspace() {
   const SO_API = "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order";
   const { call: approveOrder, loading: approving } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.approve_order`);
   const { call: rejectOrder, loading: rejecting } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.reject_order`);
-  const { call: createPoForOrder } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.stock.create_po_for_order");
+  // One draft PO per short line, and ONLY for the lines the user ticked in the purchase
+  // dialog — nothing is raised implicitly on save any more.
+  const { call: syncShortagePos } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.stock.sync_shortage_pos");
   const { call: fetchAvailability } = useFrappePostCall<{ message: { color: string; cut: string; available: number }[] }>(
     "mahaveermetalic.mahaveer_metallic.api.stock.availability_for_lines",
   );
@@ -268,9 +274,8 @@ export default function OrderWorkspace() {
   }
 
   function addItem() {
-    // One order = one item (each item becomes its own order + its own shortage PO), so a
-    // second item can only be added while building a NEW order, never onto a saved one.
-    if (selected) return setFormError("This order holds one item. Close it and create a new order for another colour.");
+    // A saved order can hold several items (they save onto the one order). A NEW order
+    // still splits one order per item, so each gets its own number from the start.
     const err = itemError(draft);
     if (err) return setFormError(err);
     setFormError(null);
@@ -286,9 +291,16 @@ export default function OrderWorkspace() {
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); void onSave(); return; }
     const el = e.target as HTMLElement;
     if (el.tagName === "TEXTAREA") return;
-    if (el.closest(".mm-link-wrap")?.querySelector(".mm-suggest")) return;
+    // Leave Enter alone while a suggestion list is open so it picks the suggestion. The
+    // list is portalled onto <body>, so look for it there — not inside the field.
+    if (el.closest(".mm-link-wrap") && document.querySelector("[data-mm-menu]")) return;
     e.preventDefault();
     addItem();
+  }
+
+  /** Edit a saved/added item row in place. */
+  function setItem(i: number, patch: Partial<Item>) {
+    setItems((prev) => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)));
   }
 
   function removeItem(i: number) {
@@ -306,26 +318,64 @@ export default function OrderWorkspace() {
     });
   }
 
-  async function onSave() {
+  /** Validate the form and return the items to save (folding in a half-typed builder row),
+   *  or null when something is wrong (the message is already on screen). */
+  function prepareSave(): Item[] | null {
     setFormError(null);
     setFlash(null);
-    if (!header.party) return setFormError("Choose the company / party.");
-    if (header.delivery_date && header.transaction_date && header.delivery_date < header.transaction_date)
-      return setFormError("Delivery date cannot be before the order date.");
+    if (!header.party) { setFormError("Choose the company / party."); return null; }
+    if (header.delivery_date && header.transaction_date && header.delivery_date < header.transaction_date) {
+      setFormError("Delivery date cannot be before the order date."); return null;
+    }
     // Fold in an item typed into the builder but not yet "Added", so it isn't dropped.
     let effectiveItems = items;
     if (draft.color_name.trim()) {
       const err = itemError(draft);
-      if (err) return setFormError(err);
+      if (err) { setFormError(err); return null; }
       effectiveItems = [...items, draft];
       setItems(effectiveItems);
       setDraft(blankItem());
     }
-    if (effectiveItems.length === 0) return setFormError("Add at least one item.");
+    if (effectiveItems.length === 0) { setFormError("Add at least one item."); return null; }
     for (const it of effectiveItems) {
-      if (it.delivery_date && header.transaction_date && it.delivery_date < header.transaction_date)
-        return setFormError("An item's delivery date is before the order date.");
+      const err = itemError(it);
+      if (err) { setFormError(err); return null; }
+      if (it.delivery_date && header.transaction_date && it.delivery_date < header.transaction_date) {
+        setFormError("An item's delivery date is before the order date."); return null;
+      }
     }
+    return effectiveItems;
+  }
+
+  /**
+   * Save is a two-step now: nothing is purchased behind the operator's back. If any line
+   * is short on stock we open the purchase dialog first and let them choose "create the
+   * PO too" or "just save the sales order".
+   */
+  function onSave() {
+    const prepared = prepareSave();
+    if (!prepared) return;
+    if (prepared.some((it) => shortageOf(it) > 0)) {
+      // Seed the dialog with the shortfall as the default purchase weight, plus whatever
+      // supplier/rate the line already carries.
+      setPoDraft(
+        Object.fromEntries(
+          prepared.map((it, i) => [i, {
+            weight: shortageOf(it) > 0 ? shortageOf(it) : ("" as number | ""),
+            rate: poByIndex[i]?.rate ?? it.purchase_rate ?? "",
+            vendor: poByIndex[i]?.vendor || it.purchase_party || "",
+          }]),
+        ),
+      );
+      setPoSheet(prepared);
+      return;
+    }
+    void doSave(prepared, false);
+  }
+
+  async function doSave(effectiveItems: Item[], withPo: boolean) {
+    setPoSheet(null);
+    setFormError(null);
 
     const headerPayload = {
       doctype: "MM Sales Order",
@@ -344,30 +394,39 @@ export default function OrderWorkspace() {
       qty_weight: it.qty_weight || 0,
       qty_box: it.qty_box || 0,
       sale_rate: it.sale_rate || 0,
-      purchase_party: poByIndex[builderIndex]?.vendor || it.purchase_party || null,
-      purchase_rate: poByIndex[builderIndex]?.rate || it.purchase_rate || 0,
+      purchase_party: (withPo ? poDraft[builderIndex]?.vendor : "") || it.purchase_party || null,
+      purchase_rate: (withPo ? poDraft[builderIndex]?.rate : "") || it.purchase_rate || 0,
     });
 
-    // Create / update / remove the shortage PO for one saved order.
-    async function syncPo(soName: string, builderIndex: number, it: Item) {
-      const short = shortageOf(it);
-      const po = poByIndex[builderIndex] ?? {};
-      const wt = short <= 0 ? 0 : (po.weight === undefined || po.weight === "" ? short : Number(po.weight) || 0);
+    /** Raise the draft shortage POs the operator asked for. `rows` maps a saved line's idx
+     *  to the builder row it came from. Never called unless they chose "create PO". */
+    async function raisePos(soName: string, rows: { idx: number; builderIndex: number; item: Item }[]) {
+      const lines = rows
+        .map(({ idx, builderIndex, item }) => {
+          const short = shortageOf(item);
+          if (short <= 0) return null;
+          const po = poDraft[builderIndex] ?? {};
+          const wt = po.weight === undefined || po.weight === "" ? short : Number(po.weight) || 0;
+          if (wt <= 0) return null;
+          return { idx, qty_kg: wt, rate: Number(po.rate) || 0, supplier: po.vendor || undefined };
+        })
+        .filter(Boolean);
+      if (lines.length === 0) return;
       try {
-        await createPoForOrder({ sales_order: soName, qty_kg: wt, rate: Number(po.rate) || 0, supplier: po.vendor || undefined });
-      } catch { /* PO sync is non-fatal to the order save */ }
+        await syncShortagePos({ sales_order: soName, lines: JSON.stringify(lines) });
+      } catch { /* PO creation is non-fatal to the order save */ }
     }
 
     try {
       if (selected) {
         await updateDoc("MM Sales Order", selected, { ...headerPayload, items: effectiveItems.map((it, i) => lineFor(it, i, i + 1)) });
         hydrated.current = null;
-        // One PO per order (create_po_for_order binds to items[0]) — sync it from the
-        // FIRST SHORT line, and only pass 0 (which deletes the PO) when no line is short.
-        const shortIdx = effectiveItems.findIndex((it) => shortageOf(it) > 0);
-        await syncPo(selected, shortIdx >= 0 ? shortIdx : 0, effectiveItems[shortIdx >= 0 ? shortIdx : 0]);
+        if (withPo) {
+          await raisePos(selected, effectiveItems.map((it, i) => ({ idx: i + 1, builderIndex: i, item: it })));
+        }
         await mutate();
-        setFlash("Saved — pending admin approval.");
+        await mutateDoc();
+        setFlash(withPo ? "Saved — purchase order raised, pending admin approval." : "Saved — pending admin approval.");
         toast(`Order ${selected} saved`);
         return;
       }
@@ -381,7 +440,10 @@ export default function OrderWorkspace() {
         try {
           const res = await createDoc("MM Sales Order", { ...headerPayload, items: [lineFor(it, i, 1)] });
           const name = (res as { name?: string }).name;
-          if (name) { created.push(name); await syncPo(name, i, it); }
+          if (name) {
+            created.push(name);
+            if (withPo) await raisePos(name, [{ idx: 1, builderIndex: i, item: it }]);
+          }
         } catch (e) {
           skippedItems.push(it);
           skippedMsgs.push(`${it.color_name}${it.cut ? "/" + it.cut : ""}: ${extractErrorMessage(e)}`);
@@ -503,8 +565,8 @@ export default function OrderWorkspace() {
             </label>
           </div>
 
-          {/* Item builder — new orders only (one order = one item). */}
-          {!ro && !selected && (
+          {/* Item builder — available while editing too, so a saved order can gain items. */}
+          {!ro && (
             <div className="mm-ow-builder" onKeyDown={onBuilderKeyDown}>
               <div className="mm-ow-builder-title">Add item <span className="mm-kbd-hint">press Enter to add</span></div>
               <div className="mm-form-grid">
@@ -542,14 +604,31 @@ export default function OrderWorkspace() {
                   {items.map((it, i) => {
                     const avail = availByKey[itemKey(it)];
                     const short = shortageOf(it);
+                    // Saved rows stay editable — weight/rate/size are the fields that get
+                    // corrected most, and re-keying the whole order to fix one was painful.
+                    const num = (k: "qty_weight" | "qty_box" | "sale_rate") => (
+                      <input className="mm-input mm-input-compact mm-iw-num" type="number" value={it[k]}
+                        onChange={(e) => setItem(i, { [k]: e.target.value === "" ? "" : Number(e.target.value) })} />
+                    );
                     return (
                       <tr key={i}>
-                        <td>{it.color_name}</td>
-                        <td>{it.cut || "—"}</td>
-                        <td>{it.delivery_date || "—"}</td>
-                        <td className="mm-num">{Number(it.qty_weight) || 0}</td>
-                        <td className="mm-num">{Number(it.qty_box) || 0}</td>
-                        <td className="mm-num">{Number(it.sale_rate) || 0}</td>
+                        {ro ? <td>{it.color_name}</td> : (
+                          <td className="mm-ow-cell-link">
+                            <LinkField compact label="" linkDoctype="MM Item Master" placeholder="colour"
+                              value={it.color_name} onChange={(v) => setItem(i, { color_name: v })} />
+                          </td>
+                        )}
+                        <td>{ro ? (it.cut || "—") : (
+                          <input className="mm-input mm-input-compact" value={it.cut} placeholder="50/85"
+                            onChange={(e) => setItem(i, { cut: e.target.value })} />
+                        )}</td>
+                        <td>{ro ? (it.delivery_date || "—") : (
+                          <input className="mm-input mm-input-compact" type="date" value={it.delivery_date}
+                            onChange={(e) => setItem(i, { delivery_date: e.target.value })} />
+                        )}</td>
+                        <td className="mm-num">{ro ? (Number(it.qty_weight) || 0) : num("qty_weight")}</td>
+                        <td className="mm-num">{ro ? (Number(it.qty_box) || 0) : num("qty_box")}</td>
+                        <td className="mm-num">{ro ? (Number(it.sale_rate) || 0) : num("sale_rate")}</td>
                         <td className="mm-num">{avail == null ? "…" : avail.toLocaleString()}</td>
                         <td className="mm-num">{short > 0 ? <span className="mm-var-over">{short.toLocaleString()}</span> : "—"}</td>
                         {!ro && (
@@ -574,56 +653,9 @@ export default function OrderWorkspace() {
             </div>
           )}
 
-          {/* Purchase Order — only for lines short on stock. Enough stock → no PO. */}
-          {!ro && items.some((it) => shortageOf(it) > 0) && (
-            <div className="mm-ow-po">
-              <div className="mm-ow-po-head">
-                <span className="mm-field-label" style={{ margin: 0 }}>Purchase Order (shortage)</span>
-                <span className="mm-muted" style={{ fontSize: "0.78rem" }}>Raised on approval, only for the short quantity.</span>
-              </div>
-              <div className="mm-table-scroll">
-                <table className="mm-table mm-table-dense">
-                  <thead>
-                    <tr><th>Color</th><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Vendor</th></tr>
-                  </thead>
-                  <tbody>
-                    {items.map((it, i) => {
-                      const short = shortageOf(it);
-                      if (short <= 0) return null;
-                      const po = poByIndex[i] ?? {};
-                      const wt = po.weight === undefined || po.weight === "" ? short : po.weight;
-                      const setPo = (patch: Partial<{ weight: number | ""; rate: number | ""; vendor: string }>) =>
-                        setPoByIndex((p) => ({ ...p, [i]: { weight: wt, rate: po.rate ?? "", vendor: po.vendor ?? "", ...patch } }));
-                      return (
-                        <tr key={i}>
-                          <td>{it.color_name}{it.cut ? ` · ${it.cut}` : ""}</td>
-                          <td className="mm-num">
-                            <input className="mm-input mm-input-compact mm-iw-num" type="number" value={wt}
-                              onChange={(e) => setPo({ weight: e.target.value === "" ? "" : Number(e.target.value) })} />
-                          </td>
-                          <td className="mm-num">
-                            <input className="mm-input mm-input-compact mm-iw-num" type="number" value={po.rate ?? ""}
-                              onChange={(e) => setPo({ rate: e.target.value === "" ? "" : Number(e.target.value) })} />
-                          </td>
-                          <td>
-                            <VendorSelect value={po.vendor ?? ""} onChange={(v) => setPo({ vendor: v })} />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Fulfilment + stock panel when editing */}
-          {selected && (
-            <>
-              <div className="mm-ow-prod">Production: <strong>{prodPct}%</strong></div>
-              <SalesOrderStockPanel docname={selected} readOnly={submitted} />
-            </>
-          )}
+          {/* Shortage is shown per line in the items table above; the purchase entry itself
+              lives in the pre-save dialog, so no PO is ever raised without a decision. */}
+          {selected && <div className="mm-ow-prod">Production: <strong>{prodPct}%</strong></div>}
 
           <div className="mm-ws-form-actions">
             {!ro && !selected && (
@@ -724,6 +756,70 @@ export default function OrderWorkspace() {
           </div>
         </section>
       </div>
+
+      {/* Pre-save purchase dialog — the ONLY place a shortage PO is raised. */}
+      {poSheet && (
+        <div className="mm-modal-scrim mm-scrim-right" style={{ zIndex: 70 }} onClick={() => setPoSheet(null)}>
+          <div className="mm-modal mm-sheet mm-sheet-narrow" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Purchase order">
+            <div className="mm-modal-head">
+              <span className="mm-modal-title">Short on stock</span>
+              <button className="mm-chat-overlay-close" onClick={() => setPoSheet(null)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="mm-modal-body">
+              <p className="mm-muted" style={{ fontSize: "0.84rem", marginTop: 0 }}>
+                {poSheet.filter((it) => shortageOf(it) > 0).length} line(s) can't be covered from stock.
+                Enter the supplier, rate and weight to raise a purchase order along with the sales
+                order — or save the sales order on its own and buy later.
+              </p>
+              <div className="mm-table-scroll">
+                <table className="mm-table mm-table-dense">
+                  <thead>
+                    <tr><th>Color</th><th className="mm-num">Short</th><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Supplier</th></tr>
+                  </thead>
+                  <tbody>
+                    {poSheet.map((it, i) => {
+                      const short = shortageOf(it);
+                      if (short <= 0) return null;
+                      const po = poDraft[i] ?? {};
+                      const wt = po.weight === undefined || po.weight === "" ? short : po.weight;
+                      const setPo = (patch: Partial<{ weight: number | ""; rate: number | ""; vendor: string }>) =>
+                        setPoDraft((p) => ({ ...p, [i]: { weight: wt, rate: po.rate ?? "", vendor: po.vendor ?? "", ...patch } }));
+                      return (
+                        <tr key={i}>
+                          <td>{it.color_name}{it.cut ? ` · ${it.cut}` : ""}</td>
+                          <td className="mm-num"><span className="mm-var-over">{short.toLocaleString()}</span></td>
+                          <td className="mm-num">
+                            <input className="mm-input mm-input-compact mm-iw-num" type="number" value={wt} autoFocus={i === 0}
+                              onChange={(e) => setPo({ weight: e.target.value === "" ? "" : Number(e.target.value) })} />
+                          </td>
+                          <td className="mm-num">
+                            <input className="mm-input mm-input-compact mm-iw-num" type="number" value={po.rate ?? ""}
+                              onChange={(e) => setPo({ rate: e.target.value === "" ? "" : Number(e.target.value) })} />
+                          </td>
+                          <td><VendorSelect value={po.vendor ?? ""} onChange={(v) => setPo({ vendor: v })} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mm-ow-po-actions">
+                <button type="button" className="mm-btn-primary" disabled={busy}
+                  onClick={() => void doSave(poSheet, true)}>
+                  {busy ? "Saving…" : "Create purchase order + save"}
+                </button>
+                <button type="button" className="mm-btn-secondary" disabled={busy}
+                  onClick={() => void doSave(poSheet, false)}>
+                  Save sales order only
+                </button>
+                <button type="button" className="mm-btn-ghost" disabled={busy} onClick={() => setPoSheet(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
-import { ChevronDown, Plus, UserPlus } from "lucide-react";
+import { ChevronDown, Plus, UserPlus, X } from "lucide-react";
 import { getMasterByDoctype } from "@/config/registry";
+import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
 import QuickCreateMaster from "./QuickCreateMaster";
 
 type Row = { party: string; party_name?: string; company_name?: string };
@@ -47,6 +48,8 @@ export default function PartyPicker({
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
+      // The menu is portalled onto <body>, so it isn't inside `wrap` — check it too.
+      if (isInsideMenu(e.target)) return;
       if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("click", onDoc);
@@ -59,11 +62,18 @@ export default function PartyPicker({
     setOpen(false);
   }
 
+  /** Blank the field again — a party can be de-selected, not only swapped. */
+  function clear() {
+    onChange("");
+    setText("");
+    setOpen(false);
+  }
+
   return (
     <>
       <label className="mm-field">
         <span className="mm-field-label">{label}{required ? " *" : ""}</span>
-        <div className="mm-link-wrap mm-link-wrap-addable" ref={wrap}>
+        <div className={`mm-link-wrap mm-link-wrap-addable${value && !disabled ? " mm-link-wrap-clearable" : ""}`} ref={wrap}>
           <input
             className="mm-input mm-link-input"
             value={open ? text : value}
@@ -71,17 +81,27 @@ export default function PartyPicker({
             required={required}
             placeholder="Search customer or company…"
             onChange={(e) => { setText(e.target.value); setOpen(true); }}
+            // Clicking an already-selected field must show the OTHER options, so blank the
+            // search text on open; onClick as well as onFocus so a second click re-opens.
             onFocus={() => { setText(""); setOpen(true); }}
+            onClick={() => { setOpen(true); }}
+            onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
             autoComplete="off"
           />
+          {value && !disabled && (
+            <button type="button" className="mm-link-clear" title="Clear" aria-label="Clear party"
+              onMouseDown={(e) => e.preventDefault()} onClick={clear}>
+              <X size={14} />
+            </button>
+          )}
           <ChevronDown size={15} className="mm-link-caret" aria-hidden />
           {!disabled && (
             <button type="button" className="mm-link-add" title="New customer" aria-label="New customer" onClick={() => setQuick(true)}>
               <Plus size={15} />
             </button>
           )}
-          {open && (
-            <ul className="mm-suggest mm-suggest-rich">
+          <AnchoredMenu anchor={wrap} open={open} className="mm-suggest-rich">
+            <>
               {isLoading && <li className="mm-suggest-muted">Searching…</li>}
               {!isLoading && rows.length === 0 && <li className="mm-suggest-muted">No customers match</li>}
               {!isLoading && rows.map((r) => (
@@ -97,8 +117,8 @@ export default function PartyPicker({
                   <UserPlus size={14} /> New customer{text.trim() ? ` “${text.trim()}”` : ""}
                 </li>
               )}
-            </ul>
-          )}
+            </>
+          </AnchoredMenu>
         </div>
       </label>
       {quick && master && (

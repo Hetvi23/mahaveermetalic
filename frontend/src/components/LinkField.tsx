@@ -1,6 +1,6 @@
 import { getMasterByDoctype } from "@/config/registry";
 import { useFrappeGetDocList } from "frappe-react-sdk";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
 import QuickCreateMaster from "./QuickCreateMaster";
@@ -71,8 +71,19 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 		setOpen(false);
 	}
 
+	function clear() {
+		setText("");
+		onChange("");
+		setOpen(false);
+	}
+
 	const body = (
-		<div className={`mm-link-wrap${master && !disabled ? " mm-link-wrap-addable" : ""}`} ref={wrap}>
+		<div
+			className={`mm-link-wrap${master && !disabled ? " mm-link-wrap-addable" : ""}${
+				text && !disabled ? " mm-link-wrap-clearable" : ""
+			}`}
+			ref={wrap}
+		>
 			<input
 				className={`mm-input mm-link-input${compact ? " mm-input-compact" : ""}`}
 				value={text}
@@ -84,9 +95,22 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 					onChange(e.target.value);
 					setOpen(true);
 				}}
+				// Clicking a field that already has a value must offer the other options, not
+				// just re-show the current one — opening on click (not only on focus) means a
+				// second click on an already-focused field re-opens the list.
 				onFocus={() => setOpen(true)}
+				onClick={() => setOpen(true)}
+				onKeyDown={(e) => {
+					if (e.key === "Escape") setOpen(false);
+				}}
 				autoComplete="off"
 			/>
+			{text && !disabled && (
+				<button type="button" className="mm-link-clear" title="Clear" aria-label="Clear"
+					onMouseDown={(e) => e.preventDefault()} onClick={clear}>
+					<X size={14} />
+				</button>
+			)}
 			<ChevronDown size={15} className="mm-link-caret" aria-hidden />
 			{master && !disabled && (
 				<button

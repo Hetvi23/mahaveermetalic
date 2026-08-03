@@ -1,5 +1,4 @@
 import ChildTableEditor, { type ChildRow } from "@/components/ChildTableEditor";
-import SalesOrderStockPanel from "@/components/SalesOrderStockPanel";
 import { FieldInput } from "@/components/FieldInputs";
 import { isFieldVisible, resolveFormSections, type DocRegistryEntry } from "@/config/registry";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -305,9 +304,6 @@ function DocFormEdit({ meta, docname }: { meta: DocRegistryEntry; docname: strin
 						readOnlyForm={frozen || !editing}
 						docstatus={docstatus}
 					/>
-					{meta.doctype === "MM Sales Order" && data?.name && (
-						<SalesOrderStockPanel docname={String(data.name)} />
-					)}
 				</>
 			}
 		/>
