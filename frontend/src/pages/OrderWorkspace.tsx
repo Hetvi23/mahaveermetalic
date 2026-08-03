@@ -157,16 +157,17 @@ export default function OrderWorkspace() {
 
   // Purchase orders already raised against the open order — shown as the three details at
   // the end of the form. Creating/updating them happens in the pre-save dialog.
-  const { data: poRows, mutate: mutatePos } = useFrappeGetDocList<{ name: string; qty_kg?: number; rate?: number; supplier?: string }>(
+  const { data: poRows, mutate: mutatePos } = useFrappeGetDocList<{ name: string; qty_kg?: number; rate?: number; supplier?: string; so_item?: string; docstatus?: number }>(
     "MM Purchase Order",
     {
-      fields: ["name", "qty_kg", "rate", "supplier"],
+      fields: ["name", "qty_kg", "rate", "supplier", "so_item", "docstatus"],
       filters: selected ? ([["sales_order", "=", selected]] as unknown as undefined) : undefined,
       limit: 0,
     },
     selected ? `mm-so-pos-${selected}` : null,
   );
   const orderPos = useMemo(() => poRows ?? [], [poRows]);
+
   const { createDoc, loading: creating } = useFrappeCreateDoc();
   const { updateDoc, loading: updating } = useFrappeUpdateDoc();
   const { deleteDoc, loading: deleting } = useFrappeDeleteDoc();
@@ -230,6 +231,65 @@ export default function OrderWorkspace() {
     void loadAvailability(draft.color_name.trim() ? [...items, draft] : items);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, draft.color_name, draft.cut, loadAvailability]);
+
+  /**
+   * Purchase rows for the open order: one per line that already HAS a purchase order or is
+   * short on stock, so purchase details can be added or corrected without re-saving the
+   * whole order. Keyed by the line's idx — an order carries one item, so normally one row.
+   */
+  const [poEdit, setPoEdit] = useState<Record<number, { weight: number | ""; rate: number | ""; vendor: string }>>({});
+  const [savingPo, setSavingPo] = useState(false);
+  const purchaseLines = useMemo(() => {
+    if (!selected) return [];
+    const lines = draft.color_name.trim() ? [draft, ...items] : items;
+    return lines
+      .map((it, i) => ({
+        idx: i + 1,
+        item: it,
+        po: orderPos.find((p) => p.so_item && p.so_item === it.name) ?? (lines.length === 1 ? orderPos[0] : undefined),
+      }))
+      .filter((r) => r.po || shortageOf(r.item) > 0);
+  }, [selected, draft, items, orderPos, availByKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seed the editors from whatever is already on the purchase orders.
+  useEffect(() => {
+    setPoEdit(
+      Object.fromEntries(
+        purchaseLines.map((r) => [r.idx, {
+          weight: (r.po?.qty_kg as number | undefined) ?? ("" as number | ""),
+          rate: (r.po?.rate as number | undefined) ?? r.item.purchase_rate ?? "",
+          vendor: r.po?.supplier || r.item.purchase_party || "",
+        }]),
+      ),
+    );
+  }, [purchaseLines]);
+
+  /** Save the purchase details typed into the order view. Weight 0 removes the PO. */
+  async function savePurchase() {
+    if (!selected) return;
+    setSavingPo(true);
+    setFormError(null);
+    try {
+      const lines = purchaseLines
+        .map((r) => {
+          const e = poEdit[r.idx] ?? {};
+          return { idx: r.idx, qty_kg: Number(e.weight) || 0, rate: Number(e.rate) || 0, supplier: e.vendor || undefined };
+        })
+        .filter((l) => l.qty_kg > 0);
+      // clamp_to_shortage=0: the weight typed here is deliberate, so don't shrink it
+      // against stock that arrived after the purchase order was raised.
+      await syncShortagePos({ sales_order: selected, lines: JSON.stringify(lines), clamp_to_shortage: 0 });
+      await mutatePos();
+      setFlash(lines.length ? "Purchase details saved." : "Purchase order removed.");
+      toast(lines.length ? "Purchase saved" : "Purchase order removed");
+    } catch (e) {
+      const msg = extractErrorMessage(e);
+      setFormError(msg);
+      toast(msg, "error");
+    } finally {
+      setSavingPo(false);
+    }
+  }
 
   // Party → auto-select the first company.
   useEffect(() => {
@@ -699,26 +759,56 @@ export default function OrderWorkspace() {
 
           {/* Shortage is shown per line in the items table above; the purchase entry itself
               lives in the pre-save dialog, so no PO is ever raised without a decision. */}
-          {/* Purchase data, if any — the three details, at the end. */}
-          {selected && orderPos.length > 0 && (
+          {/* Purchase data — the three details, at the end, editable in place. */}
+          {selected && purchaseLines.length > 0 && (
             <div className="mm-ow-po">
               <div className="mm-ow-po-head">
                 <span className="mm-field-label" style={{ margin: 0 }}>Purchase order</span>
+                <span className="mm-muted" style={{ fontSize: "0.78rem" }}>
+                  {ro ? "Locked." : "Edit and save; set weight to 0 to remove."}
+                </span>
               </div>
-              <table className="mm-table mm-table-dense">
-                <thead>
-                  <tr><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Supplier</th></tr>
-                </thead>
-                <tbody>
-                  {orderPos.map((p) => (
-                    <tr key={p.name}>
-                      <td className="mm-num">{Number(p.qty_kg || 0).toLocaleString()}</td>
-                      <td className="mm-num">{Number(p.rate || 0).toLocaleString()}</td>
-                      <td>{p.supplier || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="mm-table-scroll">
+                <table className="mm-table mm-table-dense mm-ow-items-table">
+                  <thead>
+                    <tr><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Supplier</th></tr>
+                  </thead>
+                  <tbody>
+                    {purchaseLines.map((r) => {
+                      const e = poEdit[r.idx] ?? { weight: "" as number | "", rate: "" as number | "", vendor: "" };
+                      const setPo = (patch: Partial<{ weight: number | ""; rate: number | ""; vendor: string }>) =>
+                        setPoEdit((p) => ({ ...p, [r.idx]: { ...e, ...patch } }));
+                      // A submitted PO is part of an approved order — never editable here.
+                      const poRo = ro || Number(r.po?.docstatus) === 1;
+                      return (
+                        <tr key={r.idx}>
+                          <td className="mm-num">
+                            {poRo ? Number(e.weight || 0).toLocaleString() : (
+                              <input className="mm-input mm-input-compact mm-iw-num" type="number" value={e.weight}
+                                placeholder={String(shortageOf(r.item) || "")}
+                                onChange={(ev) => setPo({ weight: ev.target.value === "" ? "" : Number(ev.target.value) })} />
+                            )}
+                          </td>
+                          <td className="mm-num">
+                            {poRo ? Number(e.rate || 0).toLocaleString() : (
+                              <input className="mm-input mm-input-compact mm-iw-num" type="number" value={e.rate}
+                                onChange={(ev) => setPo({ rate: ev.target.value === "" ? "" : Number(ev.target.value) })} />
+                            )}
+                          </td>
+                          <td>
+                            {poRo ? (e.vendor || "—") : <VendorSelect value={e.vendor} onChange={(v) => setPo({ vendor: v })} />}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {!ro && !purchaseLines.every((r) => Number(r.po?.docstatus) === 1) && (
+                <button type="button" className="mm-btn-secondary mm-ow-po-save" disabled={savingPo} onClick={() => void savePurchase()}>
+                  {savingPo ? "Saving…" : orderPos.length ? "Save purchase details" : "Create purchase order"}
+                </button>
+              )}
             </div>
           )}
 

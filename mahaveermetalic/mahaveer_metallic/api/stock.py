@@ -140,7 +140,7 @@ def create_po_for_order(sales_order, qty_kg=0, rate=0, supplier=None, clamp_to_s
 
 
 @frappe.whitelist()
-def sync_shortage_pos(sales_order, lines=None):
+def sync_shortage_pos(sales_order, lines=None, clamp_to_shortage=1):
 	"""Create / update / remove the draft shortage Purchase Orders for a Sales Order —
 	ONE PER SHORT ITEM, so a multi-item order can carry more than one PO.
 
@@ -150,8 +150,11 @@ def sync_shortage_pos(sales_order, lines=None):
 	qty <= 0) is deleted, so unticking a line or covering its shortage cleans up after
 	itself. Submitted POs are never touched.
 
-	Quantities are re-clamped to the real server-side shortage, so a client working from
-	stale availability can't raise a PO for stock that is actually covered.
+	With `clamp_to_shortage` (the default) quantities are re-clamped to the real server-side
+	shortage, so a client working from stale availability can't raise a PO for stock that is
+	actually covered. Pass 0 when the operator is editing an existing PO by hand from the
+	order view — there the typed weight is deliberate, and clamping it against stock that
+	has arrived since would silently shrink or delete their purchase order.
 
 	Unlike `create_po_for_order` this never *implicitly* raises anything: the caller passes
 	exactly the lines the user chose in the purchase dialog, and nothing else is created.
@@ -174,10 +177,11 @@ def sync_shortage_pos(sales_order, lines=None):
 		qty = round(float(ln.get("qty_kg") or 0), 3)
 		if qty <= 0:
 			continue
-		short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut)), 3)
-		qty = min(qty, short)
-		if qty <= 0:
-			continue
+		if frappe.utils.cint(clamp_to_shortage):
+			short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut)), 3)
+			qty = min(qty, short)
+			if qty <= 0:
+				continue
 		wanted[it.name] = {"item": it, "qty": qty, "rate": float(ln.get("rate") or 0), "supplier": ln.get("supplier") or None}
 
 	created, removed = [], []

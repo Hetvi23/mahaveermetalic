@@ -1242,6 +1242,8 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
    over the absolute defaults; `right`/`margin` must be cleared or they fight the width. */
 .mm-suggest-fixed { position: fixed; right: auto; margin: 0; z-index: 300; }
 /* Pre-save purchase dialog actions (create PO + save / save only / cancel). */
+.mm-ow-po-save { margin-top: 0.6rem; }
+.mm-ow-stockinfo { margin: 0.6rem 0 0; font-size: 0.82rem; color: var(--mm-text-sec); }
 .mm-ow-po-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
 .mm-ow-po-actions .mm-btn-primary, .mm-ow-po-actions .mm-btn-secondary { flex: 1 1 auto; }
 /* Editable order items table. Inline inputs are much wider than the text they replaced,
