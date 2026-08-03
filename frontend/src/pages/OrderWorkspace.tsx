@@ -240,15 +240,16 @@ export default function OrderWorkspace() {
    */
   const [poEdit, setPoEdit] = useState<Record<number, { weight: number | ""; rate: number | ""; vendor: string }>>({});
   const [savingPo, setSavingPo] = useState(false);
+
+  /** The purchase order already covering a line, if there is one. */
+  const poForItem = (it: Item, lines: Item[]) =>
+    orderPos.find((p) => p.so_item && p.so_item === it.name) ?? (lines.length === 1 ? orderPos[0] : undefined);
+
   const purchaseLines = useMemo(() => {
     if (!selected) return [];
     const lines = draft.color_name.trim() ? [draft, ...items] : items;
     return lines
-      .map((it, i) => ({
-        idx: i + 1,
-        item: it,
-        po: orderPos.find((p) => p.so_item && p.so_item === it.name) ?? (lines.length === 1 ? orderPos[0] : undefined),
-      }))
+      .map((it, i) => ({ idx: i + 1, item: it, po: poForItem(it, lines) }))
       .filter((r) => r.po || shortageOf(r.item) > 0);
   }, [selected, draft, items, orderPos, availByKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -455,7 +456,10 @@ export default function OrderWorkspace() {
     // purchase dialog on a line that is fully in stock.
     const avail = await loadAvailability(prepared);
     const shorts = prepared.map((it) => shortageIn(avail, it));
-    if (shorts.some((s) => s > 0)) {
+    // Only ask about lines that are short AND not already covered by a purchase order —
+    // re-saving an order that already has one shouldn't offer to raise it again. Edits to
+    // an existing PO happen in the purchase table on the form.
+    if (shorts.some((s, i) => s > 0 && !poForItem(prepared[i], prepared))) {
       // Seed the dialog with the shortfall as the default purchase weight, plus whatever
       // supplier/rate the line already carries.
       setPoDraft(
@@ -927,7 +931,7 @@ export default function OrderWorkspace() {
             </div>
             <div className="mm-modal-body">
               <p className="mm-muted" style={{ fontSize: "0.84rem", marginTop: 0 }}>
-                {poSheet.filter((it) => shortageOf(it) > 0).length} line(s) can't be covered from stock.
+                {poSheet.filter((it) => shortageOf(it) > 0 && !poForItem(it, poSheet)).length} line(s) can't be covered from stock.
                 Enter the supplier, rate and weight to raise a purchase order along with the sales
                 order — or save the sales order on its own and buy later.
               </p>
@@ -939,7 +943,8 @@ export default function OrderWorkspace() {
                   <tbody>
                     {poSheet.map((it, i) => {
                       const short = shortageOf(it);
-                      if (short <= 0) return null;
+                      // Covered lines are handled by the purchase table on the form.
+                      if (short <= 0 || poForItem(it, poSheet)) return null;
                       const po = poDraft[i] ?? {};
                       const wt = po.weight === undefined || po.weight === "" ? short : po.weight;
                       const setPo = (patch: Partial<{ weight: number | ""; rate: number | ""; vendor: string }>) =>
