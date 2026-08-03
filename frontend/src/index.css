@@ -1721,6 +1721,28 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* Finished-patty filters (Cut + Colour) above the patty list */
 .mm-patty-filters { display: flex; gap: 0.45rem; margin-bottom: 0.6rem; }
 .mm-patty-filters > * { flex: 1; min-width: 0; }
+/* Both feeder panels hold one fixed height whatever the filters match, so searching a
+   colour never collapses the card and shunts the machine board up the page. The lists
+   scroll inside instead; the head + filter row stay put. */
+.mm-feeders > .mm-card { display: flex; flex-direction: column; height: 360px; }
+.mm-feeders > .mm-card > .mm-flow-shelf-head,
+.mm-feeders > .mm-card > .mm-patty-filters { flex: none; }
+.mm-feeders > .mm-card > .mm-colour-list,
+.mm-feeders > .mm-card > .mm-table-scroll,
+.mm-feeders > .mm-card > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
+/* Always reserve the scrollbar gutter — otherwise a long list has a scrollbar, a filtered
+   short one doesn't, and the table columns jump by the scrollbar's width. */
+.mm-feeders > .mm-card > .mm-colour-list,
+.mm-feeders > .mm-card > .mm-table-scroll { scrollbar-gutter: stable; }
+/* Fixed column widths: without this the table re-fits its columns to whatever rows are
+   left, so "No of patty" and "Cut" slide sideways as you type in the colour filter. */
+.mm-patty-table { table-layout: fixed; }
+.mm-patty-table th:nth-child(1), .mm-patty-table td:nth-child(1) { width: 32%; }
+.mm-patty-table th:nth-child(2), .mm-patty-table td:nth-child(2) { width: 17%; }
+.mm-patty-table th:nth-child(3), .mm-patty-table td:nth-child(3) { width: 14%; }
+.mm-patty-table th:nth-child(4), .mm-patty-table td:nth-child(4) { width: 21%; }
+.mm-patty-table th:nth-child(5), .mm-patty-table td:nth-child(5) { width: 16%; }
+.mm-patty-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Cutting roll picker (finish a planned cut): search row, roll table, patty stepper */
 .mm-cutpick-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }

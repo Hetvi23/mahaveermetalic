@@ -225,7 +225,7 @@ export default function ProgramScreen() {
                 <p className="mm-flow-empty-state">{pattyColours.length === 0 ? "No finished patties yet." : "No patty matches these filters."}</p>
               ) : (
                 <div className="mm-table-scroll">
-                  <table className="mm-table mm-table-dense">
+                  <table className="mm-table mm-table-dense mm-patty-table">
                     <thead>
                       <tr><th>Color</th><th className="mm-num">No of patty</th><th>Cut</th><th>Party</th><th /></tr>
                     </thead>
