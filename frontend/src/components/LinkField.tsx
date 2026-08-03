@@ -2,6 +2,7 @@ import { getMasterByDoctype } from "@/config/registry";
 import { useFrappeGetDocList } from "frappe-react-sdk";
 import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
 import QuickCreateMaster from "./QuickCreateMaster";
 
 type Props = {
@@ -35,6 +36,8 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 
 	useEffect(() => {
 		function onDocClick(e: MouseEvent) {
+			// The menu is portalled onto <body>, so it isn't inside `wrap` — check it too.
+			if (isInsideMenu(e.target)) return;
 			if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
 		}
 		document.addEventListener("click", onDocClick);
@@ -96,25 +99,23 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 					<Plus size={15} />
 				</button>
 			)}
-			{open && (
-				<ul className="mm-suggest">
-					{isLoading && <li className="mm-suggest-muted">Loading…</li>}
-					{!isLoading &&
-						suggestions.map((s) => (
-							<li
-								key={s.name}
-								className="mm-suggest-item"
-								onMouseDown={(e) => {
-									e.preventDefault();
-									pick(s.name);
-								}}
-							>
-								<strong>{s.name}</strong>
-							</li>
-						))}
-					{!isLoading && suggestions.length === 0 && <li className="mm-suggest-muted">No matches</li>}
-				</ul>
-			)}
+			<AnchoredMenu anchor={wrap} open={open}>
+				{isLoading && <li className="mm-suggest-muted">Loading…</li>}
+				{!isLoading &&
+					suggestions.map((s) => (
+						<li
+							key={s.name}
+							className="mm-suggest-item"
+							onMouseDown={(e) => {
+								e.preventDefault();
+								pick(s.name);
+							}}
+						>
+							<strong>{s.name}</strong>
+						</li>
+					))}
+				{!isLoading && suggestions.length === 0 && <li className="mm-suggest-muted">No matches</li>}
+			</AnchoredMenu>
 		</div>
 	);
 

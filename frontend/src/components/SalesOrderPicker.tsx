@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
+import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
 
 export type SOOption = {
   sales_order: string;
@@ -43,6 +44,9 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
+      // The menu is portalled onto <body>, so it isn't inside `wrap` — check it too,
+      // otherwise using the party filter inside the list closes the list.
+      if (isInsideMenu(e.target)) return;
       if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("click", onDoc);
@@ -59,6 +63,16 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
     () => Array.from(new Set(options.map((o) => o.party_name || o.party).filter(Boolean))).sort() as string[],
     [options],
   );
+
+  /** The order is optional — clearing it sends the material to inventory instead. The
+   *  input alone can't clear it (it only edits the local search text), so this is the
+   *  only way back to "no order" once one is picked. */
+  function clear() {
+    onChange("", undefined);
+    setText("");
+    setPartyFilter("");
+    setOpen(false);
+  }
 
   const q = text.trim().toLowerCase();
   const filtered = useMemo(() => {
@@ -77,7 +91,7 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
         {label}
         {required ? " *" : ""}
       </span>
-      <div className="mm-link-wrap" ref={wrap}>
+      <div className={`mm-link-wrap${value && !disabled ? " mm-link-wrap-clearable" : ""}`} ref={wrap}>
         <input
           className="mm-input mm-link-input"
           value={open ? text : display}
@@ -92,11 +106,29 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
             setText("");
             setOpen(true);
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+            // Backspacing an already-empty search box clears the picked order.
+            if ((e.key === "Backspace" || e.key === "Delete") && !text && value) clear();
+          }}
           autoComplete="off"
         />
+        {value && !disabled && (
+          <button type="button" className="mm-link-clear" title="Clear order" aria-label="Clear order"
+            onMouseDown={(e) => e.preventDefault()} onClick={clear}>
+            <X size={14} />
+          </button>
+        )}
         <ChevronDown size={15} className="mm-link-caret" aria-hidden />
-        {open && (
-          <ul className="mm-suggest mm-suggest-rich">
+        <AnchoredMenu anchor={wrap} open={open} className="mm-suggest-rich">
+          <>
+            {value && (
+              <li className="mm-suggest-item mm-suggest-none"
+                onMouseDown={(e) => { e.preventDefault(); clear(); }}>
+                <strong>— No order —</strong>
+                <span className="mm-suggest-meta">Material goes to inventory</span>
+              </li>
+            )}
             {parties.length > 1 && (
               <li className="mm-suggest-filter" onMouseDown={(e) => e.preventDefault()}>
                 <select className="mm-input mm-input-compact" value={partyFilter} onChange={(e) => setPartyFilter(e.target.value)}>
@@ -136,8 +168,8 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
                   </li>
                 );
               })}
-          </ul>
-        )}
+          </>
+        </AnchoredMenu>
       </div>
     </label>
   );
