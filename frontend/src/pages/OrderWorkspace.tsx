@@ -11,7 +11,6 @@ import {
 import { Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
-import LinkField from "@/components/LinkField";
 import PartyPicker from "@/components/PartyPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -54,6 +53,8 @@ const F: Record<string, FieldSchema> = {
   purchase_party: { fieldname: "purchase_party", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
   purchase_rate: { fieldname: "purchase_rate", label: "Purchase rate", fieldtype: "Currency" },
 };
+
+const SO_API_PATH = "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order";
 
 type Chip = "all" | "pending" | "completed";
 
@@ -142,22 +143,30 @@ export default function OrderWorkspace() {
     orderBy: { field: "modified", order: "desc" },
   });
 
-  // Colour lives on the order's child items — pull them once and map order → colours so
-  // the list can show it alongside party/company.
-  const { data: itemRows } = useFrappeGetDocList<{ parent: string; color_name?: string }>("MM Sales Order Item", {
-    fields: ["parent", "color_name"],
-    limit: 0,
-  });
-  const coloursByOrder = useMemo(() => {
-    const m: Record<string, string[]> = {};
-    for (const r of itemRows ?? []) {
-      if (!r.parent || !r.color_name) continue;
-      (m[r.parent] ||= []).includes(r.color_name) || m[r.parent].push(r.color_name);
-    }
-    return m;
-  }, [itemRows]);
+  // Colour lives on the order's child items. Reading `MM Sales Order Item` straight from
+  // the client returns nothing (Frappe refuses a child-table get_list over REST without a
+  // parent), which left the list's Color column blank — so ask the server for the map.
+  const { data: colourData } = useFrappeGetCall<{ message: Record<string, string[]> }>(
+    `${SO_API_PATH}.order_colours`,
+    undefined,
+    "mm-so-colours",
+  );
+  const coloursByOrder = useMemo(() => colourData?.message ?? {}, [colourData]);
 
   const { data: doc, mutate: mutateDoc } = useFrappeGetDoc<Record<string, unknown>>("MM Sales Order", selected || undefined);
+
+  // Purchase orders already raised against the open order — shown as the three details at
+  // the end of the form. Creating/updating them happens in the pre-save dialog.
+  const { data: poRows, mutate: mutatePos } = useFrappeGetDocList<{ name: string; qty_kg?: number; rate?: number; supplier?: string }>(
+    "MM Purchase Order",
+    {
+      fields: ["name", "qty_kg", "rate", "supplier"],
+      filters: selected ? ([["sales_order", "=", selected]] as unknown as undefined) : undefined,
+      limit: 0,
+    },
+    selected ? `mm-so-pos-${selected}` : null,
+  );
+  const orderPos = useMemo(() => poRows ?? [], [poRows]);
   const { createDoc, loading: creating } = useFrappeCreateDoc();
   const { updateDoc, loading: updating } = useFrappeUpdateDoc();
   const { deleteDoc, loading: deleting } = useFrappeDeleteDoc();
@@ -214,10 +223,13 @@ export default function OrderWorkspace() {
     [fetchAvailability],
   );
 
-  // Keep the table's Available/Short columns live as items change.
+  // Keep stock info live for the queued items AND whatever is in the form. Only the
+  // colour/size are dependencies — weight doesn't change what's in stock, and refetching
+  // on every keystroke of it would be pointless traffic.
   useEffect(() => {
-    void loadAvailability(items);
-  }, [items, loadAvailability]);
+    void loadAvailability(draft.color_name.trim() ? [...items, draft] : items);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, draft.color_name, draft.cut, loadAvailability]);
 
   // Party → auto-select the first company.
   useEffect(() => {
@@ -238,19 +250,22 @@ export default function OrderWorkspace() {
       company: String(doc.company_name || ""),
     });
     const docItems = (doc.items as Record<string, unknown>[] | undefined) || [];
-    setItems(
-      docItems.map((r) => ({
-        name: r.name as string,
-        color_name: String(r.color_name ?? ""),
-        cut: String(r.cut ?? ""),
-        delivery_date: r.delivery_date ? String(r.delivery_date) : "",
-        qty_weight: (r.qty_weight as number) ?? "",
-        qty_box: (r.qty_box as number) ?? "",
-        sale_rate: (r.sale_rate as number) ?? "",
-        purchase_party: String(r.purchase_party ?? ""),
-        purchase_rate: (r.purchase_rate as number) ?? "",
-      })),
-    );
+    const asItem = (r: Record<string, unknown>): Item => ({
+      name: r.name as string,
+      color_name: String(r.color_name ?? ""),
+      cut: String(r.cut ?? ""),
+      delivery_date: r.delivery_date ? String(r.delivery_date) : "",
+      qty_weight: (r.qty_weight as number) ?? "",
+      qty_box: (r.qty_box as number) ?? "",
+      sale_rate: (r.sale_rate as number) ?? "",
+      purchase_party: String(r.purchase_party ?? ""),
+      purchase_rate: (r.purchase_rate as number) ?? "",
+    });
+    // An order holds ONE item, so editing loads it straight back into the same entry form
+    // the order was typed into — no separate items table to learn. (Any extra lines on a
+    // legacy multi-line order still show below, so they can't be silently dropped.)
+    setDraft(docItems.length ? asItem(docItems[0]) : blankItem());
+    setItems(docItems.slice(1).map(asItem));
     // Prefill the PO row (rate/vendor) from the order's stored purchase fields.
     const po: Record<number, { weight: number | ""; rate: number | ""; vendor: string }> = {};
     docItems.forEach((r, i) => {
@@ -319,11 +334,6 @@ export default function OrderWorkspace() {
     addItem();
   }
 
-  /** Edit a saved/added item row in place. */
-  function setItem(i: number, patch: Partial<Item>) {
-    setItems((prev) => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)));
-  }
-
   function removeItem(i: number) {
     setItems((prev) => prev.filter((_, j) => j !== i));
     // poByIndex is keyed by the item's position — shift the keys above the removed row
@@ -348,14 +358,17 @@ export default function OrderWorkspace() {
     if (header.delivery_date && header.transaction_date && header.delivery_date < header.transaction_date) {
       setFormError("Delivery date cannot be before the order date."); return null;
     }
-    // Fold in an item typed into the builder but not yet "Added", so it isn't dropped.
+    // Editing: the form IS the order's item, so it stays first. New: fold in an item typed
+    // into the builder but not yet "Added", so it isn't dropped.
     let effectiveItems = items;
     if (draft.color_name.trim()) {
       const err = itemError(draft);
       if (err) { setFormError(err); return null; }
-      effectiveItems = [...items, draft];
-      setItems(effectiveItems);
-      setDraft(blankItem());
+      effectiveItems = selected ? [draft, ...items] : [...items, draft];
+      if (!selected) {
+        setItems(effectiveItems);
+        setDraft(blankItem());
+      }
     }
     if (effectiveItems.length === 0) { setFormError("Add at least one item."); return null; }
     for (const it of effectiveItems) {
@@ -452,6 +465,7 @@ export default function OrderWorkspace() {
         }
         await mutate();
         await mutateDoc();
+        await mutatePos();
         setFlash(withPo ? "Saved — purchase order raised, pending admin approval." : "Saved — pending admin approval.");
         toast(`Order ${selected} saved`);
         return;
@@ -591,10 +605,13 @@ export default function OrderWorkspace() {
             </label>
           </div>
 
-          {/* Item builder — available while editing too, so a saved order can gain items. */}
+          {/* The order's item. Editing loads it right back into this same form; a new order
+              uses it to queue items (each queued item becomes its own order). */}
           {!ro && (
             <div className="mm-ow-builder" onKeyDown={onBuilderKeyDown}>
-              <div className="mm-ow-builder-title">Add item <span className="mm-kbd-hint">press Enter to add</span></div>
+              <div className="mm-ow-builder-title">
+                {selected ? "Item" : <>Add item <span className="mm-kbd-hint">press Enter to add</span></>}
+              </div>
               <div className="mm-form-grid">
                 <FieldInput field={F.color_name} value={draft.color_name} onChange={(v) => setDraft((d) => ({ ...d, color_name: String(v ?? "") }))} />
                 <FieldInput field={F.cut} value={draft.cut} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />
@@ -603,13 +620,32 @@ export default function OrderWorkspace() {
                 <FieldInput field={F.qty_box} value={draft.qty_box} onChange={(v) => setDraft((d) => ({ ...d, qty_box: v as number }))} />
                 <FieldInput field={F.sale_rate} value={draft.sale_rate} onChange={(v) => setDraft((d) => ({ ...d, sale_rate: v as number }))} />
               </div>
-              <button type="button" className="mm-btn-secondary mm-ow-additem" onClick={addItem}>
-                <Plus size={15} /> Add item
-              </button>
+              {/* One order = one item, so there is nothing to "add" onto a saved order. */}
+              {!selected && (
+                <button type="button" className="mm-btn-secondary mm-ow-additem" onClick={addItem}>
+                  <Plus size={15} /> Add item
+                </button>
+              )}
+              {/* Stock is informational here — the purchase decision happens on save. */}
+              {draft.color_name.trim() !== "" && (
+                <p className="mm-ow-stockinfo">
+                  {!availKnown(draft) ? (
+                    <>Checking stock…</>
+                  ) : shortageOf(draft) > 0 ? (
+                    <>In stock <strong>{(availByKey[itemKey(draft)] ?? 0).toLocaleString()}</strong> kg ·{" "}
+                      <span className="mm-var-over">short {shortageOf(draft).toLocaleString()} kg</span>
+                      {" "}— you'll be asked about a purchase order when you save.</>
+                  ) : (
+                    <>In stock <strong>{(availByKey[itemKey(draft)] ?? 0).toLocaleString()}</strong> kg — covered, no purchase needed.</>
+                  )}
+                </p>
+              )}
             </div>
           )}
 
-          {/* Items list */}
+          {/* Queued items for a NEW order — each one becomes its own order, so this is a
+              simple read-only list, not an editor. (When editing there is nothing here:
+              the order's single item lives in the form above.) */}
           {items.length > 0 && (
             <div className="mm-ow-items mm-table-scroll">
               <table className="mm-table mm-table-dense mm-ow-items-table">
@@ -621,41 +657,21 @@ export default function OrderWorkspace() {
                     <th className="mm-num">Wt</th>
                     <th className="mm-num">Box</th>
                     <th className="mm-num">Rate</th>
-                    <th className="mm-num">Available</th>
                     <th className="mm-num">Short</th>
                     {!ro && <th />}
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((it, i) => {
-                    const avail = availByKey[itemKey(it)];
                     const short = shortageOf(it);
-                    // Saved rows stay editable — weight/rate/size are the fields that get
-                    // corrected most, and re-keying the whole order to fix one was painful.
-                    const num = (k: "qty_weight" | "qty_box" | "sale_rate") => (
-                      <input className="mm-input mm-input-compact mm-iw-num" type="number" value={it[k]}
-                        onChange={(e) => setItem(i, { [k]: e.target.value === "" ? "" : Number(e.target.value) })} />
-                    );
                     return (
                       <tr key={i}>
-                        {ro ? <td>{it.color_name}</td> : (
-                          <td className="mm-ow-cell-link">
-                            <LinkField compact label="" linkDoctype="MM Item Master" placeholder="colour"
-                              value={it.color_name} onChange={(v) => setItem(i, { color_name: v })} />
-                          </td>
-                        )}
-                        <td>{ro ? (it.cut || "—") : (
-                          <input className="mm-input mm-input-compact" value={it.cut} placeholder="50/85"
-                            onChange={(e) => setItem(i, { cut: e.target.value })} />
-                        )}</td>
-                        <td>{ro ? (it.delivery_date || "—") : (
-                          <input className="mm-input mm-input-compact" type="date" value={it.delivery_date}
-                            onChange={(e) => setItem(i, { delivery_date: e.target.value })} />
-                        )}</td>
-                        <td className="mm-num">{ro ? (Number(it.qty_weight) || 0) : num("qty_weight")}</td>
-                        <td className="mm-num">{ro ? (Number(it.qty_box) || 0) : num("qty_box")}</td>
-                        <td className="mm-num">{ro ? (Number(it.sale_rate) || 0) : num("sale_rate")}</td>
-                        <td className="mm-num">{avail == null ? "…" : avail.toLocaleString()}</td>
+                        <td>{it.color_name}</td>
+                        <td>{it.cut || "—"}</td>
+                        <td>{it.delivery_date || "—"}</td>
+                        <td className="mm-num">{Number(it.qty_weight) || 0}</td>
+                        <td className="mm-num">{Number(it.qty_box) || 0}</td>
+                        <td className="mm-num">{Number(it.sale_rate) || 0}</td>
                         <td className="mm-num">
                           {!availKnown(it) ? "…" : short > 0 ? <span className="mm-var-over">{short.toLocaleString()}</span> : "—"}
                         </td>
@@ -672,9 +688,9 @@ export default function OrderWorkspace() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={3}><strong>{selected ? "Total" : `${items.length} separate order${items.length > 1 ? "s" : ""}`}</strong></td>
+                    <td colSpan={3}><strong>{selected ? "Extra lines" : `${items.length} separate order${items.length > 1 ? "s" : ""}`}</strong></td>
                     <td className="mm-num"><strong>{itemsTotal.toLocaleString()}</strong></td>
-                    <td colSpan={ro ? 4 : 5} />
+                    <td colSpan={ro ? 3 : 4} />
                   </tr>
                 </tfoot>
               </table>
@@ -683,6 +699,29 @@ export default function OrderWorkspace() {
 
           {/* Shortage is shown per line in the items table above; the purchase entry itself
               lives in the pre-save dialog, so no PO is ever raised without a decision. */}
+          {/* Purchase data, if any — the three details, at the end. */}
+          {selected && orderPos.length > 0 && (
+            <div className="mm-ow-po">
+              <div className="mm-ow-po-head">
+                <span className="mm-field-label" style={{ margin: 0 }}>Purchase order</span>
+              </div>
+              <table className="mm-table mm-table-dense">
+                <thead>
+                  <tr><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Supplier</th></tr>
+                </thead>
+                <tbody>
+                  {orderPos.map((p) => (
+                    <tr key={p.name}>
+                      <td className="mm-num">{Number(p.qty_kg || 0).toLocaleString()}</td>
+                      <td className="mm-num">{Number(p.rate || 0).toLocaleString()}</td>
+                      <td>{p.supplier || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {selected && <div className="mm-ow-prod">Production: <strong>{prodPct}%</strong></div>}
 
           <div className="mm-ws-form-actions">

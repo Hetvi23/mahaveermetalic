@@ -314,3 +314,37 @@ def recalculate_production_completed(order: str):
 		},
 		update_modified=False,
 	)
+
+
+@frappe.whitelist()
+def order_colours(orders=None):
+	"""Colour (and size) per Sales Order, for the list view's Color column.
+
+	The client cannot read `MM Sales Order Item` directly — Frappe refuses a child-table
+	get_list over the REST API unless a parent is supplied — so the browser's query came
+	back empty and the column rendered blank for every row. Serve the map from here.
+
+	`orders` (optional) limits the lookup to the names currently on screen.
+	"""
+	import json as _json
+
+	if isinstance(orders, str):
+		orders = _json.loads(orders or "[]")
+	filters = {"parenttype": "MM Sales Order"}
+	if orders:
+		filters["parent"] = ["in", orders]
+	rows = frappe.get_all(
+		"MM Sales Order Item",
+		filters=filters,
+		fields=["parent", "color_name", "cut"],
+		order_by="parent asc, idx asc",
+		limit_page_length=0,
+	)
+	out = {}
+	for r in rows:
+		if not r.color_name:
+			continue
+		bucket = out.setdefault(r.parent, [])
+		if r.color_name not in bucket:
+			bucket.append(r.color_name)
+	return out
