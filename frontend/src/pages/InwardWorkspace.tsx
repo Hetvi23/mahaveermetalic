@@ -211,6 +211,10 @@ export default function InwardWorkspace() {
     return () => { cancelled = true; };
   }, [firstColour, challanNo, postingDate, previewLot]);
 
+  // One source of truth for the lot — what the field shows, what the guard checks and what
+  // gets posted. (The field is read-only, so `lot` is only ever set by a challan fetch.)
+  const effectiveLot = (lotPreview || lot).trim();
+
   // Cancelling an inward reverses its rolls out of inventory (and posts the OUT ledger
   // entries) server-side, so the Inventory + Stock Ledger screens self-correct.
   async function onCancelInward(name: string) {
@@ -383,7 +387,9 @@ export default function InwardWorkspace() {
     if (rows.length === 0) return setError(manual ? "Add at least one material row." : "Nothing to post — fetch a challan first.");
     if (verify?.closed) return setError("This challan is already fully received — no further inward allowed.");
     if (!location.trim()) return setError("Choose a location (roll stock is tracked per location).");
-    if (!lot.trim() && !challanNo.trim()) return setError("Enter a lot number.");
+    // The lot is resolved automatically (colour-wise LT id, reused per challan) and is
+    // re-assigned server-side on post — so only block when nothing resolved at all.
+    if (!effectiveLot && !challanNo.trim()) return setError("No lot could be resolved — pick a colour on the material rows first.");
     for (const r of rows) {
       if (!r.color.trim()) return setError(`Roll ${r.roll || ""} needs a colour.`);
       if (!(Number(r.weight) > 0) && !(Number(r.qty) > 0)) return setError(`Roll ${r.roll || ""} needs a weight or qty.`);
@@ -397,7 +403,7 @@ export default function InwardWorkspace() {
       location,
       sales_order: salesOrder || null,
       challan_number: challanNo.trim(),
-      lot_number: lot || challanNo.trim(),
+      lot_number: effectiveLot || challanNo.trim(),
       verify_against_vm: verifyAgainstVm,
       is_partial: isPartial,
       items: rows.map((r, i) => ({
@@ -469,7 +475,7 @@ export default function InwardWorkspace() {
               shown here read-only so the operator can see which lot this will land in. */}
           <label className="mm-field">
             <span className="mm-field-label">Lot number</span>
-            <input className="mm-input" value={lotPreview || lot} readOnly
+            <input className="mm-input" value={effectiveLot} readOnly
               placeholder={rows.some((r) => r.color) ? "Resolving…" : "Auto — pick a colour"} />
           </label>
         </div>
