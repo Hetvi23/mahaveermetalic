@@ -9,6 +9,7 @@ from frappe.model.document import Document
 class MMInward(Document):
 	def validate(self):
 		self._set_branch_location_from_employee()
+		self._set_company()
 		if not self.items:
 			frappe.throw(_("Add at least one inward item."))
 		for row in self.items:
@@ -47,6 +48,35 @@ class MMInward(Document):
 					self.challan_number, closed
 				)
 			)
+
+	def _set_company(self):
+		"""Rolls are received COMPANY-wise, not party-wise.
+
+		Company is mandatory on the doctype, so fill it in before the mandatory check runs
+		rather than blocking a receipt the system can work out for itself: take it from the
+		sales order if there is one, else from the party when they have exactly one company.
+		A party with several companies must be told apart by hand — guessing would file the
+		stock against the wrong one.
+		"""
+		if self.company_name:
+			return
+		if self.sales_order:
+			self.company_name = frappe.db.get_value("MM Sales Order", self.sales_order, "company_name")
+		if not self.company_name and self.party:
+			companies = frappe.get_all(
+				"MM Party Company",
+				filters={"parent": self.party, "parenttype": "MM Party Master"},
+				pluck="company_name",
+			)
+			if len(companies) == 1:
+				self.company_name = companies[0]
+			elif len(companies) > 1:
+				frappe.throw(
+					_("{0} has {1} companies — choose which one this inward is for.").format(
+						self.party, len(companies)
+					)
+				)
+
 
 	def _set_branch_location_from_employee(self):
 		"""Default Branch/Location from the posting (logged-in) user's MM Employee

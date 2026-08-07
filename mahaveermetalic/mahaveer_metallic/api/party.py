@@ -55,3 +55,35 @@ def party_flags(party: str = "", company: str = ""):
 		"party": party,
 		"is_job_work": frappe.utils.cint(frappe.db.get_value("MM Party Master", party, "is_job_work")),
 	}
+
+
+@frappe.whitelist()
+def all_companies(txt: str = "", limit: int = 500):
+	"""Every company with the party it belongs to.
+
+	Screens that must be filled in company-wise (inward, job work) need to find a company
+	by its own name OR by the party it sits under — operators know some sites by the party
+	and some by the company.
+	"""
+	rows = frappe.get_all(
+		"MM Party Company",
+		filters={"parenttype": "MM Party Master"},
+		fields=["company_name", "parent as party"],
+		order_by="company_name asc",
+		limit_page_length=frappe.utils.cint(limit),
+	)
+	names = {r.party for r in rows if r.party}
+	party_names = {
+		p.name: (p.party_name or p.name)
+		for p in frappe.get_all("MM Party Master", filters={"name": ["in", list(names)]} if names else {},
+			fields=["name", "party_name"])
+	}
+	out = [
+		{"company_name": r.company_name, "party": r.party, "party_name": party_names.get(r.party, r.party)}
+		for r in rows
+		if r.company_name
+	]
+	txt = (txt or "").strip().lower()
+	if txt:
+		out = [o for o in out if txt in o["company_name"].lower() or txt in (o["party_name"] or "").lower()]
+	return out

@@ -4,10 +4,10 @@ import { ArrowRight, Download, ListChecks, PackageCheck, Pencil, Plus, RefreshCw
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import LinkField from "@/components/LinkField";
+import SearchSelect from "@/components/SearchSelect";
 import SalesOrderPicker, { type SOOption } from "@/components/SalesOrderPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
-import SearchSelect from "@/components/SearchSelect";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -93,6 +93,15 @@ export default function InwardWorkspace() {
   const [qIndex, setQIndex] = useState(-1); // -1 = still composing the queue / manual; >=0 = processing queue[qIndex]
   const [challanNo, setChallanNo] = useState(""); // the challan currently loaded
   const [lot, setLot] = useState("");
+  // Rolls are received COMPANY-wise, not party-wise. Searchable by the company's own name
+  // or by the party it sits under, because operators know sites by either.
+  const [company, setCompany] = useState("");
+  const companiesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.all_companies",
+    undefined,
+    "mm-all-companies",
+  );
+  const companies = companiesCall.data?.message ?? [];
   const [rows, setRows] = useState<Row[]>([]);
   const [orders, setOrders] = useState<MatchOrder[]>([]);
   const [fetched, setFetched] = useState(false);
@@ -388,6 +397,7 @@ export default function InwardWorkspace() {
     if (rows.length === 0) return setError(manual ? "Add at least one material row." : "Nothing to post — fetch a challan first.");
     if (verify?.closed) return setError("This challan is already fully received — no further inward allowed.");
     if (!location.trim()) return setError("Choose a location (roll stock is tracked per location).");
+    if (!company.trim()) return setError("Choose the company — rolls are received company-wise.");
     // The lot is resolved automatically (colour-wise LT id, reused per challan) and is
     // re-assigned server-side on post — so only block when nothing resolved at all.
     if (!effectiveLot && !challanNo.trim()) return setError("No lot could be resolved — pick a colour on the material rows first.");
@@ -405,6 +415,7 @@ export default function InwardWorkspace() {
       sales_order: salesOrder || null,
       challan_number: challanNo.trim(),
       lot_number: effectiveLot || challanNo.trim(),
+      company_name: company,
       verify_against_vm: verifyAgainstVm,
       is_partial: isPartial,
       items: rows.map((r, i) => ({
@@ -472,6 +483,16 @@ export default function InwardWorkspace() {
           <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
           <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} record={{ location }} />
           <SalesOrderPicker wide label="Sales order (optional)" value={salesOrder} onChange={(v, opt) => void pickSalesOrder(v, opt)} />
+          <label className="mm-field">
+            <span className="mm-field-label">Company *</span>
+            <SearchSelect
+              value={company}
+              onChange={setCompany}
+              required
+              placeholder="Search company or party…"
+              options={companies.map((c) => ({ value: c.company_name, label: c.company_name, meta: c.party_name }))}
+            />
+          </label>
           {/* Lot is assigned automatically (colour-wise LT id, reused per challan) —
               shown here read-only so the operator can see which lot this will land in. */}
           <label className="mm-field">

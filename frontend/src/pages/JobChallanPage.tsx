@@ -33,6 +33,7 @@ type PickedBobbin = { bobbin: string; qty: number };
 export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" }) {
   const [challanDate, setChallanDate] = useState(today());
   const [party, setParty] = useState("");
+  const [company, setCompany] = useState("");
   const [challanNo, setChallanNo] = useState("");
   const [picked, setPicked] = useState<PickedRoll[]>([]);
   const [bobbins, setBobbins] = useState<PickedBobbin[]>([]);
@@ -46,9 +47,14 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
-    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
-  });
+  // Job selection is company-first, and the company is findable by its own name OR by the
+  // party it sits under — picking one fills in the party it belongs to.
+  const companiesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.all_companies",
+    undefined,
+    "mm-all-companies",
+  );
+  const companies = companiesCall.data?.message ?? [];
   const items = useFrappeGetDocList<{ name: string }>("MM Item Master", { fields: ["name"], limit: 0 });
   const bobbinMasters = useFrappeGetDocList<{ name: string }>("MM Bobbin Master", { fields: ["name"], limit: 0 });
 
@@ -100,7 +106,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
 
   async function onSubmit() {
     setError(null);
-    if (!party) return setError("Choose the party.");
+    if (!company) return setError("Choose the company — job work is selected company-wise.");
+    if (!party) return setError("That company has no party on file.");
     if (picked.length === 0 && bobbins.length === 0) return setError("Add at least one roll or bobbin.");
     try {
       const res = await createJobChallan({
@@ -238,14 +245,24 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                 <input className="mm-input" type="date" value={challanDate} onChange={(e) => setChallanDate(e.target.value)} />
               </label>
               <label className="mm-field">
-                <span className="mm-field-label">Party *</span>
+                <span className="mm-field-label">Company *</span>
                 <SearchSelect
-                  value={party}
-                  onChange={setParty}
-                  placeholder="Select Company"
-                  options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))}
+                  value={company}
+                  onChange={(v) => {
+                    setCompany(v);
+                    setParty(companies.find((c) => c.company_name === v)?.party || "");
+                  }}
+                  required
+                  placeholder="Search company or party…"
+                  options={companies.map((c) => ({ value: c.company_name, label: c.company_name, meta: c.party_name }))}
                 />
               </label>
+              {party && (
+                <label className="mm-field">
+                  <span className="mm-field-label">Party</span>
+                  <input className="mm-input" value={party} readOnly />
+                </label>
+              )}
               <label className="mm-field">
                 <span className="mm-field-label">Chalan No *</span>
                 <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)} />
