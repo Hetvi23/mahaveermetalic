@@ -78,6 +78,8 @@ const SECTIONS: Section[] = [
       { label: "Inventory", icon: Boxes, to: "/inventory" },
       { label: "Stock Ledger", icon: ScrollText, to: "/stock-ledger" },
       { label: "Close-out Stack", icon: ScrollText, to: "/closeout" },
+      { label: "Job Out", icon: ArrowUpFromLine, to: "/job-out" },
+      { label: "Job In", icon: ArrowDownFromLine, to: "/job-in" },
     ],
   },
   {
@@ -108,8 +110,6 @@ const SECTIONS: Section[] = [
     items: [
       { label: "Patties", icon: Package },
       { label: "Sales", icon: Rocket },
-      { label: "Job Out", icon: ArrowUpFromLine },
-      { label: "Job In", icon: ArrowDownFromLine },
       { label: "Chalan", icon: ClipboardList },
       { label: "Deliverable", icon: Truck },
     ],

@@ -210,3 +210,156 @@ def scan_box(barcode):
 	if used:
 		frappe.throw(_("Box {0} is already on a challan.").format(code))
 	return b
+
+
+# ── Job work: Job Out / Job In ────────────────────────────────────────────────────
+# Job In and Job Out are the SAME screen and the same record as a sales challan — only
+# the type, the numbering series and the view differ. Job Out sends rolls (and bobbins)
+# to a job worker; Job In is them coming back.
+
+_JOB_SERIES = {"Sales": "MM-SC-.YYYY.-", "Job Out": "MM-JO-.YYYY.-", "Job In": "MM-JI-.YYYY.-"}
+
+
+@frappe.whitelist()
+def in_stock_rolls(item=None, challan_date=None, start=0, page_length=10):
+	"""Rolls on hand, for the left "IN STOCK ROLL" list of the job screen.
+
+	Paginated because a real site carries hundreds of rows (the legacy screen shows
+	"1 to 10 of 304"). Returns the page plus the total so the pager can be drawn.
+
+	Inventory is keyed by (branch, location, lot, colour) rather than by the inward that
+	produced it, so there is no single challan date or order to show per row; the row's
+	own creation date stands in for the date, and Order is left to the challan.
+	"""
+	conds = ["ifnull(stock_weight, 0) > 0"]
+	vals = {}
+	if item:
+		conds.append("color_name = %(item)s")
+		vals["item"] = item
+	if challan_date:
+		conds.append("date(creation) = %(cd)s")
+		vals["cd"] = challan_date
+	where = " and ".join(conds)
+
+	total = frappe.db.sql(f"select count(*) from `tabMM Roll Inventory` where {where}", vals)[0][0]
+
+	vals["start"] = frappe.utils.cint(start)
+	vals["page_length"] = frappe.utils.cint(page_length) or 10
+	rows = frappe.db.sql(
+		f"""
+		select name, roll_no, color_name, lot_number, location, branch,
+			stock_weight, stock_box, date(creation) as challan_date
+		from `tabMM Roll Inventory`
+		where {where}
+		order by modified desc
+		limit %(page_length)s offset %(start)s
+		""",
+		vals,
+		as_dict=True,
+	)
+	return {"rows": rows, "total": total}
+
+
+@frappe.whitelist()
+def next_job_challan_no(challan_type="Job Out"):
+	"""The next manual challan number for this job type — the legacy screen pre-fills it
+	and lets the operator overwrite it."""
+	last = frappe.db.sql(
+		"""
+		select challan_no from `tabMM Sales Challan`
+		where challan_type = %s and ifnull(challan_no, '') regexp '^[0-9]+$'
+		order by cast(challan_no as unsigned) desc limit 1
+		""",
+		(challan_type,),
+	)
+	return str(int(last[0][0]) + 1) if last else "1"
+
+
+@frappe.whitelist()
+def create_job_challan(challan_type="Job Out", party=None, challan_date=None, challan_no=None,
+	rolls=None, bobbins=None, remark=None, location=None, branch=None):
+	"""Create a Job Out / Job In challan from the picked rolls and bobbins.
+
+	Stock and the bobbin ledger both move on submit (see MMSalesChallan.on_submit), so
+	the challan is submitted straight away — the job material has physically moved.
+	"""
+	if challan_type not in ("Job Out", "Job In"):
+		frappe.throw(_("Challan type must be Job Out or Job In."))
+	if not party:
+		frappe.throw(_("Choose the party."))
+	roll_list = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
+	bob_list = json.loads(bobbins) if isinstance(bobbins, str) else (bobbins or [])
+	if not roll_list and not bob_list:
+		frappe.throw(_("Add at least one roll or bobbin to the challan."))
+
+	rows = []
+	for r in roll_list:
+		name = r.get("roll_inventory") if isinstance(r, dict) else r
+		inv = frappe.db.get_value(
+			"MM Roll Inventory", name,
+			["color_name", "roll_no", "stock_weight", "stock_box", "location", "branch"],
+			as_dict=True,
+		)
+		if not inv:
+			continue
+		weight = float((r.get("weight") if isinstance(r, dict) else None) or inv.stock_weight or 0)
+		rows.append({
+			"color_name": _valid_colour(inv.color_name),
+			"cut": (r.get("cut") if isinstance(r, dict) else None) or None,
+			"qty_box": inv.stock_box or 1,
+			"gross_weight": weight,
+			"net_weight": weight,
+			"weight": weight,
+			"roll_inventory": name,
+			"sales_order": (r.get("sales_order") if isinstance(r, dict) else None) or None,
+		})
+		location = location or inv.location
+		branch = branch or inv.branch
+
+	bobbin_rows = []
+	for b in bob_list:
+		qty = float(b.get("qty") or 0)
+		if qty <= 0:
+			continue
+		master = frappe.db.get_value("MM Bobbin Master", b.get("bobbin"), ["quality", "weight"], as_dict=True)
+		bobbin_rows.append({
+			"bobbin": b.get("bobbin"),
+			"qty": qty,
+			"quality": (master or {}).get("quality"),
+			"weight": round(qty * float((master or {}).get("weight") or 0), 3),
+		})
+
+	challan = frappe.get_doc({
+		"doctype": "MM Sales Challan",
+		"naming_series": _JOB_SERIES[challan_type],
+		"challan_type": challan_type,
+		"transaction_date": challan_date or frappe.utils.today(),
+		"party": party,
+		"challan_no": challan_no or None,
+		"remarks": remark or None,
+		"job_work_flag": 1,
+		"location": location,
+		"branch": branch,
+		"items": rows,
+		"bobbins": bobbin_rows,
+	})
+	challan.insert(ignore_permissions=True)
+	challan.submit()
+	return {
+		"challan": challan.name,
+		"rolls": len(rows),
+		"bobbins": len(bobbin_rows),
+		"total_weight": challan.total_weight,
+	}
+
+
+@frappe.whitelist()
+def job_challans(challan_type="Job Out", limit=50):
+	"""Recent job challans for the screen's list."""
+	return frappe.get_all(
+		"MM Sales Challan",
+		filters={"challan_type": challan_type, "docstatus": ["<", 2]},
+		fields=["name", "transaction_date", "party", "challan_no", "total_box", "total_weight", "docstatus"],
+		order_by="creation desc",
+		limit=frappe.utils.cint(limit),
+	)

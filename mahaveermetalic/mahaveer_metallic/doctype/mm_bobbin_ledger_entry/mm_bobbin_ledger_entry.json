@@ -28,7 +28,7 @@
    "fieldtype": "Select",
    "label": "Type",
    "in_list_view": 1,
-   "options": "Opening\nBobbin Challan\nProduction\nAdjustment"
+   "options": "Opening\nBobbin Challan\nProduction\nJob Out\nJob In\nAdjustment"
   },
   {
    "fieldname": "voucher_no",
@@ -91,7 +91,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-02 18:00:00.000000",
+ "modified": "2026-08-07 10:06:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Bobbin Ledger Entry",

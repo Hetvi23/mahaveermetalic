@@ -5,13 +5,129 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from mahaveermetalic.mahaveer_metallic import stock_ledger
+
+# Which way each challan type moves stock. Sales and Job Out send material away;
+# Job In is the job worker returning it.
+_DIRECTION = {"Sales": "out", "Job Out": "out", "Job In": "in"}
+_VOUCHER_TYPE = {"Sales": "Dispatch", "Job Out": "Job Out", "Job In": "Job In"}
+
 
 class MMSalesChallan(Document):
 	def validate(self):
+		if not self.challan_type:
+			self.challan_type = "Sales"
 		if not self.items:
-			frappe.throw(_("Add at least one item to the sales challan."))
+			frappe.throw(_("Add at least one item to the {0} challan.").format(self.challan_type))
 		for it in self.items:
 			if (it.qty_box or 0) < 0 or (it.weight or 0) < 0:
 				frappe.throw(_("Row #{0}: box and weight cannot be negative.").format(it.idx))
 		self.total_box = round(sum(float(i.qty_box or 0) for i in self.items), 3)
 		self.total_weight = round(sum(float(i.weight or 0) for i in self.items), 3)
+
+	def on_submit(self):
+		"""Dispatching finally moves stock.
+
+		Until now a challan was paperwork only: boxes and rolls stayed in inventory after
+		they had physically left, so the barcode could never do what it is for — deduct
+		from inventory. Submitting now posts the movement and cancelling reverses it.
+		"""
+		self._move_stock(reverse=False)
+		self._post_bobbins()
+
+	def on_cancel(self):
+		self._move_stock(reverse=True)
+		self._clear_bobbins()
+
+	def _post_bobbins(self):
+		"""Bobbins carried on a job challan hit the bobbin ledger too."""
+		from mahaveermetalic.mahaveer_metallic.api.bobbin import post_job_challan
+
+		try:
+			post_job_challan(self)
+		except Exception:
+			frappe.log_error(title=f"bobbin ledger for challan {self.name} failed")
+
+	def _clear_bobbins(self):
+		from mahaveermetalic.mahaveer_metallic.api.bobbin import clear_voucher
+
+		try:
+			clear_voucher(self.name)
+		except Exception:
+			frappe.log_error(title=f"bobbin ledger clear for challan {self.name} failed")
+
+	def _move_stock(self, reverse: bool):
+		direction = _DIRECTION.get(self.challan_type or "Sales", "out")
+		# Cancelling undoes the original direction.
+		if reverse:
+			direction = "in" if direction == "out" else "out"
+
+		for it in self.items:
+			weight = round(float(it.weight or 0), 3)
+			boxes = round(float(it.qty_box or 0), 3)
+			if weight <= 0 and boxes <= 0:
+				continue
+			row = self._inventory_row(it)
+			if not row:
+				continue
+			if direction == "out":
+				row.stock_weight = round(float(row.stock_weight or 0) - weight, 3)
+				row.stock_box = round(float(row.stock_box or 0) - boxes, 3)
+			else:
+				row.stock_weight = round(float(row.stock_weight or 0) + weight, 3)
+				row.stock_box = round(float(row.stock_box or 0) + boxes, 3)
+			row.save(ignore_permissions=True)
+
+			stock_ledger.post_movement(
+				voucher_type=_VOUCHER_TYPE.get(self.challan_type or "Sales", "Dispatch"),
+				voucher_no=self.name,
+				branch=self.branch,
+				location=self.location or row.location,
+				lot_number=row.lot_number,
+				color_name=it.color_name,
+				roll_no=row.roll_no,
+				in_weight=weight if direction == "in" else 0.0,
+				in_box=boxes if direction == "in" else 0.0,
+				out_weight=weight if direction == "out" else 0.0,
+				out_box=boxes if direction == "out" else 0.0,
+				balance_weight=row.stock_weight,
+				balance_box=row.stock_box,
+				customer_order=it.sales_order or self.sales_order,
+				challan_number=self.challan_no or self.name,
+				remarks=_("{0} challan {1}").format(self.challan_type, self.name),
+			)
+
+	def _inventory_row(self, it):
+		"""The inventory row a challan line draws from / returns to.
+
+		A line picked straight off inventory carries its row; a produced box does not, so
+		fall back to the (location, colour) key. A Job In brings material back that may
+		never have had a row here, so create one rather than dropping the movement.
+		"""
+		if it.get("roll_inventory") and frappe.db.exists("MM Roll Inventory", it.roll_inventory):
+			return frappe.get_doc("MM Roll Inventory", it.roll_inventory)
+
+		filters = {"color_name": it.color_name}
+		if self.location:
+			filters["location"] = self.location
+		match = frappe.get_all("MM Roll Inventory", filters=filters, fields=["name"], limit=1)
+		if match:
+			return frappe.get_doc("MM Roll Inventory", match[0].name)
+
+		if not self.location:
+			frappe.msgprint(
+				_("Row #{0}: no location, so stock was not adjusted for {1}.").format(it.idx, it.color_name),
+				alert=True,
+			)
+			return None
+		return frappe.get_doc(
+			{
+				"doctype": "MM Roll Inventory",
+				"roll_no": it.color_name,
+				"color_name": it.color_name,
+				"location": self.location,
+				"branch": self.branch,
+				"stock_weight": 0,
+				"stock_box": 0,
+			}
+		).insert(ignore_permissions=True)

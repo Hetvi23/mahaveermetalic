@@ -167,3 +167,30 @@ def bobbin_balances(party=None):
 		vals,
 		as_dict=True,
 	)
+
+
+def post_job_challan(doc):
+	"""Bobbins riding on a job challan.
+
+	Job Out sends bobbins to the worker (out of MM's hands); Job In is them coming back.
+	Same ledger as Bobbin In/Out and Production, so the report reconciles across all
+	three sources.
+	"""
+	clear_voucher(doc.name)
+	if (doc.challan_type or "") not in ("Job Out", "Job In"):
+		return
+	going_out = doc.challan_type == "Job Out"
+	for row in doc.bobbins or []:
+		qty = float(row.qty or 0)
+		if qty <= 0:
+			continue
+		_post(
+			posting_date=doc.transaction_date or frappe.utils.today(),
+			voucher_type=doc.challan_type,
+			voucher_no=doc.name,
+			party=doc.party,
+			bobbin=row.bobbin,
+			note=doc.remarks,
+			in_qty=0 if going_out else qty,
+			out_qty=qty if going_out else 0,
+		)

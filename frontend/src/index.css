@@ -1242,6 +1242,30 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
    over the absolute defaults; `right`/`margin` must be cleared or they fight the width. */
 .mm-suggest-fixed { position: fixed; right: auto; margin: 0; z-index: 300; }
 /* Pre-save purchase dialog actions (create PO + save / save only / cancel). */
+/* ── Job Out / Job In: pick on the left, build the challan on the right (legacy layout) ── */
+.mm-job-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 1100px) { .mm-job-grid { grid-template-columns: 1fr; } }
+.mm-job-col { display: flex; flex-direction: column; gap: 0.5rem; }
+.mm-job-bar {
+  background: var(--mm-primary); color: #fff; font-weight: 700; font-size: 0.74rem;
+  text-transform: uppercase; letter-spacing: 0.06em; padding: 0.55rem 0.85rem;
+  border-radius: var(--mm-radius-sm); margin-top: 0.4rem;
+}
+.mm-job-addbobbin { display: grid; grid-template-columns: 1fr 110px auto; gap: 0.6rem; align-items: end; }
+.mm-job-addbobbin .mm-field { margin: 0; }
+.mm-job-add { height: 38px; padding: 0 0.9rem; }
+/* The filter row sits under the header, so it must not inherit the header's colour. */
+.mm-job-filters th { background: var(--mm-card); padding: 0.35rem 0.5rem; }
+.mm-job-row-picked td { opacity: 0.5; }
+.mm-job-pager { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.6rem; font-size: 0.8rem; }
+.mm-job-pagesize { width: 72px; }
+.mm-job-pages { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
+.mm-job-foot {
+  position: sticky; bottom: 0; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-top: 1rem; padding: 0.7rem 0.9rem; background: var(--mm-card);
+  border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); box-shadow: var(--mm-shadow-lg);
+}
+.mm-job-submit { margin-left: auto; display: inline-flex; align-items: center; gap: 0.4rem; }
 .mm-ow-po-save { margin-top: 0.6rem; }
 .mm-ow-stockinfo { margin: 0.6rem 0 0; font-size: 0.82rem; color: var(--mm-text-sec); }
 .mm-ow-po-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
