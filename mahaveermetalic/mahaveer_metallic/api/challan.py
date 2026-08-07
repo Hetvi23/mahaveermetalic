@@ -363,3 +363,62 @@ def job_challans(challan_type="Job Out", limit=50):
 		order_by="creation desc",
 		limit=frappe.utils.cint(limit),
 	)
+
+
+@frappe.whitelist()
+def challan_for_print(challan):
+	"""Everything one challan needs to print, in one call.
+
+	Used by the A4 two-copies-per-sheet print (Original / Duplicate) and by the
+	auto-print that fires when a production submits.
+	"""
+	doc = frappe.get_doc("MM Sales Challan", challan)
+	party = frappe.db.get_value(
+		"MM Party Master", doc.party, ["party_name", "address", "mobile_number"], as_dict=True
+	) or {}
+	return {
+		"name": doc.name,
+		"challan_type": doc.challan_type or "Sales",
+		"challan_no": doc.challan_no or doc.name,
+		"transaction_date": str(doc.transaction_date or ""),
+		"party": doc.party,
+		"party_name": party.get("party_name") or doc.party,
+		"address": party.get("address"),
+		"mobile_no": party.get("mobile_number"),
+		"sales_order": doc.sales_order,
+		"transport": doc.transport,
+		"vehicle_no": doc.vehicle_no,
+		"remarks": doc.remarks,
+		"total_box": doc.total_box,
+		"total_weight": doc.total_weight,
+		"docstatus": doc.docstatus,
+		"items": [
+			{
+				"idx": it.idx,
+				"color_name": it.color_name,
+				"cut": it.cut,
+				"barcode": it.barcode,
+				"qty_box": it.qty_box,
+				"gross_weight": it.gross_weight,
+				"bobbin": it.bobbin,
+				"bobbin_pcs": it.bobbin_pcs,
+				"total_bobbin_weight": it.total_bobbin_weight,
+				"box_weight": it.box_weight,
+				"net_weight": it.net_weight,
+				"weight": it.weight,
+			}
+			for it in doc.items
+		],
+		"bobbins": [
+			{"bobbin": b.bobbin, "qty": b.qty, "quality": b.quality, "weight": b.weight}
+			for b in (doc.get("bobbins") or [])
+		],
+	}
+
+
+@frappe.whitelist()
+def challan_for_production(production):
+	"""The challan raised by a production, if any — so the screen can print it straight
+	after submitting without the operator hunting for it."""
+	name = frappe.db.get_value("MM Sales Challan", {"source_production": production, "docstatus": ["<", 2]}, "name")
+	return challan_for_print(name) if name else None

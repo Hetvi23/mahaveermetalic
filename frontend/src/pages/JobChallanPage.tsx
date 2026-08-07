@@ -4,6 +4,7 @@ import { ArrowRight, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -70,6 +71,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   const { call: createJobChallan, loading: submitting } = useFrappePostCall<{
     message: { challan: string; rolls: number; bobbins: number; total_weight: number };
   }>(`${API}.create_job_challan`);
+  const { call: fetchPrint } = useFrappePostCall<{ message: ChallanPrintData }>(`${API}.challan_for_print`);
 
   const totals = useMemo(() => ({
     qty: picked.reduce((s, r) => s + Number(r.stock_box || 0), 0),
@@ -111,6 +113,13 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
       });
       const name = res?.message?.challan;
       toast(`${type} challan ${name} submitted`);
+      // The goods leave with the paperwork — print A4 (Original / Duplicate) immediately.
+      if (name) {
+        try {
+          const p = await fetchPrint({ challan: name });
+          if (p?.message) printChallan(p.message);
+        } catch { /* print is best-effort; the challan is already submitted */ }
+      }
       setPicked([]);
       setBobbins([]);
       setChallanNo("");

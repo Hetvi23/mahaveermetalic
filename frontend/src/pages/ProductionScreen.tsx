@@ -6,6 +6,7 @@ import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
 import { printBoxStickers } from "@/utils/boxSticker";
+import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
@@ -166,6 +167,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
   const { call: preview } = useFrappePostCall<{ message: Calc }>(`${API}.preview_variance`);
   const { call: create, loading } = useFrappePostCall(`${API}.create_production`);
+  // Production auto-raises its challan; fetch it back so it can print straight away
+  // instead of the operator hunting for it on another screen.
+  const { call: fetchChallan } = useFrappePostCall<{ message: ChallanPrintData | null }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.challan_for_production",
+  );
 
   const [operator, setOperator] = useState("");
   const [shift, setShift] = useState<string>(program.shift || "Day");
@@ -233,7 +239,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     if (boxes.length === 0) return setErr("Add at least one box.");
     if (overTol && !pin.trim()) return setErr("Variance is over tolerance — an Admin Override PIN is required.");
     try {
-      await create({
+      const res = await create({
         source_program: program.name,
         boxes: JSON.stringify(
           boxes.map((b) => ({
@@ -255,6 +261,16 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         job_work: jobWork ? 1 : 0,
         pin: pin || undefined,
       });
+      // Auto challan print: only when the production actually raised one (i.e. it carried
+      // a sales order). Without an order the goods went to inventory, so there is nothing
+      // to print. A print failure must never look like a failed production.
+      const prod = (res as { message?: { production?: string } })?.message?.production;
+      if (prod) {
+        try {
+          const c = await fetchChallan({ production: prod });
+          if (c?.message) printChallan(c.message);
+        } catch { /* challan print is best-effort */ }
+      }
       onDone();
     } catch (e) {
       setErr(extractErrorMessage(e));

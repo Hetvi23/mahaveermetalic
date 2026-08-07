@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { X, Search, PackageSearch, Boxes } from "lucide-react";
+import { X, Search, PackageSearch, Boxes, Printer } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
@@ -43,6 +44,9 @@ export default function SalesChallanVoucher() {
 
   const { call: createChallan, loading } = useFrappePostCall(`${API}.create_challan`);
   const { call: scanBox } = useFrappePostCall<{ message: BoxRow & { barcode?: string } }>(`${API}.scan_box`);
+  const { call: fetchPrint } = useFrappePostCall<{ message: ChallanPrintData }>(`${API}.challan_for_print`);
+  // Last challan made here, so it can be reprinted without leaving the screen.
+  const [lastChallan, setLastChallan] = useState<string>("");
   const [scan, setScan] = useState("");
 
   // Scan gun types the barcode then hits Enter — resolve it and drop the box in.
@@ -118,8 +122,22 @@ export default function SalesChallanVoucher() {
       const name = (res as { message?: { challan?: string } })?.message?.challan;
       toast(`Sales Challan ${name || ""} created`);
       setLines([]); setChallanNo(""); setRemark("");
+      if (name) {
+        setLastChallan(name);
+        await doPrint(name);
+      }
     } catch (e) {
       setErr(extractErrorMessage(e));
+    }
+  }
+
+  /** A4, two copies per sheet (Original / Duplicate). */
+  async function doPrint(name: string) {
+    try {
+      const p = await fetchPrint({ challan: name });
+      if (p?.message) printChallan(p.message);
+    } catch (e) {
+      toast(extractErrorMessage(e), "error");
     }
   }
 
@@ -130,6 +148,11 @@ export default function SalesChallanVoucher() {
           <h1 className="mm-page-title">Sales Challan Voucher</h1>
           <p className="mm-page-sub">Dispatch produced boxes or inventory rolls. Production with an order raises its own challan automatically.</p>
         </div>
+        {lastChallan && (
+          <button type="button" className="mm-btn-secondary" onClick={() => void doPrint(lastChallan)}>
+            <Printer size={15} /> Reprint {lastChallan}
+          </button>
+        )}
       </header>
 
       <section className="mm-card mm-card-pad">
