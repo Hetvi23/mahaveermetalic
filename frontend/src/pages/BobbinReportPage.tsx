@@ -26,18 +26,32 @@ type Report = {
  */
 export default function BobbinReportPage() {
   const [party, setParty] = useState("");
+  const [company, setCompany] = useState("");
+  // Whose bobbins: MM's own, the party's, or both.
+  const [owner, setOwner] = useState("");
   const [from, setFrom] = useState(monthAgo());
   const [to, setTo] = useState(today());
-  const [applied, setApplied] = useState({ party: "", from: monthAgo(), to: today() });
+  const [applied, setApplied] = useState({ party: "", company: "", owner: "", from: monthAgo(), to: today() });
 
   const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
     fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
   });
+  // Selecting a company here means the party it is filed under, exactly as on the order
+  // and production screens — the server resolves company -> party.
+  const companies = useFrappeGetDocList<{ name: string; company_name?: string; parent?: string }>("MM Party Company", {
+    fields: ["name", "company_name", "parent"], limit: 0, orderBy: { field: "company_name", order: "asc" },
+  });
 
   const { data, isLoading } = useFrappeGetCall<{ message: Report }>(
     `${API}.bobbin_report`,
-    { party: applied.party || undefined, from_date: applied.from, to_date: applied.to },
-    `bobbin-report-${applied.party}-${applied.from}-${applied.to}`,
+    {
+      party: applied.party || undefined,
+      company: applied.company || undefined,
+      owner: applied.owner || undefined,
+      from_date: applied.from,
+      to_date: applied.to,
+    },
+    `bobbin-report-${applied.party}-${applied.company}-${applied.owner}-${applied.from}-${applied.to}`,
   );
   const r = data?.message;
 
@@ -58,6 +72,18 @@ export default function BobbinReportPage() {
               options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))} onChange={setParty} />
           </label>
           <label className="mm-field">
+            <span className="mm-field-label">Company</span>
+            <SearchSelect value={company} placeholder="All companies"
+              options={(companies.data ?? []).map((c) => ({ value: c.company_name || c.name, label: c.company_name || c.name, meta: c.parent }))}
+              onChange={setCompany} />
+          </label>
+          <label className="mm-field">
+            <span className="mm-field-label">Bobbins of</span>
+            <SearchSelect value={owner} placeholder="Both"
+              options={[{ value: "MM", label: "MM" }, { value: "Party", label: "Party" }]}
+              onChange={setOwner} />
+          </label>
+          <label className="mm-field">
             <span className="mm-field-label">From</span>
             <input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
@@ -65,7 +91,7 @@ export default function BobbinReportPage() {
             <span className="mm-field-label">To</span>
             <input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
-          <button className="mm-btn-primary" onClick={() => setApplied({ party, from, to })}>Filter</button>
+          <button className="mm-btn-primary" onClick={() => setApplied({ party, company, owner, from, to })}>Filter</button>
           <button className="mm-btn-secondary" onClick={() => window.print()}><Printer size={15} /> Print</button>
         </div>
       </section>

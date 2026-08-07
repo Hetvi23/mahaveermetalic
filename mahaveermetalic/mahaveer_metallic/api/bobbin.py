@@ -69,14 +69,39 @@ def post_production(doc):
 
 
 @frappe.whitelist()
-def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None):
+def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=None, company=None):
 	"""Party-wise bobbin ledger: opening before from_date, then the period's movements
-	with a running balance, plus totals."""
+	with a running balance, plus totals.
+
+	`company` selects the party that company is filed under, so the report can be pulled
+	the same way orders and production are — by company, not only by party.
+
+	`owner` narrows to whose bobbins these are: "MM", "Party", or blank/"Both". The owner
+	lives on MM Bobbin Master, so it resolves to the set of bobbins first.
+	"""
+	# A company is one of a party's MM Party Company rows — resolve it to its party.
+	if company and not party:
+		party = frappe.db.get_value(
+			"MM Party Company", {"company_name": company, "parenttype": "MM Party Master"}, "parent"
+		)
+
+	owner = (owner or "").strip()
+	owned_bobbins = None
+	if owner in ("MM", "Party"):
+		owned_bobbins = frappe.get_all("MM Bobbin Master", filters={"owner_type": owner}, pluck="name")
+		if not owned_bobbins:
+			# No bobbin is owned that way, so nothing can match — say so rather than
+			# silently dropping the filter and showing everything.
+			return {"opening_qty": 0, "opening_box": 0, "rows": [], "closing_qty": 0, "closing_box": 0,
+				"party": party, "owner": owner}
+
 	filters = {}
 	if party:
 		filters["party"] = party
 	if bobbin:
 		filters["bobbin"] = bobbin
+	if owned_bobbins is not None:
+		filters["bobbin"] = ["in", owned_bobbins]
 
 	def totals(where_extra, vals):
 		conds = ["1=1"]
@@ -87,6 +112,9 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None):
 		if bobbin:
 			conds.append("bobbin = %(bobbin)s")
 			v["bobbin"] = bobbin
+		if owned_bobbins is not None:
+			conds.append("bobbin in %(owned)s")
+			v["owned"] = owned_bobbins
 		conds.append(where_extra)
 		row = frappe.db.sql(
 			f"""select coalesce(sum(in_qty),0) - coalesce(sum(out_qty),0),
@@ -144,6 +172,8 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None):
 		"rows": out,
 		"closing_qty": round(bal_qty, 3),
 		"closing_box": round(bal_box, 3),
+		"party": party,
+		"owner": owner or "Both",
 	}
 
 

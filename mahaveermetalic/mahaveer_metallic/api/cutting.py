@@ -310,14 +310,16 @@ def cutting_board(branch=None):
 	if branch:
 		conditions.append("c.branch = %(branch)s")
 		values["branch"] = branch
-	return frappe.db.sql(
+	rows = frappe.db.sql(
 		f"""
 		select c.name, c.posting_date, c.customer_order, c.roll_no, c.shade, c.cut,
 			c.status, c.roll_qty, c.total_patti_qty, c.total_net_weight, c.program,
+			c.lot, l.lot_id,
 			case when p.unfinished = 1 then 1 else 0 end as unfinished,
 			p.name as program_name
 		from `tabMM Cutting` c
 		left join `tabMM Program` p on p.name = c.program
+		left join `tabMM Lot` l on l.name = c.lot
 		where {" and ".join(conditions)}
 		order by c.cut asc, c.modified desc
 		limit 500
@@ -325,6 +327,41 @@ def cutting_board(branch=None):
 		values,
 		as_dict=True,
 	)
+	return _merge_by_lot(rows)
+
+
+def _merge_by_lot(rows):
+	"""Fold cuttings of the same lot (and same colour/cut) into one card, summing qty and
+	weight.
+
+	The same lot arrives across several inwards, which produced a separate card per
+	inward — the operator saw one colour split over three rows and had to add up by eye.
+	Rows without a lot can't be merged safely (nothing identifies them as the same
+	material), so they pass through untouched.
+	"""
+	merged = {}
+	out = []
+	for r in rows:
+		if not r.get("lot"):
+			out.append(r)
+			continue
+		key = (r["lot"], r.get("shade") or r.get("roll_no"), r.get("cut"))
+		head = merged.get(key)
+		if not head:
+			r["merged_from"] = [r["name"]]
+			r["merged_count"] = 1
+			merged[key] = r
+			out.append(r)
+			continue
+		head["roll_qty"] = round(float(head.get("roll_qty") or 0) + float(r.get("roll_qty") or 0), 3)
+		head["total_patti_qty"] = round(float(head.get("total_patti_qty") or 0) + float(r.get("total_patti_qty") or 0), 3)
+		head["total_net_weight"] = round(float(head.get("total_net_weight") or 0) + float(r.get("total_net_weight") or 0), 3)
+		head["merged_from"].append(r["name"])
+		head["merged_count"] += 1
+		# A merged card is only "finished" if every part of it is.
+		if r.get("unfinished"):
+			head["unfinished"] = 1
+	return out
 
 
 @frappe.whitelist()

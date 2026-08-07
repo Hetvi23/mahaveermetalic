@@ -172,7 +172,14 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const { call: fetchChallan } = useFrappePostCall<{ message: ChallanPrintData | null }>(
     "mahaveermetalic.mahaveer_metallic.api.challan.challan_for_production",
   );
+  const { call: partyFlags } = useFrappePostCall<{ message: { party: string | null; is_job_work: number } }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.party_flags",
+  );
 
+  // Choosing a job-work party ticks "Is Job Work?" for you — it was being missed by hand.
+  // Only ever ticks it on: an operator who deliberately unticks it isn't overridden until
+  // they pick a different party.
+  const [jobWorkTouched, setJobWorkTouched] = useState(false);
   const [operator, setOperator] = useState("");
   const [shift, setShift] = useState<string>(program.shift || "Day");
   const [jobWork, setJobWork] = useState<boolean>(!!program.job_work_flag);
@@ -187,6 +194,24 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [err, setErr] = useState<string | null>(null);
   const [party, setParty] = useState<string>(program.party || "");
   const [company, setCompany] = useState<string>("");
+
+  // Auto-tick "Is Job Work?" when the selected party is flagged as a job-work party.
+  // Runs on party/company change, and never fights an operator who unticked it by hand.
+  useEffect(() => {
+    if (!party && !company) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await partyFlags({ party: party || undefined, company: company || undefined });
+        if (cancelled) return;
+        if (r?.message?.is_job_work && !jobWorkTouched) setJobWork(true);
+      } catch { /* the checkbox stays manual if this fails */ }
+    })();
+    return () => { cancelled = true; };
+    // jobWorkTouched is deliberately out of the deps: re-running on it would re-tick the
+    // box the moment the operator unticks it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [party, company, partyFlags]);
   const [order, setOrder] = useState<string>(program.customer_order || "");
   const [size, setSize] = useState<string>(program.cut || "");
   const [showAll, setShowAll] = useState(false);
@@ -292,7 +317,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <input className="mm-input" value={program.shade || program.roll_no || "—"} readOnly />
             </label>
             <label className="mm-field mm-field-inline">
-              <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
+              <input type="checkbox" checked={jobWork} onChange={(e) => { setJobWork(e.target.checked); setJobWorkTouched(true); }} /> <span className="mm-field-label">Is Job Work?</span>
             </label>
           </div>
 

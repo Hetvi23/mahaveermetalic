@@ -1860,3 +1860,7 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-bx-row > .mm-bx-bobbin { display: flex; gap: 0.4rem; align-items: stretch; width: 100%; }
 .mm-bx-row > .mm-bx-bobbin > select { flex: 1 1 auto; min-width: 0; }
 .mm-bx-row > .mm-bx-bobbin > .mm-bx-add { flex: 0 0 38px; }
+
+/* Job work report summary chips. */
+.mm-job-summary { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem; }
+.mm-job-summary .mm-pill { display: inline-flex; align-items: center; gap: 0.35rem; }

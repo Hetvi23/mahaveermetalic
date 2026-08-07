@@ -63,7 +63,7 @@ def available_rolls(branch=None, location=None, finished_only=0):
 			"MM Cutting",
 			filters=filters,
 			fields=["name", "posting_date", "customer_order", "roll_no", "shade", "cut",
-				"job_work_flag", "total_patti_qty", "total_net_weight"],
+				"job_work_flag", "total_patti_qty", "total_net_weight", "lot"],
 			order_by="modified desc",
 			limit_page_length=500,
 		):
@@ -80,6 +80,7 @@ def available_rolls(branch=None, location=None, finished_only=0):
 				"job_work": c.job_work_flag,
 				"batches": int(round(c.total_patti_qty or 0)),
 				"weight": c.total_net_weight or 0,
+				"lot": c.lot,
 			})
 
 	# --- In Inventory: rolls physically in stock (MM Roll Inventory) — the same balances the
@@ -126,7 +127,36 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	parties = _party_map([r["customer_order"] for r in rows])
 	for r in rows:
 		r["party"] = parties.get(r["customer_order"])
-	return rows
+	return _merge_rows_by_lot(rows)
+
+
+def _merge_rows_by_lot(rows):
+	"""Fold picker entries of the same lot into one, summing batches and weight.
+
+	The same lot spread over several cuttings listed as several near-identical rows, so
+	the operator had to add the batches up by eye before planning a program. Only rows
+	that carry a lot AND come from a cutting merge — an inventory roll is a distinct
+	physical roll, and rows without a lot can't be proven to be the same material.
+	"""
+	merged = {}
+	out = []
+	for r in rows:
+		if not r.get("lot") or r.get("source_type") != "cutting":
+			out.append(r)
+			continue
+		key = (r["lot"], r.get("shade") or r.get("roll_no"), r.get("cut"), r.get("state"))
+		head = merged.get(key)
+		if not head:
+			r["merged_from"] = [r["cutting"]]
+			r["merged_count"] = 1
+			merged[key] = r
+			out.append(r)
+			continue
+		head["batches"] = int(head.get("batches") or 0) + int(r.get("batches") or 0)
+		head["weight"] = round(float(head.get("weight") or 0) + float(r.get("weight") or 0), 3)
+		head["merged_from"].append(r["cutting"])
+		head["merged_count"] += 1
+	return out
 
 
 DEFAULT_MACHINE_COUNT = 5

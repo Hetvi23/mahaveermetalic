@@ -36,3 +36,22 @@ def companies_for_party(party: str = ""):
 		order_by="idx asc",
 		pluck="company_name",
 	)
+
+
+@frappe.whitelist()
+def party_flags(party: str = "", company: str = ""):
+	"""Flags the shop-floor screens need about a party — currently whether their work is
+	job work, so Production can tick "Is Job Work?" the moment the party is chosen.
+
+	Accepts a company too, since Production selects the company and derives the party.
+	"""
+	if company and not party:
+		party = frappe.db.get_value(
+			"MM Party Company", {"company_name": company, "parenttype": "MM Party Master"}, "parent"
+		)
+	if not party:
+		return {"party": None, "is_job_work": 0}
+	return {
+		"party": party,
+		"is_job_work": frappe.utils.cint(frappe.db.get_value("MM Party Master", party, "is_job_work")),
+	}

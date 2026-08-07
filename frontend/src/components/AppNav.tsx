@@ -80,6 +80,7 @@ const SECTIONS: Section[] = [
       { label: "Close-out Stack", icon: ScrollText, to: "/closeout" },
       { label: "Job Out", icon: ArrowUpFromLine, to: "/job-out" },
       { label: "Job In", icon: ArrowDownFromLine, to: "/job-in" },
+      { label: "Job Report", icon: ScrollText, to: "/job-report" },
     ],
   },
   {

@@ -422,3 +422,75 @@ def challan_for_production(production):
 	after submitting without the operator hunting for it."""
 	name = frappe.db.get_value("MM Sales Challan", {"source_production": production, "docstatus": ["<", 2]}, "name")
 	return challan_for_print(name) if name else None
+
+
+@frappe.whitelist()
+def job_report(party=None, from_date=None, to_date=None, company=None):
+	"""Job work report: what went out, what came back, and what is still with the worker.
+
+	Balance is per party — Job Out minus Job In — so an outstanding balance is material
+	the job worker still holds. Bobbins are tracked the same way alongside the weight.
+	"""
+	if company and not party:
+		party = frappe.db.get_value(
+			"MM Party Company", {"company_name": company, "parenttype": "MM Party Master"}, "parent"
+		)
+
+	conds = ["c.docstatus = 1", "c.challan_type in ('Job Out', 'Job In')"]
+	vals = {}
+	if party:
+		conds.append("c.party = %(party)s")
+		vals["party"] = party
+	if from_date:
+		conds.append("c.transaction_date >= %(fd)s")
+		vals["fd"] = from_date
+	if to_date:
+		conds.append("c.transaction_date <= %(td)s")
+		vals["td"] = to_date
+	where = " and ".join(conds)
+
+	rows = frappe.db.sql(
+		f"""
+		select c.name, c.challan_type, c.transaction_date, c.party, c.challan_no,
+			c.total_box, c.total_weight,
+			(select coalesce(sum(b.qty), 0) from `tabMM Production Bobbin` b
+			 where b.parent = c.name and b.parenttype = 'MM Sales Challan') as bobbin_qty
+		from `tabMM Sales Challan` c
+		where {where}
+		order by c.transaction_date asc, c.creation asc
+		""",
+		vals,
+		as_dict=True,
+	)
+
+	out = []
+	bal_w = bal_b = 0.0
+	for r in rows:
+		sent = r.challan_type == "Job Out"
+		w = float(r.total_weight or 0)
+		b = float(r.bobbin_qty or 0)
+		bal_w += w if sent else -w
+		bal_b += b if sent else -b
+		out.append({
+			"challan": r.name,
+			"type": r.challan_type,
+			"date": str(r.transaction_date) if r.transaction_date else None,
+			"party": r.party,
+			"challan_no": r.challan_no,
+			"box": float(r.total_box or 0),
+			"out_weight": w if sent else 0.0,
+			"in_weight": 0.0 if sent else w,
+			"out_bobbin": b if sent else 0.0,
+			"in_bobbin": 0.0 if sent else b,
+			"balance_weight": round(bal_w, 3),
+			"balance_bobbin": round(bal_b, 3),
+		})
+
+	return {
+		"rows": out,
+		"party": party,
+		"total_out": round(sum(r["out_weight"] for r in out), 3),
+		"total_in": round(sum(r["in_weight"] for r in out), 3),
+		"pending_weight": round(bal_w, 3),
+		"pending_bobbin": round(bal_b, 3),
+	}
