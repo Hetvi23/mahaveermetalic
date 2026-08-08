@@ -221,7 +221,7 @@ _JOB_SERIES = {"Sales": "MM-SC-.YYYY.-", "Job Out": "MM-JO-.YYYY.-", "Job In": "
 
 
 @frappe.whitelist()
-def in_stock_rolls(item=None, challan_date=None, start=0, page_length=10):
+def in_stock_rolls(item=None, challan_date=None, search=None, start=0, page_length=10):
 	"""Rolls on hand, for the left "IN STOCK ROLL" list of the job screen.
 
 	Paginated because a real site carries hundreds of rows (the legacy screen shows
@@ -239,6 +239,10 @@ def in_stock_rolls(item=None, challan_date=None, start=0, page_length=10):
 	if challan_date:
 		conds.append("date(creation) = %(cd)s")
 		vals["cd"] = challan_date
+	if search:
+		# Operators know a roll by its colour or its roll number — match either.
+		conds.append("(color_name like %(q)s or roll_no like %(q)s or lot_number like %(q)s)")
+		vals["q"] = f"%{search.strip()}%"
 	where = " and ".join(conds)
 
 	total = frappe.db.sql(f"select count(*) from `tabMM Roll Inventory` where {where}", vals)[0][0]
