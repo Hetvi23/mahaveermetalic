@@ -91,34 +91,15 @@ class MMSalesOrder(Document):
 				)
 
 	def _prevent_duplicate_order(self):
-		"""SRS rule (non-negotiable): don't create a new order that duplicates an
-		open order for the same party + colour + cut. Enforced on creation only so
-		edits to an existing order are never blocked."""
-		if not self.is_new():
-			return
-		for it in self.items:
-			dup = frappe.db.sql(
-				"""
-				select so.name
-				from `tabMM Sales Order` so
-				join `tabMM Sales Order Item` soi on soi.parent = so.name
-				where so.party = %s
-					and so.name != %s
-					and so.docstatus < 2
-					and ifnull(so.production_completed_percent, 0) < 100
-					and soi.color_name = %s
-					and ifnull(soi.cut, '') = ifnull(%s, '')
-				limit 1
-				""",
-				(self.party, self.name or "", it.color_name, it.cut or ""),
-			)
-			if dup:
-				frappe.throw(
-					_(
-						"Open order {0} already exists for {1} — {2}/{3}. "
-						"Add to that order instead of creating a duplicate."
-					).format(dup[0][0], self.party, it.color_name, it.cut or "—")
-				)
+		"""No longer blocks: a customer may hold several open orders for the same colour.
+
+		This used to throw and tell the operator to merge into the existing order, on the
+		reading that a repeat colour was a mistake. It isn't — a customer genuinely reorders
+		the same colour and cut while the first order is still open, and each order has its
+		own delivery date, rate and challan, so folding them together loses information and
+		bills wrongly. Kept as a no-op rather than deleted so the intent stays on record.
+		"""
+		return
 
 	def _compute_ordered_weight(self):
 		"""Order weight = sum of line weights. Required = ordered − already inwarded."""
