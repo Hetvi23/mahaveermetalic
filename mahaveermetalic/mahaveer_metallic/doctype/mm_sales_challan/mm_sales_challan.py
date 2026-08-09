@@ -34,10 +34,28 @@ class MMSalesChallan(Document):
 		"""
 		self._move_stock(reverse=False)
 		self._post_bobbins()
+		self._mark_orders_dispatched()
 
 	def on_cancel(self):
 		self._move_stock(reverse=True)
 		self._clear_bobbins()
+
+	def _mark_orders_dispatched(self):
+		"""Goods gone out close their order, and that closure sticks.
+
+		Only a Sales challan dispatches to a customer — a Job Out sends material to a
+		worker and the order is not fulfilled by it.
+		"""
+		if (self.challan_type or "Sales") != "Sales":
+			return
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import mark_dispatched
+
+		orders = {self.sales_order} | {it.sales_order for it in self.items if it.sales_order}
+		for order in filter(None, orders):
+			try:
+				mark_dispatched(order)
+			except Exception:
+				frappe.log_error(title=f"could not close order {order} from challan {self.name}")
 
 	def _post_bobbins(self):
 		"""Bobbins carried on a job challan hit the bobbin ledger too."""

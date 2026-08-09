@@ -102,9 +102,44 @@ class MMInward(Document):
 		self._refresh_order_fulfilment()
 
 	def on_cancel(self):
+		self._block_cancel_if_dispatched()
 		self._apply_to_roll_inventory(sign=-1)
 		self._refresh_order_fulfilment()
 		self._release_lot()
+
+	def _block_cancel_if_dispatched(self):
+		"""Refuse to cancel an inward whose material has already gone out.
+
+		Reversing it would pull stock the challan has already shipped, which the inventory
+		guard then rejects with "Available stock cannot be negative" — true, but it tells
+		the operator nothing. Name the challan and the order of operations instead.
+		"""
+		orders = {it.customer_order for it in self.items if it.customer_order}
+		if self.sales_order:
+			orders.add(self.sales_order)
+		orders = {o for o in orders if o}
+		if not orders:
+			return
+		hit = frappe.db.sql(
+			"""
+			select c.name, c.sales_order, ci.sales_order as line_order
+			from `tabMM Sales Challan` c
+			left join `tabMM Sales Challan Item` ci on ci.parent = c.name
+			where c.docstatus = 1
+				and ifnull(c.challan_type, 'Sales') = 'Sales'
+				and (c.sales_order in %(orders)s or ci.sales_order in %(orders)s)
+			limit 1
+			""",
+			{"orders": tuple(orders)},
+			as_dict=True,
+		)
+		if hit:
+			frappe.throw(
+				_(
+					"This inward can't be cancelled — its material has already been dispatched "
+					"on challan {0}. Cancel that challan first, then cancel this inward."
+				).format(hit[0].name)
+			)
 
 	def _release_lot(self):
 		"""Give the lot number back when a cancelled inward leaves it unused.

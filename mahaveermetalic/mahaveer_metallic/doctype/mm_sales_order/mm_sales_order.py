@@ -182,8 +182,8 @@ def _apply_inward_completion(order, inwarded, ordered):
 	)
 
 	mode = frappe.db.get_value("MM Sales Order", order, "completion_mode")
-	if mode == "Force":
-		return  # a manual force-complete is sticky
+	if mode in ("Force", "Dispatch"):
+		return  # closed by hand, or the goods have physically gone — both stick
 
 	tol = get_inward_match_tolerance()
 	# "Matched" = received has reached within tol% below the ordered weight (or more).
@@ -195,12 +195,49 @@ def _apply_inward_completion(order, inwarded, ordered):
 			update_modified=False,
 		)
 	elif mode == "Inward":
-		# was auto-completed, but a cancelled/amended inward pulled it back below tolerance
+		# Was auto-completed, but a cancelled/amended inward pulled it back below tolerance.
+		# If the goods have already gone out on a challan the order is done regardless of
+		# what the inward paperwork now says — reopening it there put a dispatched order
+		# back to Pending. Promote it to Dispatch instead, which sticks.
+		if _has_dispatch(order):
+			frappe.db.set_value(
+				"MM Sales Order", order, {"completed": 1, "completion_mode": "Dispatch"},
+				update_modified=False,
+			)
+			return
 		frappe.db.set_value(
 			"MM Sales Order", order,
 			{"completed": 0, "completion_mode": "", "completed_on": None},
 			update_modified=False,
 		)
+
+
+def _has_dispatch(order) -> bool:
+	"""True once anything has physically left against this order on a submitted challan."""
+	return bool(
+		frappe.db.sql(
+			"""
+			select 1 from `tabMM Sales Challan` c
+			left join `tabMM Sales Challan Item` ci on ci.parent = c.name
+			where c.docstatus = 1
+				and ifnull(c.challan_type, 'Sales') = 'Sales'
+				and (c.sales_order = %(o)s or ci.sales_order = %(o)s)
+			limit 1
+			""",
+			{"o": order},
+		)
+	)
+
+
+def mark_dispatched(order):
+	"""A submitted sales challan closes its order, and that closure sticks."""
+	if not order:
+		return
+	frappe.db.set_value(
+		"MM Sales Order", order,
+		{"completed": 1, "completion_mode": "Dispatch", "completed_on": frappe.utils.now()},
+		update_modified=False,
+	)
 
 
 @frappe.whitelist()

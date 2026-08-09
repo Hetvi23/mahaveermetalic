@@ -1,174 +1,235 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "naming_series:",
-  "creation": "2026-05-03 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "branch",
-    "location",
-    "naming_series",
-    "transaction_date",
-    "delivery_date",
-    "party",
-    "company_name",
-    "section_items",
-    "items",
-    "section_status",
-    "ordered_weight",
-    "inwarded_weight",
-    "required_weight",
-    "production_completed_percent",
-    "order_locked",
-    "completed",
-    "completion_mode",
-    "completed_on"
-  ],
-  "fields": [
-    {
-      "fieldname": "naming_series",
-      "fieldtype": "Select",
-      "label": "Series",
-      "options": "MM-SO-.YYYY.-",
-      "reqd": 1,
-      "set_only_once": 1
-    },
-    {
-      "fieldname": "transaction_date",
-      "fieldtype": "Date",
-      "in_list_view": 1,
-      "label": "Date",
-      "reqd": 1,
-      "default": "Today"
-    },
-    {
-      "fieldname": "delivery_date",
-      "fieldtype": "Date",
-      "in_list_view": 1,
-      "label": "Delivery Date"
-    },
-    {
-      "fieldname": "party",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Party Name",
-      "options": "MM Party Master",
-      "reqd": 1
-    },
-    {
-      "fieldname": "company_name",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Company",
-      "description": "One of the selected party's companies."
-    },
-    {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "label": "Branch",
-      "options": "MM Branch",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "location",
-      "fieldtype": "Link",
-      "label": "Location",
-      "options": "MM Location Master"
-    },
-    {
-      "fieldname": "section_items",
-      "fieldtype": "Section Break",
-      "label": "Line Items"
-    },
-    {
-      "fieldname": "items",
-      "fieldtype": "Table",
-      "label": "Items",
-      "options": "MM Sales Order Item",
-      "reqd": 1
-    },
-    {
-      "fieldname": "section_status",
-      "fieldtype": "Section Break",
-      "label": "Production & Lock"
-    },
-    {
-      "fieldname": "ordered_weight",
-      "fieldtype": "Float",
-      "label": "Order Weight (Kg)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "inwarded_weight",
-      "fieldtype": "Float",
-      "label": "Inwards (Kg)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "required_weight",
-      "fieldtype": "Float",
-      "label": "Required (Kg)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "production_completed_percent",
-      "fieldtype": "Percent",
-      "label": "Production Completed %",
-      "read_only": 1,
-      "default": "0"
-    },
-    {
-      "fieldname": "order_locked",
-      "fieldtype": "Check",
-      "label": "Order Locked",
-      "read_only": 1,
-      "default": "0"
-    },
-    {
-      "fieldname": "completed",
-      "fieldtype": "Check",
-      "label": "Completed",
-      "read_only": 1,
-      "default": "0",
-      "description": "Set when inward matches the ordered weight (within tolerance) or on a Force Complete."
-    },
-    {
-      "fieldname": "completion_mode",
-      "fieldtype": "Select",
-      "label": "Completion Mode",
-      "options": "\nInward\nForce",
-      "read_only": 1
-    },
-    {
-      "fieldname": "completed_on",
-      "fieldtype": "Datetime",
-      "label": "Completed On",
-      "read_only": 1
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "is_submittable": 1,
-  "links": [],
-  "modified": "2026-08-01 16:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Sales Order",
-  "naming_rule": "By \"Naming Series\" field",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "amend": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "amend": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Sales Team", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Inventory Manager", "read": 1, "export": 1, "print": 1, "report": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": [],
-  "track_changes": 1
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-05-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "location",
+  "naming_series",
+  "transaction_date",
+  "delivery_date",
+  "party",
+  "company_name",
+  "section_items",
+  "items",
+  "section_status",
+  "ordered_weight",
+  "inwarded_weight",
+  "required_weight",
+  "production_completed_percent",
+  "order_locked",
+  "completed",
+  "completion_mode",
+  "completed_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "MM-SO-.YYYY.-",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "transaction_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1,
+   "default": "Today"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Delivery Date"
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Party Name",
+   "options": "MM Party Master",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company",
+   "description": "One of the selected party's companies."
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "MM Branch",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "label": "Location",
+   "options": "MM Location Master"
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Line Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "MM Sales Order Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Production & Lock"
+  },
+  {
+   "fieldname": "ordered_weight",
+   "fieldtype": "Float",
+   "label": "Order Weight (Kg)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "inwarded_weight",
+   "fieldtype": "Float",
+   "label": "Inwards (Kg)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "required_weight",
+   "fieldtype": "Float",
+   "label": "Required (Kg)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "production_completed_percent",
+   "fieldtype": "Percent",
+   "label": "Production Completed %",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "order_locked",
+   "fieldtype": "Check",
+   "label": "Order Locked",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "completed",
+   "fieldtype": "Check",
+   "label": "Completed",
+   "read_only": 1,
+   "default": "0",
+   "description": "Set when inward matches the ordered weight (within tolerance) or on a Force Complete."
+  },
+  {
+   "fieldname": "completion_mode",
+   "fieldtype": "Select",
+   "label": "Completion Mode",
+   "options": "\nInward\nDispatch\nForce",
+   "read_only": 1,
+   "description": "How the order closed. Inward = material fully received; Dispatch = goods gone out on a challan; Force = closed by admin PIN. Dispatch and Force are sticky."
+  },
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Datetime",
+   "label": "Completed On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-08 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Sales Order",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }
