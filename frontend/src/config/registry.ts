@@ -311,6 +311,22 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 	},
 	{
+		// The nav has always linked to /masters/item-type, but there was no entry here, so
+		// the page resolved to nothing — "Item Type not working".
+		slug: "item-type",
+		routeBase: "/masters/item-type",
+		doctype: "MM Item Type Master",
+		title: "Item Type",
+		listTagline: "Item types used to classify colours and rolls.",
+		navGroup: "masters",
+		formSections: [{ id: "it1", title: "Item Type", fieldnames: ["type_name"] }],
+		listColumns: [{ fieldname: "type_name", label: "Item Type" }],
+		searchField: "type_name",
+		fields: [
+			{ fieldname: "type_name", label: "Item Type", fieldtype: "Data", reqd: true },
+		],
+	},
+	{
 		slug: "branch",
 		routeBase: "/masters/branch",
 		doctype: "MM Branch",

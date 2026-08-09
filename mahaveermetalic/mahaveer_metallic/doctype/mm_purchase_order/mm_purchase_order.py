@@ -82,6 +82,17 @@ class MMPurchaseOrder(Document):
 			# names of SO-mirrored POs.
 			self.name = make_autoname("MMPO-.#####")
 
+	def _reject_negatives(self):
+		"""Weight and rate can never be negative — a negative PO orders nothing and
+		quietly corrupts every total it feeds (shortage, order value, supplier pending)."""
+		from frappe import _
+
+		if float(self.qty_kg or 0) < 0:
+			frappe.throw(_("Purchase weight cannot be negative."))
+		if float(self.rate or 0) < 0:
+			frappe.throw(_("Purchase rate cannot be negative."))
+
 	def validate(self):
+		self._reject_negatives()
 		if self.sales_order:
 			self.po_number = self.sales_order

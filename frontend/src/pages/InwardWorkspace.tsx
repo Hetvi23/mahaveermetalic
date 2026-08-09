@@ -156,6 +156,9 @@ export default function InwardWorkspace() {
   // auto-forms the rows from the order (works whichever is chosen first — see startManual).
   async function pickSalesOrder(v: string, opt?: SOOption) {
     setSalesOrder(v);
+    // The order already knows its company — filling it in saves the operator re-picking
+    // it, and stops the mandatory Company being missed.
+    if (opt?.company_name) setCompany(opt.company_name);
     setForceOpen(false);
     setForcePin("");
     void opt;

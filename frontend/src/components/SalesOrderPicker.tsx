@@ -9,6 +9,7 @@ export type SOOption = {
   party_name?: string;
   delivery_date?: string | null;
   transaction_date?: string | null;
+  company_name?: string;
   ordered_weight?: number;
   required_weight?: number;
   colours?: string[];
@@ -54,8 +55,12 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
   }, []);
 
   const selected = options.find((o) => o.sales_order === value);
+  // Colour is what the operator recognises an order by on the floor, so it belongs in
+  // the closed field too — not only inside the open dropdown.
   const display = selected
-    ? `${selected.sales_order} · ${selected.party_name || selected.party || ""}`
+    ? [selected.sales_order, selected.party_name || selected.party, (selected.colours || []).join(", ")]
+        .filter(Boolean)
+        .join(" · ")
     : value;
 
   const [partyFilter, setPartyFilter] = useState("");

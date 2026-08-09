@@ -213,7 +213,7 @@ export default function OrderWorkspace() {
       const lines = list.filter((it) => it.color_name).map((it) => ({ color: it.color_name, cut: it.cut || "" }));
       if (lines.length === 0) { setAvailByKey({}); return {}; }
       try {
-        const r = await fetchAvailability({ lines: JSON.stringify(lines) });
+        const r = await fetchAvailability({ lines: JSON.stringify(lines), exclude_order: selected || undefined });
         const m: Record<string, number> = {};
         for (const row of r?.message ?? []) m[`${row.color}||${row.cut || ""}`] = Number(row.available || 0);
         setAvailByKey(m);
@@ -222,7 +222,7 @@ export default function OrderWorkspace() {
         return {};
       }
     },
-    [fetchAvailability],
+    [fetchAvailability, selected],
   );
 
   // Keep stock info live for the queued items AND whatever is in the form. Only the

@@ -7,12 +7,16 @@ from frappe import _
 
 @frappe.whitelist()
 def get_roll_stock(color_name=None, cut=None, location=None, item_type=None, branch=None):
-	"""Aggregated roll inventory filtered by color, cut, location (and optional item type)."""
+	"""Aggregated roll inventory filtered by color, location (and optional item type).
+
+	`cut` is accepted and IGNORED: rolls are raw material and MM Roll Inventory has no cut
+	column — cutting happens downstream. Filtering by it matched nothing, so any
+	availability check that carried a size reported zero stock and every such order looked
+	fully short. Callers still pass it, so the argument stays.
+	"""
 	filters = {}
 	if color_name:
 		filters["color_name"] = color_name
-	if cut is not None and cut != "":
-		filters["cut"] = cut
 	if location:
 		filters["location"] = location
 	if branch:
@@ -29,7 +33,6 @@ def get_roll_stock(color_name=None, cut=None, location=None, item_type=None, bra
 			"location",
 			"branch",
 			"color_name",
-			"cut",
 			"item_type",
 			"stock_weight",
 			"stock_box",
@@ -64,16 +67,61 @@ def get_stock_summary(color_name=None, cut=None, location=None, item_type=None, 
 	}
 
 
-def _line_available(color_name, cut):
-	"""Available roll weight for a colour/cut across all locations."""
+def _committed_weight(color_name, cut, exclude_order=None):
+	"""Weight of this colour/cut already promised to other live orders.
+
+	`reserved_weight` on MM Roll Inventory is never written by anything, so physical stock
+	looked free even after it had been sold: order 53 took 100 kg and order 54 was still
+	told 100 kg were available. An open order's claim is what it has yet to deliver
+	(ordered − produced), so stock already turned into finished goods stops being a claim.
+	"""
+	# Matched on colour alone, to mirror the stock it draws from: inventory is not held per
+	# cut, so two orders for the same colour in different sizes compete for the same rolls.
+	conds = [
+		"so.docstatus = 1",
+		"ifnull(so.completed, 0) = 0",
+		"ifnull(so.production_completed_percent, 0) < 100",
+		"soi.color_name = %(color)s",
+	]
+	vals = {"color": color_name}
+	if exclude_order:
+		conds.append("so.name != %(ex)s")
+		vals["ex"] = exclude_order
+	row = frappe.db.sql(
+		f"""
+		select coalesce(sum(
+			greatest(
+				ifnull(soi.qty_weight, 0)
+				- ifnull(soi.qty_weight, 0) * ifnull(so.production_completed_percent, 0) / 100,
+				0
+			)
+		), 0)
+		from `tabMM Sales Order Item` soi
+		join `tabMM Sales Order` so on so.name = soi.parent
+		where {" and ".join(conds)}
+		""",
+		vals,
+	)
+	return float((row[0][0] if row else 0) or 0)
+
+
+def _line_available(color_name, cut, exclude_order=None):
+	"""Roll weight genuinely free for a NEW order: physical stock minus what other live
+	orders have already claimed. Never negative — an over-committed colour is simply 0
+	free, and the shortage is what the new order needs in full."""
 	rows = get_roll_stock(color_name=color_name, cut=cut)
-	return sum(float(r.get("available_weight") or 0) for r in rows)
+	physical = sum(float(r.get("available_weight") or 0) for r in rows)
+	return max(0.0, physical - _committed_weight(color_name, cut, exclude_order))
 
 
 @frappe.whitelist()
-def availability_for_lines(lines):
+def availability_for_lines(lines, exclude_order=None):
 	"""Available roll weight per (colour, cut) — lets the order builder compute the
-	shortage (order weight − available) live, before the order is saved."""
+	shortage (order weight − available) live, before the order is saved.
+
+	`exclude_order` is the order being edited: its own claim must not count against it,
+	or re-saving an order would show its own weight as a shortage.
+	"""
 	import json as _json
 
 	if isinstance(lines, str):
@@ -82,7 +130,11 @@ def availability_for_lines(lines):
 	for ln in lines or []:
 		color = ln.get("color") or ln.get("color_name")
 		cut = ln.get("cut")
-		out.append({"color": color, "cut": cut, "available": round(_line_available(color, cut), 3)})
+		out.append({
+			"color": color,
+			"cut": cut,
+			"available": round(_line_available(color, cut, exclude_order), 3),
+		})
 	return out
 
 
@@ -100,7 +152,7 @@ def create_po_for_order(sales_order, qty_kg=0, rate=0, supplier=None, clamp_to_s
 	it = so.items[0] if so.items else None
 
 	if qty > 0 and frappe.utils.cint(clamp_to_shortage) and it:
-		short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut)), 3)
+		short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut, so.name)), 3)
 		qty = min(qty, short)
 	existing = frappe.db.get_value("MM Purchase Order", {"sales_order": so.name, "docstatus": 0}, "name")
 
@@ -178,7 +230,7 @@ def sync_shortage_pos(sales_order, lines=None, clamp_to_shortage=1):
 		if qty <= 0:
 			continue
 		if frappe.utils.cint(clamp_to_shortage):
-			short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut)), 3)
+			short = round(max(0.0, float(it.qty_weight or 0) - _line_available(it.color_name, it.cut, so.name)), 3)
 			qty = min(qty, short)
 			if qty <= 0:
 				continue
@@ -235,7 +287,7 @@ def get_so_stock_status(sales_order):
 	any_short = False
 	for it in so.items:
 		required = float(it.qty_weight or 0)
-		available = _line_available(it.color_name, it.cut)
+		available = _line_available(it.color_name, it.cut, so.name)
 		short = round(max(0.0, required - available), 3)
 		if short > 0:
 			any_short = True
@@ -284,7 +336,7 @@ def create_purchase_order_from_so(sales_order, full=0):
 		if full:
 			qty = round(required, 3)
 		else:
-			qty = round(max(0.0, required - _line_available(it.color_name, it.cut)), 3)
+			qty = round(max(0.0, required - _line_available(it.color_name, it.cut, so.name)), 3)
 		if qty <= 0:
 			continue
 		existing = frappe.db.get_value("MM Purchase Order", {"so_item": it.name}, "name")

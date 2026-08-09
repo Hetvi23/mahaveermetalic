@@ -238,7 +238,7 @@ def sales_order_options(search=None, limit=200):
 	limit = int(limit or 200)
 	rows = frappe.db.sql(
 		"""
-		select so.name as sales_order, so.party, pm.party_name,
+		select so.name as sales_order, so.party, pm.party_name, so.company_name,
 			so.delivery_date, so.transaction_date,
 			so.ordered_weight, so.required_weight,
 			soi.color_name, soi.cut
@@ -246,6 +246,9 @@ def sales_order_options(search=None, limit=200):
 		left join `tabMM Party Master` pm on pm.name = so.party
 		left join `tabMM Sales Order Item` soi on soi.parent = so.name
 		where so.docstatus = 1
+			-- A completed order is not open for inward, however it was completed. Without
+			-- this it kept appearing in the picker as though it were still open.
+			and ifnull(so.completed, 0) = 0
 			and ifnull(so.production_completed_percent, 0) < 100
 			and not (ifnull(so.ordered_weight, 0) > 0 and ifnull(so.required_weight, 0) <= 0)
 		order by so.transaction_date desc, so.modified desc
@@ -260,6 +263,8 @@ def sales_order_options(search=None, limit=200):
 				"sales_order": r.sales_order,
 				"party": r.party,
 				"party_name": r.party_name or r.party,
+				# Carried so picking an order fills the inward's Company by itself.
+				"company_name": r.company_name,
 				"delivery_date": str(r.delivery_date) if r.delivery_date else None,
 				"transaction_date": str(r.transaction_date) if r.transaction_date else None,
 				"ordered_weight": r.ordered_weight,

@@ -249,10 +249,28 @@ def reject_order(sales_order):
 	if doc.docstatus == 0:
 		for po in frappe.get_all("MM Purchase Order", filters={"sales_order": doc.name, "docstatus": 0}, pluck="name"):
 			frappe.delete_doc("MM Purchase Order", po, ignore_permissions=True, force=True)
+		rejected_name = doc.name
 		frappe.delete_doc("MM Sales Order", doc.name, ignore_permissions=True)
+		_release_order_number(rejected_name)
 		return {"order": sales_order, "docstatus": None, "approval_status": "Rejected", "deleted": True}
 	return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Rejected"}
 
+
+def _release_order_number(name):
+	"""Give a rejected order's number back so the next order reuses it.
+
+	Rejecting a pending order deletes it, but the naming counter had already moved on —
+	so rejecting 50 left the next order as 51 and a gap in the books. Only rolls back when
+	the deleted order was the LAST number issued; rejecting an older one leaves the counter
+	alone, since numbers above it are already in use.
+	"""
+	try:
+		n = int(str(name))
+	except (TypeError, ValueError):
+		return  # not a plain running number — nothing to reclaim
+	current = frappe.db.sql("select current from `tabSeries` where name = %s for update", ("MMSO",))
+	if current and int(current[0][0] or 0) == n:
+		frappe.db.sql("update `tabSeries` set current = %s where name = %s", (n - 1, "MMSO"))
 
 def assert_order_submitted(order):
 	"""Guard for downstream flows (inward / cutting / production): the referenced order

@@ -104,6 +104,38 @@ class MMInward(Document):
 	def on_cancel(self):
 		self._apply_to_roll_inventory(sign=-1)
 		self._refresh_order_fulfilment()
+		self._release_lot()
+
+	def _release_lot(self):
+		"""Give the lot number back when a cancelled inward leaves it unused.
+
+		Lot numbers come from max(lot_no) per colour, and cancelling an inward left its
+		MM Lot behind — so cancelling LT1/26-27 and re-entering produced LT2/26-27 with a
+		hole at LT1. The lot is only removed when nothing else still points at it: another
+		live inward, a cutting, a program or a production keeps it.
+		"""
+		if not self.lot:
+			return
+		still_used = frappe.db.sql(
+			"""
+			select 1 from `tabMM Inward` where lot = %(lot)s and name != %(me)s and docstatus < 2
+			union all select 1 from `tabMM Cutting`    where lot = %(lot)s and docstatus < 2
+			union all select 1 from `tabMM Program`    where lot = %(lot)s and docstatus < 2
+			union all select 1 from `tabMM Production` where lot = %(lot)s and docstatus < 2
+			limit 1
+			""",
+			{"lot": self.lot, "me": self.name},
+		)
+		if still_used:
+			return
+		lot = self.lot
+		self.db_set("lot", None, update_modified=False)
+		try:
+			frappe.delete_doc("MM Lot", lot, ignore_permissions=True, force=True)
+		except Exception:
+			# Something else still references it — leave the lot alone rather than fail
+			# the cancellation the operator actually asked for.
+			frappe.log_error(title=f"could not release lot {lot}")
 
 	def _refresh_order_fulfilment(self):
 		"""Update Inwards/Required (Kg) on every Sales Order touched by this inward
