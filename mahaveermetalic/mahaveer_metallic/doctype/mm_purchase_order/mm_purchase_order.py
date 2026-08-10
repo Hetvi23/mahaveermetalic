@@ -83,12 +83,14 @@ class MMPurchaseOrder(Document):
 			self.name = make_autoname("MMPO-.#####")
 
 	def _reject_negatives(self):
-		"""Weight and rate can never be negative — a negative PO orders nothing and
+		"""Weight, box and rate can never be negative — a negative PO orders nothing and
 		quietly corrupts every total it feeds (shortage, order value, supplier pending)."""
 		from frappe import _
 
 		if float(self.qty_kg or 0) < 0:
 			frappe.throw(_("Purchase weight cannot be negative."))
+		if float(self.qty_box or 0) < 0:
+			frappe.throw(_("Purchase box quantity cannot be negative."))
 		if float(self.rate or 0) < 0:
 			frappe.throw(_("Purchase rate cannot be negative."))
 
