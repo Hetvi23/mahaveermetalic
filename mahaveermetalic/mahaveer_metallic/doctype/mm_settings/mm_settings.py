@@ -50,10 +50,23 @@ def get_inward_match_tolerance() -> float:
 
 
 def verify_admin_pin(pin) -> bool:
-	"""True when `pin` matches the configured Admin Override PIN. Raises if no PIN
-	has been configured (so an override can never silently pass)."""
+	"""True when `pin` matches the configured Admin Override PIN.
+
+	With no PIN configured the override used to throw outright, which left the floor
+	unable to submit a production at all: the variance gate demanded an override and the
+	override refused to exist. The PIN gates the override for ORDINARY users, so when none
+	is set an admin — who could set it themselves anyway — is allowed through, and everyone
+	else is told who to ask.
+	"""
 	settings = frappe.get_single("MM Settings")
 	stored = settings.get_password("admin_override_pin", raise_exception=False) if settings.admin_override_pin else None
 	if not stored:
-		frappe.throw(_("No Admin Override PIN is configured in MM Settings."))
+		if "MM Admin" in frappe.get_roles() or "Administrator" in frappe.get_roles():
+			return True
+		frappe.throw(
+			_(
+				"No Admin Override PIN is set. Ask an admin to set one in MM Settings "
+				"(Admin Override PIN), or to approve this themselves."
+			)
+		)
 	return bool(pin) and str(pin) == str(stored)

@@ -1882,3 +1882,17 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* Job work report summary chips. */
 .mm-job-summary { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem; }
 .mm-job-summary .mm-pill { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+/* Box Details: the bobbin row used to hold a <select>, which the flex rules targeted by
+   tag. It is a SearchSelect (a div) now, so the field stopped growing and the "+ new
+   bobbin" button drifted out of its row. Target the wrapper instead. */
+.mm-bx-bobbin > .mm-link-wrap,
+.mm-bx-row > .mm-bx-bobbin > .mm-link-wrap { flex: 1 1 auto; min-width: 0; }
+.mm-bx-bobbin > .mm-bx-add { align-self: center; height: 38px; }
+
+/* The box table carries 11 columns inside a drawer, so it must scroll rather than wrap
+   every cell into an unreadable stack. */
+.mm-pv-boxtable { overflow-x: auto; }
+.mm-pv-boxtable table { min-width: 720px; }
+.mm-pv-boxtable th, .mm-pv-boxtable td { white-space: nowrap; }
+.mm-pv-rowacts { display: flex; gap: 0.3rem; justify-content: flex-end; align-items: center; }

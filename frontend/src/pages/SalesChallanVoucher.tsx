@@ -45,6 +45,12 @@ export default function SalesChallanVoucher() {
   const { call: createChallan, loading } = useFrappePostCall(`${API}.create_challan`);
   const { call: scanBox } = useFrappePostCall<{ message: BoxRow & { barcode?: string } }>(`${API}.scan_box`);
   const { call: fetchPrint } = useFrappePostCall<{ message: ChallanPrintData }>(`${API}.challan_for_print`);
+  // An order fixes which colours may be dispatched against it — the pickers filter to
+  // these so the wrong colour can't be picked, and the server rejects it either way.
+  const orderColoursCall = useFrappeGetCall<{ message: string[] }>(
+    `${API}.order_colour_names`, { sales_order: order || undefined }, order ? `chal-oc-${order}` : null,
+  );
+  const orderColours = orderColoursCall.data?.message ?? [];
   // Last challan made here, so it can be reprinted without leaving the screen.
   const [lastChallan, setLastChallan] = useState<string>("");
   const [scan, setScan] = useState("");
@@ -244,20 +250,21 @@ export default function SalesChallanVoucher() {
         </div>
       </section>
 
-      {picker === "box" && <BoxPicker party={party} order={order} onClose={() => setPicker(null)} onAdd={addBoxes} />}
-      {picker === "roll" && <RollPicker onClose={() => setPicker(null)} onAdd={addRolls} />}
+      {picker === "box" && <BoxPicker party={party} order={order} colours={orderColours} onClose={() => setPicker(null)} onAdd={addBoxes} />}
+      {picker === "roll" && <RollPicker colours={orderColours} onClose={() => setPicker(null)} onAdd={addRolls} />}
     </div>
   );
 }
 
 /* ── SELECT BOX: produced boxes not yet dispatched ── */
-function BoxPicker({ party, order, onClose, onAdd }: { party: string; order: string; onClose: () => void; onAdd: (r: BoxRow[]) => void }) {
+function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; order: string; colours: string[]; onClose: () => void; onAdd: (r: BoxRow[]) => void }) {
   const { data, isLoading } = useFrappeGetCall<{ message: BoxRow[] }>(
     `${API}.available_boxes`,
     { party: party || undefined, sales_order: order || undefined },
     `chal-boxes-${party}-${order}`,
   );
-  const rows = data?.message ?? [];
+  // Only boxes of a colour this order is for.
+  const rows = (data?.message ?? []).filter((r) => colours.length === 0 || !r.item || colours.includes(r.item));
   const [sel, setSel] = useState<Record<string, BoxRow>>({});
   return (
     <PickerSheet title="Select box" isLoading={isLoading} empty={rows.length === 0} emptyText="No produced boxes available."
@@ -284,14 +291,18 @@ function BoxPicker({ party, order, onClose, onAdd }: { party: string; order: str
 }
 
 /* ── SELECT ROLL: straight from inventory ── */
-function RollPicker({ onClose, onAdd }: { onClose: () => void; onAdd: (r: RollRow[]) => void }) {
+function RollPicker({ colours, onClose, onAdd }: { colours: string[]; onClose: () => void; onAdd: (r: RollRow[]) => void }) {
   const [q, setQ] = useState("");
   const { data, isLoading } = useFrappeGetCall<{ message: RollRow[] }>(
     "mahaveermetalic.mahaveer_metallic.api.program.program_inventory_search", {}, "chal-rolls",
   );
-  const rows = (data?.message ?? []).filter((r) =>
-    !q.trim() || `${r.roll_no || ""} ${r.color_name || ""} ${r.lot_number || ""} ${r.location || ""}`.toLowerCase().includes(q.toLowerCase()),
-  );
+  const rows = (data?.message ?? [])
+    // Only rolls of a colour this order is for — dispatching another colour against it
+    // is a picking mistake that mis-bills the customer.
+    .filter((r) => colours.length === 0 || !r.color_name || colours.includes(r.color_name))
+    .filter((r) =>
+      !q.trim() || `${r.roll_no || ""} ${r.color_name || ""} ${r.lot_number || ""} ${r.location || ""}`.toLowerCase().includes(q.toLowerCase()),
+    );
   const [sel, setSel] = useState<Record<string, RollRow>>({});
   return (
     <PickerSheet title="Select roll" isLoading={isLoading} empty={rows.length === 0} emptyText="No rolls in stock."

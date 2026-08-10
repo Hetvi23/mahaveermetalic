@@ -32,6 +32,14 @@ class MMCutting(Document):
 			net = float(row.net_weight or 0)
 			if qty <= 0:
 				frappe.throw(_("Row #{0}: Patti Qty must be greater than 0.").format(row.idx))
+			# A zero (or negative) weight was accepted and became per_patty_weight = 0,
+			# which the program then planned batches against — so the whole job ran on a
+			# weight of nothing. Catch it at the cutting, where it can still be corrected.
+			if net <= 0:
+				frappe.throw(
+					_("Row #{0}: Net Weight must be greater than 0 — a cutting with no weight "
+					  "cannot be programmed.").format(row.idx)
+				)
 			row.weight_per_patti = ceil2(net / qty)
 			total_qty += qty
 			total_net += net

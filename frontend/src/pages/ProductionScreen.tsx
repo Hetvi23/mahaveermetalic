@@ -188,6 +188,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
   const [boxes, setBoxes] = useState<BoxRow[]>([]);
+  // Which box the calculator is editing (null = adding a new one). A mistyped box used to
+  // mean deleting it and keying everything again.
+  const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [pin, setPin] = useState("");
   const [calc, setCalc] = useState<Calc | null>(null);
@@ -454,7 +457,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                         <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
                         <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
                         <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
-                        <td className="mm-num">
+                        <td className="mm-num mm-pv-rowacts">
+                          <button className="mm-mini" onClick={() => { setEditing(i); setAdding(true); }} aria-label="Edit box">Edit</button>
                           <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
                         </td>
                       </tr>
@@ -503,8 +507,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           bobbinMasters={bobbinMasters.data ?? []}
           availableNet={availableNet}
           defaultItem={program.shade || program.roll_no || ""}
-          onClose={() => setAdding(false)}
-          onAdd={(b) => { setBoxes((p) => [...p, b]); setAdding(false); }}
+          edit={editing != null ? boxes[editing] : undefined}
+          onClose={() => { setAdding(false); setEditing(null); }}
+          onAdd={(b) => {
+            setBoxes((p) => (editing != null ? p.map((x, j) => (j === editing ? b : x)) : [...p, b]));
+            setAdding(false);
+            setEditing(null);
+          }}
         />
       )}
     </div>
@@ -513,9 +522,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
 /* ── Box Details popup: the per-box calculator (Net = Gross − Bobbin − Box) ── */
 function BoxDialog({
-  bobbinMasters, availableNet, defaultItem, onClose, onAdd,
+  bobbinMasters, availableNet, defaultItem, edit, onClose, onAdd,
 }: {
   bobbinMasters: BobbinMaster[]; availableNet: number; defaultItem: string;
+  edit?: BoxRow;
   onClose: () => void; onAdd: (b: BoxRow) => void;
 }) {
   const [extraBobbins, setExtraBobbins] = useState<BobbinMaster[]>([]);
@@ -530,11 +540,12 @@ function BoxDialog({
   const [printer, setPrinter] = useState<string>(
     () => (typeof window !== "undefined" && window.localStorage.getItem("mm-box-printer")) || "TSC TE244",
   );
-  const [gross, setGross] = useState<number | "">("");
-  const [bobbin, setBobbin] = useState("");
-  const [pcs, setPcs] = useState<number | "">("");
-  const [perPcs, setPerPcs] = useState<number | "">("");
-  const [boxWeight, setBoxWeight] = useState<number | "">("");
+  // Seeded from the box being edited, so Edit reopens exactly what was entered.
+  const [gross, setGross] = useState<number | "">(edit?.gross ?? "");
+  const [bobbin, setBobbin] = useState(edit?.bobbin ?? "");
+  const [pcs, setPcs] = useState<number | "">(edit?.bobbinPcs ?? "");
+  const [perPcs, setPerPcs] = useState<number | "">(edit?.perPcsWeight ?? "");
+  const [boxWeight, setBoxWeight] = useState<number | "">(edit?.boxWeight ?? "");
   const [quick, setQuick] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 

@@ -107,7 +107,7 @@ def available_boxes(party=None, sales_order=None, limit=200):
 		vals["party"] = party
 	rows = frappe.db.sql(
 		f"""
-		select b.name as box, p.name as production, p.posting_date, p.shade as item, p.cut,
+		select b.name as box, b.barcode, p.name as production, p.posting_date, p.shade as item, p.cut,
 			p.customer_order, b.gross_weight, b.bobbin, b.bobbin_pcs, b.bobbin_pcs_weight,
 			b.total_bobbin_weight, b.box_weight, b.net_weight
 		from `tabMM Production Box` b
@@ -119,15 +119,34 @@ def available_boxes(party=None, sales_order=None, limit=200):
 		vals,
 		as_dict=True,
 	)
-	# Drop boxes already dispatched (same production already on a submitted challan).
-	used = set(
+	# Drop boxes already on a challan — BY BOX, not by production. Excluding the whole
+	# production hid every remaining box the moment one of its boxes shipped, and since a
+	# production with an order raises its own challan immediately, the list came back empty
+	# every time ("Select box not working").
+	used_barcodes = set(
+		frappe.db.sql_list(
+			"""select distinct ci.barcode from `tabMM Sales Challan Item` ci
+			join `tabMM Sales Challan` c on c.name = ci.parent
+			where c.docstatus < 2 and ifnull(ci.barcode, '') != ''"""
+		)
+	)
+	# Boxes that predate barcoding can only be matched by their production.
+	used_productions = set(
 		frappe.db.sql_list(
 			"""select distinct ci.production from `tabMM Sales Challan Item` ci
 			join `tabMM Sales Challan` c on c.name = ci.parent
-			where c.docstatus < 2 and ifnull(ci.production, '') != ''"""
+			where c.docstatus < 2 and ifnull(ci.production, '') != ''
+				and ifnull(ci.barcode, '') = ''"""
 		)
 	)
-	return [r for r in rows if r.production not in used]
+	out = []
+	for r in rows:
+		if r.get("barcode") and r["barcode"] in used_barcodes:
+			continue
+		if not r.get("barcode") and r.production in used_productions:
+			continue
+		out.append(r)
+	return out
 
 
 @frappe.whitelist()
@@ -141,6 +160,25 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	if not party:
 		frappe.throw(_("Choose the customer."))
 
+	# The order fixes what may go on the challan: dispatching a colour the customer never
+	# ordered is a picking mistake, and it silently mis-bills them.
+	order_colours = set()
+	if sales_order:
+		order_colours = {
+			c for c in frappe.get_all(
+				"MM Sales Order Item", filters={"parent": sales_order, "parenttype": "MM Sales Order"},
+				pluck="color_name",
+			) if c
+		}
+
+	def _check_colour(colour, what):
+		if order_colours and colour and colour not in order_colours:
+			frappe.throw(
+				_("{0} is {1}, but order {2} is for {3}. Pick the ordered colour, or clear the order.").format(
+					what, colour, sales_order, ", ".join(sorted(order_colours))
+				)
+			)
+
 	rows = []
 	for name in box_list:
 		b = frappe.db.get_value(
@@ -152,6 +190,7 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 		if not b:
 			continue
 		cut = frappe.db.get_value("MM Production", b.parent, "cut")
+		_check_colour(b.item, _("Box {0}").format(b.barcode or name))
 		rows.append(_box_row(dict(b, cut=cut), production=b.parent, order=sales_order))
 	for name in roll_list:
 		r = frappe.db.get_value(
@@ -159,6 +198,7 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 		)
 		if not r:
 			continue
+		_check_colour(r.color_name, _("Roll {0}").format(r.roll_no or name))
 		rows.append(
 			{
 				"color_name": _valid_colour(r.color_name),
@@ -498,3 +538,18 @@ def job_report(party=None, from_date=None, to_date=None, company=None):
 		"pending_weight": round(bal_w, 3),
 		"pending_bobbin": round(bal_b, 3),
 	}
+
+
+@frappe.whitelist()
+def order_colour_names(sales_order=None):
+	"""Colours an order is for — the challan pickers filter to these so a roll or box of
+	the wrong colour can't be chosen against it in the first place."""
+	if not sales_order:
+		return []
+	return [
+		c for c in frappe.get_all(
+			"MM Sales Order Item",
+			filters={"parent": sales_order, "parenttype": "MM Sales Order"},
+			pluck="color_name",
+		) if c
+	]
