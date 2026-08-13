@@ -8,7 +8,6 @@ import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
-const PROD_API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = () => new Date().toISOString().slice(0, 10);
 
 type BoxRow = {
@@ -70,8 +69,10 @@ export default function SalesChallanVoucher() {
       setScan("");
     }
   }
+  // Orders not yet dispatched. An order that already has a submitted challan is gone from
+  // this list — offering it again invites a second challan for the same goods.
   const ordersCall = useFrappeGetCall<{ message: { name: string; colours?: string }[] }>(
-    `${PROD_API}.orders_for_production`,
+    `${API}.orders_for_challan`,
     party ? { party } : undefined,
     party ? `chal-orders-${party}` : null,
   );

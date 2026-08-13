@@ -196,10 +196,16 @@ export default function InwardWorkspace() {
 
   // Recent posted inwards, shown as a list below the entry form and refreshed after
   // each successful post.
+  // How many posted inwards to show. It was hard-capped at 30, so posting a 31st made the
+  // oldest one vanish with nothing to say it had — the entries were still there, just off
+  // the end of the list.
+  const [recentLimit, setRecentLimit] = useState(30);
   const { data: recentData, isLoading: recentLoading, mutate: refreshRecent } = useFrappeGetCall<{
     message: RecentInward[];
-  }>("mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards", { limit: 30 }, "mm-inward-recent");
+  }>("mahaveermetalic.mahaveer_metallic.api.inward.recent_inwards", { limit: recentLimit }, `mm-inward-recent-${recentLimit}`);
   const recent = recentData?.message ?? [];
+  // A full page means there are probably more behind it.
+  const maybeMore = recent.length >= recentLimit;
 
   const { call: cancelInwardCall, loading: cancelling } = useFrappePostCall(
     "mahaveermetalic.mahaveer_metallic.api.inward.cancel_inward",
@@ -752,6 +758,11 @@ export default function InwardWorkspace() {
           <h2 className="mm-panel-title"><ListChecks size={16} /> Posted inwards</h2>
           <div className="mm-iw-recent-head-actions">
             <span className="mm-pill mm-pill-muted">{recent.length}</span>
+            {maybeMore && (
+              <button type="button" className="mm-mini" onClick={() => setRecentLimit((n) => n + 50)}>
+                Show more
+              </button>
+            )}
             <button type="button" className="mm-icon-btn" title="Refresh" onClick={() => void refreshRecent()}>
               <RefreshCw size={14} />
             </button>

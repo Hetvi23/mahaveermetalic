@@ -151,7 +151,7 @@ def available_boxes(party=None, sales_order=None, limit=200):
 
 @frappe.whitelist()
 def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
-	job_work=0, boxes=None, rolls=None, challan_no=None, **kwargs):
+	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None, **kwargs):
 	"""Build a challan by hand from picked produced boxes and/or inventory rolls."""
 	box_list = json.loads(boxes) if isinstance(boxes, str) else (boxes or [])
 	roll_list = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
@@ -189,16 +189,22 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 		)
 		if not b:
 			continue
-		cut = frappe.db.get_value("MM Production", b.parent, "cut")
+		prod = frappe.db.get_value("MM Production", b.parent, ["cut", "location", "branch"], as_dict=True) or {}
+		cut = prod.get("cut")
+		location = location or prod.get("location")
+		branch = branch or prod.get("branch")
 		_check_colour(b.item, _("Box {0}").format(b.barcode or name))
 		rows.append(_box_row(dict(b, cut=cut), production=b.parent, order=sales_order))
 	for name in roll_list:
 		r = frappe.db.get_value(
-			"MM Roll Inventory", name, ["color_name", "roll_no", "stock_weight", "stock_box"], as_dict=True
+			"MM Roll Inventory", name,
+			["color_name", "roll_no", "stock_weight", "stock_box", "location", "branch"], as_dict=True
 		)
 		if not r:
 			continue
 		_check_colour(r.color_name, _("Roll {0}").format(r.roll_no or name))
+		location = location or r.location
+		branch = branch or r.branch
 		rows.append(
 			{
 				"color_name": _valid_colour(r.color_name),
@@ -220,11 +226,23 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 			"challan_no": challan_no or None,
 			"remarks": remark or None,
 			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
+			"location": location,
+			"branch": branch,
 			"items": rows,
 		}
 	)
 	challan.insert(ignore_permissions=True)
-	return {"challan": challan.name, "lines": len(rows)}
+	# Submit it. A hand-built challan used to be left as a DRAFT, so nothing ran: stock
+	# never moved, the order was never marked dispatched (it sat on "Material In" even
+	# after the goods had gone), and the screen offered no way to complete it. The
+	# production and job-work paths have always submitted; this one was the odd one out.
+	challan.submit()
+	return {
+		"challan": challan.name,
+		"lines": len(rows),
+		"docstatus": challan.docstatus,
+		"total_weight": challan.total_weight,
+	}
 
 
 @frappe.whitelist()
@@ -553,3 +571,36 @@ def order_colour_names(sales_order=None):
 			pluck="color_name",
 		) if c
 	]
+
+
+@frappe.whitelist()
+def orders_for_challan(party=None):
+	"""Orders still available to dispatch against, for the challan's order picker.
+
+	An order that already has a submitted Sales challan is dropped: it has been
+	dispatched, so offering it again invites a second challan for the same goods.
+	"""
+	if not party:
+		return []
+	rows = frappe.db.sql(
+		"""
+		select so.name, so.transaction_date, so.ordered_weight,
+			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
+			 from `tabMM Sales Order Item` x where x.parent = so.name) as colours
+		from `tabMM Sales Order` so
+		where so.party = %(party)s
+			and so.docstatus = 1
+			and not exists (
+				select 1 from `tabMM Sales Challan` c
+				left join `tabMM Sales Challan Item` ci on ci.parent = c.name
+				where c.docstatus = 1
+					and ifnull(c.challan_type, 'Sales') = 'Sales'
+					and (c.sales_order = so.name or ci.sales_order = so.name)
+			)
+		order by so.transaction_date desc, so.modified desc
+		limit 200
+		""",
+		{"party": party},
+		as_dict=True,
+	)
+	return rows

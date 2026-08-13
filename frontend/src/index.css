@@ -1896,3 +1896,7 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-pv-boxtable table { min-width: 720px; }
 .mm-pv-boxtable th, .mm-pv-boxtable td { white-space: nowrap; }
 .mm-pv-rowacts { display: flex; gap: 0.3rem; justify-content: flex-end; align-items: center; }
+
+/* The picker sheets' search box stretched to fill the whole header (flex: 1 1 260px). It
+   only needs to be wide enough to type a roll or colour into. */
+.mm-sheet .mm-search-box { flex: 0 1 300px; max-width: 300px; }

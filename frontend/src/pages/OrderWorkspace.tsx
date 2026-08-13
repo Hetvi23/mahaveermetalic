@@ -592,6 +592,10 @@ export default function OrderWorkspace() {
     setFormError(null);
     const name = selected;
     try {
+      // Save any purchase edits FIRST. An admin who changed the supplier (or rate/weight)
+      // and then hit Approve had those edits thrown away — approval submits the purchase
+      // order, so it was submitted with the old supplier still on it.
+      if (purchaseLines.length > 0) await savePurchase();
       await approveOrder({ sales_order: name });
       // Revalidate the SINGLE-doc cache too, else the form keeps the pre-approval
       // docstatus and stays editable with Approve/Reject showing.
