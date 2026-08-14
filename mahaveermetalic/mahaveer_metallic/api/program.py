@@ -46,6 +46,8 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	program from that row. `finished_only` restricts to finished cuttings (Cut) — the
 	default Add-program list; the "search inventory" mode covers everything else.
 	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
+
 	rows = []
 	finished_only = int(finished_only or 0)
 
@@ -63,7 +65,7 @@ def available_rolls(branch=None, location=None, finished_only=0):
 			"MM Cutting",
 			filters=filters,
 			fields=["name", "posting_date", "customer_order", "roll_no", "shade", "cut",
-				"job_work_flag", "total_patti_qty", "total_net_weight", "lot"],
+				"job_work_flag", "total_patti_qty", "total_net_weight", "per_patty_weight", "lot"],
 			order_by="modified desc",
 			limit_page_length=500,
 		):
@@ -80,6 +82,12 @@ def available_rolls(branch=None, location=None, finished_only=0):
 				"job_work": c.job_work_flag,
 				"batches": int(round(c.total_patti_qty or 0)),
 				"weight": c.total_net_weight or 0,
+				# A cutting is consumed PER PATTY (one patty = one batch), so the per-patty
+				# weight — not the cutting's total — is what a program actually takes.
+				"per_patty": float(c.per_patty_weight or 0) or (
+					ceil2(float(c.total_net_weight or 0) / float(c.total_patti_qty))
+					if c.total_patti_qty else 0.0
+				),
 				"lot": c.lot,
 			})
 
@@ -122,6 +130,8 @@ def available_rolls(branch=None, location=None, finished_only=0):
 				"job_work": 0,
 				"batches": int(round(ri.qty_box or 0)) or 1,
 				"weight": ri.weight or 0,
+				# An inventory row is a whole roll — it has no patty division yet.
+				"per_patty": 0.0,
 			})
 
 	parties = _party_map([r["customer_order"] for r in rows])
@@ -460,9 +470,11 @@ def available_colours(branch=None, location=None):
 		# belongs to no single source: a colour with an empty cutting and 210 kg in
 		# inventory read "210 kg", and programming then drew from the empty cutting.
 		if r.get("state"):
-			g["by_state"][r["state"]] = round(
-				g["by_state"].get(r["state"], 0.0) + float(r.get("weight") or 0), 3
-			)
+			e = g["by_state"].setdefault(r["state"], {"weight": 0.0, "per_patty": 0.0, "batches": 0})
+			e["weight"] = round(e["weight"] + float(r.get("weight") or 0), 3)
+			e["batches"] += int(r.get("batches") or 0)
+			# Per-patty is a rate, not a total — carry the largest seen rather than summing.
+			e["per_patty"] = max(e["per_patty"], round(float(r.get("per_patty") or 0), 3))
 	out = [groups[k] for k in order]
 	for g in out:
 		g["total_weight"] = round(g["total_weight"], 3)

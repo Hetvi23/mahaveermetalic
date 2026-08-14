@@ -29,9 +29,10 @@ type Roll = {
 };
 type Colour = {
   colour: string; rows: Roll[]; states: string[]; total_weight: number; count: number;
-  /** Weight per source ("Cut" / "In Cutting" / "In Inventory") — the total belongs to no
-   *  single source, so the card shows these instead. */
-  by_state?: Record<string, number>;
+  /** Per source ("Cut" / "In Cutting" / "In Inventory"): its own total, its per-patty
+   *  rate and how many patties. A cutting is consumed per patty (one patty = one batch),
+   *  an inventory row is a whole roll — so they are shown in their own units. */
+  by_state?: Record<string, { weight: number; per_patty: number; batches: number }>;
   programmable_weight?: number;
   programmable_state?: string | null;
 };
@@ -512,7 +513,15 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
                   <span className="mm-colour-name">{c.colour}</span>
                   <span className="mm-prog-card-meta">
                     {c.by_state && Object.keys(c.by_state).length > 0
-                      ? Object.entries(c.by_state).map(([st, w]) => `${sourceLabel([st])} ${kg(w)} kg`).join(" · ")
+                      ? Object.entries(c.by_state)
+                          .map(([st, e]) =>
+                            // A cutting: show the per-patty rate and the patty count, since
+                            // that is what a program takes. Inventory: the roll weight.
+                            e.per_patty > 0
+                              ? `${sourceLabel([st])} ${kg(e.per_patty)} kg/patty × ${e.batches}`
+                              : `${sourceLabel([st])} ${kg(e.weight)} kg`,
+                          )
+                          .join(" · ")
                       : `${sourceLabel(c.states)} · ${kg(c.total_weight)} kg`}
                   </span>
                 </div>
