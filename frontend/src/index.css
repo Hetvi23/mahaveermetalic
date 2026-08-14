@@ -1888,7 +1888,13 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
    bobbin" button drifted out of its row. Target the wrapper instead. */
 .mm-bx-bobbin > .mm-link-wrap,
 .mm-bx-row > .mm-bx-bobbin > .mm-link-wrap { flex: 1 1 auto; min-width: 0; }
-.mm-bx-bobbin > .mm-bx-add { align-self: center; height: 38px; }
+/* The button also carries .mm-link-add, which is position:absolute — and .mm-bx-bobbin
+   is a flex row with no positioning of its own, so the + escaped the row entirely and
+   rendered between Box Weight and Bobbin. Put it back in the flow. */
+.mm-bx-bobbin > .mm-bx-add {
+  position: static; right: auto; top: auto; transform: none;
+  align-self: stretch; flex: 0 0 38px; height: auto;
+}
 
 /* The box table carries 11 columns inside a drawer, so it must scroll rather than wrap
    every cell into an unreadable stack. */

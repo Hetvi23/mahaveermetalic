@@ -243,12 +243,11 @@ def mark_dispatched(order):
 @frappe.whitelist()
 def force_complete_order(order, pin):
 	"""Close an order regardless of inward weight, gated by the Admin Override PIN."""
-	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import verify_admin_pin
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import require_admin_pin
 
 	if not order or not frappe.db.exists("MM Sales Order", order):
 		frappe.throw(_("Order {0} not found.").format(order))
-	if not verify_admin_pin(pin):
-		frappe.throw(_("Invalid Admin Override PIN."))
+	require_admin_pin(pin, action=_("close this order early"))
 	frappe.db.set_value(
 		"MM Sales Order", order,
 		{"completed": 1, "completion_mode": "Force", "completed_on": frappe.utils.now()},

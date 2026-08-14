@@ -70,3 +70,18 @@ def verify_admin_pin(pin) -> bool:
 			)
 		)
 	return bool(pin) and str(pin) == str(stored)
+
+
+def require_admin_pin(pin, action=None):
+	"""Check the Admin Override PIN and throw a message that says which problem it is.
+
+	Callers used one message for both "no PIN entered" and "wrong PIN", so typing a wrong
+	PIN reported that a PIN was required — with no way to tell a typo from a missing entry.
+	"""
+	if not str(pin or "").strip():
+		frappe.throw(
+			_("Enter the Admin Override PIN{0}.").format(f" to {action}" if action else "")
+		)
+	if not verify_admin_pin(pin):
+		frappe.throw(_("That Admin Override PIN is incorrect."))
+	return True

@@ -19,6 +19,7 @@ from frappe import _
 
 from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 	get_tolerance_percent,
+	require_admin_pin,
 	verify_admin_pin,
 )
 
@@ -174,10 +175,9 @@ def companies_for_item(color=None, show_all=0, pin=None):
 	PIN (a direct voucher with no order behind it)."""
 	show_all = frappe.utils.cint(show_all)
 	if show_all:
-		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import verify_admin_pin
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import require_admin_pin
 
-		if not verify_admin_pin(pin):
-			frappe.throw(_("A valid Admin Override PIN is required to show parties without an order."))
+		require_admin_pin(pin, action=_("show parties without an order"))
 		rows = frappe.db.sql(
 			"""
 			select p.name as party, p.party_name, c.company_name
@@ -419,12 +419,16 @@ def create_production(
 	tol = get_tolerance_percent()
 	pin_override = 0
 	if input_weight and abs(variance) > tol:
-		if not verify_admin_pin(pin):
+		# Say which of the two it is. One message covered both "you typed nothing" and
+		# "you typed the wrong PIN", so entering a wrong PIN reported that a PIN was
+		# required — leaving no way to tell a typo from a missing entry.
+		if not str(pin or "").strip():
 			frappe.throw(
-				_("Variance {0}% exceeds tolerance ±{1}%. A valid Admin Override PIN is required.").format(
+				_("Variance {0}% exceeds tolerance ±{1}%. Enter the Admin Override PIN to accept it.").format(
 					variance, tol
 				)
 			)
+		require_admin_pin(pin)
 		pin_override = 1
 
 	prod = frappe.get_doc(
