@@ -83,6 +83,20 @@ def all_companies(txt: str = "", limit: int = 500):
 		for r in rows
 		if r.company_name
 	]
+
+	# A customer with no company row would simply be missing from every company picker —
+	# and since Inward's Company is mandatory, that customer could not be used at all.
+	# Fall back to the customer themselves so the list always covers every customer.
+	covered = {o["party"] for o in out}
+	for p in frappe.get_all("MM Party Master", fields=["name", "party_name"]):
+		if p.name in covered:
+			continue
+		out.append({
+			"company_name": p.party_name or p.name,
+			"party": p.name,
+			"party_name": p.party_name or p.name,
+		})
+	out.sort(key=lambda o: (o["company_name"] or "").lower())
 	txt = (txt or "").strip().lower()
 	if txt:
 		out = [o for o in out if txt in o["company_name"].lower() or txt in (o["party_name"] or "").lower()]

@@ -70,6 +70,11 @@ class MMInward(Document):
 			)
 			if len(companies) == 1:
 				self.company_name = companies[0]
+			elif not companies:
+				# No company on file for this customer — fall back to the customer's own
+				# name rather than blocking the receipt on a mandatory field they have no
+				# way to fill.
+				self.company_name = frappe.db.get_value("MM Party Master", self.party, "party_name") or self.party
 			elif len(companies) > 1:
 				frappe.throw(
 					_("{0} has {1} companies — choose which one this inward is for.").format(
