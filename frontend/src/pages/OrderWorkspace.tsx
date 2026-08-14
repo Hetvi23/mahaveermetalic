@@ -262,7 +262,20 @@ export default function OrderWorkspace() {
       .filter((r) => r.po || shortageOf(r.item) > 0);
   }, [selected, draft, items, orderPos, availByKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Seed the editors from whatever is already on the purchase orders.
+  /**
+   * Seed the purchase editors from the saved purchase orders.
+   *
+   * Keyed on the ORDER and the saved PO values only. It used to run off `purchaseLines`,
+   * which is recomputed on every keystroke in the item form and on every availability
+   * refetch — so a moment after typing a new supplier the effect fired again and replaced
+   * it with the one still on the PO. That is why an edited supplier reverted to the old
+   * one on re-save. Re-seeding now happens only when the order changes or the PO itself
+   * comes back different (i.e. after saving), which is exactly when it should.
+   */
+  const poSignature = useMemo(
+    () => JSON.stringify(orderPos.map((p) => [p.name, p.qty_kg, p.rate, p.supplier])),
+    [orderPos],
+  );
   useEffect(() => {
     setPoEdit(
       Object.fromEntries(
@@ -273,7 +286,9 @@ export default function OrderWorkspace() {
         }]),
       ),
     );
-  }, [purchaseLines]);
+    // purchaseLines is deliberately NOT a dependency — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, poSignature]);
 
   /** Save the purchase details typed into the order view. Weight 0 removes the PO. */
   async function savePurchase() {
