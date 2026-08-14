@@ -27,7 +27,14 @@ type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
   customer_order?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number;
 };
-type Colour = { colour: string; rows: Roll[]; states: string[]; total_weight: number; count: number };
+type Colour = {
+  colour: string; rows: Roll[]; states: string[]; total_weight: number; count: number;
+  /** Weight per source ("Cut" / "In Cutting" / "In Inventory") — the total belongs to no
+   *  single source, so the card shows these instead. */
+  by_state?: Record<string, number>;
+  programmable_weight?: number;
+  programmable_state?: string | null;
+};
 type BoardCard = { name: string; roll_no?: string; shade?: string; cut?: string; status?: string; unfinished?: number; total_net_weight?: number; program_name?: string };
 type OrderOpt = { name: string };
 type OnMachine = { name: string; roll_no?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
@@ -503,7 +510,11 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
               {shown.map((c) => (
                 <div key={c.colour} className={`mm-pick-row ${sel?.colour === c.colour ? "mm-pick-row-active" : ""}`} onClick={() => { setSel(c); setOrder(""); }}>
                   <span className="mm-colour-name">{c.colour}</span>
-                  <span className="mm-prog-card-meta">{sourceLabel(c.states)} · {kg(c.total_weight)} kg</span>
+                  <span className="mm-prog-card-meta">
+                    {c.by_state && Object.keys(c.by_state).length > 0
+                      ? Object.entries(c.by_state).map(([st, w]) => `${sourceLabel([st])} ${kg(w)} kg`).join(" · ")
+                      : `${sourceLabel(c.states)} · ${kg(c.total_weight)} kg`}
+                  </span>
                 </div>
               ))}
             </div>

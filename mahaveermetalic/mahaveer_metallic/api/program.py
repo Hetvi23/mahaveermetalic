@@ -450,16 +450,32 @@ def available_colours(branch=None, location=None):
 		key = (r.get("shade") or "").strip() or "—"
 		g = groups.get(key)
 		if not g:
-			g = groups[key] = {"colour": key, "rows": [], "states": [], "total_weight": 0.0}
+			g = groups[key] = {"colour": key, "rows": [], "states": [], "total_weight": 0.0, "by_state": {}}
 			order.append(key)
 		g["rows"].append(r)
 		if r.get("state") and r["state"] not in g["states"]:
 			g["states"].append(r["state"])
 		g["total_weight"] += float(r.get("weight") or 0)
+		# Weight PER SOURCE as well as the total. The card used to show only the sum, which
+		# belongs to no single source: a colour with an empty cutting and 210 kg in
+		# inventory read "210 kg", and programming then drew from the empty cutting.
+		if r.get("state"):
+			g["by_state"][r["state"]] = round(
+				g["by_state"].get(r["state"], 0.0) + float(r.get("weight") or 0), 3
+			)
 	out = [groups[k] for k in order]
 	for g in out:
 		g["total_weight"] = round(g["total_weight"], 3)
 		g["count"] = len(g["rows"])
+		# The weight actually available to a program: the best source that has any, in the
+		# same order the picker prefers them (patty → in cutting → inventory).
+		rank = {"Cut": 0, "In Cutting": 1, "In Inventory": 2}
+		usable = sorted(
+			(r for r in g["rows"] if float(r.get("weight") or 0) > 0),
+			key=lambda r: rank.get(r.get("state"), 9),
+		)
+		g["programmable_weight"] = round(float(usable[0].get("weight") or 0), 3) if usable else 0.0
+		g["programmable_state"] = usable[0].get("state") if usable else None
 	# Colours with a finished patty first (readiest to program), then the rest.
 	out.sort(key=lambda g: (0 if "Cut" in g["states"] else 1, g["colour"]))
 	return out
