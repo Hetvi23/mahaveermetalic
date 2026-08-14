@@ -427,11 +427,15 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const orders = orderOpts.data?.message ?? [];
   const [order, setOrder] = useState("");
 
-  // best available source row for the chosen colour: patty > in-cutting > inventory
+  // Best available source for the chosen colour: patty > in-cutting > inventory, but a
+  // source with NO weight is never preferred over one that has weight. A cutting saved
+  // with 0 kg used to win on rank alone and the program was then refused for having no
+  // weight, while the same colour sat in inventory with stock on it.
   const bestRow = useMemo(() => {
     if (!sel) return null;
     const rank = (s: string) => (s === "Cut" ? 0 : s === "In Cutting" ? 1 : 2);
-    return [...sel.rows].sort((a, b) => rank(a.state) - rank(b.state))[0] ?? null;
+    const sorted = [...sel.rows].sort((a, b) => rank(a.state) - rank(b.state));
+    return sorted.find((r) => Number(r.weight || 0) > 0) ?? sorted[0] ?? null;
   }, [sel]);
 
   const date = shift === "Night" ? nightDate : dayDate;
@@ -439,6 +443,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   async function submit() {
     setErr(null);
     if (!sel || !bestRow) return setErr("Pick a colour to program.");
+    if (Number(bestRow.weight || 0) <= 0 && bestRow.source_type === "cutting") {
+      return setErr(
+        `${sel.colour} has no weight recorded on its cutting, so there is nothing to ` +
+        `program. Open Cutting and set the net weight for it first.`,
+      );
+    }
     if (!machine) return setErr("Choose a machine.");
     if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     try {
