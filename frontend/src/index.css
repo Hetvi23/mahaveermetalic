@@ -2131,3 +2131,14 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-ow-cell-date { white-space: nowrap; color: var(--mm-text-sec); font-size: 0.8rem; }
 .mm-ow-rates { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mm-ow-rate-sep { color: var(--mm-text-sec); }
+
+/* Order register: totals sit beside the heading; the table stays readable at 10 columns. */
+.mm-orep-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.mm-orep-totals { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--mm-text-sec); }
+.mm-orep-totals b { color: var(--mm-text); font-variant-numeric: tabular-nums; }
+.mm-orep-table th, .mm-orep-table td { white-space: nowrap; }
+.mm-orep-table .mm-suggest-meta { display: block; font-size: 0.7rem; }
+@media print {
+  .mm-orep-table { font-size: 9pt; }
+  .mm-orep-table th, .mm-orep-table td { white-space: normal; }
+}

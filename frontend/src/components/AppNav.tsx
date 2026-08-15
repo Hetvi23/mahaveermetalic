@@ -62,6 +62,7 @@ const SECTIONS: Section[] = [
       { label: "Order Stock", icon: Search, to: "/sales-order/stock" },
       { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
       { label: "Supplier Pending", icon: ArrowUpFromLine, to: "/supplier-pending" },
+      { label: "Order Report", icon: ScrollText, to: "/order-report" },
       { label: "Sales Challan", icon: FileText, to: "/sales-challan" },
       { label: "Challan Voucher", icon: FileText, to: "/sales-challan-voucher" },
     ],
