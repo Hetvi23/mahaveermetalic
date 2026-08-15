@@ -2118,3 +2118,10 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 @media (prefers-reduced-motion: reduce) {
   .mm-rail, .mm-app-content { transition: none; }
 }
+
+/* Purchase not yet received — its own state, distinct from the amber "in progress" of
+   mm-pill-pending, so a row that still needs buying reads apart from one mid-flight. */
+.mm-pill-warn {
+  background: var(--mm-danger-bg); color: var(--mm-danger-fg);
+  border: 1px solid var(--mm-danger-border);
+}

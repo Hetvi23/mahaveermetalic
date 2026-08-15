@@ -97,6 +97,16 @@ function orderStatus(o: Row): { label: string; cls: string } {
   return { label: "Pending", cls: "mm-pill-muted" };
 }
 
+/** Purchase state for the order row. No PO at all is a real state — the order was saved
+ *  without buying — and is worth showing as plainly as the others. */
+function purchaseBadge(p?: { status: string; count: number }): { label: string; cls: string } {
+  if (!p) return { label: "No PO", cls: "mm-pill-muted" };
+  const many = p.count > 1 ? ` ×${p.count}` : "";
+  if (p.status === "Received") return { label: `Received${many}`, cls: "mm-pill-ok" };
+  if (p.status === "Partially Received") return { label: `Partial${many}`, cls: "mm-pill-pending" };
+  return { label: `Pending${many}`, cls: "mm-pill-warn" };
+}
+
 function isAdmin(): boolean {
   const roles =
     (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot?.user?.roles ?? [];
@@ -162,6 +172,16 @@ export default function OrderWorkspace() {
     "mm-so-colours",
   );
   const coloursByOrder = useMemo(() => colourData?.message ?? {}, [colourData]);
+
+  // Purchase status per order. The sales side and the purchase side of the same order
+  // were only visible on separate screens; this puts them on one row.
+  type PORollup = { status: string; po: string; supplier?: string; qty_kg?: number; count: number };
+  const { data: poStatusData, mutate: mutatePoStatus } = useFrappeGetCall<{ message: Record<string, PORollup> }>(
+    `${SO_API_PATH}.purchase_status_by_order`,
+    undefined,
+    "mm-so-po-status",
+  );
+  const poByOrder = useMemo(() => poStatusData?.message ?? {}, [poStatusData]);
 
   const { data: doc, mutate: mutateDoc } = useFrappeGetDoc<Record<string, unknown>>("MM Sales Order", selected || undefined);
 
@@ -306,6 +326,7 @@ export default function OrderWorkspace() {
       // against stock that arrived after the purchase order was raised.
       await syncShortagePos({ sales_order: selected, lines: JSON.stringify(lines), clamp_to_shortage: 0 });
       await mutatePos();
+      await mutatePoStatus();
       setFlash(lines.length ? "Purchase details saved." : "Purchase order removed.");
       toast(lines.length ? "Purchase saved" : "Purchase order removed");
     } catch (e) {
@@ -555,6 +576,7 @@ export default function OrderWorkspace() {
         await mutate();
         await mutateDoc();
         await mutatePos();
+      await mutatePoStatus();
         setFlash(withPo ? "Saved — purchase order raised, pending admin approval." : "Saved — pending admin approval.");
         toast(`Order ${selected} saved`);
         return;
@@ -909,6 +931,7 @@ export default function OrderWorkspace() {
                   <th>Color</th>
                   <th>Delivery</th>
                   <th className="mm-ow-fulfil-col">Inwards / Required</th>
+                  <th>Purchase</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -933,6 +956,17 @@ export default function OrderWorkspace() {
                           <span className="mm-open-bar"><span className="mm-open-bar-fill" style={{ width: `${pct}%` }} /></span>
                           <span className="mm-ow-fulfil-txt">{inw.toLocaleString()}/{ordered.toLocaleString()} · req {req.toLocaleString()}</span>
                         </div>
+                      </td>
+                      <td>
+                        {(() => {
+                          const p = poByOrder[o.name];
+                          const pb = purchaseBadge(p);
+                          return (
+                            <span className={`mm-pill ${pb.cls}`} title={p ? `${p.po}${p.supplier ? ` · ${p.supplier}` : ""}${p.qty_kg ? ` · ${p.qty_kg} kg` : ""}` : "No purchase order raised"}>
+                              {pb.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>
                         <span className={`mm-pill ${st.cls}`}>{st.label}</span>

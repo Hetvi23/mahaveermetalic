@@ -383,3 +383,48 @@ def order_colours(orders=None):
 		if r.color_name not in bucket:
 			bucket.append(r.color_name)
 	return out
+
+
+@frappe.whitelist()
+def purchase_status_by_order(orders=None):
+	"""Purchase-order status per Sales Order, for the order list's Purchase column.
+
+	The sales side and the purchase side of the same order were only visible on separate
+	screens, so telling whether an order's material had actually been bought meant opening
+	the Purchase Orders tab and matching by hand. One call carries it for the whole list.
+
+	An order can hold more than one PO (one per short line), so the rollup takes the WORST
+	state — a single Pending line means the order is not covered, whatever the others say.
+	"""
+	import json as _json
+
+	if isinstance(orders, str):
+		orders = _json.loads(orders or "[]")
+
+	filters = {"docstatus": ["<", 2]}
+	if orders:
+		filters["sales_order"] = ["in", orders]
+	fields = ["name", "sales_order", "qty_kg", "supplier", "docstatus"]
+	has_status = frappe.db.has_column("MM Purchase Order", "status")
+	if has_status:
+		fields.append("status")
+
+	rank = {"Pending": 0, "Partially Received": 1, "Received": 2}
+	out = {}
+	for po in frappe.get_all("MM Purchase Order", filters=filters, fields=fields):
+		if not po.sales_order:
+			continue
+		status = (po.get("status") if has_status else None) or "Pending"
+		cur = out.get(po.sales_order)
+		if cur is None or rank.get(status, 0) < rank.get(cur["status"], 0):
+			out[po.sales_order] = {
+				"status": status,
+				"po": po.name,
+				"qty_kg": po.qty_kg,
+				"supplier": po.supplier,
+				"count": (cur or {}).get("count", 0) + 1,
+				"submitted": bool(po.docstatus == 1),
+			}
+		else:
+			cur["count"] = cur.get("count", 0) + 1
+	return out
