@@ -130,7 +130,8 @@ export default function BobbinReportPage() {
                     <td>{row.voucher_no || "—"}</td>
                     <td>{row.voucher_type || "—"}</td>
                     <td>{row.bobbin || "—"}</td>
-                    <td>{row.note || "—"}</td>
+                    {/* Free text — let it wrap rather than stretch the register sideways. */}
+                    <td className="mm-cell-wrap">{row.note || "—"}</td>
                     <td className={`mm-num ${row.qty < 0 ? "mm-var-over" : ""}`}>{row.qty > 0 ? `+${row.qty}` : row.qty}</td>
                     <td className="mm-num">{row.box || "—"}</td>
                     <td className="mm-num">{row.balance_qty.toLocaleString()}</td>

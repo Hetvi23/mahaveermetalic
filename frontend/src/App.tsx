@@ -5,8 +5,6 @@ import AppNav, { isSupplierOnly } from "./components/AppNav";
 import Dashboard from "./pages/Dashboard";
 import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
-import SalesOrderStock from "./pages/SalesOrderStock";
-import SupplierPending from "./pages/SupplierPending";
 import CuttingWorklist from "./pages/CuttingWorklist";
 import ProgramScreen from "./pages/ProgramScreen";
 import ProductionScreen from "./pages/ProductionScreen";
@@ -16,6 +14,7 @@ import BobbinReportPage from "./pages/BobbinReportPage";
 import JobChallanPage from "./pages/JobChallanPage";
 import JobReportPage from "./pages/JobReportPage";
 import OrderReportPage from "./pages/OrderReportPage";
+import InwardReportPage from "./pages/InwardReportPage";
 import SalesChallanVoucher from "./pages/SalesChallanVoucher";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
@@ -43,9 +42,9 @@ function AuthedShell() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // Supplier logins only get their pending view — keep them out of the ops home.
+  // Supplier logins only get their own purchase orders — keep them out of the ops home.
   if (isSupplierOnly() && location.pathname === "/") {
-    return <Navigate to="/supplier-pending" replace />;
+    return <Navigate to="/purchase-order" replace />;
   }
 
   // Every screen uses the full width now; forms self-center via their own .mm-page cap,
@@ -103,6 +102,7 @@ export default function App() {
             <Route path="/job-in" element={<JobChallanPage type="Job In" />} />
             <Route path="/job-report" element={<JobReportPage />} />
             <Route path="/order-report" element={<OrderReportPage />} />
+            <Route path="/inward-report" element={<InwardReportPage />} />
             <Route path="/sales-challan-voucher" element={<SalesChallanVoucher />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
             <Route path="/inward" element={<InwardWorkspace />} />
@@ -127,8 +127,6 @@ export default function App() {
             {DOC_REGISTRY.map((meta) => (
               <Route key={`${meta.slug}-edit`} path={`${meta.routeBase}/:name`} element={<DocFormPage meta={meta} />} />
             ))}
-            <Route path="/sales-order/stock" element={<SalesOrderStock />} />
-            <Route path="/supplier-pending" element={<SupplierPending />} />
             <Route path="/tools/reminders-chat" element={<TaskReminderChatPage />} />
           </Route>
         </Routes>

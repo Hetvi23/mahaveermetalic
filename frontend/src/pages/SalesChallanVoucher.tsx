@@ -10,6 +10,22 @@ import SearchSelect from "@/components/SearchSelect";
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * The papers this screen can issue. The type picked here decides the numbering series —
+ * the prefixes are shown so the operator can see which book the number will come from.
+ * The server holds the authoritative map (api/challan.py SERIES) and re-derives it from
+ * the type, so a stale prefix here can only ever mislabel the hint, never misnumber.
+ *
+ * Job Challan sends material to a worker, so it does not close the customer's order;
+ * the other three do.
+ */
+const CHALLAN_TYPES = [
+  { value: "Sales", label: "Sales Chalan", series: "MM-SC-" },
+  { value: "Job Challan", label: "Job Challan", series: "MM-JC-" },
+  { value: "Challan", label: "Challan", series: "MM-CH-" },
+  { value: "Delivery Challan", label: "Delivery Challan", series: "MM-DC-" },
+];
+
 type BoxRow = {
   box: string; production: string; posting_date?: string; item?: string; cut?: string;
   customer_order?: string; barcode?: string; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
@@ -33,6 +49,7 @@ type Line = {
 export default function SalesChallanVoucher() {
   const [party, setParty] = useState("");
   const [order, setOrder] = useState("");
+  const [challanType, setChallanType] = useState("Sales");
   const [challanNo, setChallanNo] = useState("");
   const [date, setDate] = useState(today());
   const [remark, setRemark] = useState("");
@@ -122,12 +139,14 @@ export default function SalesChallanVoucher() {
     try {
       const res = await createChallan({
         party, sales_order: order || undefined, challan_date: date, remark: remark || undefined,
+        challan_type: challanType,
         job_work: jobWork ? 1 : 0, challan_no: challanNo || undefined,
         boxes: JSON.stringify(lines.filter((l) => l.kind === "box").map((l) => l.ref)),
         rolls: JSON.stringify(lines.filter((l) => l.kind === "roll").map((l) => l.ref)),
       });
       const name = (res as { message?: { challan?: string } })?.message?.challan;
-      toast(`Sales Challan ${name || ""} created`);
+      const typeLabel = CHALLAN_TYPES.find((t) => t.value === challanType)?.label ?? challanType;
+      toast(`${typeLabel} ${name || ""} created`);
       setLines([]); setChallanNo(""); setRemark("");
       if (name) {
         setLastChallan(name);
@@ -165,8 +184,21 @@ export default function SalesChallanVoucher() {
       <section className="mm-card mm-card-pad">
         <div className="mm-scv-grid">
           <label className="mm-field">
-            <span className="mm-field-label">Sale Chalan *</span>
-            <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)} placeholder="Auto / number" />
+            <span className="mm-field-label">
+              Chalan Type *
+              <span className="mm-muted"> · series {CHALLAN_TYPES.find((t) => t.value === challanType)?.series}</span>
+            </span>
+            <SearchSelect
+              noClear
+              value={challanType}
+              onChange={setChallanType}
+              options={CHALLAN_TYPES.map((t) => ({ value: t.value, label: t.label, meta: `series ${t.series}` }))}
+            />
+          </label>
+          <label className="mm-field">
+            <span className="mm-field-label">Manual Chalan No</span>
+            <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)}
+              placeholder="Blank — numbered by the series" />
           </label>
           <PartyPicker label="Customer *" value={party} required onChange={(v) => { setParty(v); setOrder(""); }} />
           <label className="mm-field">

@@ -11,7 +11,6 @@ import {
   MoreHorizontal,
   LogOut,
   X,
-  Search,
   ClipboardList,
   ArrowUpFromLine,
   ScrollText,
@@ -59,12 +58,10 @@ const SECTIONS: Section[] = [
     label: "Orders & Purchase",
     items: [
       { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
-      { label: "Order Stock", icon: Search, to: "/sales-order/stock" },
       { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
-      { label: "Supplier Pending", icon: ArrowUpFromLine, to: "/supplier-pending" },
       { label: "Order Report", icon: ScrollText, to: "/order-report" },
       { label: "Sales Challan", icon: FileText, to: "/sales-challan" },
-      { label: "Challan Voucher", icon: FileText, to: "/sales-challan-voucher" },
+      { label: "Sales Challan Voucher", icon: FileText, to: "/sales-challan-voucher" },
     ],
   },
   {
@@ -72,6 +69,7 @@ const SECTIONS: Section[] = [
     label: "Shop Floor",
     items: [
       { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
+      { label: "Inward Report", icon: ScrollText, to: "/inward-report" },
       { label: "Cutting", icon: Scissors, to: "/cutting" },
       { label: "Program", icon: Monitor, to: "/program" },
       { label: "Production", icon: Factory, to: "/production" },
@@ -190,11 +188,10 @@ export default function AppNav() {
     nav("/login", { replace: true });
   };
 
+  // A supplier login has exactly one screen: its own purchase orders, scoped server-side
+  // by po_permission_query. (It used to land on the pending summary, now removed.)
   const primary: NavItem[] = supplier
-    ? [
-        { label: "Home", icon: Home, to: "/supplier-pending" },
-        { label: "My POs", icon: ClipboardList, to: "/purchase-order" },
-      ]
+    ? [{ label: "My POs", icon: ClipboardList, to: "/purchase-order" }]
     : PRIMARY;
 
   const displayName = currentUser ? currentUser.split("@")[0].replace(/[._]/g, " ") : "User";
@@ -225,7 +222,8 @@ export default function AppNav() {
         </div>
 
         <nav className="mm-rail-nav">
-          <RailLink item={{ label: "Home", icon: Home, to: supplier ? "/supplier-pending" : "/" }} pathname={loc.pathname} />
+          {/* No "Home" for suppliers — their group below IS their only destination. */}
+          {!supplier && <RailLink item={{ label: "Home", icon: Home, to: "/" }} pathname={loc.pathname} />}
           {(supplier
             ? [{ key: "s", label: "Supplier", items: [{ label: "My Purchase Orders", icon: ClipboardList, to: "/purchase-order" }] }]
             : SECTIONS

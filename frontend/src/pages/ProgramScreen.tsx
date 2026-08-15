@@ -13,7 +13,8 @@ const CUT_API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const today = () => new Date().toISOString().slice(0, 10);
 const tomorrow = () => new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
-const SHIFTS = ["Day", "Night"] as const;
+// Night first everywhere it is listed — a shift pair is one night plus the NEXT day.
+const SHIFTS = ["Night", "Day"] as const;
 type ShiftView = "Day" | "Night" | "Combined";
 
 type Machine = { name: string; machine_no: string; machine_name?: string; cut?: string; closed?: number; active_programs?: number };
@@ -37,7 +38,7 @@ type Colour = {
   programmable_state?: string | null;
 };
 type BoardCard = { name: string; roll_no?: string; shade?: string; cut?: string; status?: string; unfinished?: number; total_net_weight?: number; program_name?: string };
-type OrderOpt = { name: string };
+type OrderOpt = { name: string; party?: string; party_name?: string; delivery_date?: string; required_weight?: number };
 type OnMachine = { name: string; roll_no?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
@@ -133,7 +134,9 @@ export default function ProgramScreen() {
     [pattyColours, pattyCutFilter, pattyColourFilter],
   );
 
-  const shiftCols: string[] = shiftView === "Combined" ? ["Day", "Night"] : [shiftView];
+  // Night first: the working day starts with the night shift and runs into the NEXT
+  // calendar day's day shift, so reading the board left to right is reading it in order.
+  const shiftCols: string[] = shiftView === "Combined" ? ["Night", "Day"] : [shiftView];
   const shiftDate = (s: string) => (s === "Night" ? nightDate : dayDate);
 
   function ProgCard({ p }: { p: Program }) {
@@ -169,15 +172,15 @@ export default function ProgramScreen() {
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Program</h1>
-          <p className="mm-page-sub">Colours in cutting &amp; finished patties feed the machines. Plan Day and Night side by side.</p>
+          <p className="mm-page-sub">Colours in cutting &amp; finished patties feed the machines. The night shift leads; the day shift beside it is the next day.</p>
         </div>
         <div className="mm-ws-toolbar-right">
-          <label className="mm-field-inline"><span className="mm-field-label-inline">☀ Day</span>
-            <input className="mm-input mm-input-compact" type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} /></label>
           <label className="mm-field-inline"><span className="mm-field-label-inline">🌙 Night</span>
             <input className="mm-input mm-input-compact" type="date" value={nightDate} onChange={(e) => setNightDate(e.target.value)} /></label>
+          <label className="mm-field-inline"><span className="mm-field-label-inline">☀ Day</span>
+            <input className="mm-input mm-input-compact" type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} /></label>
           <div className="mm-seg">
-            {(["Combined", "Day", "Night"] as ShiftView[]).map((s) => (
+            {(["Combined", "Night", "Day"] as ShiftView[]).map((s) => (
               <button key={s} className={`mm-seg-btn ${shiftView === s ? "mm-seg-btn-active" : ""}`} onClick={() => setShiftView(s)}>{s}</button>
             ))}
           </div>
@@ -410,7 +413,8 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const [search, setSearch] = useState("");
   const [sel, setSel] = useState<Colour | null>(null);
   const [machine, setMachine] = useState(presetMachine ?? machines.find((m) => !m.closed)?.name ?? "");
-  const [shift, setShift] = useState<string>(presetShift ?? "Day");
+  // Adding from the toolbar (no cell clicked) starts on the shift that comes first.
+  const [shift, setShift] = useState<string>(presetShift ?? "Night");
   const [batches, setBatches] = useState<number | "">(1);
   const [remark, setRemark] = useState("");
   const [jobWork, setJobWork] = useState(false);
@@ -427,12 +431,6 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const q = search.trim().toLowerCase();
   const shown = q ? colours.filter((c) => c.colour.toLowerCase().includes(q)) : colours;
   const orderCtx = sel?.rows[0]?.customer_order || "";
-  const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
-    `${API}.order_options_for_party`,
-    sel ? { customer_order: orderCtx } : undefined,
-    sel ? `pg-orders-${orderCtx}` : undefined,
-  );
-  const orders = orderOpts.data?.message ?? [];
   const [order, setOrder] = useState("");
 
   // Best available source for the chosen colour: patty > in-cutting > inventory, but a
@@ -445,6 +443,18 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     const sorted = [...sel.rows].sort((a, b) => rank(a.state) - rank(b.state));
     return sorted.find((r) => Number(r.weight || 0) > 0) ?? sorted[0] ?? null;
   }, [sel]);
+
+  // The order dropdown is offered for BOTH sources. A patty already carries its cut, so
+  // only orders asking for that cut are worth listing; an inventory roll has no cut until
+  // it is cut, so it sees every open order. (It used to be keyed off the selection's own
+  // order, which a roll never has — so the list came up empty on every roll.)
+  const pattyCut = bestRow?.source_type === "cutting" ? bestRow.cut || "" : "";
+  const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
+    `${API}.order_options`,
+    { customer_order: orderCtx || undefined, cut: pattyCut || undefined },
+    `pg-orders-${orderCtx}-${pattyCut}`,
+  );
+  const orders = orderOpts.data?.message ?? [];
 
   const date = shift === "Night" ? nightDate : dayDate;
 
@@ -542,9 +552,20 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
                 options={SHIFTS.map((s) => ({ value: s, label: `${s} · ${s === "Night" ? nightDate : dayDate}` }))} onChange={setShift} />
             </label>
             <label className="mm-field">
-              <span className="mm-field-label">Customer Order</span>
+              <span className="mm-field-label">
+                Customer Order
+                {pattyCut ? <span className="mm-muted"> · cut {pattyCut}</span> : null}
+              </span>
+              {/* Id AND party on the closed field — the floor picks an order by who it is
+                  for, not by its number. */}
               <SearchSelect value={order} placeholder={sel?.rows[0]?.customer_order || "—"}
-                options={orders.map((o) => ({ value: o.name, label: o.name }))} onChange={setOrder} />
+                options={orders.map((o) => ({
+                  value: o.name,
+                  label: `${o.name}${o.party_name || o.party ? ` · ${o.party_name || o.party}` : ""}`,
+                  meta: [o.delivery_date ? `due ${o.delivery_date}` : "",
+                         o.required_weight ? `${kg(o.required_weight)} kg required` : ""].filter(Boolean).join(" · "),
+                }))}
+                onChange={setOrder} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Total Batches *</span>

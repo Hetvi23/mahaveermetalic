@@ -75,10 +75,16 @@ function copy(d: ChallanPrintData, label: string): string {
         .join("")}</table>`
     : "";
 
+  // The type names the paper. Types that already say "Challan" (Delivery Challan, Job
+  // Challan, plain Challan) must not have another one appended — "Delivery Challan
+  // Challan" is what a blind `${type} Challan` printed.
+  const type = (d.challan_type || "Sales").trim();
+  const heading = /challan/i.test(type) ? type : `${type} Challan`;
+
   return `<section class="copy">
     <div class="hd">
       <div class="brand">MAHAVIR METALIC</div>
-      <div class="ttl">${esc(d.challan_type || "Sales")} Challan<span class="lbl">${esc(label)}</span></div>
+      <div class="ttl">${esc(heading)}<span class="lbl">${esc(label)}</span></div>
     </div>
     <table class="meta">
       <tr>

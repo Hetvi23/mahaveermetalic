@@ -835,9 +835,11 @@ export default function OrderWorkspace() {
                 </span>
               </div>
               <div className="mm-table-scroll">
-                <table className="mm-table mm-table-dense mm-ow-items-table">
+                <table className="mm-table mm-table-dense mm-ow-items-table mm-ow-po-table">
                   <thead>
-                    <tr><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Supplier</th></tr>
+                    {/* Short labels — the card is already headed "Purchase order", and the
+                        orders list next to it reads "P.Rate / S.Rate" the same way. */}
+                    <tr><th className="mm-num">P. Weight</th><th className="mm-num">P. Rate</th><th>Supplier</th></tr>
                   </thead>
                   <tbody>
                     {purchaseLines.map((r) => {
@@ -939,7 +941,9 @@ export default function OrderWorkspace() {
                   <th>Party</th>
                   <th>Company</th>
                   <th>Color</th>
-                  <th className="mm-num">P.Rate / S.Rate</th>
+                  {/* The heading was wider than any rate pair under it, and in a ten-column
+                      list that width comes straight out of the party and colour names. */}
+                  <th className="mm-num" title="Purchase rate / Sale rate">P/S Rate</th>
                   <th>Delivery</th>
                   <th className="mm-ow-fulfil-col">Inwards / Required</th>
                   <th>Purchase</th>
@@ -1020,7 +1024,7 @@ export default function OrderWorkspace() {
               <div className="mm-table-scroll">
                 <table className="mm-table mm-table-dense">
                   <thead>
-                    <tr><th>Color</th><th className="mm-num">Short</th><th className="mm-num">Purchase weight</th><th className="mm-num">Purchase rate</th><th>Supplier</th></tr>
+                    <tr><th>Color</th><th className="mm-num">Short</th><th className="mm-num">P. Weight</th><th className="mm-num">P. Rate</th><th>Supplier</th></tr>
                   </thead>
                   <tbody>
                     {poSheet.map((it, i) => {

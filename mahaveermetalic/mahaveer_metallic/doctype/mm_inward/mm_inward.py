@@ -131,7 +131,7 @@ class MMInward(Document):
 			from `tabMM Sales Challan` c
 			left join `tabMM Sales Challan Item` ci on ci.parent = c.name
 			where c.docstatus = 1
-				and ifnull(c.challan_type, 'Sales') = 'Sales'
+				and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
 				and (c.sales_order in %(orders)s or ci.sales_order in %(orders)s)
 			limit 1
 			""",

@@ -25,6 +25,7 @@
   "total_net_weight",
   "per_patty_weight",
   "lot",
+  "planned",
   "closed",
   "close_mode",
   "closed_on",
@@ -164,6 +165,14 @@
    "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
   },
   {
+   "fieldname": "planned",
+   "fieldtype": "Check",
+   "label": "Planned Cut",
+   "read_only": 1,
+   "default": "0",
+   "description": "Placeholder for a roll-wise program: the roll is not bound yet, so zero weight is allowed until it is."
+  },
+  {
    "fieldname": "closed",
    "fieldtype": "Check",
    "label": "Closed",
@@ -198,7 +207,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-02 15:00:00.000000",
+ "modified": "2026-08-15 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Cutting",

@@ -150,7 +150,7 @@ export default function StockLedgerScreen() {
                       <td className="mm-num mm-in">{r.in_weight ? n(r.in_weight) : ""}</td>
                       <td className="mm-num mm-out">{r.out_weight ? n(r.out_weight) : ""}</td>
                       <td className="mm-num"><strong>{n(r.balance_weight)}</strong></td>
-                      <td>{r.customer_order || (r.remarks ? <span className="mm-muted">{r.remarks}</span> : "—")}</td>
+                      <td className="mm-cell-wrap">{r.customer_order || (r.remarks ? <span className="mm-muted">{r.remarks}</span> : "—")}</td>
                     </tr>
                   );
                 })}

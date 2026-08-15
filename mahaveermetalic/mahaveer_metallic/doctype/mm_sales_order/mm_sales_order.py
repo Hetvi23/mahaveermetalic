@@ -220,7 +220,7 @@ def _has_dispatch(order) -> bool:
 			select 1 from `tabMM Sales Challan` c
 			left join `tabMM Sales Challan Item` ci on ci.parent = c.name
 			where c.docstatus = 1
-				and ifnull(c.challan_type, 'Sales') = 'Sales'
+				and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
 				and (c.sales_order = %(o)s or ci.sales_order = %(o)s)
 			limit 1
 			""",
@@ -521,7 +521,7 @@ def orders_with_dispatch(orders):
 		from `tabMM Sales Challan` c
 		left join `tabMM Sales Challan Item` ci on ci.parent = c.name
 		where c.docstatus = 1
-			and ifnull(c.challan_type, 'Sales') = 'Sales'
+			and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
 			and (c.sales_order in %(o)s or ci.sales_order in %(o)s)
 		""",
 		{"o": tuple(orders)},

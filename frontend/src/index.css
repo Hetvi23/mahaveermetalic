@@ -859,7 +859,8 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-ow { display: flex; flex-direction: column; gap: 1rem; }
 .mm-ow-grid {
   display: grid;
-  grid-template-columns: minmax(420px, 520px) 1fr;
+  /* minmax(0, 1fr): the list scrolls inside its card instead of pushing the page wide. */
+  grid-template-columns: minmax(400px, 480px) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -889,10 +890,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-ow-search { flex: 1; min-width: 160px; }
 .mm-ow-table-scroll { max-height: calc(100vh - 220px); overflow: auto; }
 .mm-ow-cell-order { font-weight: 700; color: var(--mm-accent); white-space: nowrap; }
-.mm-ow-fulfil-col { min-width: 180px; }
+.mm-ow-fulfil-col { min-width: 0; }
 .mm-ow-fulfil { display: flex; align-items: center; gap: 0.5rem; }
-.mm-ow-fulfil .mm-open-bar { flex: 1; min-width: 60px; }
-.mm-ow-fulfil-txt { font-size: 0.72rem; color: var(--mm-text-sec); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mm-ow-fulfil .mm-open-bar { flex: 1; min-width: 34px; }
+.mm-ow-fulfil-txt { font-size: 0.68rem; color: var(--mm-text-sec); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* Filter chips */
 .mm-chips { display: inline-flex; gap: 0.3rem; }
@@ -936,13 +937,76 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* A cancelled inward stays listed (its stock was reversed) but reads as inactive. */
 .mm-row-cancelled { opacity: 0.62; }
 .mm-row-cancelled td:not(:last-child) { text-decoration: line-through; text-decoration-color: var(--mm-border-dark); }
-.mm-iw-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.25rem; align-items: start; }
+.mm-iw-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
 .mm-iw-grid-single { grid-template-columns: 1fr; }
 .mm-iw-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }
 .mm-iw-sec-head .mm-panel-title { display: flex; align-items: center; gap: 0.35rem; margin: 0; }
 .mm-iw-recent { margin-top: 1rem; }
 .mm-iw-recent-head-actions { display: flex; align-items: center; gap: 0.5rem; }
 .mm-iw-num { width: 80px; text-align: right; }
+
+/* ── Inward entry grid ─────────────────────────────────────
+   Modelled on the inward screen the floor already knows: header fields on top, then one
+   full-width row per roll with everything on a single line, and the running totals +
+   Submit pinned to the bottom of the grid so they are in view however long the list runs. */
+.mm-iw-head-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.85rem; align-items: end; }
+.mm-iw-head-grid .mm-so-field-wide { grid-column: 1 / -1; }
+.mm-iw-fetch { display: flex; gap: 0.4rem; }
+.mm-iw-fetch .mm-input { flex: 1; min-width: 0; }
+.mm-iw-fetch .mm-btn-secondary { flex: 0 0 auto; white-space: nowrap; }
+
+.mm-iw-items-card { padding: 0; overflow: hidden; }
+.mm-iw-band {
+  background: var(--mm-primary); color: #fff; font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; padding: 0.6rem 0.9rem;
+}
+.mm-iw-grid-table { width: 100%; }
+.mm-iw-grid-table th, .mm-iw-grid-table td { white-space: nowrap; vertical-align: middle; }
+.mm-iw-grid-table td { padding: 0.35rem 0.5rem; }
+.mm-iw-grid-table .mm-input { min-width: 0; width: 100%; }
+.mm-iw-c-no { width: 42px; color: var(--mm-text-sec); }
+.mm-iw-c-jw { width: 78px; text-align: center; }
+.mm-iw-c-chalan { width: 130px; }
+.mm-iw-c-roll { width: 150px; }
+.mm-iw-c-qty { width: 210px; }
+.mm-iw-c-act { width: 84px; }
+.mm-iw-jw-box { width: 17px; height: 17px; accent-color: var(--mm-accent); cursor: pointer; }
+/* Qty and Weight read as one measurement, so they sit in one control with the bulk-add
+   button welded to the end of it. */
+.mm-iw-qtypair { display: flex; align-items: stretch; gap: 0.3rem; }
+.mm-iw-qtypair .mm-input { text-align: right; }
+.mm-iw-cart, .mm-iw-add {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; border: 1px solid transparent; border-radius: 8px;
+  background: var(--mm-accent); color: #fff; cursor: pointer;
+}
+.mm-iw-cart:hover, .mm-iw-add:hover { background: var(--mm-accent-fg); }
+.mm-iw-add { height: 30px; }
+.mm-iw-rowacts { display: flex; align-items: center; gap: 0.3rem; }
+
+.mm-iw-footer {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.7rem 0.9rem; border-top: 1px solid var(--mm-border);
+  background: var(--mm-bg-warm, var(--mm-accent-bg));
+}
+.mm-iw-total {
+  padding: 0.4rem 0.8rem; border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius-sm);
+  background: var(--mm-card); font-size: 0.82rem; font-variant-numeric: tabular-nums;
+}
+.mm-iw-footer .mm-check { margin-left: auto; }
+.mm-iw-submit { min-width: 150px; justify-content: center; }
+
+.mm-iw-bulk-line { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.mm-iw-bulk-line .mm-input { flex: 1; min-width: 0; text-align: right; }
+.mm-iw-bulk-spacer { width: 26px; flex: 0 0 26px; }
+.mm-iw-bulk-add { height: 32px; margin-bottom: 0.6rem; }
+
+@media (max-width: 900px) {
+  .mm-iw-c-qty { width: 180px; }
+  .mm-iw-footer .mm-check { margin-left: 0; }
+  .mm-iw-submit { flex: 1 1 100%; }
+}
 @media (max-width: 1000px) {
   .mm-iw-entry-grid { grid-template-columns: 1fr; }
   .mm-iw-grid { grid-template-columns: 1fr; }
@@ -1159,9 +1223,36 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-table-wrap { border-radius: var(--mm-radius-sm); overflow: hidden; }
 .mm-table-wrap-elevated { border: 1px solid var(--mm-border); background: var(--mm-card); }
 .mm-table-scroll { overflow-x: auto; }
+
+/* ── Table column sizing ───────────────────────────────────
+   Dense list tables were squeezing text onto two and three lines — a party name broke
+   mid-name while the id, date and progress columns sat on more width than their content
+   needed.
+
+   The cause is not "some column is too greedy": a grid `1fr` track takes the table's
+   MIN-CONTENT as its floor, and a table's min-content is the sum of each column's
+   longest word. So every column was already at its minimum, the pane was sized to that
+   sum, and shrinking one column only shrank the pane — it never handed the space to the
+   name. Trimming greedy columns alone could not have fixed this.
+
+   So: rows are kept on one line (min-content becomes the whole string, and the columns
+   get the width their data actually needs), and .mm-table-scroll — which is already an
+   overflow-x container — does the scrolling on the rare screen too narrow to hold them.
+   Cells that deliberately stack a second line still do: their sub-line is a block
+   element (.mm-suggest-meta), which nowrap does not affect. */
+.mm-table-scroll .mm-table td, .mm-table-scroll .mm-table th { white-space: nowrap; }
+/* Opt back in where a cell is genuinely prose. */
+.mm-table .mm-cell-wrap { white-space: normal; }
+
+/* Ids, dates and numbers take the width of their content and no more, so any slack goes
+   to the text columns instead of padding out an "ORDER" or "QTY" heading. */
+.mm-table td.mm-num, .mm-table th.mm-num,
+.mm-table .mm-ow-cell-order, .mm-table .mm-ow-cell-date { width: 1%; }
 .mm-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .mm-table th, .mm-table td { text-align: left; padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--mm-border); }
-.mm-table th { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: #fff; font-weight: 700; background: var(--mm-primary); }
+/* Tighter than the data it heads: a wide-tracked "INWARDS / REQUIRED" was setting the
+   column width all by itself. */
+.mm-table th { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.02em; color: #fff; font-weight: 700; background: var(--mm-primary); }
 .mm-table-hover tbody tr:hover { background: var(--mm-accent-bg); }
 .mm-table-rows tbody tr:last-child td { border-bottom: none; }
 .mm-td-actions { white-space: nowrap; text-align: right; }
@@ -1259,11 +1350,20 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-suggest-muted { padding: 0.4rem 0.7rem; color: var(--mm-text-sec); font-size: 0.8rem; }
 /* Portalled menus (AnchoredMenu) are pinned to the field with fixed coordinates, so they
    escape any scrolling ancestor that would otherwise clip them. Inline left/top/width win
-   over the absolute defaults; `right`/`margin` must be cleared or they fight the width. */
-.mm-suggest-fixed { position: fixed; right: auto; margin: 0; z-index: 300; }
+   over the absolute defaults; `right`/`margin` must be cleared or they fight the width.
+   `top`/`bottom` MUST reset too: a menu that opens upward sets only `bottom`, and the
+   absolute default `top: 100%` — the bottom of the viewport, once positioning is fixed —
+   then over-constrained the box to zero height, i.e. the list silently never appeared.
+   Two classes so this beats the later single-class `.mm-suggest { z-index: 80 }`.
+   `--mm-menu-space` is the room the field actually has; the list never grows past it. */
+.mm-suggest.mm-suggest-fixed {
+	position: fixed; right: auto; top: auto; bottom: auto; margin: 0; z-index: 300;
+	max-height: min(200px, var(--mm-menu-space, 200px));
+	overscroll-behavior: contain;
+}
 /* Pre-save purchase dialog actions (create PO + save / save only / cancel). */
 /* ── Job Out / Job In: pick on the left, build the challan on the right ── */
-.mm-job-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1rem; align-items: start; }
+.mm-job-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 @media (max-width: 1180px) { .mm-job-grid { grid-template-columns: 1fr; } }
 .mm-job-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 /* The stock list is long; keep the challan in view while it is scrolled. */
@@ -1323,8 +1423,24 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* Size cell only — must not catch the colour LinkField's (typeless) input. */
 .mm-ow-items-table td:not(.mm-ow-cell-link) input[type="text"],
 .mm-ow-items-table td:not(.mm-ow-cell-link) input:not([type]) { width: 74px; }
+
+/* Purchase order block: three fields, two of them short numbers. Full-width headings
+   ("PURCHASE WEIGHT") stretched those two columns across the card, so a 2,400 sat a
+   long way from the label it belonged to and the supplier picker — the one control
+   that needs room — was left with a 74px box. Short labels in a smaller cap, fixed
+   narrow number columns, and every remaining pixel to the supplier. */
+.mm-ow-po-table { table-layout: fixed; }
+.mm-ow-po-table th { font-size: 0.6rem; letter-spacing: 0.02em; padding: 0.35rem 0.5rem; }
+.mm-ow-po-table td { padding: 0.4rem 0.5rem; }
+.mm-ow-po-table th:nth-child(1), .mm-ow-po-table td:nth-child(1) { width: 96px; }
+.mm-ow-po-table th:nth-child(2), .mm-ow-po-table td:nth-child(2) { width: 88px; }
+.mm-ow-po-table td input[type="number"] { width: 100%; }
+.mm-ow-po-table td:nth-child(3) .mm-link-wrap { width: 100%; }
+.mm-ow-po-table td:nth-child(3) input:not([type]) { width: 100%; }
 .mm-suggest-none { display: flex; flex-direction: column; gap: 0.1rem; border-bottom: 1px solid var(--mm-border); }
 .mm-suggest-rich { max-height: 280px; }
+/* Two-line rows need more height — but still never more than the screen has left. */
+.mm-suggest-rich.mm-suggest-fixed { max-height: min(280px, var(--mm-menu-space, 280px)); }
 .mm-suggest-rich .mm-suggest-item { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.7rem; }
 .mm-suggest-rich .mm-suggest-item strong { font-size: 0.82rem; }
 .mm-suggest-meta { font-size: 0.72rem; color: var(--mm-text-sec); }
@@ -1803,7 +1919,7 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 @media (prefers-reduced-motion: reduce) { .mm-sk::after { animation: none; } }
 
 /* ── Program: feeders (top, colour-first) + Day/Night shift board (2026-07-26) ── */
-.mm-feeders { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.4rem; }
+.mm-feeders { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; margin-bottom: 1.4rem; }
 @media (max-width: 900px) { .mm-feeders { grid-template-columns: 1fr; } }
 .mm-colour-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: 280px; overflow-y: auto; }
 .mm-colour-row { display: flex; align-items: center; gap: 0.55rem; padding: 0.5rem 0.7rem; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); background: var(--mm-card); }
@@ -1855,7 +1971,7 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-patty-step .mm-mini { flex: none; width: 34px; justify-content: center; font-size: 1rem; }
 
 /* Production day-sheet view: Day | Night columns, colour blocks with batch lines */
-.mm-pvw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; align-items: start; }
+.mm-pvw-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
 @media (max-width: 900px) { .mm-pvw-grid { grid-template-columns: 1fr; } }
 .mm-pvw-col { background: var(--mm-card); border: 1px solid var(--mm-border); border-radius: var(--mm-radius); padding: 0.9rem 1rem; }
 .mm-pvw-col-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding-bottom: 0.5rem; margin-bottom: 0.7rem; border-bottom: 2px solid var(--mm-border-dark); }
@@ -2133,6 +2249,13 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-ow-rate-sep { color: var(--mm-text-sec); }
 
 /* Order register: totals sit beside the heading; the table stays readable at 10 columns. */
+/* Inward register: the status/cancel actions act on the WHOLE inward, so they appear
+   once per inward — on its first roll row — beside the document number. */
+.mm-irep-acts { display: flex; align-items: center; gap: 0.4rem; flex-wrap: nowrap; white-space: nowrap; font-size: 0.75rem; }
+.mm-irep-jw {
+  margin-left: 0.35rem; padding: 0.05rem 0.3rem; border-radius: 5px; font-size: 0.62rem; font-weight: 800;
+  letter-spacing: 0.04em; background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid var(--mm-accent-soft);
+}
 .mm-orep-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .mm-orep-totals { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--mm-text-sec); }
 .mm-orep-totals b { color: var(--mm-text); font-variant-numeric: tabular-nums; }

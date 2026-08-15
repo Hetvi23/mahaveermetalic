@@ -34,19 +34,19 @@
    "fieldname": "challan_type",
    "fieldtype": "Select",
    "label": "Challan Type",
-   "options": "Sales\nJob Out\nJob In",
+   "options": "Sales\nJob Out\nJob In\nJob Challan\nChallan\nDelivery Challan",
    "default": "Sales",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "set_only_once": 1,
-   "description": "Sales dispatch, or job work sent out / received back. Job challans are the same record with their own view and series."
+   "description": "Sales dispatch, job work sent out / received back, or the other dispatch papers the floor issues. Each type carries its own series; Job Out / Job In / Job Challan do not close a sales order."
   },
   {
    "fieldname": "naming_series",
    "fieldtype": "Select",
    "label": "Series",
-   "options": "MM-SC-.YYYY.-\nMM-JO-.YYYY.-\nMM-JI-.YYYY.-",
+   "options": "MM-SC-.YYYY.-\nMM-JO-.YYYY.-\nMM-JI-.YYYY.-\nMM-JC-.YYYY.-\nMM-CH-.YYYY.-\nMM-DC-.YYYY.-",
    "reqd": 1,
    "set_only_once": 1
   },
@@ -172,7 +172,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-07 10:05:00.000000",
+ "modified": "2026-08-15 18:30:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Challan",

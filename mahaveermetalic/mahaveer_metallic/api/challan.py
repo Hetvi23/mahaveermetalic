@@ -151,8 +151,21 @@ def available_boxes(party=None, sales_order=None, limit=200):
 
 @frappe.whitelist()
 def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
-	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None, **kwargs):
-	"""Build a challan by hand from picked produced boxes and/or inventory rolls."""
+	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None,
+	challan_type="Sales", **kwargs):
+	"""Build a challan by hand from picked produced boxes and/or inventory rolls.
+
+	`challan_type` is the paper being issued — Sales, Job Challan, Challan or Delivery
+	Challan — and it decides the numbering series. Only a dispatch type closes the order
+	it references (see MMSalesChallan.NON_DISPATCH_TYPES).
+	"""
+	challan_type = (challan_type or "Sales").strip() or "Sales"
+	if challan_type not in SERIES:
+		frappe.throw(
+			_("Unknown challan type {0}. Choose one of: {1}.").format(
+				challan_type, ", ".join(SERIES)
+			)
+		)
 	box_list = json.loads(boxes) if isinstance(boxes, str) else (boxes or [])
 	roll_list = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
 	if not box_list and not roll_list:
@@ -220,6 +233,8 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	challan = frappe.get_doc(
 		{
 			"doctype": "MM Sales Challan",
+			"challan_type": challan_type,
+			"naming_series": SERIES[challan_type],
 			"transaction_date": challan_date or frappe.utils.today(),
 			"party": party,
 			"sales_order": sales_order or None,
@@ -275,7 +290,17 @@ def scan_box(barcode):
 # the type, the numbering series and the view differ. Job Out sends rolls (and bobbins)
 # to a job worker; Job In is them coming back.
 
-_JOB_SERIES = {"Sales": "MM-SC-.YYYY.-", "Job Out": "MM-JO-.YYYY.-", "Job In": "MM-JI-.YYYY.-"}
+# The series each challan type is numbered in. The type IS the choice the operator makes
+# on the voucher screen; the series follows from it, so the two can never disagree.
+SERIES = {
+	"Sales": "MM-SC-.YYYY.-",
+	"Job Out": "MM-JO-.YYYY.-",
+	"Job In": "MM-JI-.YYYY.-",
+	"Job Challan": "MM-JC-.YYYY.-",
+	"Challan": "MM-CH-.YYYY.-",
+	"Delivery Challan": "MM-DC-.YYYY.-",
+}
+_JOB_SERIES = SERIES  # kept for the job screens, which only ever index Job Out / Job In
 
 
 @frappe.whitelist()
@@ -594,7 +619,7 @@ def orders_for_challan(party=None):
 				select 1 from `tabMM Sales Challan` c
 				left join `tabMM Sales Challan Item` ci on ci.parent = c.name
 				where c.docstatus = 1
-					and ifnull(c.challan_type, 'Sales') = 'Sales'
+					and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
 					and (c.sales_order = so.name or ci.sales_order = so.name)
 			)
 		order by so.transaction_date desc, so.modified desc

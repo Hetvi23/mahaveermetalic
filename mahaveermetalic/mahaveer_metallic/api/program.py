@@ -305,19 +305,57 @@ def free_program(program):
 
 
 @frappe.whitelist()
-def order_options_for_party(party=None, customer_order=None):
-	"""Modal "Customer Order" dropdown — only the given party's orders."""
+def order_options(party=None, customer_order=None, cut=None):
+	"""Orders for the modal's "Customer Order" dropdown, with the party name on each.
+
+	Offered for BOTH sources. It used to return [] whenever no party could be resolved,
+	which is exactly the case for an inventory roll — nothing has been cut yet, so there
+	is no order to take a party from — and the dropdown came up empty on every roll.
+
+	A patty already carries its cut, so only orders that actually ask for that cut are
+	worth offering and `cut` filters them. A roll has no cut until it is cut, so it sees
+	every open order.
+
+	The context party's own orders sort first but the others are still listed: the roll on
+	the machine can legitimately be programmed against whoever is waiting for it.
+	"""
 	if not party and customer_order:
 		party = frappe.db.get_value("MM Sales Order", customer_order, "party")
-	if not party:
-		return []
-	return frappe.get_all(
-		"MM Sales Order",
-		filters={"party": party, "docstatus": 1},
-		fields=["name", "transaction_date", "delivery_date", "ordered_weight", "required_weight"],
-		order_by="delivery_date asc, modified desc",
-		limit_page_length=100,
-	)
+
+	vals = {"party": party or "", "cut": (cut or "").strip()}
+
+	def fetch(with_cut: bool):
+		cut_filter = ""
+		if with_cut:
+			cut_filter = """
+			and exists (
+				select 1 from `tabMM Sales Order Item` soi
+				where soi.parent = so.name and soi.cut = %(cut)s
+			)"""
+		return frappe.db.sql(
+			f"""
+			select so.name, so.party, pm.party_name, so.transaction_date, so.delivery_date,
+				so.ordered_weight, so.required_weight
+			from `tabMM Sales Order` so
+			left join `tabMM Party Master` pm on pm.name = so.party
+			where so.docstatus = 1
+				and ifnull(so.completed, 0) = 0
+				{cut_filter}
+			order by case when so.party = %(party)s then 0 else 1 end,
+				so.delivery_date asc, so.modified desc
+			limit 200
+			""",
+			vals,
+			as_dict=True,
+		)
+
+	if vals["cut"]:
+		rows = fetch(True)
+		# Cut is optional on an order line. Narrowing to a cut nobody recorded would hand
+		# back an empty dropdown — worse than showing everything — so fall back rather
+		# than leave the operator with nothing to pick.
+		return rows or fetch(False)
+	return fetch(False)
 
 
 def _ensure_cutting_from_inward(inward_item, customer_order=None, job_work=0, batches=1, cut=None):
@@ -406,6 +444,15 @@ def create_program(
 		final_weight = round(per_patty * batches, 3)
 	else:
 		final_weight = float(cut.total_net_weight or 0)
+
+	# Programming something with no weight means the job runs on a weight of nothing —
+	# refused here rather than at the cutting, so a PLANNED cut (weight not known until
+	# its roll is bound) can still exist while a real one can never be programmed empty.
+	if final_weight <= 0:
+		frappe.throw(
+			_("{0} has no weight recorded on its cutting, so there is nothing to program. "
+			  "Set the net weight on the cutting first.").format(cut.shade or cut.roll_no or cut.name)
+		)
 	final_cut = machine_cut or cut.cut  # machine cut wins, per spec
 
 	program = frappe.get_doc(
@@ -568,6 +615,9 @@ def create_unfinished_program(
 			"status": "Open",
 			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
 			"roll_qty": 0,
+			# Marks the zero weight below as legitimate — see MMCutting._compute_patti_weights.
+			# finish_unfinished clears it once the real roll (and its weight) is bound.
+			"planned": 1,
 			"branch": branch,
 			"location": location,
 			"patti_entries": [{"shade": color, "cut": machine_cut, "patti_qty": batches, "net_weight": 0}],
@@ -694,6 +744,9 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 			"total_patti_qty": patty,
 			"per_patty_weight": per_patty,
 			"roll_no": (ri.roll_no if ri else None) or doc.roll_no,
+			# The roll is bound and the weight is real — it is an ordinary cutting now, so
+			# the zero-weight carve-out no longer applies to it.
+			"planned": 0,
 		}
 		if cut:
 			updates["cut"] = cut

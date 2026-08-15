@@ -8,9 +8,28 @@ from frappe.model.document import Document
 from mahaveermetalic.mahaveer_metallic import stock_ledger
 
 # Which way each challan type moves stock. Sales and Job Out send material away;
-# Job In is the job worker returning it.
+# Job In is the job worker returning it. Anything else (Challan, Delivery Challan,
+# Job Challan) is goods leaving, so the "out" / "Dispatch" fallbacks below are right.
 _DIRECTION = {"Sales": "out", "Job Out": "out", "Job In": "in"}
 _VOUCHER_TYPE = {"Sales": "Dispatch", "Job Out": "Job Out", "Job In": "Job In"}
+
+# Types that do NOT fulfil a customer order. Everything else — Sales, Challan, Delivery
+# Challan — is goods gone out to the customer and closes the order it references.
+#
+# Kept as an exclusion list, not an "is it Sales?" test: the code used to ask
+# `challan_type = 'Sales'` in five places, so every type added later would silently stop
+# counting as a dispatch — the order would stay open and could be dispatched twice.
+#
+# The same rule is spelled in SQL by the four queries that ask "has this order gone
+# out?" — mm_sales_order (dispatch check + bulk dispatch map), mm_inward, and
+# api/challan.orders_for_challan. Grep `not in ('Job Out', 'Job In', 'Job Challan')` to
+# find them all if this list ever changes.
+NON_DISPATCH_TYPES = ("Job Out", "Job In", "Job Challan")
+
+
+def is_dispatch(challan_type) -> bool:
+	"""True when this challan type sends goods to the customer against their order."""
+	return (challan_type or "Sales") not in NON_DISPATCH_TYPES
 
 
 class MMSalesChallan(Document):
@@ -43,10 +62,11 @@ class MMSalesChallan(Document):
 	def _mark_orders_dispatched(self):
 		"""Goods gone out close their order, and that closure sticks.
 
-		Only a Sales challan dispatches to a customer — a Job Out sends material to a
-		worker and the order is not fulfilled by it.
+		A job challan does not: it sends material to a worker, which does not fulfil the
+		customer's order. Every other type does — a Delivery Challan against an order is
+		as much a dispatch as a Sales challan.
 		"""
-		if (self.challan_type or "Sales") != "Sales":
+		if not is_dispatch(self.challan_type):
 			return
 		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import mark_dispatched
 

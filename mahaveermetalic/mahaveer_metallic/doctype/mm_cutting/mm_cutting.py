@@ -35,7 +35,17 @@ class MMCutting(Document):
 			# A zero (or negative) weight was accepted and became per_patty_weight = 0,
 			# which the program then planned batches against — so the whole job ran on a
 			# weight of nothing. Catch it at the cutting, where it can still be corrected.
-			if net <= 0:
+			#
+			# A PLANNED cut is the one legitimate exception: it is the placeholder a "to
+			# cut" program creates before any roll is picked, so its weight is genuinely
+			# unknown until the operator binds the real roll (finish_unfinished fills the
+			# weight in and clears the flag). Without this carve-out the guard rejected
+			# every roll-wise program at save with "Net Weight must be greater than 0",
+			# which is the whole feature. Programming a weightless cutting is still
+			# refused — in create_program, where that decision actually belongs.
+			# .get(), not .planned — the field is only there after a migrate, and an
+			# AttributeError here would break every cutting save on a half-deployed site.
+			if net <= 0 and not self.get("planned"):
 				frappe.throw(
 					_("Row #{0}: Net Weight must be greater than 0 — a cutting with no weight "
 					  "cannot be programmed.").format(row.idx)
