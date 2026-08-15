@@ -477,3 +477,94 @@ def purchase_status_by_order(orders=None):
 		else:
 			cur["count"] = cur.get("count", 0) + 1
 	return out
+
+
+# ── The two states an order is read by ────────────────────────────────────────────
+# They answer different questions and are deliberately kept apart:
+#   Purchase — has the material been bought and received against this order?
+#   Sales    — has it gone out to the customer?
+# Both are derived here so the order list and the order register cannot disagree.
+
+
+def purchase_state(ordered, inwarded, has_po=False):
+	"""Completed / Partial / Pending, from what the order needs against what came in.
+
+	Judged on the ORDER's requirement rather than the purchase order's own weight: a PO
+	raised for only part of a shortage still leaves the order short, and it is the order
+	the floor is asking about. The same tolerance the inward auto-complete uses decides
+	"met", so a receipt that closes an order cannot simultaneously read as Partial here.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+		get_inward_match_tolerance,
+	)
+
+	ordered = float(ordered or 0)
+	inwarded = float(inwarded or 0)
+	if inwarded <= 0:
+		return "Pending"
+	if ordered <= 0:
+		# Nothing to measure against (a box-only order), but material did arrive.
+		return "Completed"
+	tol = get_inward_match_tolerance()
+	if inwarded >= ordered * (1 - tol / 100.0):
+		return "Completed"
+	return "Partial"
+
+
+def orders_with_dispatch(orders):
+	"""The subset of `orders` that have a submitted Sales challan against them."""
+	if not orders:
+		return set()
+	rows = frappe.db.sql(
+		"""
+		select distinct coalesce(ci.sales_order, c.sales_order) as so
+		from `tabMM Sales Challan` c
+		left join `tabMM Sales Challan Item` ci on ci.parent = c.name
+		where c.docstatus = 1
+			and ifnull(c.challan_type, 'Sales') = 'Sales'
+			and (c.sales_order in %(o)s or ci.sales_order in %(o)s)
+		""",
+		{"o": tuple(orders)},
+	)
+	return {r[0] for r in rows if r[0]}
+
+
+@frappe.whitelist()
+def order_states(orders=None):
+	"""Purchase and Sales state per order, for the list's two status columns."""
+	import json as _json
+
+	if isinstance(orders, str):
+		orders = _json.loads(orders or "[]")
+
+	filters = {"docstatus": ["<", 2]}
+	if orders:
+		filters["name"] = ["in", orders]
+	rows = frappe.get_all(
+		"MM Sales Order",
+		filters=filters,
+		fields=["name", "ordered_weight", "inwarded_weight", "docstatus"],
+		limit_page_length=0,
+	)
+	names = [r.name for r in rows]
+
+	with_po = {
+		p.sales_order
+		for p in frappe.get_all(
+			"MM Purchase Order",
+			filters={"sales_order": ["in", names], "docstatus": ["<", 2]} if names else {"name": ["in", []]},
+			fields=["sales_order"],
+		)
+		if p.sales_order
+	}
+	dispatched = orders_with_dispatch(names)
+
+	out = {}
+	for r in rows:
+		out[r.name] = {
+			"purchase": purchase_state(r.ordered_weight, r.inwarded_weight, r.name in with_po),
+			"has_po": r.name in with_po,
+			# A challan against the order is the whole test: the goods have gone out.
+			"sales": "Completed" if r.name in dispatched else "Pending",
+		}
+	return out

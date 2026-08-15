@@ -13,6 +13,11 @@ turn a 600-row register into 2,400 round trips.
 
 import frappe
 
+from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
+	orders_with_dispatch,
+	purchase_state,
+)
+
 
 def _rate_range(vals):
 	"""One rate, or the spread when an order's lines disagree — never an average, which
@@ -23,21 +28,18 @@ def _rate_range(vals):
 	return {"lo": round(lo, 2), "hi": round(hi, 2), "same": lo == hi}
 
 
-def _status(o):
-	"""Mirrors the order list exactly, so the register never disagrees with the screen
-	it was opened from."""
+def _sales_state(o, dispatched):
+	"""Sales is one question: has it gone out? A challan against the order answers it.
+
+	Rejected and awaiting-approval are shown in its place, because those are stronger
+	facts about the order than "no challan yet" — an order nobody has approved has not
+	failed to dispatch, it has not started.
+	"""
 	if int(o.get("docstatus") or 0) == 2:
 		return "Rejected"
 	if int(o.get("docstatus") or 0) == 0:
 		return "Pending Approval"
-	prod = round(float(o.get("production_completed_percent") or 0))
-	if o.get("completed") and o.get("completion_mode") == "Inward" and prod < 100:
-		return "Material In"
-	if prod >= 100 or o.get("completed"):
-		return "Completed"
-	if float(o.get("inwarded_weight") or 0) > 0 or prod > 0:
-		return "Partially Completed"
-	return "Pending"
+	return "Completed" if o.get("name") in dispatched else "Pending"
 
 
 @frappe.whitelist()
@@ -94,26 +96,24 @@ def orders_report(from_date=None, to_date=None, party=None, status=None, limit=2
 		if float(r.sale_rate or 0) > 0:
 			e["s"].append(float(r.sale_rate))
 
-	# Purchase state, worst-of when an order carries several POs.
-	po_fields = ["name", "sales_order", "supplier"]
-	has_status = frappe.db.has_column("MM Purchase Order", "status")
-	if has_status:
-		po_fields.append("status")
-	rank = {"Pending": 0, "Partially Received": 1, "Received": 2}
+	# Purchase orders raised against these orders — carried for the supplier and the
+	# count; the STATE itself is judged on the order's own requirement (see below).
 	pos = {}
 	for po in frappe.get_all(
-		"MM Purchase Order", filters={"sales_order": ["in", names], "docstatus": ["<", 2]}, fields=po_fields
+		"MM Purchase Order",
+		filters={"sales_order": ["in", names], "docstatus": ["<", 2]},
+		fields=["name", "sales_order", "supplier"],
 	):
-		st = (po.get("status") if has_status else None) or "Pending"
-		cur = pos.get(po.sales_order)
-		if cur is None or rank.get(st, 0) < rank.get(cur["status"], 0):
-			pos[po.sales_order] = {"status": st, "supplier": po.supplier, "count": (cur or {}).get("count", 0) + 1}
-		else:
-			cur["count"] += 1
+		if not po.sales_order:
+			continue
+		cur = pos.setdefault(po.sales_order, {"supplier": po.supplier, "count": 0})
+		cur["count"] += 1
+
+	dispatched = orders_with_dispatch(names)
 
 	rows, t_ord, t_inw, t_req = [], 0.0, 0.0, 0.0
 	for o in orders:
-		st = _status(o)
+		st = _sales_state(o, dispatched)
 		if status and st != status:
 			continue
 		ln = lines.get(o.name, {"colours": [], "cuts": [], "p": [], "s": []})
@@ -137,9 +137,10 @@ def orders_report(from_date=None, to_date=None, party=None, status=None, limit=2
 			"ordered_weight": round(ordered, 3),
 			"inwarded_weight": round(inwarded, 3),
 			"required_weight": round(required, 3),
-			"purchase_status": (po or {}).get("status"),
+			"purchase_status": purchase_state(ordered, inwarded, bool(po)),
 			"purchase_count": (po or {}).get("count", 0),
 			"supplier": (po or {}).get("supplier"),
+			"has_po": bool(po),
 			"status": st,
 		})
 

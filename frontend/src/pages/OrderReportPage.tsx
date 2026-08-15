@@ -14,12 +14,13 @@ type Row = {
   party?: string; company?: string; items?: string; cuts?: string;
   purchase_rate: Rate; sale_rate: Rate;
   ordered_weight: number; inwarded_weight: number; required_weight: number;
-  purchase_status?: string; purchase_count: number; supplier?: string;
+  purchase_status?: string; purchase_count: number; supplier?: string; has_po?: boolean;
   status: string;
 };
 type Report = { rows: Row[]; totals: { orders: number; ordered: number; inwarded: number; required: number } };
 
-const STATUSES = ["Pending Approval", "Pending", "Material In", "Partially Completed", "Completed", "Rejected"];
+// The Sales column's own values — the report filters on it.
+const STATUSES = ["Pending Approval", "Pending", "Completed", "Rejected"];
 
 /** One rate, or the spread when an order's lines disagree. A rate never entered is a
  *  gap, not a zero — 0 would read as "bought for nothing". */
@@ -32,7 +33,7 @@ const statusCls = (s: string) =>
   : "mm-pill-pending";
 
 const purchaseCls = (s?: string) =>
-  !s ? "mm-pill-muted" : s === "Received" ? "mm-pill-ok" : s === "Partially Received" ? "mm-pill-pending" : "mm-pill-warn";
+  s === "Completed" ? "mm-pill-ok" : s === "Partial" ? "mm-pill-pending" : "mm-pill-warn";
 
 /**
  * Order register — one row per order, the same columns the order list shows, plus what a
@@ -65,7 +66,7 @@ export default function OrderReportPage() {
   /** CSV of exactly what is on screen, so a printed copy and an exported one agree. */
   function exportCsv() {
     const head = ["Order", "Date", "Party", "Company", "Items", "P.Rate", "S.Rate",
-      "Weight (Kg)", "Inwards (Kg)", "Required (Kg)", "Purchase", "Status"];
+      "Weight (Kg)", "Inwards (Kg)", "Required (Kg)", "Purchase", "Sales"];
     const esc = (v: unknown) => {
       const t = String(v ?? "");
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
@@ -74,7 +75,7 @@ export default function OrderReportPage() {
       r.order, r.date ?? "", r.party ?? "", r.company ?? "", r.items ?? "",
       rate(r.purchase_rate), rate(r.sale_rate),
       r.ordered_weight, r.inwarded_weight, r.required_weight,
-      r.purchase_status ?? "No PO", r.status,
+      r.purchase_status ?? "", r.status,
     ].map(esc).join(","));
     const csv = [head.join(","), ...body].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -90,7 +91,7 @@ export default function OrderReportPage() {
       <header className="mm-ws-toolbar mm-no-print">
         <div>
           <h1 className="mm-page-title"><ScrollText size={18} /> Report — Orders</h1>
-          <p className="mm-page-sub">One row per order: rates, weight against what has come in, purchase state and status.</p>
+          <p className="mm-page-sub">One row per order. Purchase = bought and received against it; Sales = gone out on a challan.</p>
         </div>
       </header>
 
@@ -145,7 +146,7 @@ export default function OrderReportPage() {
                 <th className="mm-num">Weight (Kg)</th>
                 <th className="mm-num">Inwards (Kg)</th>
                 <th className="mm-num">Required (Kg)</th>
-                <th>Purchase</th><th>Status</th>
+                <th>Purchase</th><th>Sales</th>
               </tr>
             </thead>
             <tbody>
@@ -175,10 +176,8 @@ export default function OrderReportPage() {
                     <td className={`mm-num ${r.required_weight > 0 ? "mm-var-over" : ""}`}>{kg(r.required_weight)}</td>
                     <td>
                       <span className={`mm-pill ${purchaseCls(r.purchase_status)}`}
-                        title={r.supplier || (r.purchase_status ? "" : "No purchase order raised")}>
-                        {r.purchase_status
-                          ? `${r.purchase_status === "Partially Received" ? "Partial" : r.purchase_status}${r.purchase_count > 1 ? ` ×${r.purchase_count}` : ""}`
-                          : "No PO"}
+                        title={`${kg(r.inwarded_weight)} of ${kg(r.ordered_weight)} kg received${r.has_po ? (r.supplier ? ` · ${r.supplier}` : "") : " · no purchase order raised"}`}>
+                        {r.purchase_status}
                       </span>
                     </td>
                     <td><span className={`mm-pill ${statusCls(r.status)}`}>{r.status}</span></td>

@@ -78,33 +78,22 @@ type Row = {
 /** An order is done when production hits 100% OR it was completed via inward/force. */
 const isDone = (o: Row) => Math.round(o.production_completed_percent ?? 0) >= 100 || !!o.completed;
 
-/**
- * Status badge: Draft (unsubmitted) → then fulfilment.
- *
- * "Material In" and "Completed" are kept apart on purpose: an order whose INWARD matched
- * the ordered weight has its raw material in, but nothing has been made or sent yet —
- * calling that Completed read as though the job were finished. Production, dispatch and a
- * force-close are the real completions.
- */
-function orderStatus(o: Row): { label: string; cls: string } {
-  if (Number(o.docstatus) === 2) return { label: "Rejected", cls: "mm-pill-muted" };
-  if (Number(o.docstatus) === 0) return { label: "Pending Approval", cls: "mm-pill-pending" };
-  if (o.completed && o.completion_mode === "Inward" && Math.round(o.production_completed_percent ?? 0) < 100)
-    return { label: "Material In", cls: "mm-pill-pending" };
-  if (isDone(o)) return { label: "Completed", cls: "mm-pill-ok" };
-  if ((o.inwarded_weight ?? 0) > 0 || (o.production_completed_percent ?? 0) > 0)
-    return { label: "Partially Completed", cls: "mm-pill-pending" };
-  return { label: "Pending", cls: "mm-pill-muted" };
+/* The old single "Status" badge is gone: it mixed approval, inward-completion and
+   production % into one word, which could not answer either question the floor asks.
+   It is replaced by two columns — Purchase (bought and received?) and Sales (gone
+   out?) — each decided by its own rule, server-side, in mm_sales_order.py. */
+
+/** Purchase — has the material been bought and received against this order? */
+function purchaseBadge(st?: string): { label: string; cls: string } {
+  if (st === "Completed") return { label: "Completed", cls: "mm-pill-ok" };
+  if (st === "Partial") return { label: "Partial", cls: "mm-pill-pending" };
+  return { label: "Pending", cls: "mm-pill-warn" };
 }
 
-/** Purchase state for the order row. No PO at all is a real state — the order was saved
- *  without buying — and is worth showing as plainly as the others. */
-function purchaseBadge(p?: { status: string; count: number }): { label: string; cls: string } {
-  if (!p) return { label: "No PO", cls: "mm-pill-muted" };
-  const many = p.count > 1 ? ` ×${p.count}` : "";
-  if (p.status === "Received") return { label: `Received${many}`, cls: "mm-pill-ok" };
-  if (p.status === "Partially Received") return { label: `Partial${many}`, cls: "mm-pill-pending" };
-  return { label: `Pending${many}`, cls: "mm-pill-warn" };
+/** Sales — has it gone out to the customer? A challan against the order answers it. */
+function salesBadge(st?: string): { label: string; cls: string } {
+  if (st === "Completed") return { label: "Completed", cls: "mm-pill-ok" };
+  return { label: "Pending", cls: "mm-pill-muted" };
 }
 
 /** "purchase / sale" on one line, the way the floor reads a rate. A blank side means
@@ -195,13 +184,13 @@ export default function OrderWorkspace() {
 
   // Purchase status per order. The sales side and the purchase side of the same order
   // were only visible on separate screens; this puts them on one row.
-  type PORollup = { status: string; po: string; supplier?: string; qty_kg?: number; count: number };
-  const { data: poStatusData, mutate: mutatePoStatus } = useFrappeGetCall<{ message: Record<string, PORollup> }>(
-    `${SO_API_PATH}.purchase_status_by_order`,
+  type OrderState = { purchase: string; sales: string; has_po: boolean };
+  const { data: poStatusData, mutate: mutatePoStatus } = useFrappeGetCall<{ message: Record<string, OrderState> }>(
+    `${SO_API_PATH}.order_states`,
     undefined,
-    "mm-so-po-status",
+    "mm-so-states",
   );
-  const poByOrder = useMemo(() => poStatusData?.message ?? {}, [poStatusData]);
+  const stateByOrder = useMemo(() => poStatusData?.message ?? {}, [poStatusData]);
 
   const { data: doc, mutate: mutateDoc } = useFrappeGetDoc<Record<string, unknown>>("MM Sales Order", selected || undefined);
 
@@ -954,7 +943,7 @@ export default function OrderWorkspace() {
                   <th>Delivery</th>
                   <th className="mm-ow-fulfil-col">Inwards / Required</th>
                   <th>Purchase</th>
-                  <th>Status</th>
+                  <th>Sales</th>
                 </tr>
               </thead>
               <tbody>
@@ -964,7 +953,6 @@ export default function OrderWorkspace() {
                   const req = o.required_weight ?? 0;
                   const pct = ordered > 0 ? Math.min(100, Math.round((inw / ordered) * 100)) : 0;
                   const done = isDone(o);
-                  const st = orderStatus(o);
                   const overdue = !!o.delivery_date && !done && o.delivery_date < today();
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
@@ -983,17 +971,25 @@ export default function OrderWorkspace() {
                       </td>
                       <td>
                         {(() => {
-                          const p = poByOrder[o.name];
-                          const pb = purchaseBadge(p);
+                          const stt = stateByOrder[o.name];
+                          const pb = purchaseBadge(stt?.purchase);
                           return (
-                            <span className={`mm-pill ${pb.cls}`} title={p ? `${p.po}${p.supplier ? ` · ${p.supplier}` : ""}${p.qty_kg ? ` · ${p.qty_kg} kg` : ""}` : "No purchase order raised"}>
+                            <span className={`mm-pill ${pb.cls}`}
+                              title={`${inw.toLocaleString()} of ${ordered.toLocaleString()} kg received${stt?.has_po ? "" : " · no purchase order raised"}`}>
                               {pb.label}
                             </span>
                           );
                         })()}
                       </td>
                       <td>
-                        <span className={`mm-pill ${st.cls}`}>{st.label}</span>
+                        {(() => {
+                          // Approval outranks dispatch: an order nobody has approved has not
+                          // failed to go out, it has not started.
+                          const b = Number(o.docstatus) === 2 ? { label: "Rejected", cls: "mm-pill-muted" }
+                            : Number(o.docstatus) === 0 ? { label: "Pending Approval", cls: "mm-pill-pending" }
+                            : salesBadge(stateByOrder[o.name]?.sales);
+                          return <span className={`mm-pill ${b.cls}`}>{b.label}</span>;
+                        })()}
                       </td>
                     </tr>
                   );
