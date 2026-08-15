@@ -9,6 +9,13 @@ try {
 	if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
 } catch { /* ignore */ }
 
+// Same for the sidebar: restore it before paint, or a collapsed rail flashes open and
+// the whole page shifts 168px sideways on every reload.
+try {
+	const rail = localStorage.getItem("mm-rail");
+	if (rail === "collapsed" || rail === "expanded") document.documentElement.setAttribute("data-rail", rail);
+} catch { /* ignore */ }
+
 function initApp() {
 	const win = window as Window & { frappe?: Record<string, unknown> };
 	if (!win.frappe) win.frappe = {};

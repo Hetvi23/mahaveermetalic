@@ -1,8 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useFrappeAuth } from "frappe-react-sdk";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Home,
+  PanelLeftClose,
+  PanelLeftOpen,
   ShoppingCart,
   ArrowDownToLine,
   Scissors,
@@ -138,6 +140,36 @@ export default function AppNav() {
     () => (typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") : "") || "",
   );
   const supplier = isSupplierOnly();
+  // Collapsed state lives on <html data-rail>, not in React, for the same reason the
+  // theme does: the rail and the content offset are rendered by DIFFERENT components
+  // (AppNav and App), so a shared attribute avoids lifting state or adding a context
+  // just to keep one number in sync. main.tsx applies it before first paint.
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(
+    () => typeof document !== "undefined" && document.documentElement.getAttribute("data-rail") === "collapsed",
+  );
+
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      document.documentElement.setAttribute("data-rail", next ? "collapsed" : "expanded");
+      try { localStorage.setItem("mm-rail", next ? "collapsed" : "expanded"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // "[" collapses/expands, the way an editor sidebar does — but never while the operator
+  // is typing into a field, or entering a size like "50/85" would toggle the nav.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "[" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      e.preventDefault();
+      toggleRail();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleRail]);
 
   function toggleTheme() {
     const cur = document.documentElement.getAttribute("data-theme");
@@ -172,13 +204,23 @@ export default function AppNav() {
   return (
     <>
       {/* ── Desktop left rail ───────────────────────────── */}
-      <aside className="mm-rail">
+      <aside className="mm-rail" aria-label="Sections">
         <div className="mm-rail-brand">
           <div className="mm-rail-logo"><Factory size={20} strokeWidth={2.2} /></div>
           <div className="mm-rail-brand-text">
             <span className="mm-rail-name">Mahavir</span>
             <span className="mm-rail-sub">Metalic</span>
           </div>
+          <button
+            type="button"
+            className="mm-rail-toggle"
+            onClick={toggleRail}
+            aria-expanded={!railCollapsed}
+            aria-label={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={`${railCollapsed ? "Expand" : "Collapse"} sidebar  [`}
+          >
+            {railCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
         </div>
 
         <nav className="mm-rail-nav">

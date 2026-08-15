@@ -2043,3 +2043,78 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   :root { --mm-hairline: rgba(15,23,42,0.32); --mm-hairline-str: rgba(15,23,42,0.5); }
   .mm-input, .mm-textarea { border-width: 1.5px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   COLLAPSIBLE RAIL
+   The rail is position:fixed and the content clears it with margin-left, so both
+   numbers must move together. They are rendered by different components, so the width
+   lives in ONE custom property on :root and both rules read it — nothing to keep in
+   sync by hand. Collapsing to an icon rail rather than hiding it keeps every
+   destination one click away, which a hamburger would cost.
+   ══════════════════════════════════════════════════════════════════════════════ */
+:root { --mm-rail-w: 232px; }
+:root[data-rail="collapsed"] { --mm-rail-w: 64px; }
+
+@media (min-width: 900px) {
+  .mm-rail { width: var(--mm-rail-w); }
+  .mm-app-content { margin-left: var(--mm-rail-w); }
+
+  /* Width springs; the labels cross-fade. Sharing one transition squashes the text as
+     the rail narrows, which reads as the layout breaking rather than folding away. */
+  .mm-rail { transition: width var(--mm-dur) var(--mm-ease); }
+  .mm-app-content { transition: margin-left var(--mm-dur) var(--mm-ease); }
+  .mm-rail-brand-text, .mm-rail-group-label, .mm-rail-user,
+  .mm-rail a > span, .mm-rail-nav em {
+    transition: opacity 140ms var(--mm-ease-out);
+  }
+
+  /* Collapsed: icons only, centred, labels gone but still announced to screen readers
+     via the title/aria on each link. */
+  :root[data-rail="collapsed"] .mm-rail-brand-text,
+  :root[data-rail="collapsed"] .mm-rail-group-label,
+  :root[data-rail="collapsed"] .mm-rail-user,
+  :root[data-rail="collapsed"] .mm-rail a > span,
+  :root[data-rail="collapsed"] .mm-rail-nav em {
+    opacity: 0; width: 0; overflow: hidden; white-space: nowrap; pointer-events: none;
+  }
+  :root[data-rail="collapsed"] .mm-rail-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  :root[data-rail="collapsed"] .mm-rail-nav { padding-left: 0.35rem; padding-right: 0.35rem; }
+  :root[data-rail="collapsed"] .mm-rail a,
+  :root[data-rail="collapsed"] .mm-rail-nav > div > div:not(.mm-rail-group-label) {
+    justify-content: center; padding-left: 0; padding-right: 0;
+  }
+  :root[data-rail="collapsed"] .mm-rail-group { margin-top: 0.35rem; }
+  /* Group labels are the only thing separating sections once the words are gone. */
+  :root[data-rail="collapsed"] .mm-rail-group + .mm-rail-group {
+    border-top: 1px solid var(--mm-hairline); padding-top: 0.35rem;
+  }
+  :root[data-rail="collapsed"] .mm-rail-footer { flex-direction: column; gap: 0.3rem; }
+}
+
+.mm-rail-brand { position: relative; }
+.mm-rail-toggle {
+  margin-left: auto;
+  width: 26px; height: 26px; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid var(--mm-hairline); border-radius: 8px;
+  background: var(--mm-card); color: var(--mm-text-sec); cursor: pointer;
+  transition: background-color var(--mm-dur-fast) var(--mm-ease-out),
+              border-color var(--mm-dur-fast) var(--mm-ease-out),
+              transform 90ms var(--mm-ease-out);
+}
+.mm-rail-toggle:hover { color: var(--mm-text); border-color: var(--mm-hairline-str); }
+.mm-rail-toggle:active { transform: scale(0.94); }
+.mm-rail-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3.5px var(--mm-focus); }
+/* Collapsed, the toggle IS the header — the wordmark is gone, so it centres. */
+:root[data-rail="collapsed"] .mm-rail-toggle { margin-left: 0; }
+/* The rail only exists on desktop, so neither does its toggle. */
+@media (max-width: 899px) { .mm-rail-toggle { display: none; } }
+
+/* Printing hid the rail but left the content indented by the old fixed 232px, so every
+   printed page carried a blank left margin. Reading the width from the property fixes
+   it for both states at once. */
+@media print { .mm-app-content { margin-left: 0 !important; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-rail, .mm-app-content { transition: none; }
+}
