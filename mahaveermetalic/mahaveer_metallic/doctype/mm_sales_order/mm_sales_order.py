@@ -386,6 +386,55 @@ def order_colours(orders=None):
 
 
 @frappe.whitelist()
+def order_line_summary(orders=None):
+	"""Per-order line detail for the list: colours, and the purchase/sale rate pair.
+
+	Purchase and sale rate belong on the same row — that is the whole point of showing
+	them together: what the material cost against what it sold for, readable at a glance
+	without opening the order. A multi-line order has more than one of each, so the range
+	is carried rather than a single figure pretending to be the only one.
+	"""
+	import json as _json
+
+	if isinstance(orders, str):
+		orders = _json.loads(orders or "[]")
+	filters = {"parenttype": "MM Sales Order"}
+	if orders:
+		filters["parent"] = ["in", orders]
+	rows = frappe.get_all(
+		"MM Sales Order Item",
+		filters=filters,
+		fields=["parent", "color_name", "cut", "purchase_rate", "sale_rate"],
+		order_by="parent asc, idx asc",
+		limit_page_length=0,
+	)
+
+	out = {}
+	for r in rows:
+		e = out.setdefault(r.parent, {"colours": [], "cuts": [], "p_rates": [], "s_rates": []})
+		if r.color_name and r.color_name not in e["colours"]:
+			e["colours"].append(r.color_name)
+		if r.cut and r.cut not in e["cuts"]:
+			e["cuts"].append(r.cut)
+		if float(r.purchase_rate or 0) > 0:
+			e["p_rates"].append(float(r.purchase_rate))
+		if float(r.sale_rate or 0) > 0:
+			e["s_rates"].append(float(r.sale_rate))
+
+	def rng(vals):
+		"""One rate, or the spread when the lines disagree — never a misleading average."""
+		if not vals:
+			return None
+		lo, hi = min(vals), max(vals)
+		return {"lo": round(lo, 2), "hi": round(hi, 2), "same": lo == hi}
+
+	for e in out.values():
+		e["purchase_rate"] = rng(e.pop("p_rates"))
+		e["sale_rate"] = rng(e.pop("s_rates"))
+	return out
+
+
+@frappe.whitelist()
 def purchase_status_by_order(orders=None):
 	"""Purchase-order status per Sales Order, for the order list's Purchase column.
 

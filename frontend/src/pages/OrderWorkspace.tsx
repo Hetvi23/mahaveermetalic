@@ -107,6 +107,24 @@ function purchaseBadge(p?: { status: string; count: number }): { label: string; 
   return { label: `Pending${many}`, cls: "mm-pill-warn" };
 }
 
+/** "purchase / sale" on one line, the way the floor reads a rate. A blank side means
+ *  that side was never entered — shown as an empty slot, not a zero, because 0 would
+ *  read as "bought for nothing". */
+function ratePair(l?: { purchase_rate: { lo: number; hi: number; same: boolean } | null; sale_rate: { lo: number; hi: number; same: boolean } | null }) {
+  const fmt = (r: { lo: number; hi: number; same: boolean } | null) =>
+    !r ? "" : r.same ? r.lo.toLocaleString() : `${r.lo.toLocaleString()}–${r.hi.toLocaleString()}`;
+  const p = fmt(l?.purchase_rate ?? null);
+  const sr = fmt(l?.sale_rate ?? null);
+  if (!p && !sr) return "—";
+  return (
+    <>
+      <span className={p ? undefined : "mm-muted"}>{p || "·"}</span>
+      <span className="mm-ow-rate-sep"> / </span>
+      <span className={sr ? undefined : "mm-muted"}>{sr || "·"}</span>
+    </>
+  );
+}
+
 function isAdmin(): boolean {
   const roles =
     (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot?.user?.roles ?? [];
@@ -166,12 +184,14 @@ export default function OrderWorkspace() {
   // Colour lives on the order's child items. Reading `MM Sales Order Item` straight from
   // the client returns nothing (Frappe refuses a child-table get_list over REST without a
   // parent), which left the list's Color column blank — so ask the server for the map.
-  const { data: colourData } = useFrappeGetCall<{ message: Record<string, string[]> }>(
-    `${SO_API_PATH}.order_colours`,
+  type Rate = { lo: number; hi: number; same: boolean } | null;
+  type LineSummary = { colours: string[]; cuts: string[]; purchase_rate: Rate; sale_rate: Rate };
+  const { data: colourData } = useFrappeGetCall<{ message: Record<string, LineSummary> }>(
+    `${SO_API_PATH}.order_line_summary`,
     undefined,
-    "mm-so-colours",
+    "mm-so-lines",
   );
-  const coloursByOrder = useMemo(() => colourData?.message ?? {}, [colourData]);
+  const linesByOrder = useMemo(() => colourData?.message ?? {}, [colourData]);
 
   // Purchase status per order. The sales side and the purchase side of the same order
   // were only visible on separate screens; this puts them on one row.
@@ -926,9 +946,11 @@ export default function OrderWorkspace() {
               <thead>
                 <tr>
                   <th>Order</th>
+                  <th>Date</th>
                   <th>Party</th>
                   <th>Company</th>
                   <th>Color</th>
+                  <th className="mm-num">P.Rate / S.Rate</th>
                   <th>Delivery</th>
                   <th className="mm-ow-fulfil-col">Inwards / Required</th>
                   <th>Purchase</th>
@@ -947,9 +969,11 @@ export default function OrderWorkspace() {
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
                       <td className="mm-ow-cell-order">{o.name}</td>
+                      <td className="mm-ow-cell-date">{o.transaction_date || "—"}</td>
                       <td>{o.party || "—"}</td>
                       <td>{o.company_name || "—"}</td>
-                      <td>{coloursByOrder[o.name]?.join(", ") || "—"}</td>
+                      <td>{linesByOrder[o.name]?.colours.join(", ") || "—"}</td>
+                      <td className="mm-num mm-ow-rates">{ratePair(linesByOrder[o.name])}</td>
                       <td className={overdue ? "mm-open-overdue" : undefined}>{o.delivery_date || "—"}{overdue ? " · overdue" : ""}</td>
                       <td>
                         <div className="mm-ow-fulfil">

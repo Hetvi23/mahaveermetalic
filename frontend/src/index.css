@@ -2125,3 +2125,9 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   background: var(--mm-danger-bg); color: var(--mm-danger-fg);
   border: 1px solid var(--mm-danger-border);
 }
+
+/* Order list: date and the purchase/sale rate pair sit tight so the row stays readable
+   with the two extra columns. */
+.mm-ow-cell-date { white-space: nowrap; color: var(--mm-text-sec); font-size: 0.8rem; }
+.mm-ow-rates { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mm-ow-rate-sep { color: var(--mm-text-sec); }
