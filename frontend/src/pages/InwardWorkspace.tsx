@@ -526,7 +526,7 @@ export default function InwardWorkspace() {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <td className="mm-iw-c-no">{i + 1}</td>
-                  <td className="mm-iw-c-jw">
+                  <td className="mm-iw-c-jw" data-label="JobWork">
                     <input
                       type="checkbox"
                       className="mm-iw-jw-box"
@@ -536,11 +536,11 @@ export default function InwardWorkspace() {
                       onChange={(e) => setRow(i, { job_work: e.target.checked })}
                     />
                   </td>
-                  <td className="mm-iw-c-chalan">
+                  <td className="mm-iw-c-chalan" data-label="Chalan No">
                     <input className="mm-input mm-input-compact" value={r.challan_no} placeholder="Chalan No"
                       onChange={(e) => setRow(i, { challan_no: e.target.value })} />
                   </td>
-                  <td className="mm-iw-c-order">
+                  <td className="mm-iw-c-order" data-label="Customer Order">
                     <SearchSelect
                       compact
                       value={r.customer_order}
@@ -553,11 +553,11 @@ export default function InwardWorkspace() {
                       onChange={(v) => pickOrder(i, v)}
                     />
                   </td>
-                  <td className="mm-iw-c-roll">
+                  <td className="mm-iw-c-roll" data-label="Roll">
                     <input className="mm-input mm-input-compact" value={r.roll} placeholder="Roll"
                       onChange={(e) => setRow(i, { roll: e.target.value })} />
                   </td>
-                  <td className="mm-iw-c-color">
+                  <td className="mm-iw-c-color" data-label="Color">
                     <LinkField
                       compact
                       label=""
@@ -568,7 +568,7 @@ export default function InwardWorkspace() {
                       onChange={(v) => setRow(i, { color: v })}
                     />
                   </td>
-                  <td className="mm-iw-c-qty">
+                  <td className="mm-iw-c-qty" data-label="Qty | Weight (Kg)">
                     <div className="mm-iw-qtypair">
                       <input className="mm-input mm-input-compact" type="number" value={r.qty} placeholder="Qty"
                         onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />

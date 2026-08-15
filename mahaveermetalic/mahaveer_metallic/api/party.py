@@ -35,6 +35,10 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 		filters={"parent": ["in", [r.party for r in rows]], "parenttype": "MM Party Master"},
 		fields=["parent", "company_name", "idx"],
 		order_by="parent asc, idx asc",
+		# Child tables must name their parent doctype or the query is refused for anyone
+		# without blanket permissions — as Administrator it passes, for a floor role it
+		# comes back empty and the company silently never fills in.
+		parent="MM Party Master",
 	):
 		first.setdefault(c.parent, c.company_name)
 
@@ -56,6 +60,7 @@ def companies_for_party(party: str = ""):
 		fields=["company_name"],
 		order_by="idx asc",
 		pluck="company_name",
+		parent="MM Party Master",
 	)
 
 

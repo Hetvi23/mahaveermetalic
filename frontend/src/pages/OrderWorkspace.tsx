@@ -399,6 +399,35 @@ export default function OrderWorkspace() {
   const submitted = !!selected && Number((doc as { docstatus?: number } | undefined)?.docstatus) === 1;
   const ro = submitted || (locked && !isAdmin());
 
+  /* ── The builder drawer ───────────────────────────────────
+     Open whenever an order is selected (clicked in the list) or "New order" was pressed.
+     Saving a new order clears `selected` but leaves the drawer up, so several orders can
+     be keyed in a row without reopening it. */
+  const [newOpen, setNewOpen] = useState(false);
+  const formOpen = !!selected || newOpen;
+
+  function openNewOrder() {
+    resetNew();
+    setNewOpen(true);
+  }
+  function closeForm() {
+    resetNew();
+    setNewOpen(false);
+  }
+
+  // Esc closes it, the way every other overlay in the app does.
+  useEffect(() => {
+    if (!formOpen) return;
+    // globalThis.KeyboardEvent — React's own KeyboardEvent type is imported above and
+    // would shadow the DOM one here.
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape" && !document.querySelector("[data-mm-menu]")) closeForm();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formOpen]);
+
   function resetNew() {
     setSelected(null);
     hydrated.current = null;
@@ -692,20 +721,26 @@ export default function OrderWorkspace() {
       <header className="mm-ws-head">
         <div>
           <h1 className="mm-page-title">Sales Orders</h1>
-          <p className="mm-page-sub">Create an order, then track inwards against it — all on one screen.</p>
+          <p className="mm-page-sub">Track inwards against every order. Click a row to edit it.</p>
         </div>
+        <button type="button" className="mm-btn-primary" onClick={openNewOrder}>
+          <Plus size={15} /> New order
+        </button>
       </header>
 
-      <div className="mm-ow-grid">
-        {/* LEFT — order builder */}
-        <section className="mm-card mm-ow-form">
+      {/* The list owns the screen; the builder is a drawer over it. Half the width used
+          to be held by a form that is only needed while actually writing an order, which
+          left ten columns fighting over what was left. */}
+      <div className={`mm-ow-drawer-scrim ${formOpen ? "mm-ow-drawer-open" : ""}`}
+        onClick={closeForm} aria-hidden={!formOpen} />
+      <aside className={`mm-ow-drawer ${formOpen ? "mm-ow-drawer-open" : ""}`}
+        role="dialog" aria-label={selected ? `Editing ${selected}` : "New order"} aria-hidden={!formOpen}>
+        <section className="mm-ow-form">
           <div className="mm-ws-form-head">
             <h2 className="mm-panel-title">{selected ? `Editing ${selected}` : "New order"}</h2>
-            {selected && (
-              <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetNew} title="Close — back to new order">
-                <X size={14} /> Close
-              </button>
-            )}
+            <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={closeForm} title="Close (Esc)">
+              <X size={14} /> Close
+            </button>
           </div>
 
           {submitted && <div className="mm-banner mm-banner-ok">Approved — this order and its purchase order are locked.</div>}
@@ -839,7 +874,14 @@ export default function OrderWorkspace() {
                   <thead>
                     {/* Short labels — the card is already headed "Purchase order", and the
                         orders list next to it reads "P.Rate / S.Rate" the same way. */}
-                    <tr><th className="mm-num">P. Weight</th><th className="mm-num">P. Rate</th><th>Supplier</th></tr>
+                    <tr>
+                      <th className="mm-num">P. Weight</th>
+                      <th className="mm-num">P. Rate</th>
+                      <th>Supplier</th>
+                      {/* Without this the supplier field stretched across everything left
+                          over and the three columns read as a form strip, not a table. */}
+                      <th className="mm-col-fill" aria-hidden />
+                    </tr>
                   </thead>
                   <tbody>
                     {purchaseLines.map((r) => {
@@ -866,6 +908,7 @@ export default function OrderWorkspace() {
                           <td>
                             {poRo ? (e.vendor || "—") : <VendorSelect value={e.vendor} onChange={(v) => setPo({ vendor: v })} />}
                           </td>
+                          <td className="mm-col-fill" />
                         </tr>
                       );
                     })}
@@ -914,9 +957,9 @@ export default function OrderWorkspace() {
             {flash && <span className="mm-ws-flash">{flash}</span>}
           </div>
         </section>
+      </aside>
 
-        {/* RIGHT — orders list */}
-        <section className="mm-card mm-ow-list">
+      <section className="mm-card mm-ow-list">
           <div className="mm-ow-list-head">
             <div className="mm-chips">
               {(["all", "pending", "completed"] as Chip[]).map((c) => (
@@ -945,9 +988,14 @@ export default function OrderWorkspace() {
                       list that width comes straight out of the party and colour names. */}
                   <th className="mm-num" title="Purchase rate / Sale rate">P/S Rate</th>
                   <th>Delivery</th>
-                  <th className="mm-ow-fulfil-col">Inwards / Required</th>
+                  {/* Inwards vs required was a progress bar plus two figures — the widest
+                      cell in the row, saying what the Purchase status beside it already
+                      says. It reads as a status here; the figures are on its tooltip. */}
                   <th>Purchase</th>
                   <th>Sales</th>
+                  {/* Soaks up any width left over so every real column stays at its own
+                      content width instead of each one growing a gap. */}
+                  <th className="mm-col-fill" aria-hidden />
                 </tr>
               </thead>
               <tbody>
@@ -955,7 +1003,6 @@ export default function OrderWorkspace() {
                   const ordered = o.ordered_weight ?? 0;
                   const inw = o.inwarded_weight ?? 0;
                   const req = o.required_weight ?? 0;
-                  const pct = ordered > 0 ? Math.min(100, Math.round((inw / ordered) * 100)) : 0;
                   const done = isDone(o);
                   const overdue = !!o.delivery_date && !done && o.delivery_date < today();
                   return (
@@ -968,18 +1015,12 @@ export default function OrderWorkspace() {
                       <td className="mm-num mm-ow-rates">{ratePair(linesByOrder[o.name])}</td>
                       <td className={overdue ? "mm-open-overdue" : undefined}>{o.delivery_date || "—"}{overdue ? " · overdue" : ""}</td>
                       <td>
-                        <div className="mm-ow-fulfil">
-                          <span className="mm-open-bar"><span className="mm-open-bar-fill" style={{ width: `${pct}%` }} /></span>
-                          <span className="mm-ow-fulfil-txt">{inw.toLocaleString()}/{ordered.toLocaleString()} · req {req.toLocaleString()}</span>
-                        </div>
-                      </td>
-                      <td>
                         {(() => {
                           const stt = stateByOrder[o.name];
                           const pb = purchaseBadge(stt?.purchase);
                           return (
                             <span className={`mm-pill ${pb.cls}`}
-                              title={`${inw.toLocaleString()} of ${ordered.toLocaleString()} kg received${stt?.has_po ? "" : " · no purchase order raised"}`}>
+                              title={`${inw.toLocaleString()} of ${ordered.toLocaleString()} kg received · ${req.toLocaleString()} kg required${stt?.has_po ? "" : " · no purchase order raised"}`}>
                               {pb.label}
                             </span>
                           );
@@ -995,17 +1036,17 @@ export default function OrderWorkspace() {
                           return <span className={`mm-pill ${b.cls}`}>{b.label}</span>;
                         })()}
                       </td>
+                      <td className="mm-col-fill" />
                     </tr>
                   );
                 })}
                 {!isLoading && list.length === 0 && (
-                  <tr><td colSpan={7} className="mm-empty">No orders.</td></tr>
+                  <tr><td colSpan={10} className="mm-empty">No orders.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </section>
-      </div>
 
       {/* Pre-save purchase dialog — the ONLY place a shortage PO is raised. */}
       {poSheet && (

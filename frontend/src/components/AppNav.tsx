@@ -5,6 +5,8 @@ import {
   Home,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronDown,
+  ChevronRight,
   ShoppingCart,
   ArrowDownToLine,
   Scissors,
@@ -37,7 +39,18 @@ import {
 } from "lucide-react";
 
 export type NavItem = { label: string; icon: LucideIcon; to?: string };
-type Section = { key: string; label: string; items: NavItem[] };
+type Section = { key: string; label: string; icon: LucideIcon; items: NavItem[] };
+
+/** Which nav groups are open, kept across sessions like the rail's own width. */
+const GROUPS_KEY = "mm-nav-groups";
+function readOpenGroups(): Set<string> {
+  try {
+    const saved = localStorage.getItem(GROUPS_KEY);
+    return new Set<string>(saved ? (JSON.parse(saved) as string[]) : ["commerce", "floor"]);
+  } catch {
+    return new Set(["commerce", "floor"]);
+  }
+}
 
 /** Primary destinations on the bottom tab bar (mobile) + top of the rail. */
 const PRIMARY: NavItem[] = [
@@ -56,6 +69,7 @@ const SECTIONS: Section[] = [
   {
     key: "commerce",
     label: "Orders & Purchase",
+    icon: ShoppingCart,
     items: [
       { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
       { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
@@ -67,6 +81,7 @@ const SECTIONS: Section[] = [
   {
     key: "floor",
     label: "Shop Floor",
+    icon: Factory,
     items: [
       { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
       { label: "Inward Report", icon: ScrollText, to: "/inward-report" },
@@ -87,6 +102,7 @@ const SECTIONS: Section[] = [
   {
     key: "masters",
     label: "Masters",
+    icon: Boxes,
     items: [
       { label: "Customers", icon: Users, to: "/masters/party" },
       { label: "Colors / Items", icon: Palette, to: "/masters/item" },
@@ -101,6 +117,7 @@ const SECTIONS: Section[] = [
   {
     key: "tools",
     label: "Tools",
+    icon: Bell,
     items: [
       { label: "Reminders", icon: Bell, to: "/tools/reminders-chat" },
       { label: "Tasks", icon: ListChecks, to: "/tools/task-reminder" },
@@ -109,6 +126,7 @@ const SECTIONS: Section[] = [
   {
     key: "soon",
     label: "Coming soon",
+    icon: Rocket,
     items: [
       { label: "Patties", icon: Package },
       { label: "Sales", icon: Rocket },
@@ -146,6 +164,30 @@ export default function AppNav() {
   const [railCollapsed, setRailCollapsed] = useState<boolean>(
     () => typeof document !== "undefined" && document.documentElement.getAttribute("data-rail") === "collapsed",
   );
+
+  // Groups fold, so the rail shows five headings instead of a wall of thirty links.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(readOpenGroups);
+  const toggleGroup = useCallback((key: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Whichever group holds the current page opens itself — navigating from a link that
+  // isn't in the rail (a card, a redirect) should still reveal where you are.
+  useEffect(() => {
+    const sec = SECTIONS.find((s) => s.items.some((it) => pathActive(loc.pathname, it.to)));
+    if (!sec) return;
+    setOpenGroups((prev) => {
+      if (prev.has(sec.key)) return prev;
+      const next = new Set(prev).add(sec.key);
+      try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [loc.pathname]);
 
   const toggleRail = useCallback(() => {
     setRailCollapsed((prev) => {
@@ -225,16 +267,39 @@ export default function AppNav() {
           {/* No "Home" for suppliers — their group below IS their only destination. */}
           {!supplier && <RailLink item={{ label: "Home", icon: Home, to: "/" }} pathname={loc.pathname} />}
           {(supplier
-            ? [{ key: "s", label: "Supplier", items: [{ label: "My Purchase Orders", icon: ClipboardList, to: "/purchase-order" }] }]
+            ? [{ key: "s", label: "Supplier", icon: ClipboardList, items: [{ label: "My Purchase Orders", icon: ClipboardList, to: "/purchase-order" }] }]
             : SECTIONS
-          ).map((sec) => (
-            <div key={sec.key} className={`mm-rail-group ${sec.key === "soon" ? "mm-group-soon" : ""}`}>
-              <div className="mm-rail-group-label">{sec.label}</div>
-              {sec.items.map((it) => (
-                <RailLink key={it.label} item={it} pathname={loc.pathname} />
-              ))}
-            </div>
-          ))}
+          ).map((sec) => {
+            const Icon = sec.icon;
+            const hasActive = sec.items.some((it) => pathActive(loc.pathname, it.to));
+            const open = openGroups.has(sec.key);
+            return (
+              <div key={sec.key} className={`mm-rail-group ${sec.key === "soon" ? "mm-group-soon" : ""}`}>
+                <button
+                  type="button"
+                  className={`mm-rail-group-btn ${hasActive ? "mm-rail-group-btn-on" : ""}`}
+                  onClick={() => toggleGroup(sec.key)}
+                  aria-expanded={open}
+                  title={sec.label}
+                >
+                  {/* Marks the group holding the current page while it is folded away —
+                      otherwise collapsing a group hides where you are. */}
+                  {hasActive && !open && <span className="mm-rail-group-mark" aria-hidden />}
+                  <Icon size={17} strokeWidth={hasActive ? 2.2 : 1.8} />
+                  <span>{sec.label}</span>
+                  {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span className="mm-rail-tip">{sec.label}</span>
+                </button>
+                {open && (
+                  <div className="mm-rail-group-items">
+                    {sec.items.map((it) => (
+                      <RailLink key={it.label} item={it} pathname={loc.pathname} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="mm-rail-footer">
@@ -329,8 +394,11 @@ function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
     );
   }
   return (
-    <Link to={item.to} className={`mm-rail-link ${active ? "mm-rail-link-active" : ""}`}>
+    // title + .mm-rail-tip: collapsed, the rail is nothing but icons — it had no labels
+    // of any kind, so you had to click one to find out what it was.
+    <Link to={item.to} className={`mm-rail-link ${active ? "mm-rail-link-active" : ""}`} title={item.label}>
       <Icon size={17} strokeWidth={active ? 2.2 : 1.8} /> <span>{item.label}</span>
+      <span className="mm-rail-tip">{item.label}</span>
     </Link>
   );
 }
