@@ -2142,3 +2142,12 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   .mm-orep-table { font-size: 9pt; }
   .mm-orep-table th, .mm-orep-table td { white-space: normal; }
 }
+
+/* A status chip an admin can act on — it must look pressable, not decorative. */
+.mm-state-clickable {
+  border: 1px dashed currentColor; cursor: pointer; font: inherit;
+  transition: transform 90ms var(--mm-ease-out), filter var(--mm-dur-fast) var(--mm-ease-out);
+}
+.mm-state-clickable:hover { filter: brightness(0.97); }
+.mm-state-clickable:active { transform: scale(0.96); }
+.mm-state-clickable:focus-visible { outline: none; box-shadow: 0 0 0 3.5px var(--mm-focus); }

@@ -7,11 +7,17 @@ import json
 import frappe
 from frappe import _
 
+from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+	get_inward_over_tolerance,
+)
+
 
 # A little slack when comparing entered weight to the challan's expected weight, so
 # floating-point noise / minor rounding on the scale doesn't trip the over-receipt guard.
-_RECEIPT_TOLERANCE = 0.5  # kg absolute
-_RECEIPT_TOLERANCE_PCT = 0.02  # + 2% of expected
+# The PERCENTAGE allowance is configurable (MM Settings) because how much extra a shop
+# will accept is a business call, not a constant: it is 20% here, where it used to be a
+# hardcoded 2%.
+_RECEIPT_TOLERANCE = 0.5  # kg absolute floor, for scale rounding
 
 
 def _challan_expected_from_vm(challan_no: str) -> dict:
@@ -184,10 +190,11 @@ def post_inward(payload):
 		exp_w, exp_b = exp["expected_weight"], exp["expected_box"]
 		cum_w = round(prior["received_weight"] + this_weight, 3)
 		cum_b = round(prior["received_box"] + this_box, 3)
+		over_pct = get_inward_over_tolerance() / 100.0
 
 		# Over-receipt: cap on weight when the challan carries a weight target, else on box.
 		if exp_w > 0:
-			allowed = exp_w + max(_RECEIPT_TOLERANCE, exp_w * _RECEIPT_TOLERANCE_PCT)
+			allowed = exp_w + max(_RECEIPT_TOLERANCE, exp_w * over_pct)
 			if cum_w > allowed:
 				frappe.throw(
 					_("Over-receipt blocked: challan {0} expects {1} kg, already received {2} kg, "
@@ -195,7 +202,7 @@ def post_inward(payload):
 						challan, exp_w, prior["received_weight"], this_weight, cum_w)
 				)
 		elif exp_b > 0:
-			allowed = exp_b + max(_RECEIPT_TOLERANCE, exp_b * _RECEIPT_TOLERANCE_PCT)
+			allowed = exp_b + max(_RECEIPT_TOLERANCE, exp_b * over_pct)
 			if cum_b > allowed:
 				frappe.throw(
 					_("Over-receipt blocked: challan {0} expects {1} box, already received {2} box, "
@@ -405,3 +412,53 @@ def allocate_inward_to_order(inward, sales_order):
 	for so in affected:
 		recalculate_order_fulfilment(so)
 	return {"inward": inward, "sales_order": sales_order, "refreshed": sorted(affected)}
+
+
+@frappe.whitelist()
+def set_inward_status(inward, status, reason=None):
+	"""Admin override of a posted inward's receipt status.
+
+	The status is normally derived — Complete once the challan's weight is met, Partial
+	while short. Reality does not always agree: a supplier confirms nothing more is
+	coming on a short delivery, or a challan's expected weight was wrong to begin with.
+	Rather than have the floor post a phantom inward to force the number, an admin can
+	say so directly.
+
+	Only the status moves. The stock already posted is untouched, because the material
+	that arrived is not in question — only whether more is still expected.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
+		is_mm_admin,
+		recalculate_order_fulfilment,
+	)
+
+	if not is_mm_admin():
+		frappe.throw(_("Only an admin can change an inward's status."))
+	if status not in ("Complete", "Partial"):
+		frappe.throw(_("Status must be Complete or Partial."))
+
+	doc = frappe.get_doc("MM Inward", inward)
+	if doc.docstatus != 1:
+		frappe.throw(_("Only a submitted inward's status can be changed."))
+	if doc.receipt_status == status:
+		return {"inward": doc.name, "receipt_status": status, "changed": False}
+
+	before = doc.receipt_status
+	# db_set, not save: a submitted doc would re-run validation and the derivation would
+	# simply overwrite the override we are making.
+	doc.db_set("receipt_status", status, update_modified=False)
+	doc.db_set("is_partial", 1 if status == "Partial" else 0, update_modified=False)
+
+	doc.add_comment(
+		"Comment",
+		_("Receipt status changed {0} → {1} by {2}{3}").format(
+			before or "—", status, frappe.session.user, f": {reason}" if reason else ""
+		),
+	)
+
+	# A challan reopened or closed by hand changes what the order is still owed.
+	for order in {i.customer_order for i in doc.items if i.customer_order} | {doc.sales_order}:
+		if order:
+			recalculate_order_fulfilment(order)
+
+	return {"inward": doc.name, "receipt_status": status, "changed": True, "was": before}

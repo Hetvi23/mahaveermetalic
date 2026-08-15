@@ -76,6 +76,13 @@ type RecentInward = {
   docstatus?: number;
 };
 
+/** MM Admin / Administrator — the same check the order and production screens use. */
+function isAdmin(): boolean {
+  const roles =
+    (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot?.user?.roles ?? [];
+  return roles.includes("Administrator") || roles.includes("MM Admin");
+}
+
 const blankRow = (): Row => ({ roll: "", color: "", cut: "", qty: "", weight: "", customer_order: "" });
 
 /**
@@ -210,6 +217,32 @@ export default function InwardWorkspace() {
   const { call: cancelInwardCall, loading: cancelling } = useFrappePostCall(
     "mahaveermetalic.mahaveer_metallic.api.inward.cancel_inward",
   );
+  const { call: setStatusCall } = useFrappePostCall<{ message: { receipt_status: string } }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.set_inward_status",
+  );
+
+  /** Admin override of a derived status. The stock already posted is untouched — what
+   *  arrived is not in question, only whether more is still expected. */
+  async function onSetStatus(name: string, current?: string) {
+    const next = current === "Partial" ? "Complete" : "Partial";
+    if (!window.confirm(
+      `Mark inward ${name} as ${next}?\n\n` +
+      (next === "Complete"
+        ? "The challan will be treated as fully received — no further inward can be posted against it."
+        : "The challan reopens, so more can still be received against it.") +
+      "\n\nStock already posted is not changed.",
+    )) return;
+    setError(null);
+    try {
+      await setStatusCall({ inward: name, status: next });
+      toast(`${name} marked ${next}`);
+      void refreshRecent();
+    } catch (e) {
+      const msg = extractErrorMessage(e);
+      setError(msg);
+      toast(msg, "error");
+    }
+  }
 
   // Show which lot this inward will land in — the challan's existing lot, or the next
   // colour-wise LT id. Preview only: the authoritative lot is assigned on post.
@@ -395,9 +428,15 @@ export default function InwardWorkspace() {
     [rows],
   );
 
-  // Mirror the server's over-receipt allowance: max(0.5 kg, 2% of expected). Using the
-  // same tolerance keeps the panel warning consistent with what the server will accept.
-  const overTol = verify ? Math.max(0.5, (verify.expected_weight || 0) * 0.02) : 0.5;
+  // The server's own figures, not a copy of them: a mirrored constant drifts the moment
+  // the setting changes, and the panel then warns about a limit that is no longer real.
+  const { data: tolData } = useFrappeGetCall<{ message: { under: number; over: number } }>(
+    "mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings.inward_tolerances",
+    undefined,
+    "mm-inward-tolerances",
+  );
+  const overPct = (tolData?.message?.over ?? 20) / 100;
+  const overTol = verify ? Math.max(0.5, (verify.expected_weight || 0) * overPct) : 0.5;
   const overReceipt = !!verify && totals.weight > verify.remaining_weight + overTol;
 
   async function onSubmit() {
@@ -809,6 +848,15 @@ export default function InwardWorkspace() {
                     <td>
                       {r.docstatus === 2 ? (
                         <span className="mm-state-chip mm-state-open">Cancelled</span>
+                      ) : isAdmin() ? (
+                        <button
+                          type="button"
+                          className={`mm-state-chip mm-state-clickable ${r.receipt_status === "Partial" ? "mm-state-inventory" : "mm-state-cut"}`}
+                          title={`Click to mark ${r.receipt_status === "Partial" ? "Complete" : "Partial"}`}
+                          onClick={() => void onSetStatus(r.name, r.receipt_status)}
+                        >
+                          {r.receipt_status === "Partial" ? "Partial" : "Complete"}
+                        </button>
                       ) : r.receipt_status === "Partial" ? (
                         <span className="mm-state-chip mm-state-inventory">Partial</span>
                       ) : (

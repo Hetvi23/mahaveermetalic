@@ -8,6 +8,7 @@
   "admin_override_pin",
   "production_tolerance_percent",
   "inward_match_tolerance_percent",
+  "inward_over_tolerance_percent",
   "auto_close_leftover",
   "leftover_tolerance_kg"
  ],
@@ -34,10 +35,18 @@
   {
    "fieldname": "inward_match_tolerance_percent",
    "fieldtype": "Float",
-   "label": "Inward Match Tolerance (%)",
+   "label": "Inward Under-receipt Tolerance (%)",
    "precision": 2,
-   "default": "2",
-   "description": "When an order's total inwarded weight reaches within this % of the ordered weight, the order auto-completes on inward. Force Complete (with the Admin PIN) closes it regardless."
+   "default": "10",
+   "description": "How far SHORT of the ordered weight a receipt may fall and still count as complete. 10 means 90% of the order closes it."
+  },
+  {
+   "fieldname": "inward_over_tolerance_percent",
+   "fieldtype": "Float",
+   "label": "Inward Over-receipt Tolerance (%)",
+   "default": "20",
+   "precision": "2",
+   "description": "How far OVER the expected weight a receipt may go before it is refused. 20 means up to 120% of the challan is accepted."
   },
   {
    "fieldname": "auto_close_leftover",
@@ -58,7 +67,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-02 15:00:00.000000",
+ "modified": "2026-08-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Settings",

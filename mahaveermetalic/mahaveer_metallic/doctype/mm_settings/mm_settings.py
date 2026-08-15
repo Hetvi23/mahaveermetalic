@@ -44,9 +44,29 @@ def auto_close_enabled() -> bool:
 
 
 def get_inward_match_tolerance() -> float:
-	"""Inward-to-order match tolerance (%). An order auto-completes once its inwarded
-	weight is within this % of the ordered weight. Defaults to 2 when unset."""
-	return _mm_setting_float("inward_match_tolerance_percent", 2.0)
+	"""How far SHORT a receipt may fall and still count as complete (%).
+
+	An order closes once its inwarded weight is within this much of the ordered weight,
+	so 10 means 90% of the order is accepted as delivered. Defaults to 10.
+	"""
+	return _mm_setting_float("inward_match_tolerance_percent", 10.0)
+
+
+def get_inward_over_tolerance() -> float:
+	"""How far OVER the expected weight a receipt may go before it is refused (%).
+
+	Kept separate from the under-receipt figure because the two are not symmetric: a
+	little short is a normal delivery, a lot extra is usually a keying error, and the
+	shop accepts far more of the former than the latter. Defaults to 20.
+	"""
+	return _mm_setting_float("inward_over_tolerance_percent", 20.0)
+
+
+@frappe.whitelist()
+def inward_tolerances():
+	"""Both figures, so the Inward screen warns on exactly what the server will enforce
+	instead of mirroring a constant that can drift out of step with it."""
+	return {"under": get_inward_match_tolerance(), "over": get_inward_over_tolerance()}
 
 
 def verify_admin_pin(pin) -> bool:

@@ -11,8 +11,11 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 	txt = (txt or "").strip()
 	like = f"%{txt}%"
 
+	# One row per party. The join used to emit a row per COMPANY with no ordering on the
+	# child rows, so a party with several companies appeared several times and whichever
+	# company the join happened to return first became the one on screen.
 	sql = """
-		SELECT p.name AS party, p.party_name, c.company_name
+		SELECT DISTINCT p.name AS party, p.party_name, p.modified
 		FROM `tabMM Party Master` p
 		LEFT JOIN `tabMM Party Company` c ON c.parent = p.name
 		WHERE (%(txt)s = '' OR p.party_name LIKE %(like)s OR c.company_name LIKE %(like)s)
@@ -20,6 +23,24 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 		LIMIT %(limit)s
 	"""
 	rows = frappe.db.sql(sql, {"txt": txt, "like": like, "limit": limit}, as_dict=True)
+	if not rows:
+		return []
+
+	# The company shown beneath the name is the FIRST one filed under the party — the
+	# order they were entered in the master, which is the one the office treats as
+	# primary. Ordered by idx, so it is that row and not whichever the database returned.
+	first = {}
+	for c in frappe.get_all(
+		"MM Party Company",
+		filters={"parent": ["in", [r.party for r in rows]], "parenttype": "MM Party Master"},
+		fields=["parent", "company_name", "idx"],
+		order_by="parent asc, idx asc",
+	):
+		first.setdefault(c.parent, c.company_name)
+
+	for r in rows:
+		r["company_name"] = first.get(r.party)
+		r.pop("modified", None)
 	return rows
 
 
