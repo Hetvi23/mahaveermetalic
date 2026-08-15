@@ -399,35 +399,6 @@ export default function OrderWorkspace() {
   const submitted = !!selected && Number((doc as { docstatus?: number } | undefined)?.docstatus) === 1;
   const ro = submitted || (locked && !isAdmin());
 
-  /* ── The builder drawer ───────────────────────────────────
-     Open whenever an order is selected (clicked in the list) or "New order" was pressed.
-     Saving a new order clears `selected` but leaves the drawer up, so several orders can
-     be keyed in a row without reopening it. */
-  const [newOpen, setNewOpen] = useState(false);
-  const formOpen = !!selected || newOpen;
-
-  function openNewOrder() {
-    resetNew();
-    setNewOpen(true);
-  }
-  function closeForm() {
-    resetNew();
-    setNewOpen(false);
-  }
-
-  // Esc closes it, the way every other overlay in the app does.
-  useEffect(() => {
-    if (!formOpen) return;
-    // globalThis.KeyboardEvent — React's own KeyboardEvent type is imported above and
-    // would shadow the DOM one here.
-    function onKey(e: globalThis.KeyboardEvent) {
-      if (e.key === "Escape" && !document.querySelector("[data-mm-menu]")) closeForm();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formOpen]);
-
   function resetNew() {
     setSelected(null);
     hydrated.current = null;
@@ -723,24 +694,18 @@ export default function OrderWorkspace() {
           <h1 className="mm-page-title">Sales Orders</h1>
           <p className="mm-page-sub">Track inwards against every order. Click a row to edit it.</p>
         </div>
-        <button type="button" className="mm-btn-primary" onClick={openNewOrder}>
-          <Plus size={15} /> New order
-        </button>
       </header>
 
-      {/* The list owns the screen; the builder is a drawer over it. Half the width used
-          to be held by a form that is only needed while actually writing an order, which
-          left ten columns fighting over what was left. */}
-      <div className={`mm-ow-drawer-scrim ${formOpen ? "mm-ow-drawer-open" : ""}`}
-        onClick={closeForm} aria-hidden={!formOpen} />
-      <aside className={`mm-ow-drawer ${formOpen ? "mm-ow-drawer-open" : ""}`}
-        role="dialog" aria-label={selected ? `Editing ${selected}` : "New order"} aria-hidden={!formOpen}>
-        <section className="mm-ow-form">
+      <div className="mm-ow-grid">
+        {/* LEFT — order builder */}
+        <section className="mm-card mm-ow-form">
           <div className="mm-ws-form-head">
             <h2 className="mm-panel-title">{selected ? `Editing ${selected}` : "New order"}</h2>
-            <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={closeForm} title="Close (Esc)">
-              <X size={14} /> Close
-            </button>
+            {selected && (
+              <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={resetNew} title="Close — back to new order">
+                <X size={14} /> Close
+              </button>
+            )}
           </div>
 
           {submitted && <div className="mm-banner mm-banner-ok">Approved — this order and its purchase order are locked.</div>}
@@ -957,9 +922,9 @@ export default function OrderWorkspace() {
             {flash && <span className="mm-ws-flash">{flash}</span>}
           </div>
         </section>
-      </aside>
 
-      <section className="mm-card mm-ow-list">
+        {/* RIGHT — orders list */}
+        <section className="mm-card mm-ow-list">
           <div className="mm-ow-list-head">
             <div className="mm-chips">
               {(["all", "pending", "completed"] as Chip[]).map((c) => (
@@ -1047,6 +1012,7 @@ export default function OrderWorkspace() {
             </table>
           </div>
         </section>
+      </div>
 
       {/* Pre-save purchase dialog — the ONLY place a shortage PO is raised. */}
       {poSheet && (

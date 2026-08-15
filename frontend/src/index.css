@@ -879,28 +879,12 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 
 /* ── Orders workspace ──────────────────────────────────── */
 .mm-ow { display: flex; flex-direction: column; gap: 1rem; }
-/* The order builder is a drawer over a full-width list. It used to be a permanent left
-   column: 480px held all day for a form that matters only while an order is being
-   written, which is what squeezed the ten-column list into a scroller. */
-.mm-ow-drawer-scrim {
-  position: fixed; inset: 0; z-index: 60; background: rgba(15, 23, 42, 0.45);
-  opacity: 0; pointer-events: none; transition: opacity var(--mm-dur) var(--mm-ease-out);
-}
-.mm-ow-drawer-scrim.mm-ow-drawer-open { opacity: 1; pointer-events: auto; }
-.mm-ow-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 61;
-  width: min(620px, 100vw); max-width: 100vw;
-  background: var(--mm-card); border-left: 1px solid var(--mm-border);
-  box-shadow: -12px 0 44px rgba(0, 0, 0, 0.28);
-  overflow-y: auto; overscroll-behavior: contain;
-  transform: translateX(100%); visibility: hidden;
-  transition: transform var(--mm-dur) var(--mm-ease), visibility 0s linear var(--mm-dur);
-}
-.mm-ow-drawer.mm-ow-drawer-open {
-  transform: none; visibility: visible; transition: transform var(--mm-dur) var(--mm-ease);
-}
-@media (prefers-reduced-motion: reduce) {
-  .mm-ow-drawer, .mm-ow-drawer-scrim { transition: none; }
+.mm-ow-grid {
+  display: grid;
+  /* minmax(0, 1fr): the list scrolls inside its card instead of pushing the page wide. */
+  grid-template-columns: minmax(400px, 480px) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
 }
 .mm-ow-form { padding: 1.1rem 1.25rem 1.25rem; }
 .mm-ow-builder {
@@ -947,6 +931,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-pill-pending { background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid rgba(217,119,6,0.2); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
 
 @media (max-width: 980px) {
+  .mm-ow-grid { grid-template-columns: 1fr; }
   .mm-ow-table-scroll { max-height: none; }
 }
 
@@ -1010,6 +995,11 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-iw-c-qty { width: 210px; }
 .mm-iw-c-act { width: 84px; }
 .mm-iw-jw-box { width: 17px; height: 17px; accent-color: var(--mm-accent); cursor: pointer; }
+/* A colour fixed by the row's order is read-only, not unimportant — it has to stay as
+   readable as the rest of the line, so keep the text colour and only drop the chrome. */
+.mm-iw-c-color .mm-input:disabled {
+  color: var(--mm-text); background: transparent; border-color: transparent; cursor: default;
+}
 /* Qty and Weight read as one measurement, so they sit in one control with the bulk-add
    button welded to the end of it. */
 .mm-iw-qtypair { display: flex; align-items: stretch; gap: 0.3rem; }

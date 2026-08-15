@@ -29,16 +29,18 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 	# The company shown beneath the name is the FIRST one filed under the party — the
 	# order they were entered in the master, which is the one the office treats as
 	# primary. Ordered by idx, so it is that row and not whichever the database returned.
+	# Raw SQL for the same reason as companies_for_party: a child-table get_all is refused
+	# for restricted roles, and this keeps the row order the master's own.
 	first = {}
-	for c in frappe.get_all(
-		"MM Party Company",
-		filters={"parent": ["in", [r.party for r in rows]], "parenttype": "MM Party Master"},
-		fields=["parent", "company_name", "idx"],
-		order_by="parent asc, idx asc",
-		# Child tables must name their parent doctype or the query is refused for anyone
-		# without blanket permissions — as Administrator it passes, for a floor role it
-		# comes back empty and the company silently never fills in.
-		parent="MM Party Master",
+	for c in frappe.db.sql(
+		"""
+		select parent, company_name from `tabMM Party Company`
+		where parent in %(parents)s and parenttype = 'MM Party Master'
+			and ifnull(company_name, '') != ''
+		order by parent asc, idx asc
+		""",
+		{"parents": tuple([r.party for r in rows])},
+		as_dict=True,
 	):
 		first.setdefault(c.parent, c.company_name)
 
@@ -50,18 +52,27 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 
 @frappe.whitelist()
 def companies_for_party(party: str = ""):
-	"""The company names filed under a party (its MM Party Company rows) — for the
-	'first pick party, then its company' selector on the order."""
+	"""The company names filed under a party, in the order they were entered.
+
+	Raw SQL on purpose. get_all on a child table is refused for roles without blanket
+	permissions (the list came back empty and the order form's Company silently never
+	filled), and this way the `idx` ordering is the table's own row order with nothing in
+	between that could reorder it. The FIRST row is what the order form auto-selects.
+	"""
 	if not party:
 		return []
-	return frappe.get_all(
-		"MM Party Company",
-		filters={"parent": party, "parenttype": "MM Party Master"},
-		fields=["company_name"],
-		order_by="idx asc",
-		pluck="company_name",
-		parent="MM Party Master",
-	)
+	return [
+		r[0]
+		for r in frappe.db.sql(
+			"""
+			select company_name from `tabMM Party Company`
+			where parent = %s and parenttype = 'MM Party Master'
+				and ifnull(company_name, '') != ''
+			order by idx asc
+			""",
+			(party,),
+		)
+	]
 
 
 @frappe.whitelist()

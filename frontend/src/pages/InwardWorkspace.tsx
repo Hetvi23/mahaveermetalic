@@ -250,6 +250,11 @@ export default function InwardWorkspace() {
         j === i ? { ...r, customer_order: sales_order, color: r.color || colour, cut: r.cut || cut } : r,
       ),
     );
+    // The order carries its company, so picking the order settles it — no reason to make
+    // the operator choose it separately in the header. Only fills an empty one: an inward
+    // is a single document with a single company, so a second row for another customer's
+    // order must not silently re-stamp the first.
+    if (opt?.company_name) setCompany((c) => c || opt.company_name || "");
   }
 
   // Keyboard: Enter adds another row so material can be keyed in without reaching for the
@@ -558,11 +563,16 @@ export default function InwardWorkspace() {
                       onChange={(e) => setRow(i, { roll: e.target.value })} />
                   </td>
                   <td className="mm-iw-c-color" data-label="Color">
+                    {/* Once the row's order has supplied the colour it is the order's to
+                        decide — read-only, and disabled so Tab runs straight past it to
+                        the weight instead of stopping on a field nobody edits. It stays
+                        editable when there is no order, or the order names no colour. */}
                     <LinkField
                       compact
                       label=""
                       linkDoctype="MM Item Master"
                       value={r.color}
+                      disabled={!!r.customer_order && !!r.color}
                       placeholder="Select Color"
                       createDefaults={{ item_type: "Roll" }}
                       onChange={(v) => setRow(i, { color: v })}
