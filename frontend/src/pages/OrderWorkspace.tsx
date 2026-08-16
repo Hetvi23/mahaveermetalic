@@ -843,9 +843,6 @@ export default function OrderWorkspace() {
                       <th className="mm-num">P. Weight</th>
                       <th className="mm-num">P. Rate</th>
                       <th>Supplier</th>
-                      {/* Without this the supplier field stretched across everything left
-                          over and the three columns read as a form strip, not a table. */}
-                      <th className="mm-col-fill" aria-hidden />
                     </tr>
                   </thead>
                   <tbody>
@@ -873,7 +870,6 @@ export default function OrderWorkspace() {
                           <td>
                             {poRo ? (e.vendor || "—") : <VendorSelect value={e.vendor} onChange={(v) => setPo({ vendor: v })} />}
                           </td>
-                          <td className="mm-col-fill" />
                         </tr>
                       );
                     })}
@@ -941,7 +937,7 @@ export default function OrderWorkspace() {
           </div>
 
           <div className="mm-table-scroll mm-ow-table-scroll">
-            <table className="mm-table mm-table-hover">
+            <table className="mm-table mm-table-hover mm-table-fixed mm-ow-list-table">
               <thead>
                 <tr>
                   <th>Order</th>
@@ -958,9 +954,6 @@ export default function OrderWorkspace() {
                       says. It reads as a status here; the figures are on its tooltip. */}
                   <th>Purchase</th>
                   <th>Sales</th>
-                  {/* Soaks up any width left over so every real column stays at its own
-                      content width instead of each one growing a gap. */}
-                  <th className="mm-col-fill" aria-hidden />
                 </tr>
               </thead>
               <tbody>
@@ -974,9 +967,9 @@ export default function OrderWorkspace() {
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
                       <td className="mm-ow-cell-order">{o.name}</td>
                       <td className="mm-ow-cell-date">{o.transaction_date || "—"}</td>
-                      <td>{o.party || "—"}</td>
-                      <td>{o.company_name || "—"}</td>
-                      <td>{linesByOrder[o.name]?.colours.join(", ") || "—"}</td>
+                      <td title={o.party || ""}>{o.party || "—"}</td>
+                      <td title={o.company_name || ""}>{o.company_name || "—"}</td>
+                      <td title={linesByOrder[o.name]?.colours.join(", ") || ""}>{linesByOrder[o.name]?.colours.join(", ") || "—"}</td>
                       <td className="mm-num mm-ow-rates">{ratePair(linesByOrder[o.name])}</td>
                       <td className={overdue ? "mm-open-overdue" : undefined}>{o.delivery_date || "—"}{overdue ? " · overdue" : ""}</td>
                       <td>
@@ -1001,7 +994,6 @@ export default function OrderWorkspace() {
                           return <span className={`mm-pill ${b.cls}`}>{b.label}</span>;
                         })()}
                       </td>
-                      <td className="mm-col-fill" />
                     </tr>
                   );
                 })}

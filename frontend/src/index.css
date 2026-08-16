@@ -1296,6 +1296,16 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
    Cells that deliberately stack a second line still do: their sub-line is a block
    element (.mm-suggest-meta), which nowrap does not affect. */
 .mm-table-scroll .mm-table td, .mm-table-scroll .mm-table th { white-space: nowrap; }
+
+/* Every column gets a fixed share of the pane, so the table is exactly as wide as the
+   space it has: it cannot scroll sideways, and no column can end up holding a pocket of
+   empty space while another is squeezed. Text too long for its share is clipped with an
+   ellipsis and kept in full on the cell's title, which is the trade the floor asked for
+   — "why would I scroll when there is a gap in the id column". */
+.mm-table-fixed { table-layout: fixed; width: 100%; }
+.mm-table-fixed th, .mm-table-fixed td { overflow: hidden; text-overflow: ellipsis; }
+/* A cell holding a control (input, picker) must not clip it. */
+.mm-table-fixed td:has(.mm-input), .mm-table-fixed td:has(.mm-link-wrap) { overflow: visible; }
 /* Opt back in where a cell is genuinely prose. */
 .mm-table .mm-cell-wrap { white-space: normal; }
 
@@ -1312,9 +1322,14 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-table .mm-col-fill { width: 100%; padding: 0; }
 .mm-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .mm-table th, .mm-table td { text-align: left; padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--mm-border); }
-/* Tighter than the data it heads: a wide-tracked "INWARDS / REQUIRED" was setting the
-   column width all by itself. */
-.mm-table th { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.02em; color: #fff; font-weight: 700; background: var(--mm-primary); }
+/* The heading is a label, not a banner. A solid navy bar on every table (plus the rail,
+   plus the buttons) made the chrome louder than the data; a quiet header over a firm
+   rule reads as a table and lets the status pills carry the colour. */
+.mm-table th {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700;
+  color: var(--mm-text-sec); background: var(--mm-surface2);
+  border-bottom: 2px solid var(--mm-border-dark);
+}
 .mm-table-hover tbody tr:hover { background: var(--mm-accent-bg); }
 .mm-table-rows tbody tr:last-child td { border-bottom: none; }
 .mm-td-actions { white-space: nowrap; text-align: right; }
@@ -1497,24 +1512,33 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-ow-items-table td:not(.mm-ow-cell-link) input[type="text"],
 .mm-ow-items-table td:not(.mm-ow-cell-link) input:not([type]) { width: 74px; }
 
-/* Purchase order block: three fields, two of them short numbers. Full-width headings
-   ("PURCHASE WEIGHT") stretched those two columns across the card, so a 2,400 sat a
-   long way from the label it belonged to and the supplier picker — the one control
-   that needs room — was left with a 74px box. Short labels in a smaller cap, fixed
-   narrow number columns, and every remaining pixel to the supplier. */
-.mm-ow-po-table { table-layout: fixed; }
-.mm-ow-po-table th { font-size: 0.6rem; letter-spacing: 0.02em; padding: 0.35rem 0.5rem; }
-.mm-ow-po-table td { padding: 0.4rem 0.5rem; }
-.mm-ow-po-table th:nth-child(1), .mm-ow-po-table td:nth-child(1) { width: 96px; }
-.mm-ow-po-table th:nth-child(2), .mm-ow-po-table td:nth-child(2) { width: 88px; }
-/* Supplier is a name, not a paragraph — bounded, with the slack going to the filler
-   column so this reads as three columns of a table rather than one huge input. */
-.mm-ow-po-table th:nth-child(3), .mm-ow-po-table td:nth-child(3) { width: 200px; }
-/* Row rules, since a one-row table with no separators barely reads as one. */
+/* ── Orders list: the pane divided deliberately ────────────
+   Nine columns, each given the share of the pane its content actually needs — an order
+   number and a date need very little, a customer name the most. Percentages rather than
+   content-sizing, so the split is identical on every screen. That is what stops one
+   column holding a pocket of empty space while the row overflows and scrolls. */
+.mm-ow-list-table th:nth-child(1), .mm-ow-list-table td:nth-child(1) { width: 6%; }
+.mm-ow-list-table th:nth-child(2), .mm-ow-list-table td:nth-child(2) { width: 9%; }
+.mm-ow-list-table th:nth-child(3), .mm-ow-list-table td:nth-child(3) { width: 17%; }
+.mm-ow-list-table th:nth-child(4), .mm-ow-list-table td:nth-child(4) { width: 15%; }
+.mm-ow-list-table th:nth-child(5), .mm-ow-list-table td:nth-child(5) { width: 13%; }
+.mm-ow-list-table th:nth-child(6), .mm-ow-list-table td:nth-child(6) { width: 9%; }
+.mm-ow-list-table th:nth-child(7), .mm-ow-list-table td:nth-child(7) { width: 10%; }
+.mm-ow-list-table th:nth-child(8), .mm-ow-list-table td:nth-child(8) { width: 11%; }
+.mm-ow-list-table th:nth-child(9), .mm-ow-list-table td:nth-child(9) { width: 10%; }
+
+/* ── Purchase order block on the form ──────────────────────
+   Three fields of wildly different weight with the supplier sprawling into whatever was
+   left is what made this read as scattered inputs instead of a table. Fixed shares,
+   controls filling their cell so every edge lines up, and a rule under each row. */
+.mm-ow-po-table { table-layout: fixed; width: 100%; }
+.mm-ow-po-table th { letter-spacing: 0.03em; padding: 0.4rem 0.6rem; }
+.mm-ow-po-table td { padding: 0.45rem 0.6rem; }
+.mm-ow-po-table th:nth-child(1), .mm-ow-po-table td:nth-child(1) { width: 24%; }
+.mm-ow-po-table th:nth-child(2), .mm-ow-po-table td:nth-child(2) { width: 22%; }
+.mm-ow-po-table th:nth-child(3), .mm-ow-po-table td:nth-child(3) { width: 54%; }
+.mm-ow-po-table td .mm-input, .mm-ow-po-table td .mm-link-wrap { width: 100%; }
 .mm-ow-po-table tbody td { border-bottom: 1px solid var(--mm-border); }
-.mm-ow-po-table td input[type="number"] { width: 100%; }
-.mm-ow-po-table td:nth-child(3) .mm-link-wrap { width: 100%; }
-.mm-ow-po-table td:nth-child(3) input:not([type]) { width: 100%; }
 .mm-suggest-none { display: flex; flex-direction: column; gap: 0.1rem; border-bottom: 1px solid var(--mm-border); }
 .mm-suggest-rich { max-height: 280px; }
 /* Two-line rows need more height — but still never more than the screen has left. */
