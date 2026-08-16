@@ -1326,10 +1326,18 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
    plus the buttons) made the chrome louder than the data; a quiet header over a firm
    rule reads as a table and lets the status pills carry the colour. */
 .mm-table th {
-  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700;
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 800;
   color: var(--mm-text-sec); background: var(--mm-surface2);
-  border-bottom: 2px solid var(--mm-border-dark);
+  border-bottom: 1px solid var(--mm-border);
+  padding-top: 0.62rem; padding-bottom: 0.62rem;
 }
+/* Wide tracking is affordable now that columns are percentage shares — the heading can
+   no longer set its column's width, which is what made it costly before.
+   The fill stays (rather than flamezo's transparent header) because these headers are
+   sticky: rows would scroll through a transparent one. */
+.mm-table thead th:first-child, .mm-table tbody td:first-child { padding-left: 0.95rem; }
+.mm-table thead th:last-child, .mm-table tbody td:last-child { padding-right: 0.95rem; }
+.mm-table tbody tr:last-child td { border-bottom: 0; }
 .mm-table-hover tbody tr:hover { background: var(--mm-accent-bg); }
 .mm-table-rows tbody tr:last-child td { border-bottom: none; }
 .mm-td-actions { white-space: nowrap; text-align: right; }
@@ -1955,7 +1963,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* Tables — sticky header so column labels stay while scrolling, smoother rows */
 .mm-table thead th { position: sticky; top: 0; z-index: 2; }
 .mm-table tbody tr { transition: background 0.12s ease; }
-.mm-table tbody tr:hover td { background: var(--mm-blue-bg); }
+.mm-table tbody tr:hover td { background: var(--mm-surface2); }
 
 /* Inputs & selects — clearer focus ring, comfortable touch height */
 .mm-input:focus, select.mm-input:focus, textarea.mm-input:focus { outline: none; border-color: var(--mm-blue); box-shadow: 0 0 0 3px var(--mm-blue-bg); }
