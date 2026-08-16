@@ -1410,6 +1410,17 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-suggest-item { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.8rem; }
 .mm-suggest-item:hover { background: var(--mm-accent-bg); }
 .mm-suggest-muted { padding: 0.4rem 0.7rem; color: var(--mm-text-sec); font-size: 0.8rem; }
+/* Group heading inside a menu — e.g. the orders that want the colour being programmed,
+   above the ones that don't. Sticky so the operator can still tell which half of a long
+   list they are scrolling through. */
+.mm-suggest-group {
+	position: sticky; top: 0; z-index: 1;
+	padding: 0.35rem 0.7rem 0.2rem;
+	background: var(--mm-card);
+	color: var(--mm-text-sec);
+	font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mm-suggest-item + .mm-suggest-group { border-top: 1px solid var(--mm-border); margin-top: 0.2rem; }
 /* Portalled menus (AnchoredMenu) are pinned to the field with fixed coordinates, so they
    escape any scrolling ancestor that would otherwise clip them. Inline left/top/width win
    over the absolute defaults; `right`/`margin` must be cleared or they fight the width.

@@ -27,6 +27,20 @@ type Program = {
 type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
   customer_order?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number;
+  per_patty?: number;
+};
+/**
+ * One selectable thing to program: a colour in ONE of its forms.
+ *
+ * A roll and a patty of the same colour are not interchangeable here. The roll is only a
+ * form of the colour and can still be cut any way, so it can serve any order wanting that
+ * colour; the patty is already cut and can only serve an order wanting that colour at that
+ * cut. Folding them into one "colour" row hid that choice — the modal picked the patty and
+ * the roll could never be programmed against a wider set of orders.
+ */
+type Source = {
+  key: string; colour: string; kind: "cutting" | "inventory"; cut: string; state: string;
+  rows: Roll[]; weight: number; perPatty: number; batches: number;
 };
 type Colour = {
   colour: string; rows: Roll[]; states: string[]; total_weight: number; count: number;
@@ -38,7 +52,16 @@ type Colour = {
   programmable_state?: string | null;
 };
 type BoardCard = { name: string; roll_no?: string; shade?: string; cut?: string; status?: string; unfinished?: number; total_net_weight?: number; program_name?: string };
-type OrderOpt = { name: string; party?: string; party_name?: string; delivery_date?: string; required_weight?: number };
+type OrderOpt = {
+  name: string; party?: string; party_name?: string; delivery_date?: string; required_weight?: number;
+  /** A line asking for the colour being programmed — and one asking for it at this cut. */
+  color_match?: number; color_cut_match?: number;
+  /** How much the order wants in that colour (and of it at this cut) — in kg or in boxes,
+   *  whichever the line carries — the cuts it wants it in, and every colour on the order. */
+  matched_weight?: number; matched_cut_weight?: number;
+  matched_box?: number; matched_cut_box?: number;
+  matched_cuts?: string[]; colours?: string[];
+};
 type OnMachine = { name: string; roll_no?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
@@ -411,7 +434,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const colours = coloursCall.data?.message ?? [];
 
   const [search, setSearch] = useState("");
-  const [sel, setSel] = useState<Colour | null>(null);
+  const [sel, setSel] = useState<Source | null>(null);
   const [machine, setMachine] = useState(presetMachine ?? machines.find((m) => !m.closed)?.name ?? "");
   // Adding from the toolbar (no cell clicked) starts on the shift that comes first.
   const [shift, setShift] = useState<string>(presetShift ?? "Night");
@@ -420,47 +443,109 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const [jobWork, setJobWork] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // pre-select a colour passed in from a feeder card
+  // One row per FORM of a colour, not one per colour: the 1,200 kg LGDT BSM roll and the
+  // LGDT BSM already cut to 50/1.5 are two different things to program, and which one is
+  // picked decides which orders can take it. Cuttings split by cut as well, since a colour
+  // cut two ways is two different patties.
+  const sources = useMemo(() => {
+    const rank = (s: string) => (s === "Cut" ? 0 : s === "In Cutting" ? 1 : 2);
+    const out: Source[] = [];
+    // Built colour by colour so the server's colour ordering is preserved as-is, and only
+    // the forms WITHIN a colour are ranked — readiest to program first.
+    for (const c of colours) {
+      const forms = new Map<string, Source>();
+      for (const r of c.rows) {
+        const kind = r.source_type === "cutting" ? "cutting" : "inventory";
+        const cut = kind === "cutting" ? (r.cut || "").trim() : "";
+        const key = `${c.colour}|${r.state}|${cut}`;
+        let s = forms.get(key);
+        if (!s) {
+          s = { key, colour: c.colour, kind, cut, state: r.state, rows: [], weight: 0, perPatty: 0, batches: 0 };
+          forms.set(key, s);
+        }
+        s.rows.push(r);
+        s.weight += Number(r.weight || 0);
+        s.batches += Number(r.batches || 0);
+        // Per-patty is a rate, not a total — carry the largest, the way the server does.
+        s.perPatty = Math.max(s.perPatty, Number(r.per_patty || 0));
+      }
+      out.push(...[...forms.values()].sort((a, b) => rank(a.state) - rank(b.state)));
+    }
+    return out;
+  }, [colours]);
+
+  // pre-select a colour passed in from a feeder card — its readiest form
   useEffect(() => {
     if (presetColour && !sel) {
-      const g = colours.find((c) => c.colour === presetColour);
-      if (g) setSel(g);
+      const s = sources.find((x) => x.colour === presetColour);
+      if (s) setSel(s);
     }
-  }, [presetColour, colours, sel]);
+  }, [presetColour, sources, sel]);
 
   const q = search.trim().toLowerCase();
-  const shown = q ? colours.filter((c) => c.colour.toLowerCase().includes(q)) : colours;
+  const shown = q ? sources.filter((s) => s.colour.toLowerCase().includes(q)) : sources;
   const orderCtx = sel?.rows[0]?.customer_order || "";
   const [order, setOrder] = useState("");
 
-  // Best available source for the chosen colour: patty > in-cutting > inventory, but a
-  // source with NO weight is never preferred over one that has weight. A cutting saved
-  // with 0 kg used to win on rank alone and the program was then refused for having no
-  // weight, while the same colour sat in inventory with stock on it.
-  const bestRow = useMemo(() => {
-    if (!sel) return null;
-    const rank = (s: string) => (s === "Cut" ? 0 : s === "In Cutting" ? 1 : 2);
-    const sorted = [...sel.rows].sort((a, b) => rank(a.state) - rank(b.state));
-    return sorted.find((r) => Number(r.weight || 0) > 0) ?? sorted[0] ?? null;
-  }, [sel]);
+  // Within the chosen form, the row actually programmed: one that has weight. A cutting
+  // saved with 0 kg used to win and the program was then refused for having no weight,
+  // while the same colour sat in inventory with stock on it — which is now a row of its
+  // own that the operator can pick instead.
+  const bestRow = useMemo(
+    () => (sel ? sel.rows.find((r) => Number(r.weight || 0) > 0) ?? sel.rows[0] ?? null : null),
+    [sel],
+  );
 
-  // The order dropdown is offered for BOTH sources. A patty already carries its cut, so
-  // only orders asking for that cut are worth listing; an inventory roll has no cut until
-  // it is cut, so it sees every open order. (It used to be keyed off the selection's own
-  // order, which a roll never has — so the list came up empty on every roll.)
-  const pattyCut = bestRow?.source_type === "cutting" ? bestRow.cut || "" : "";
+  // Which orders can take this program depends on WHICH FORM was picked above.
+  //
+  //   A roll is only a form of its colour — it has no cut until it is cut — so any order
+  //   asking for that colour can take it, whatever cut that order wants. Colour alone.
+  //
+  //   A patty is already cut: it is a colour AT a cut, so only an order asking for that
+  //   colour IN that cut can take it. Colour and cut, on the same order line.
+  //
+  // Sending `cut` only for a patty is what draws that line — the server matches on what
+  // it is given, and returns ONLY the orders that can take it. An order that cannot is
+  // not an option, so it is never listed: the dropdown is the answer, not a haystack.
+  const pattyCut = sel?.kind === "cutting" ? sel.cut : "";
+  const colour = sel?.colour ?? "";
   const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
     `${API}.order_options`,
-    { customer_order: orderCtx || undefined, cut: pattyCut || undefined },
-    `pg-orders-${orderCtx}-${pattyCut}`,
+    { customer_order: orderCtx || undefined, cut: pattyCut || undefined, color: colour || undefined },
+    `pg-orders-${orderCtx}-${pattyCut}-${colour}`,
   );
   const orders = orderOpts.data?.message ?? [];
+
+  // An order line is quantified in kg or in boxes — say whichever it actually carries,
+  // so a box-only line never advertises itself as "0 kg".
+  const qty = (weight?: number, box?: number) =>
+    (weight ?? 0) > 0 ? `${kg(weight)} kg` : (box ?? 0) > 0 ? `${kg(box)} box` : "";
+  const orderChoices = orders.map((o) => ({
+    value: o.name,
+    label: `${o.name}${o.party_name || o.party ? ` · ${o.party_name || o.party}` : ""}`,
+    meta: (pattyCut
+      ? [[qty(o.matched_cut_weight, o.matched_cut_box), colour].filter(Boolean).join(" "), `cut ${pattyCut}`]
+      : [[qty(o.matched_weight, o.matched_box), colour].filter(Boolean).join(" "),
+         o.matched_cuts?.length ? `cut ${o.matched_cuts.join(", ")}` : ""]
+    ).concat(o.delivery_date ? `due ${o.delivery_date}` : "").filter(Boolean).join(" · "),
+  }));
+  // Empty means something specific here, and saying which saves a trip to the Orders
+  // screen to find out.
+  const noneText = orderOpts.isLoading
+    ? "Loading orders…"
+    : orderOpts.error
+      ? "Could not load orders — check the connection and try again."
+      : pattyCut
+        ? `No pending order wants ${colour} at cut ${pattyCut}.`
+        : colour
+          ? `No pending order wants ${colour}.`
+          : "No approved order is open — approve one on the Orders screen first.";
 
   const date = shift === "Night" ? nightDate : dayDate;
 
   async function submit() {
     setErr(null);
-    if (!sel || !bestRow) return setErr("Pick a colour to program.");
+    if (!sel || !bestRow) return setErr("Pick what to program.");
     if (Number(bestRow.weight || 0) <= 0 && bestRow.source_type === "cutting") {
       return setErr(
         `${sel.colour} has no weight recorded on its cutting, so there is nothing to ` +
@@ -496,8 +581,15 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     } catch (e) { setErr(extractErrorMessage(e)); }
   }
 
-  const sourceLabel = (states: string[]) =>
-    states.map((s) => (s === "Cut" ? "patty" : s === "In Cutting" ? "in cutting" : "inventory")).join(" · ");
+  const stateWord = (s: string) => (s === "Cut" ? "patty" : s === "In Cutting" ? "in cutting" : "roll");
+  // What this form is, in the operator's words — and, for a roll, WHY it will offer more
+  // orders than the patty sitting right under it.
+  const formLabel = (s: Source) =>
+    (s.kind === "inventory"
+      ? ["roll · any cut", `${kg(s.weight)} kg`]
+      : [`${stateWord(s.state)} · ${s.cut ? `cut ${s.cut}` : "no cut recorded"}`,
+         s.perPatty > 0 ? `${kg(s.perPatty)} kg/patty × ${s.batches}` : `${kg(s.weight)} kg`]
+    ).join(" · ");
 
   return (
     <div className="mm-modal-scrim" onClick={onClose}>
@@ -507,7 +599,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Pick a colour</p>
+          <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Pick what to program</p>
           <div className="mm-search-box" style={{ marginBottom: "0.55rem" }}>
             <Search size={15} />
             <input className="mm-input mm-input-compact" placeholder="Search colour…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -518,22 +610,13 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
             <p className="mm-empty">No colours available to program.</p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
-              {shown.map((c) => (
-                <div key={c.colour} className={`mm-pick-row ${sel?.colour === c.colour ? "mm-pick-row-active" : ""}`} onClick={() => { setSel(c); setOrder(""); }}>
-                  <span className="mm-colour-name">{c.colour}</span>
-                  <span className="mm-prog-card-meta">
-                    {c.by_state && Object.keys(c.by_state).length > 0
-                      ? Object.entries(c.by_state)
-                          .map(([st, e]) =>
-                            // A cutting: show the per-patty rate and the patty count, since
-                            // that is what a program takes. Inventory: the roll weight.
-                            e.per_patty > 0
-                              ? `${sourceLabel([st])} ${kg(e.per_patty)} kg/patty × ${e.batches}`
-                              : `${sourceLabel([st])} ${kg(e.weight)} kg`,
-                          )
-                          .join(" · ")
-                      : `${sourceLabel(c.states)} · ${kg(c.total_weight)} kg`}
-                  </span>
+              {shown.map((s, i) => (
+                <div key={s.key} className={`mm-pick-row ${sel?.key === s.key ? "mm-pick-row-active" : ""}`}
+                  onClick={() => { setSel(s); setOrder(""); }}>
+                  {/* The colour is named once per colour: the rows under it are the same
+                      colour in different forms, and repeating it reads as different stock. */}
+                  <span className="mm-colour-name">{shown[i - 1]?.colour === s.colour ? "" : s.colour}</span>
+                  <span className="mm-prog-card-meta">{formLabel(s)}</span>
                 </div>
               ))}
             </div>
@@ -554,17 +637,23 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
             <label className="mm-field">
               <span className="mm-field-label">
                 Customer Order
-                {pattyCut ? <span className="mm-muted"> · cut {pattyCut}</span> : null}
+                {colour ? (
+                  <span className="mm-muted">
+                    {" · "}
+                    {/* "none" is a fact about a list that has arrived. While the call is in
+                        flight the honest word is that we are still looking. */}
+                    {orderOpts.isLoading
+                      ? "checking orders…"
+                      : `${orders.length || "none"} for ${colour}${pattyCut ? ` at cut ${pattyCut}` : ""}`}
+                  </span>
+                ) : null}
               </span>
               {/* Id AND party on the closed field — the floor picks an order by who it is
-                  for, not by its number. */}
-              <SearchSelect value={order} placeholder={sel?.rows[0]?.customer_order || "—"}
-                options={orders.map((o) => ({
-                  value: o.name,
-                  label: `${o.name}${o.party_name || o.party ? ` · ${o.party_name || o.party}` : ""}`,
-                  meta: [o.delivery_date ? `due ${o.delivery_date}` : "",
-                         o.required_weight ? `${kg(o.required_weight)} kg required` : ""].filter(Boolean).join(" · "),
-                }))}
+                  for, not by its number. The placeholder names the order submit would fall
+                  back to, which is bestRow's — not the form's first row. */}
+              <SearchSelect value={order} placeholder={bestRow?.customer_order || "—"}
+                options={orderChoices}
+                emptyText={noneText}
                 onChange={setOrder} />
             </label>
             <label className="mm-field">
@@ -580,7 +669,16 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
             </label>
           </div>
-          {sel && bestRow && <p className="mm-muted" style={{ marginTop: "0.5rem", fontSize: "0.78rem" }}>Programming <strong>{sel.colour}</strong> from {sourceLabel(bestRow.state ? [bestRow.state] : [])} · {kg(bestRow.weight)} kg</p>}
+          {sel && bestRow && (
+            <p className="mm-muted" style={{ marginTop: "0.5rem", fontSize: "0.78rem" }}>
+              Programming <strong>{sel.colour}</strong> · {formLabel(sel)}
+              {sel.kind === "inventory"
+                ? " — still to be cut, so any order wanting this colour can take it"
+                : sel.cut
+                  ? ` — already cut, so only orders wanting ${sel.colour} at ${sel.cut}`
+                  : ""}
+            </p>
+          )}
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">

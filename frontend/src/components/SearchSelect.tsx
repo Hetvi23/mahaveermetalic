@@ -1,5 +1,5 @@
 import { ChevronDown, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
 
 export type SelectOption = {
@@ -7,6 +7,9 @@ export type SelectOption = {
 	label: string;
 	/** Second line in the list — e.g. a party name or colour under an order number. */
 	meta?: string;
+	/** Heading the option sits under. Options carrying one are expected to arrive already
+	 *  ordered by group; a heading is drawn each time the group changes. */
+	group?: string;
 };
 
 type Props = {
@@ -20,6 +23,9 @@ type Props = {
 	compact?: boolean;
 	/** Hide the "— none —" row when the field must always hold a value. */
 	noClear?: boolean;
+	/** What an empty list means here. "No matches" is right while typing, but it reads as
+	 *  a failed search when the list was empty to begin with. */
+	emptyText?: string;
 	className?: string;
 };
 
@@ -41,6 +47,7 @@ export default function SearchSelect({
 	required,
 	compact,
 	noClear,
+	emptyText,
 	className,
 }: Props) {
 	const [open, setOpen] = useState(false);
@@ -118,14 +125,25 @@ export default function SearchSelect({
 							{placeholder}
 						</li>
 					)}
-					{shown.map((o) => (
-						<li key={o.value} className="mm-suggest-item"
-							onMouseDown={(e) => { e.preventDefault(); pick(o.value); }}>
-							<strong>{o.label}</strong>
-							{o.meta && <span className="mm-suggest-meta">{o.meta}</span>}
-						</li>
+					{shown.map((o, i) => (
+						<Fragment key={o.value}>
+							{/* Heading only when this option opens a new group — and only against
+							    what is actually visible, so filtering can't leave one stranded.
+							    preventDefault or clicking a heading blurs the field it sits in,
+							    leaving an open menu over a dead input. */}
+							{o.group && o.group !== shown[i - 1]?.group && (
+								<li className="mm-suggest-group" onMouseDown={(e) => e.preventDefault()}>{o.group}</li>
+							)}
+							<li className="mm-suggest-item"
+								onMouseDown={(e) => { e.preventDefault(); pick(o.value); }}>
+								<strong>{o.label}</strong>
+								{o.meta && <span className="mm-suggest-meta">{o.meta}</span>}
+							</li>
+						</Fragment>
 					))}
-					{shown.length === 0 && <li className="mm-suggest-muted">No matches</li>}
+					{shown.length === 0 && (
+						<li className="mm-suggest-muted">{options.length === 0 && emptyText ? emptyText : "No matches"}</li>
+					)}
 				</>
 			</AnchoredMenu>
 		</div>

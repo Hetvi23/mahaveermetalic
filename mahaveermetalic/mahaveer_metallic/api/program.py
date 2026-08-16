@@ -304,58 +304,137 @@ def free_program(program):
 	return {"program": doc.name, "released": True}
 
 
+def _match_key(value):
+	"""Colours and cuts are typed by hand on both sides — once on an order line, again on
+	an inward — so spacing and case must never decide whether two of them are the same
+	thing. "LGDT BSM", "lgdt bsm" and "LGDTBSM" all key alike."""
+	return "".join(str(value or "").split()).lower()
+
+
 @frappe.whitelist()
-def order_options(party=None, customer_order=None, cut=None):
-	"""Orders for the modal's "Customer Order" dropdown, with the party name on each.
+def order_options(party=None, customer_order=None, cut=None, color=None):
+	"""Orders for the modal's "Customer Order" dropdown, matched to what is being programmed.
 
-	Offered for BOTH sources. It used to return [] whenever no party could be resolved,
-	which is exactly the case for an inventory roll — nothing has been cut yet, so there
-	is no order to take a party from — and the dropdown came up empty on every roll.
+	A ROLL is only a form of its colour — it carries no cut until someone cuts it — so an
+	order that asks for that colour is an order that roll can serve, whatever cut it wants
+	it in. Colour alone decides the match: `color` is passed, `cut` is not.
 
-	A patty already carries its cut, so only orders that actually ask for that cut are
-	worth offering and `cut` filters them. A roll has no cut until it is cut, so it sees
-	every open order.
+	A PATTY has already been cut, so it is a colour AT a cut, and only an order asking for
+	that colour IN that cut can take it. Both are passed and `color_cut_match` — the two
+	on the SAME line, not merely both somewhere on the order — is what marks it.
 
-	The context party's own orders sort first but the others are still listed: the roll on
-	the machine can legitimately be programmed against whoever is waiting for it.
+	Only the matches come back — an order that cannot take what is on the machine is not an
+	option, so it is not offered. With no colour at all (nothing picked yet) the plain list
+	of pending orders is returned.
+
+	Each one carries how much it asks for in that colour (`matched_weight` / `matched_box`,
+	and `matched_cut_weight` / `matched_cut_box` at this cut), the cuts it wants it in
+	(`matched_cuts`) and every colour on it (`colours`).
+
+	"Pending" is docstatus 1 and not completed: approved by the office, still open. A draft
+	or rejected order is not something the floor can program against.
 	"""
 	if not party and customer_order:
 		party = frappe.db.get_value("MM Sales Order", customer_order, "party")
 
-	vals = {"party": party or "", "cut": (cut or "").strip()}
+	vals = {
+		"party": party or "",
+		"ckey": _match_key(color),
+		"cutkey": _match_key(cut),
+	}
 
-	def fetch(with_cut: bool):
-		cut_filter = ""
-		if with_cut:
-			cut_filter = """
-			and exists (
+	# Matched-first is decided in SQL, not after the fact: with the ordering done here the
+	# 200-row cap can only ever drop orders that DON'T want this colour.
+	orders = frappe.db.sql(
+		"""
+		select so.name, so.party, pm.party_name, so.transaction_date, so.delivery_date,
+			so.ordered_weight, so.inwarded_weight, so.required_weight,
+			exists (
 				select 1 from `tabMM Sales Order Item` soi
-				where soi.parent = so.name and soi.cut = %(cut)s
-			)"""
-		return frappe.db.sql(
-			f"""
-			select so.name, so.party, pm.party_name, so.transaction_date, so.delivery_date,
-				so.ordered_weight, so.required_weight
-			from `tabMM Sales Order` so
-			left join `tabMM Party Master` pm on pm.name = so.party
-			where so.docstatus = 1
-				and ifnull(so.completed, 0) = 0
-				{cut_filter}
-			order by case when so.party = %(party)s then 0 else 1 end,
-				so.delivery_date asc, so.modified desc
-			limit 200
-			""",
-			vals,
-			as_dict=True,
-		)
+				where soi.parent = so.name and %(ckey)s <> ''
+					and lower(replace(ifnull(soi.color_name, ''), ' ', '')) = %(ckey)s
+			) as color_match,
+			exists (
+				select 1 from `tabMM Sales Order Item` soi
+				where soi.parent = so.name and %(ckey)s <> '' and %(cutkey)s <> ''
+					and lower(replace(ifnull(soi.color_name, ''), ' ', '')) = %(ckey)s
+					and lower(replace(ifnull(soi.cut, ''), ' ', '')) = %(cutkey)s
+			) as color_cut_match
+		from `tabMM Sales Order` so
+		left join `tabMM Party Master` pm on pm.name = so.party
+		where so.docstatus = 1
+			and ifnull(so.completed, 0) = 0
+		order by color_cut_match desc, color_match desc,
+			case when so.party = %(party)s then 0 else 1 end,
+			so.delivery_date asc, so.modified desc
+		limit 200
+		""",
+		vals,
+		as_dict=True,
+	)
+	if not orders:
+		return []
 
-	if vals["cut"]:
-		rows = fetch(True)
-		# Cut is optional on an order line. Narrowing to a cut nobody recorded would hand
-		# back an empty dropdown — worse than showing everything — so fall back rather
-		# than leave the operator with nothing to pick.
-		return rows or fetch(False)
-	return fetch(False)
+	# Raw SQL, not get_all: a child table read runs its own permission check against the
+	# parent, and this list is opened by the floor, not by a System Manager.
+	lines = frappe.db.sql(
+		"""
+		select soi.parent, soi.color_name, soi.cut, soi.qty_weight, soi.qty_box
+		from `tabMM Sales Order Item` soi
+		where soi.parent in %(names)s and soi.parenttype = 'MM Sales Order'
+		""",
+		{"names": [o.name for o in orders]},
+		as_dict=True,
+	)
+	by_order = {}
+	for line in lines:
+		by_order.setdefault(line.parent, []).append(line)
+
+	# The flags handed to the UI are re-derived here from the lines rather than kept from
+	# SQL: the match and the weight shown beside it must come from the same reading of the
+	# colour, or an order can be listed as a match with "0 kg" under it.
+	for o in orders:
+		colours, matched_cuts = [], []
+		matched_weight = matched_cut_weight = 0.0
+		# An order line is quantified in kg OR in boxes. Reporting only kg would print a
+		# real match as "0 kg of LGDT BSM", which reads as nothing to make.
+		matched_box = matched_cut_box = 0.0
+		matched = matched_at_cut = False
+		for line in by_order.get(o.name, []):
+			shade = (line.color_name or "").strip()
+			if shade and shade not in colours:
+				colours.append(shade)
+			if not vals["ckey"] or _match_key(shade) != vals["ckey"]:
+				continue
+			matched = True
+			matched_weight += float(line.qty_weight or 0)
+			matched_box += float(line.qty_box or 0)
+			line_cut = (line.cut or "").strip()
+			if line_cut and line_cut not in matched_cuts:
+				matched_cuts.append(line_cut)
+			# Colour and cut on ONE line. An order wanting this colour in 50/85 and some
+			# other colour in 50/1.5 does not want THIS patty.
+			if vals["cutkey"] and _match_key(line_cut) == vals["cutkey"]:
+				matched_at_cut = True
+				matched_cut_weight += float(line.qty_weight or 0)
+				matched_cut_box += float(line.qty_box or 0)
+		o["colours"] = colours
+		o["matched_cuts"] = matched_cuts
+		o["matched_weight"] = round(matched_weight, 3)
+		o["matched_cut_weight"] = round(matched_cut_weight, 3)
+		o["matched_box"] = round(matched_box, 3)
+		o["matched_cut_box"] = round(matched_cut_box, 3)
+		o["color_match"] = int(matched)
+		o["color_cut_match"] = int(matched_at_cut)
+
+	# Only what can actually take this program. A patty is judged on colour AND cut, a roll
+	# on colour alone; with nothing picked yet there is nothing to judge against, so the
+	# plain pending list stands. Filtered on the flags derived above, not on SQL's own
+	# reading of the colour, so what is offered and what is shown beside it always agree.
+	if vals["ckey"]:
+		wanted = "color_cut_match" if vals["cutkey"] else "color_match"
+		orders = [o for o in orders if o[wanted]]
+	return orders
 
 
 def _ensure_cutting_from_inward(inward_item, customer_order=None, job_work=0, batches=1, cut=None):
