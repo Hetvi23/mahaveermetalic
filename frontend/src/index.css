@@ -1542,9 +1542,14 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-ow-po-table { table-layout: fixed; width: 100%; }
 .mm-ow-po-table th { letter-spacing: 0.03em; padding: 0.4rem 0.6rem; }
 .mm-ow-po-table td { padding: 0.45rem 0.6rem; }
-.mm-ow-po-table th:nth-child(1), .mm-ow-po-table td:nth-child(1) { width: 24%; }
-.mm-ow-po-table th:nth-child(2), .mm-ow-po-table td:nth-child(2) { width: 22%; }
-.mm-ow-po-table th:nth-child(3), .mm-ow-po-table td:nth-child(3) { width: 54%; }
+.mm-ow-po-table th:nth-child(1), .mm-ow-po-table td:nth-child(1) { width: 27%; }
+.mm-ow-po-table th:nth-child(2), .mm-ow-po-table td:nth-child(2) { width: 19%; }
+.mm-ow-po-table th:nth-child(3), .mm-ow-po-table td:nth-child(3) { width: 18%; }
+.mm-ow-po-table th:nth-child(4), .mm-ow-po-table td:nth-child(4) { width: 36%; }
+/* The colour names the line; it must not be clipped to a stub. */
+.mm-ow-po-table td:nth-child(1) { overflow: hidden; text-overflow: ellipsis; }
+.mm-ow-po-table .mm-colour-name { font-size: 0.82rem; }
+.mm-ow-po-table .mm-suggest-meta { display: block; font-size: 0.68rem; }
 .mm-ow-po-table td .mm-input, .mm-ow-po-table td .mm-link-wrap { width: 100%; }
 .mm-ow-po-table tbody td { border-bottom: 1px solid var(--mm-border); }
 .mm-suggest-none { display: flex; flex-direction: column; gap: 0.1rem; border-bottom: 1px solid var(--mm-border); }

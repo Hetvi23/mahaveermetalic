@@ -840,6 +840,10 @@ export default function OrderWorkspace() {
                     {/* Short labels — the card is already headed "Purchase order", and the
                         orders list next to it reads "P.Rate / S.Rate" the same way. */}
                     <tr>
+                      {/* Which line this purchase is for. Weight, rate and supplier alone
+                          are unattributable the moment an order carries more than one
+                          colour — the pre-save dialog already names it, so this matches. */}
+                      <th>Color</th>
                       <th className="mm-num">P. Weight</th>
                       <th className="mm-num">P. Rate</th>
                       <th>Supplier</th>
@@ -854,6 +858,10 @@ export default function OrderWorkspace() {
                       const poRo = ro || Number(r.po?.docstatus) === 1;
                       return (
                         <tr key={r.idx}>
+                          <td title={`${r.item.color_name}${r.item.cut ? ` · ${r.item.cut}` : ""}`}>
+                            <span className="mm-colour-name">{r.item.color_name || "—"}</span>
+                            {r.item.cut ? <span className="mm-suggest-meta">{r.item.cut}</span> : null}
+                          </td>
                           <td className="mm-num">
                             {poRo ? Number(e.weight || 0).toLocaleString() : (
                               <input className="mm-input mm-input-compact mm-iw-num" type="number" value={e.weight}
