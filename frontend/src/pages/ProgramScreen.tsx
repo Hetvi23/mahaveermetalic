@@ -62,7 +62,7 @@ type OrderOpt = {
   matched_box?: number; matched_cut_box?: number;
   matched_cuts?: string[]; colours?: string[];
 };
-type OnMachine = { name: string; roll_no?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
+type OnMachine = { name: string; roll_no?: string; shade?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
 const shiftIcon = (s: string) => (s === "Night" ? "🌙" : "☀");
@@ -726,12 +726,18 @@ function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onC
               <p className="mm-page-sub" style={{ marginTop: 0 }}>For each program, how many batches to revert?</p>
               <div className="mm-table-scroll">
                 <table className="mm-table mm-table-dense">
-                  <thead><tr><th>Program</th><th>Cut</th><th className="mm-num">Done / Total</th><th className="mm-num">Revert</th></tr></thead>
+                  <thead><tr><th>Color</th><th>Cut</th><th>Shift</th><th className="mm-num">Done / Total</th><th className="mm-num">Revert</th></tr></thead>
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.name}>
-                        <td>{r.roll_no || r.name}</td>
+                        {/* The colour is how the floor knows which job this is. The row
+                            named the roll number, or fell back to the document id, which
+                            tells an operator being asked to revert batches nothing. */}
+                        <td title={r.name}>
+                          <span className="mm-colour-name">{r.shade || r.roll_no || r.name}</span>
+                        </td>
                         <td>{r.cut || "—"}</td>
+                        <td>{r.shift ? `${shiftIcon(r.shift)} ${r.shift}` : "—"}</td>
                         <td className="mm-num">{r.completed_batches ?? 0} / {r.total_batches ?? 0}</td>
                         <td className="mm-num">
                           <input className="mm-input mm-input-compact mm-iw-num" type="number" min={0} max={r.completed_batches ?? 0}
