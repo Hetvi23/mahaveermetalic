@@ -82,8 +82,8 @@ export default function ProductionViewPage() {
     <div className="mm-screen mm-page-enter">
       <header className="mm-ws-toolbar">
         <div>
-          <h1 className="mm-page-title">Production view</h1>
-          <p className="mm-page-sub">What&apos;s in cutting, and the day&apos;s plan by shift — view only.</p>
+          <h1 className="mm-page-title">Program view</h1>
+          <p className="mm-page-sub">What&apos;s in cutting, and the programmes on each machine by shift — view only.</p>
         </div>
         <div className="mm-ws-toolbar-right">
           <label className="mm-field mm-field-inline">
