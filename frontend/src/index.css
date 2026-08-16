@@ -2405,3 +2405,11 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-state-clickable:hover { filter: brightness(0.97); }
 .mm-state-clickable:active { transform: scale(0.96); }
 .mm-state-clickable:focus-visible { outline: none; box-shadow: 0 0 0 3.5px var(--mm-focus); }
+
+/* Add-program: the list is narrowed to the machine's cut, so say so where the list is,
+   and keep the way out next to the reason. */
+.mm-prog-picklabel { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin: 0 0 0.4rem; }
+.mm-prog-cuthint {
+  display: inline-flex; align-items: center; gap: 0.45rem; margin-left: auto;
+  font-size: 0.72rem; color: var(--mm-text-sec);
+}

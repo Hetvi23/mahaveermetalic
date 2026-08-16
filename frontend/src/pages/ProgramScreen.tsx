@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
@@ -483,7 +483,32 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   }, [presetColour, sources, sel]);
 
   const q = search.trim().toLowerCase();
-  const shown = q ? sources.filter((s) => s.colour.toLowerCase().includes(q)) : sources;
+  const searched = q ? sources.filter((s) => s.colour.toLowerCase().includes(q)) : sources;
+
+  // A machine runs one cut. Offering it a patty cut to something else is offering a job it
+  // cannot physically run, so the list narrows to what this machine can take:
+  //
+  //   a patty is already cut — it must match the machine's cut exactly;
+  //   a roll is not cut yet — it can be cut to the machine's size, so it always qualifies
+  //   (create_unfinished_program stamps the planned cutting with the machine's cut).
+  //
+  // A machine with no cut set filters nothing. "Show all cuts" is there because the rule
+  // is strict enough to hide a patty whose cut was never recorded, and a list that can
+  // hide the thing you need with no way back is worse than a noisy one.
+  const machineCut = (machines.find((m) => m.name === machine)?.cut || "").trim();
+  const [allCuts, setAllCuts] = useState(false);
+  const fitsMachine = useCallback(
+    (s: Source) => !machineCut || allCuts || s.kind === "inventory" || s.cut === machineCut,
+    [machineCut, allCuts],
+  );
+  const shown = searched.filter(fitsMachine);
+  const hiddenByCut = searched.length - shown.length;
+
+  // Changing the machine can invalidate what is already picked — drop it rather than let
+  // a 50/85 patty be submitted to a machine running 50/1.5.
+  useEffect(() => {
+    if (sel && !fitsMachine(sel)) setSel(null);
+  }, [sel, fitsMachine]);
   const orderCtx = sel?.rows[0]?.customer_order || "";
   const [order, setOrder] = useState("");
 
@@ -599,7 +624,25 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <p className="mm-field-label" style={{ margin: "0 0 0.4rem" }}>Pick what to program</p>
+          <div className="mm-prog-picklabel">
+            <span className="mm-field-label" style={{ margin: 0 }}>Pick what to program</span>
+            {machineCut && (
+              allCuts ? (
+                <button type="button" className="mm-mini" onClick={() => setAllCuts(false)}>
+                  Show only cut {machineCut}
+                </button>
+              ) : hiddenByCut > 0 ? (
+                <span className="mm-prog-cuthint">
+                  cut {machineCut} on this machine
+                  <button type="button" className="mm-mini" onClick={() => setAllCuts(true)}>
+                    Show all cuts ({hiddenByCut} hidden)
+                  </button>
+                </span>
+              ) : (
+                <span className="mm-prog-cuthint">cut {machineCut} on this machine</span>
+              )
+            )}
+          </div>
           <div className="mm-search-box" style={{ marginBottom: "0.55rem" }}>
             <Search size={15} />
             <input className="mm-input mm-input-compact" placeholder="Search colour…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -607,7 +650,11 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
           {coloursCall.isLoading ? (
             <p className="mm-muted">Loading…</p>
           ) : shown.length === 0 ? (
-            <p className="mm-empty">No colours available to program.</p>
+            <p className="mm-empty">
+              {machineCut && !allCuts && hiddenByCut > 0
+                ? `Nothing cut to ${machineCut} is available — that is the cut set on this machine.`
+                : "No colours available to program."}
+            </p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
               {shown.map((s) => (
