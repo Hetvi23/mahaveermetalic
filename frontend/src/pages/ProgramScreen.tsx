@@ -610,12 +610,14 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
             <p className="mm-empty">No colours available to program.</p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
-              {shown.map((s, i) => (
+              {shown.map((s) => (
                 <div key={s.key} className={`mm-pick-row ${sel?.key === s.key ? "mm-pick-row-active" : ""}`}
                   onClick={() => { setSel(s); setOrder(""); }}>
-                  {/* The colour is named once per colour: the rows under it are the same
-                      colour in different forms, and repeating it reads as different stock. */}
-                  <span className="mm-colour-name">{shown[i - 1]?.colour === s.colour ? "" : s.colour}</span>
+                  {/* Every row names its colour. It used to be printed once per group and
+                      blanked on the rows beneath — which reads fine from the top, and not
+                      at all once the list is scrolled, searched or you land mid-group:
+                      "patty · cut 50/120 · 50 kg/patty × 1" of WHAT. */}
+                  <span className="mm-colour-name">{s.colour}</span>
                   <span className="mm-prog-card-meta">{formLabel(s)}</span>
                 </div>
               ))}
