@@ -1348,7 +1348,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* ── Search ───────────────────────────────────────────── */
 .mm-search-wrap { position: relative; flex: 1; min-width: 0; max-width: 320px; }
 .mm-search-icon { position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%); color: var(--mm-text-sec); pointer-events: none; }
-.mm-search-pill { padding-left: 2rem; border-radius: 999px; }
+/* Two classes, not one: the generic `.mm-input` further down sets `padding` as a
+   shorthand, which silently reset this left padding and dropped the text under the
+   search icon on every search box in the app. */
+.mm-input.mm-search-pill { padding-left: 2rem; border-radius: 999px; }
 
 /* ── List page ────────────────────────────────────────── */
 .mm-list-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
