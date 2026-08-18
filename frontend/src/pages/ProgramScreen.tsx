@@ -95,6 +95,10 @@ export default function ProgramScreen() {
   /** Set the first time Add-program is opened — until then the patty shelf stays empty. */
   const [pattyAsked, setPattyAsked] = useState(false);
   const [pattyColourFilter, setPattyColourFilter] = useState("");
+  /** The machine the shelf is answering for. A patty count summed over every cut answers
+   *  nobody's question — 9 patty of a colour is 6 this machine can run and 3 it cannot — so
+   *  refreshing from a machine scopes the shelf to that machine's cut. */
+  const [pattyScope, setPattyScope] = useState<{ machine: string; machineNo: string; cut: string } | null>(null);
   const [closing, setClosing] = useState<Machine | null>(null);
   const [completing, setCompleting] = useState<Program | null>(null);
 
@@ -123,6 +127,14 @@ export default function ProgramScreen() {
     setPattyAsked(true);
     setAdding(preset);
   };
+  /** "What can THIS machine run, right now." Fills the shelf if it was blank, scopes it to
+   *  the machine's cut, and re-pulls — the patty count moves as programs take patti. */
+  const refreshPattyFor = (m: Machine) => {
+    setPattyAsked(true);
+    setPattyScope({ machine: m.name, machineNo: m.machine_no, cut: (m.cut || "").trim() });
+    setPattyColourFilter("");
+    void pattyCall.mutate();
+  };
   const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { const m = extractErrorMessage(e); toast(m, "error"); } };
 
   // programs[machine][shift]
@@ -145,8 +157,12 @@ export default function ProgramScreen() {
   // patti are all programmed is not on the shelf at all: the shelf is what can go on a
   // machine, and a spent one cannot.
   const pattyColours = useMemo(() => {
+    const scopeCut = (pattyScope?.cut || "").trim();
     const g: Record<string, { colour: string; count: number; total: number }> = {};
     for (const p of patties) {
+      // Scoped to a machine: only patty cut the way that machine runs. A machine with no cut
+      // recorded filters nothing — it can take anything.
+      if (scopeCut && (p.cut || "").trim() !== scopeCut) continue;
       const colour = p.shade || p.roll_no || "—";
       const e = (g[colour] ||= { colour, count: 0, total: 0 });
       // "No of patty" = the patti still available to program on this colour.
@@ -154,7 +170,7 @@ export default function ProgramScreen() {
       e.total += Number(p.total_patti ?? p.batches ?? 0);
     }
     return Object.values(g).sort((a, b) => a.colour.localeCompare(b.colour));
-  }, [patties]);
+  }, [patties, pattyScope]);
 
   const shownPatties = useMemo(
     () =>
@@ -245,6 +261,16 @@ export default function ProgramScreen() {
             <div className="mm-flow-shelf-head" style={{ margin: 0, marginBottom: "0.7rem" }}>
               <span className="mm-flow-num">✓</span><h2>Finished patty</h2>
               <span className="mm-flow-count">{shownPatties.length}</span>
+              {pattyScope && (
+                <span className="mm-patty-scope">
+                  Machine {pattyScope.machineNo}
+                  {pattyScope.cut ? ` · cut ${pattyScope.cut}` : " · any cut"}
+                  <button type="button" className="mm-icon-btn" aria-label="Show every cut again"
+                    title="Show patty of every cut" onClick={() => setPattyScope(null)}>
+                    <X size={13} />
+                  </button>
+                </span>
+              )}
               {pattyAsked && (
                 <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour…"
                   value={pattyColourFilter} onChange={(e) => setPattyColourFilter(e.target.value)} />
@@ -258,7 +284,11 @@ export default function ProgramScreen() {
               <p className="mm-muted">Loading…</p>
             ) : shownPatties.length === 0 ? (
               <p className="mm-flow-empty-state">
-                {pattyColours.length === 0 ? "No finished patty available — finish a cutting first." : "No patty of that colour."}
+                {pattyColours.length > 0
+                  ? "No patty of that colour."
+                  : pattyScope?.cut
+                    ? `No finished patty cut to ${pattyScope.cut} — that is what Machine ${pattyScope.machineNo} runs.`
+                    : "No finished patty available — finish a cutting first."}
               </p>
             ) : (
               <div className="mm-table-scroll">
@@ -301,12 +331,23 @@ export default function ProgramScreen() {
                       {m.closed ? (
                         <>
                           <span className="mm-state mm-state-open">Not working</span>
-                          <div style={{ marginTop: "0.5rem" }}>
+                          <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
                             <button className="mm-mini mm-mini-ok" onClick={guard(() => reopen({ machine: m.name }))}><Power size={13} /> Reopen</button>
+                            <button className="mm-mini" title={`Show the finished patty Machine ${m.machine_no} can run`}
+                              aria-label={`Refresh finished patty for machine ${m.machine_no}`}
+                              onClick={() => refreshPattyFor(m)}>
+                              <RotateCcw size={13} /> Patty
+                            </button>
                           </div>
                         </>
                       ) : (
                         <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                          {/* Refresh the patty shelf for THIS machine — what it can run, now. */}
+                          <button className="mm-mini" title={`Show the finished patty Machine ${m.machine_no} can run${m.cut ? ` (cut ${m.cut})` : ""}`}
+                            aria-label={`Refresh finished patty for machine ${m.machine_no}`}
+                            onClick={() => refreshPattyFor(m)}>
+                            <RotateCcw size={13} /> Patty
+                          </button>
                           <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
                           {Object.values(byMachineShift[m.name] || {}).flat().length === 0 && (
                             <button className="mm-mini" title="Remove this machine" onClick={guard(() => removeMachine({ machine: m.name }))}><Trash2 size={13} /></button>

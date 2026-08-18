@@ -103,30 +103,29 @@ def production_view(date=None, branch=None):
 	def lot_id(lot):
 		return frappe.db.get_value("MM Lot", lot, "lot_id") if lot else None
 
-	# --- In cutting: submitted cuttings not yet finished ---
-	cut_filters = {"docstatus": 1, "status": ["!=", "Completed"]}
-	if branch:
-		cut_filters["branch"] = branch
-	in_cutting = []
-	for c in frappe.get_all(
-		"MM Cutting",
-		filters=cut_filters,
-		fields=["name", "shade", "roll_no", "cut", "lot", "total_patti_qty", "total_net_weight", "status", "customer_order"],
-		order_by="modified desc",
-		limit_page_length=200,
-	):
-		in_cutting.append(
-			{
-				"cutting": c.name,
-				"color": c.shade or c.roll_no or "—",
-				"cut": c.cut,
-				"lot_id": lot_id(c.lot),
-				"patty": int(round(c.total_patti_qty or 0)),
-				"weight": c.total_net_weight or 0,
-				"status": c.status,
-				"customer_order": c.customer_order,
-			}
-		)
+	# --- In cutting: THE SAME LIST THE CUTTING BOARD SHOWS ---
+	#
+	# It used to be "any cutting that isn't Completed", which is a different question and gave
+	# a different answer: cuttings already pulled into a program, and ones closed out, are off
+	# the Cutting board but were still listed here — so the board could read empty while this
+	# panel showed a dozen rows. Asking the board itself is what keeps the two screens honest;
+	# it also folds the cuttings of one lot into a single row, as the board does.
+	from mahaveermetalic.mahaveer_metallic.api.cutting import cutting_board
+
+	in_cutting = [
+		{
+			"cutting": c.get("name"),
+			"color": c.get("shade") or c.get("roll_no") or "—",
+			"cut": c.get("cut"),
+			"lot_id": c.get("lot_id"),
+			"patty": int(round(float(c.get("total_patti_qty") or 0))),
+			"weight": c.get("total_net_weight") or 0,
+			"status": c.get("status"),
+			"unfinished": bool(c.get("unfinished")),
+			"customer_order": c.get("customer_order"),
+		}
+		for c in cutting_board(branch=branch)
+	]
 
 	# --- Programs planned for this date, split Day / Night and grouped by MACHINE ---
 	# released = it has left the machine (completed to Production, or closed out short).

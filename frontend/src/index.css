@@ -2141,6 +2141,14 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-patty-shelf > .mm-table-scroll,
 .mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .mm-patty-filter { margin-left: auto; max-width: 190px; }
+/* Which machine the shelf is answering for — a count summed over every cut answers nobody. */
+.mm-patty-scope {
+  display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.5rem;
+  padding: 0.15rem 0.3rem 0.15rem 0.55rem; border-radius: 99px;
+  background: var(--mm-accent-bg); color: var(--mm-accent-fg);
+  border: 1px solid var(--mm-accent-soft); font-size: 0.72rem; font-weight: 700;
+}
+.mm-patty-scope .mm-icon-btn { width: 18px; height: 18px; color: inherit; }
 
 
 /* Cutting roll picker (finish a planned cut): search row, roll table, patty stepper */
