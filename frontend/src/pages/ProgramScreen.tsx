@@ -104,12 +104,23 @@ export default function ProgramScreen() {
 
   const nav = useNavigate();
   const machinesCall = useFrappeGetCall<{ message: Machine[] }>(`${API}.list_machines`, undefined, "pg-machines");
-  const progCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "pg-threads");
+  const progCall = useFrappeGetCall<{ message: Program[] }>(
+    `${API}.threads_processing`, undefined, "pg-threads",
+    { refreshInterval: 20000, revalidateOnFocus: true, keepPreviousData: true },
+  );
   // Finished patty starts BLANK and is fetched the first time Add-program is used: the shelf
   // answers "what can I put on a machine", which is a question you only ask while planning.
   // A null swr key is what holds the request back.
+  //
+  // Once asked, it KEEPS ITSELF CURRENT. Patti are consumed and handed back by things that
+  // happen elsewhere — a cutting finished on the Cutting screen, a program completed or
+  // reverted by someone else — and a shelf that only moves when you press something is a
+  // shelf that quietly goes stale on a shift-long screen. It re-pulls on a timer and
+  // whenever the tab comes back into focus; SWR keeps the current rows on screen while it
+  // does, so nothing blinks.
   const pattyCall = useFrappeGetCall<{ message: Roll[] }>(
     `${API}.available_rolls`, { finished_only: 1 }, pattyAsked ? "pg-patties" : null,
+    { refreshInterval: 20000, revalidateOnFocus: true, keepPreviousData: true },
   );
 
   const { call: addMachine } = useFrappePostCall(`${API}.add_machine`);
