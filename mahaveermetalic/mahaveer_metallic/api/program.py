@@ -123,6 +123,33 @@ def _apply_patti(program: str, allocation) -> None:
 			frappe.db.set_value("MM Cutting", a["cutting"], "program", program, update_modified=False)
 
 
+def _hand_over_cutting_link(cutting: str, leaving: str) -> None:
+	"""Pass a cutting's `program` link on when the program holding it lets go.
+
+	The link is the old one-cutting-one-program signal, kept for the screens that still read
+	it — but it names ONE program while several can now hold patti on the same cutting. When
+	the named one releases, the link has to move to another program that still holds some,
+	not simply stay: a submitted cutting pointing at a program BLOCKS that program's cancel,
+	so a released program could not be cancelled while a second one held the rest of the cut.
+	Nothing left holding it → cleared.
+	"""
+	heir = frappe.db.sql(
+		"""
+		select pp.parent
+		from `tabMM Program Patty` pp
+		join `tabMM Program` p on p.name = pp.parent
+		where pp.cutting = %(cutting)s and pp.parent != %(leaving)s
+			and pp.parenttype = 'MM Program' and p.docstatus < 2 and ifnull(pp.patti, 0) > 0
+		order by pp.creation asc
+		limit 1
+		""",
+		{"cutting": cutting, "leaving": leaving},
+	)
+	frappe.db.set_value(
+		"MM Cutting", cutting, "program", heir[0][0] if heir else None, update_modified=False
+	)
+
+
 def _release_patti(program: str, count=None) -> float:
 	"""Hand patti back — the ones this program did not run.
 
@@ -149,8 +176,8 @@ def _release_patti(program: str, count=None) -> float:
 		if row:
 			consumed = round(max(0.0, float(row.consumed_patti or 0) - give), 3)
 			frappe.db.set_value("MM Cutting", r.cutting, "consumed_patti", consumed, update_modified=False)
-			if consumed <= 0 and row.program == program:
-				frappe.db.set_value("MM Cutting", r.cutting, "program", None, update_modified=False)
+			if row.program == program:
+				_hand_over_cutting_link(r.cutting, program)
 		kept = round(float(r.patti or 0) - give, 3)
 		if kept > 0:
 			frappe.db.set_value("MM Program Patty", r.name, "patti", kept, update_modified=False)
@@ -170,10 +197,10 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	the program from that row. `finished_only` restricts to patties — the default
 	Add-program list; the "search inventory" mode covers everything else.
 
-	A patty is listed while any of it is left: `batches` is what is still AVAILABLE, and a
-	fully consumed one is still returned, flagged `consumed`, so the picker can grey it out
-	rather than have it vanish mid-shift. Cuttings still in progress are NOT offered — a
-	program runs on patti that exist.
+	A patty is listed only while some of it is left: `batches` is what is still AVAILABLE, and
+	one whose patti are all programmed is left out entirely — the list answers "what can go on
+	a machine", and a spent patty is not an answer to that. Cuttings still in progress are NOT
+	offered either: a program runs on patti that exist.
 	"""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
 
@@ -196,6 +223,9 @@ def available_rolls(branch=None, location=None, finished_only=0):
 		limit_page_length=500,
 	):
 		free = available_patti(c)
+		# Spent — every patty of it is already in a program. Not offered.
+		if free <= 0:
+			continue
 		per_patty = float(c.per_patty_weight or 0) or (
 			ceil2(float(c.total_net_weight or 0) / float(c.total_patti_qty)) if c.total_patti_qty else 0.0
 		)
@@ -214,7 +244,6 @@ def available_rolls(branch=None, location=None, finished_only=0):
 			"batches": int(free) if float(free).is_integer() else free,
 			"total_patti": int(round(c.total_patti_qty or 0)),
 			"consumed_patti": round(float(c.consumed_patti or 0), 3),
-			"consumed": 1 if free <= 0 else 0,
 			# The weight still on it, at the per-patty rate a program actually takes.
 			"weight": round(per_patty * free, 3) if per_patty else (c.total_net_weight or 0),
 			# A cutting is consumed PER PATTY (one patty = one batch), so the per-patty
@@ -303,8 +332,6 @@ def _merge_rows_by_lot(rows):
 		head["weight"] = round(float(head.get("weight") or 0) + float(r.get("weight") or 0), 3)
 		head["merged_from"].append(r["cutting"])
 		head["merged_count"] += 1
-		# A merged card is only spent when every cutting behind it is.
-		head["consumed"] = 1 if float(head.get("batches") or 0) <= 0 else 0
 	for r in out:
 		if r.get("source_type") == "cutting" and float(r.get("batches") or 0).is_integer():
 			r["batches"] = int(float(r["batches"] or 0))
@@ -740,12 +767,16 @@ def create_program(
 
 @frappe.whitelist()
 def available_colours(branch=None, location=None):
-	"""Colour-first picker for Add-program: the colours available to program right now,
-	aggregated across finished patties (Cut) and inventory rolls (In Inventory). Each colour
-	lists its underlying source rows (so the UI can show only the colour up front, then
-	create from the right source). Patties whose patti are all consumed come through flagged,
-	so the picker greys them instead of hiding them."""
-	rows = available_rolls(branch=branch, location=location)
+	"""Colour-first picker for Add-program: FINISHED PATTY, and only what is left of it.
+
+	Patty only — an uncut roll is not something a machine can run, so it is not offered here.
+	It used to be, as a way of planning a program before the cut ("to cut"); that plan starts
+	from Cutting now, and `create_unfinished_program` is still here for it. A patty with no
+	patti left is not listed either: it cannot go on a machine, so it is not an option.
+
+	Each colour lists its underlying source rows, so the UI can show the colour up front and
+	still create from the right cutting."""
+	rows = available_rolls(branch=branch, location=location, finished_only=1)
 	groups = {}
 	order = []
 	for r in rows:
@@ -771,8 +802,7 @@ def available_colours(branch=None, location=None):
 	for g in out:
 		g["total_weight"] = round(g["total_weight"], 3)
 		g["count"] = len(g["rows"])
-		# The weight actually available to a program: the best source that has any, in the
-		# same order the picker prefers them (patty → inventory).
+		# The weight actually available to a program: the best source that has any.
 		rank = {"Cut": 0, "In Inventory": 1}
 		usable = sorted(
 			(r for r in g["rows"] if float(r.get("weight") or 0) > 0),

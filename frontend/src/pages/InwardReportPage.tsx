@@ -154,8 +154,11 @@ export default function InwardReportPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Raising a GR is a FLOOR action: whoever finds the bad rolls records the return. Only
+  // the admin-only controls beside it — overriding a challan's Complete/Partial status —
+  // stay behind the admin check.
   const admin = isAdmin();
-  const cols = admin ? 9 : 8;
+  const cols = 9;
 
   return (
     <div className="mm-screen mm-page-enter">
@@ -223,7 +226,7 @@ export default function InwardReportPage() {
                 <th>Roll</th>
                 <th className="mm-num">Qty</th>
                 <th className="mm-num">Weight (Kg)</th>
-                {admin && <th className="mm-no-print">Inward</th>}
+                <th className="mm-no-print">Inward</th>
               </tr>
             </thead>
             <tbody>
@@ -265,15 +268,12 @@ export default function InwardReportPage() {
                     </td>
                     <td className="mm-num">{(r.qty_box ?? 0).toLocaleString()}</td>
                     <td className="mm-num">{kg(r.weight)}</td>
-                    {admin && (
-                      <td className="mm-no-print">
+                    <td className="mm-no-print">
                         {firstOfInward && (
-                          // Compact on purpose: the register is read first and acted on
-                          // rarely, so the document number is trimmed to its serial (full
-                          // name on hover) and Cancel is an icon, to keep the action in
-                          // view instead of pushed off the end of a wide table.
+                          // The inward's document id is machinery — a hash nobody quotes —
+                          // so it stays off the register and only rides along as a tooltip
+                          // for when someone does need to name the document.
                           <div className="mm-irep-acts" title={r.inward}>
-                            <span className="mm-muted">{r.inward.split("-").pop()}</span>
                             {cancelled ? (
                               <span className="mm-state-chip mm-state-open">Cancelled</span>
                             ) : r.is_gr ? (
@@ -282,14 +282,20 @@ export default function InwardReportPage() {
                               </span>
                             ) : (
                               <>
-                                <button
-                                  type="button"
-                                  className={`mm-state-chip mm-state-clickable ${r.receipt_status === "Partial" ? "mm-state-inventory" : "mm-state-cut"}`}
-                                  title={`${r.inward} — click to mark ${r.receipt_status === "Partial" ? "Complete" : "Partial"}`}
-                                  onClick={() => void onToggleStatus(r.inward, r.receipt_status)}
-                                >
-                                  {r.receipt_status === "Partial" ? "Partial" : "Complete"}
-                                </button>
+                                {admin ? (
+                                  <button
+                                    type="button"
+                                    className={`mm-state-chip mm-state-clickable ${r.receipt_status === "Partial" ? "mm-state-inventory" : "mm-state-cut"}`}
+                                    title={`${r.inward} — click to mark ${r.receipt_status === "Partial" ? "Complete" : "Partial"}`}
+                                    onClick={() => void onToggleStatus(r.inward, r.receipt_status)}
+                                  >
+                                    {r.receipt_status === "Partial" ? "Partial" : "Complete"}
+                                  </button>
+                                ) : (
+                                  <span className={`mm-state-chip ${r.receipt_status === "Partial" ? "mm-state-inventory" : "mm-state-cut"}`}>
+                                    {r.receipt_status === "Partial" ? "Partial" : "Complete"}
+                                  </span>
+                                )}
                                 {/* GR, not Cancel: the rolls DID arrive. The return posts a
                                     negative entry and this inward stays on the record. */}
                                 <button
@@ -309,7 +315,6 @@ export default function InwardReportPage() {
                           </div>
                         )}
                       </td>
-                    )}
                   </tr>
                 );
               })}

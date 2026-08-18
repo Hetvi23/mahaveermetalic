@@ -89,10 +89,14 @@ def production_view(date=None, branch=None):
 	"""Program day sheet for one date.
 
 	Returns what's currently IN CUTTING, the floor's shared notes, and the Day and Night
-	programs for that date grouped BY MACHINE — each machine listing its programs, each
-	program its colour, lot, cut and one line per batch, the way the floor reads it off the
-	board. Grouped by machine rather than colour because the sheet is read machine by
-	machine: what is that machine running, and how far through is it.
+	programs for that date grouped BY MACHINE. Grouped by machine rather than colour because
+	the sheet is read machine by machine: what is that machine running, and how far through
+	is it.
+
+	EVERY machine is listed, running something or not — a blank machine is information (it is
+	free), and a list that skips it makes the floor count machines to notice. A program that
+	is finished with is NOT listed: completing it, or closing it out short, takes it off the
+	machine, and a sheet of what is running should not still be offering to complete it.
 	"""
 	day = date or frappe.utils.nowdate()
 
@@ -125,7 +129,8 @@ def production_view(date=None, branch=None):
 		)
 
 	# --- Programs planned for this date, split Day / Night and grouped by MACHINE ---
-	prog_filters = {"docstatus": 1, "program_date": day}
+	# released = it has left the machine (completed to Production, or closed out short).
+	prog_filters = {"docstatus": 1, "program_date": day, "released": 0}
 	if branch:
 		prog_filters["branch"] = branch
 	shifts = {"Day": {}, "Night": {}}
@@ -138,11 +143,17 @@ def production_view(date=None, branch=None):
 		order_by="machine_no asc, creation asc",
 		limit_page_length=500,
 	):
+		if (p.status or "") == "Completed":
+			continue
 		sk = p.shift or "Day"
 		if sk not in shifts:
 			shifts[sk] = {}
 		machine = p.machine_no or "—"
-		grp = shifts[sk].setdefault(machine, {"machine_no": machine, "programs": []})
+		grp = shifts[sk].setdefault(
+			machine,
+			{"machine_no": frappe.db.get_value("MM Machine", machine, "machine_no") or machine,
+			 "machine": machine, "programs": []},
+		)
 		total = int(p.total_batches or 0) or 1
 		done = int(p.completed_batches or 0)
 		grp["programs"].append(
@@ -166,12 +177,31 @@ def production_view(date=None, branch=None):
 			}
 		)
 
+	# Every machine on every shift, in board order, so the two columns line up and a machine
+	# with nothing on it is visibly free rather than missing.
+	machine_filters = {"branch": branch} if branch else {}
+	machines = frappe.get_all(
+		"MM Machine", filters=machine_filters, fields=["name", "machine_no"],
+		order_by="cast(machine_no as unsigned) asc, machine_no asc",
+	)
+
+	def laid_out(shift_key):
+		groups = shifts.get(shift_key, {})
+		out = [
+			groups.get(m.name) or {"machine_no": m.machine_no, "machine": m.name, "programs": []}
+			for m in machines
+		]
+		# Anything planned on a machine that no longer exists still has to appear.
+		known = {m.name for m in machines}
+		out += [g for name, g in groups.items() if name not in known]
+		return out
+
 	return {
 		"date": day,
 		"in_cutting": in_cutting,
 		"notes": frappe.db.get_single_value("MM Settings", "program_view_notes") or "",
-		"day": list(shifts.get("Day", {}).values()),
-		"night": list(shifts.get("Night", {}).values()),
+		"day": laid_out("Day"),
+		"night": laid_out("Night"),
 	}
 
 

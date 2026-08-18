@@ -29,9 +29,9 @@ type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
   customer_order?: string; roll_no?: string; shade?: string; cut?: string; party?: string; batches?: number; weight?: number;
   per_patty?: number;
-  /** `batches` is what is still AVAILABLE; these say out of how many, and whether the
-   *  patty is spent (kept in the list, greyed, rather than disappearing). */
-  total_patti?: number; consumed_patti?: number; consumed?: number;
+  /** `batches` is what is still AVAILABLE; these say out of how many it started with.
+   *  A patty with none left is not sent at all. */
+  total_patti?: number; consumed_patti?: number;
   /** Every cutting behind a lot-merged card — a program can draw across them. */
   merged_from?: string[]; merged_count?: number;
 };
@@ -47,8 +47,6 @@ type Roll = {
 type Source = {
   key: string; colour: string; kind: "cutting" | "inventory"; cut: string; state: string;
   rows: Roll[]; weight: number; perPatty: number; batches: number;
-  /** True when every patty of this form is already programmed. */
-  spent?: boolean;
 };
 type Colour = {
   colour: string; rows: Roll[]; states: string[]; total_weight: number; count: number;
@@ -70,6 +68,18 @@ type OrderOpt = {
   matched_cuts?: string[]; colours?: string[];
 };
 type OnMachine = { name: string; roll_no?: string; shade?: string; cut?: string; shift?: string; status?: string; total_batches?: number; completed_batches?: number };
+
+/** A program's weight: the per-patty rate times the batches it runs. Falls back to the
+ *  stored net weight for anything planned before the rate was carried onto the program. */
+const programKg = (p: { per_patty_weight?: number; total_batches?: number; net_weight?: number }) => {
+  const rate = Number(p.per_patty_weight || 0);
+  const batches = Number(p.total_batches || 0);
+  return rate > 0 && batches > 0 ? rate * batches : Number(p.net_weight || 0);
+};
+const perPattyNote = (p: { per_patty_weight?: number; total_batches?: number; net_weight?: number }) =>
+  Number(p.per_patty_weight || 0) > 0
+    ? `${kg(p.per_patty_weight)} kg per patty x ${p.total_batches ?? 0} batches`
+    : "weight planned for this program";
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
 const shiftIcon = (s: string) => (s === "Night" ? "🌙" : "☀");
@@ -132,19 +142,18 @@ export default function ProgramScreen() {
   }, [programs, dayDate, nightDate]);
 
   // Feeder: finished patty — colour and how many patti it has, nothing else. A patty whose
-  // patti are all taken is kept but marked spent, so it greys out instead of disappearing
-  // from under the operator mid-shift.
+  // patti are all programmed is not on the shelf at all: the shelf is what can go on a
+  // machine, and a spent one cannot.
   const pattyColours = useMemo(() => {
-    const g: Record<string, { colour: string; count: number; total: number; consumed: boolean }> = {};
+    const g: Record<string, { colour: string; count: number; total: number }> = {};
     for (const p of patties) {
       const colour = p.shade || p.roll_no || "—";
-      const e = (g[colour] ||= { colour, count: 0, total: 0, consumed: true });
+      const e = (g[colour] ||= { colour, count: 0, total: 0 });
       // "No of patty" = the patti still available to program on this colour.
       e.count += Number(p.batches || 0);
       e.total += Number(p.total_patti ?? p.batches ?? 0);
-      if (!p.consumed) e.consumed = false;
     }
-    return Object.values(g).sort((a, b) => Number(a.consumed) - Number(b.consumed) || a.colour.localeCompare(b.colour));
+    return Object.values(g).sort((a, b) => a.colour.localeCompare(b.colour));
   }, [patties]);
 
   const shownPatties = useMemo(
@@ -169,11 +178,17 @@ export default function ProgramScreen() {
         </div>
         <div className="mm-prog-card-meta">
           {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches ·{" "}
-          {p.unfinished
-            ? "roll not yet picked"
-            /* The weight that came off the machine — per-patty x batches DONE — is what
-               Production takes, so it is what the card says. The plan is on hover. */
-            : <span title={`planned ${kg(p.net_weight)} kg`}>{kg(p.completed_weight)} kg done</span>}
+          {p.unfinished ? (
+            "roll not yet picked"
+          ) : (
+            /* Once the cut is done its per-patty weight is known, and the program's weight
+               is that rate times its batches — 50 kg a patty over 4 batches is 200 kg. That
+               total is the headline; what has actually run follows it once any has. */
+            <>
+              <span title={perPattyNote(p)}>{kg(programKg(p))} kg</span>
+              {(p.completed_batches ?? 0) > 0 ? ` · ${kg(p.completed_weight)} kg done` : ""}
+            </>
+          )}
         </div>
         {p.remark && <div className="mm-prog-card-remark">“{p.remark}”</div>}
         <div className="mm-prog-actions">
@@ -243,7 +258,7 @@ export default function ProgramScreen() {
               <p className="mm-muted">Loading…</p>
             ) : shownPatties.length === 0 ? (
               <p className="mm-flow-empty-state">
-                {pattyColours.length === 0 ? "No finished patty yet — finish a cutting first." : "No patty of that colour."}
+                {pattyColours.length === 0 ? "No finished patty available — finish a cutting first." : "No patty of that colour."}
               </p>
             ) : (
               <div className="mm-table-scroll">
@@ -253,17 +268,11 @@ export default function ProgramScreen() {
                   </thead>
                   <tbody>
                     {shownPatties.map((c) => (
-                      // Spent patty stays on the shelf, greyed: it was there a minute ago and
-                      // vanishing rows are how an operator loses their place.
-                      <tr key={c.colour} className={c.consumed ? "mm-patty-row-spent" : undefined}>
+                      <tr key={c.colour}>
                         <td><span className="mm-colour-name">{c.colour}</span></td>
-                        <td className="mm-num" title={c.consumed ? `all ${c.total} patti consumed` : `${c.count} of ${c.total} patti available`}>
-                          {c.count}
-                          {c.consumed ? <span className="mm-patty-spent-tag">all consumed</span> : null}
-                        </td>
+                        <td className="mm-num" title={`${c.count} of ${c.total} patti still available`}>{c.count}</td>
                         <td className="mm-num">
-                          <button className="mm-mini mm-mini-ok" disabled={c.consumed}
-                            title={c.consumed ? "Every patty of this colour is already programmed" : "Program this patty"}
+                          <button className="mm-mini mm-mini-ok" title="Program this patty"
                             onClick={() => openAdd({ colour: c.colour })}>→ Program</button>
                         </td>
                       </tr>
@@ -476,10 +485,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
         // Per-patty is a rate, not a total — carry the largest, the way the server does.
         s.perPatty = Math.max(s.perPatty, Number(r.per_patty || 0));
       }
-      // Spent = a patty whose patti are all programmed. It stays on the list, greyed, so the
-      // operator can see it was there rather than wonder where it went.
-      for (const f of forms.values()) f.spent = f.kind === "cutting" && f.batches <= 0;
-      out.push(...[...forms.values()].sort((a, b) => Number(a.spent) - Number(b.spent) || rank(a.state) - rank(b.state)));
+      out.push(...[...forms.values()].sort((a, b) => rank(a.state) - rank(b.state)));
     }
     return out;
   }, [colours]);
@@ -495,12 +501,8 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const q = search.trim().toLowerCase();
   const searched = q ? sources.filter((s) => s.colour.toLowerCase().includes(q)) : sources;
 
-  // A machine runs one cut. Offering it a patty cut to something else is offering a job it
-  // cannot physically run, so the list narrows to what this machine can take:
-  //
-  //   a patty is already cut — it must match the machine's cut exactly;
-  //   a roll is not cut yet — it can be cut to the machine's size, so it always qualifies
-  //   (create_unfinished_program stamps the planned cutting with the machine's cut).
+  // A machine runs one cut, and everything offered here is already cut, so a patty must
+  // match the machine's cut exactly to be a job it can physically run.
   //
   // A machine with no cut set filters nothing. "Show all cuts" is there because the rule
   // is strict enough to hide a patty whose cut was never recorded, and a list that can
@@ -580,7 +582,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
 
   async function submit() {
     setErr(null);
-    if (!sel || !bestRow) return setErr("Pick what to program.");
+    if (!sel || !bestRow) return setErr("Pick a finished patty to program.");
     if (Number(bestRow.weight || 0) <= 0 && bestRow.source_type === "cutting") {
       return setErr(
         `${sel.colour} has no weight recorded on its cutting, so there is nothing to ` +
@@ -588,7 +590,6 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
       );
     }
     if (!machine) return setErr("Choose a machine.");
-    if (sel.spent) return setErr(`Every patty of ${sel.colour} is already programmed — nothing left to take.`);
     if (batches === "" || batches < 1) return setErr("Enter the total batches.");
     if (sel.kind === "cutting" && batches > sel.batches) {
       return setErr(`Only ${sel.batches} patty of ${sel.colour} ${sel.cut ? `at cut ${sel.cut} ` : ""}are still available.`);
@@ -629,11 +630,9 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     (s.kind === "inventory"
       ? ["roll · any cut", `${kg(s.weight)} kg`]
       : [`${stateWord(s.state)} · ${s.cut ? `cut ${s.cut}` : "no cut recorded"}`,
-         s.spent
-           ? "no patty left"
-           : s.perPatty > 0
-             ? `${s.batches} patty free · ${kg(s.perPatty)} kg each`
-             : `${s.batches} patty free · ${kg(s.weight)} kg`]
+         s.perPatty > 0
+           ? `${s.batches} patty free · ${kg(s.perPatty)} kg each`
+           : `${s.batches} patty free · ${kg(s.weight)} kg`]
     ).join(" · ");
 
   return (
@@ -645,7 +644,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
         </div>
         <div className="mm-modal-body">
           <div className="mm-prog-picklabel">
-            <span className="mm-field-label" style={{ margin: 0 }}>Pick what to program</span>
+            <span className="mm-field-label" style={{ margin: 0 }}>Pick a finished patty</span>
             {machineCut && (
               allCuts ? (
                 <button type="button" className="mm-mini" onClick={() => setAllCuts(false)}>
@@ -673,25 +672,19 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
             <p className="mm-empty">
               {machineCut && !allCuts && hiddenByCut > 0
                 ? `Nothing cut to ${machineCut} is available — that is the cut set on this machine.`
-                : "No colours available to program."}
+                : "No finished patty available to program — finish a cutting first."}
             </p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
               {shown.map((s) => (
-                // A spent patty is shown and NOT selectable: greying it says "this was here,
-                // it's gone into programs" where hiding it just loses the row.
-                <div key={s.key}
-                  className={`mm-pick-row ${sel?.key === s.key ? "mm-pick-row-active" : ""} ${s.spent ? "mm-pick-row-spent" : ""}`}
-                  aria-disabled={s.spent || undefined}
-                  title={s.spent ? `Every patty of ${s.colour} is already programmed` : undefined}
-                  onClick={() => { if (s.spent) return; setSel(s); setOrder(""); }}>
+                <div key={s.key} className={`mm-pick-row ${sel?.key === s.key ? "mm-pick-row-active" : ""}`}
+                  onClick={() => { setSel(s); setOrder(""); }}>
                   {/* Every row names its colour. It used to be printed once per group and
                       blanked on the rows beneath — which reads fine from the top, and not
                       at all once the list is scrolled, searched or you land mid-group:
                       "patty · cut 50/120 · 50 kg/patty × 1" of WHAT. */}
                   <span className="mm-colour-name">{s.colour}</span>
                   <span className="mm-prog-card-meta">{formLabel(s)}</span>
-                  {s.spent && <span className="mm-patty-spent-tag">all consumed</span>}
                 </div>
               ))}
             </div>

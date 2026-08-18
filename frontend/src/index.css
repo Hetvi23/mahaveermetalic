@@ -1,11 +1,13 @@
 :root {
   /* Brand + structural */
-  --mm-primary:      #1e293b;
-  --mm-primary-soft: #334155;
-  --mm-accent:       #d97706;
-  --mm-accent-soft:  #fbbf24;
-  --mm-accent-bg:    #fffbeb;
-  --mm-accent-fg:    #b45309;
+  /* Warm, not navy: the structural dark carries a brown cast so the app reads orange
+     even where it is nearly black — a slate primary is what made it look blue. */
+  --mm-primary:      #33261f;
+  --mm-primary-soft: #4a382e;
+  --mm-accent:       #d97757;
+  --mm-accent-soft:  #f0a88c;
+  --mm-accent-bg:    #fff5f0;
+  --mm-accent-fg:    #b4502f;
   --mm-bg:           #f6f8fb;
   --mm-bg-warm:      #fefce8;
   --mm-card:         #ffffff;
@@ -15,9 +17,11 @@
   --mm-border:       #e2e8f0;
   --mm-border-dark:  #cbd5e1;
   /* Semantic (solid / bg tint / text fg / border) */
-  --mm-blue:         #2563eb;
-  --mm-blue-bg:      #eef6ff;
-  --mm-blue-border:  #bfdbfe;
+  /* The interactive colour — nav highlight, state chips, row hover, focus. It is named
+     "blue" from when it was; every screen it touches is orange now. */
+  --mm-blue:         #c2410c;
+  --mm-blue-bg:      #fff3ec;
+  --mm-blue-border:  #fbcfb5;
   --mm-danger:       #dc2626;
   --mm-danger-bg:    #fef2f2;
   --mm-danger-fg:    #b91c1c;
@@ -36,7 +40,7 @@
      cartoonish at this scale; a single hairline is what makes a dense form look composed. */
   --mm-hairline:     rgba(15, 23, 42, 0.10);
   --mm-hairline-str: rgba(15, 23, 42, 0.16);
-  --mm-focus:        rgba(217, 119, 6, 0.16);
+  --mm-focus:        rgba(217, 119, 87, 0.20);
   --mm-material:     rgba(255, 255, 255, 0.72);
   /* Motion: critically damped by default; the momentum curve is for things that were
      thrown or dragged, never for something that merely appeared. */
@@ -58,25 +62,25 @@
 /* ── Dark theme: redefine tokens; components read tokens so they follow automatically.
    Order: OS preference (media), then explicit user toggle (data-theme) wins both ways. ── */
 :root[data-theme="dark"], .mm-dark {
-  --mm-primary: #223041; --mm-primary-soft: #2f3f52;
-  --mm-accent: #f59e0b; --mm-accent-soft: #fbbf24; --mm-accent-bg: #2a1f0e; --mm-accent-fg: #fbbf24;
+  --mm-primary: #2b211c; --mm-primary-soft: #3d2f27;
+  --mm-accent: #e8886a; --mm-accent-soft: #f0a88c; --mm-accent-bg: #33201a; --mm-accent-fg: #f0a88c;
   --mm-bg: #0d1117; --mm-bg-warm: #221a0a; --mm-card: #161c26; --mm-surface2: #1c2530;
   --mm-text: #e6edf3; --mm-text-sec: #9aa7b8; --mm-border: #29323f; --mm-border-dark: #3a4552;
-  --mm-blue: #3b82f6; --mm-blue-bg: #14284d; --mm-blue-border: #1e3a5f;
+  --mm-blue: #f0895f; --mm-blue-bg: #3a1f14; --mm-blue-border: #5c3221;
   --mm-danger: #ef4444; --mm-danger-bg: #2c1517; --mm-danger-fg: #f87171; --mm-danger-border: #5c2626;
   --mm-green: #22c55e; --mm-green-bg: #0f2a1c; --mm-green-fg: #4ade80; --mm-green-border: #1c5236;
   --mm-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.35);
   --mm-shadow-md: 0 6px 18px rgba(0,0,0,0.45); --mm-shadow-lg: 0 12px 34px rgba(0,0,0,0.5);
   --mm-hairline: rgba(255,255,255,0.12); --mm-hairline-str: rgba(255,255,255,0.20);
-  --mm-focus: rgba(245,158,11,0.22); --mm-material: rgba(22,28,38,0.72);
+  --mm-focus: rgba(232,136,106,0.26); --mm-material: rgba(22,28,38,0.72);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --mm-primary: #223041; --mm-primary-soft: #2f3f52;
-    --mm-accent: #f59e0b; --mm-accent-soft: #fbbf24; --mm-accent-bg: #2a1f0e; --mm-accent-fg: #fbbf24;
+    --mm-primary: #2b211c; --mm-primary-soft: #3d2f27;
+    --mm-accent: #e8886a; --mm-accent-soft: #f0a88c; --mm-accent-bg: #33201a; --mm-accent-fg: #f0a88c;
     --mm-bg: #0d1117; --mm-bg-warm: #221a0a; --mm-card: #161c26; --mm-surface2: #1c2530;
     --mm-text: #e6edf3; --mm-text-sec: #9aa7b8; --mm-border: #29323f; --mm-border-dark: #3a4552;
-    --mm-blue: #3b82f6; --mm-blue-bg: #14284d; --mm-blue-border: #1e3a5f;
+    --mm-blue: #f0895f; --mm-blue-bg: #3a1f14; --mm-blue-border: #5c3221;
     --mm-danger: #ef4444; --mm-danger-bg: #2c1517; --mm-danger-fg: #f87171; --mm-danger-border: #5c2626;
     --mm-green: #22c55e; --mm-green-bg: #0f2a1c; --mm-green-fg: #4ade80; --mm-green-border: #1c5236;
     --mm-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.35);
@@ -590,7 +594,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   background: var(--mm-accent-bg);
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
-  border: 1px solid rgba(217,119,6,0.12);
+  border: 1px solid rgba(217,119,87,0.12);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -663,8 +667,8 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
 .mm-kpi-hint { font-size: 0.7rem; color: rgba(255,255,255,0.82); }
 
 .mm-kpi-accent { background: linear-gradient(135deg, #fb923c, #ea580c); }
-.mm-kpi-amber  { background: linear-gradient(135deg, #fbbf24, var(--mm-accent)); }
-.mm-kpi-blue   { background: linear-gradient(135deg, #60a5fa, var(--mm-blue)); }
+.mm-kpi-amber  { background: linear-gradient(135deg, #f0a88c, var(--mm-accent)); }
+.mm-kpi-blue   { background: linear-gradient(135deg, #f0a88c, var(--mm-blue)); }
 .mm-kpi-green  { background: linear-gradient(135deg, #34d399, #059669); }
 .mm-kpi-slate  { background: linear-gradient(135deg, #818cf8, #4f46e5); }
 .mm-kpi-danger { background: linear-gradient(135deg, #fb7185, #e11d48); }
@@ -929,7 +933,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-chip:hover { border-color: var(--mm-border-dark); }
 .mm-chip-active { background: var(--mm-primary); color: #fff; border-color: var(--mm-text); }
 
-.mm-pill-pending { background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid rgba(217,119,6,0.2); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
+.mm-pill-pending { background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid rgba(217,119,87,0.2); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
 
 @media (max-width: 980px) {
   .mm-ow-grid { grid-template-columns: 1fr; }
@@ -1135,9 +1139,9 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 	border-color: rgba(100,116,139,0.25);
 }
 .mm-mode-pill-edit {
-	background: rgba(217,119,6,0.14);
+	background: rgba(217,119,87,0.14);
 	color: var(--mm-accent-fg);
-	border-color: rgba(217,119,6,0.3);
+	border-color: rgba(217,119,87,0.3);
 }
 
 /* ── Cards ─────────────────────────────────────────────── */
@@ -1251,7 +1255,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-input:focus {
   outline: none;
   border-color: var(--mm-accent);
-  box-shadow: 0 0 0 3px rgba(217,119,6,0.12);
+  box-shadow: 0 0 0 3px rgba(217,119,87,0.12);
 }
 .mm-input:disabled {
   background: var(--mm-bg);
@@ -1271,7 +1275,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   transition: border-color 0.15s;
   resize: vertical;
 }
-.mm-textarea:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 3px rgba(217,119,6,0.12); }
+.mm-textarea:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 3px rgba(217,119,87,0.12); }
 
 /* ── Forms ────────────────────────────────────────────── */
 .mm-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.65rem 0.85rem; margin-bottom: 0.65rem; }
@@ -1422,10 +1426,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   font-size: 0.75rem;
   font-weight: 600;
   text-decoration: none;
-  border: 1px solid rgba(217,119,6,0.15);
+  border: 1px solid rgba(217,119,87,0.15);
   transition: all 0.15s;
 }
-.mm-link-pill:hover { background: rgba(217,119,6,0.15); }
+.mm-link-pill:hover { background: rgba(217,119,87,0.15); }
 .mm-task-reminder-chat-link { margin-top: 0.4rem; }
 
 /* ── Autocomplete ─────────────────────────────────────── */
@@ -1451,7 +1455,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 	cursor: pointer;
 	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.mm-link-add:hover { background: rgba(217,119,6,0.12); border-color: rgba(217,119,6,0.4); }
+.mm-link-add:hover { background: rgba(217,119,87,0.12); border-color: rgba(217,119,87,0.4); }
 /* Clear button on every picker — a selected value can always be blanked again, not only
    swapped for another. Three affordances can share the right edge (clear, +, caret), so
    position them per combination. */
@@ -1716,14 +1720,14 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   display: grid; place-items: center; font-size: 0.66rem; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #818cf8, #4f46e5);
 }
-.mm-chat-row.user .mm-chat-avatar { background: linear-gradient(135deg, #60a5fa, var(--mm-blue)); }
+.mm-chat-row.user .mm-chat-avatar { background: linear-gradient(135deg, #f0a88c, var(--mm-blue)); }
 .mm-chat-bubble {
   padding: 0.7rem 0.95rem; border-radius: 20px; font-size: 0.9rem; line-height: 1.45;
   background: var(--mm-card); border: 1px solid var(--mm-border); box-shadow: var(--mm-shadow);
   border-bottom-left-radius: 6px;
 }
 .mm-chat-row.user .mm-chat-bubble {
-  background: linear-gradient(135deg, #3b82f6, var(--mm-blue)); color: #fff; border: 0;
+  background: linear-gradient(135deg, var(--mm-accent), var(--mm-blue)); color: #fff; border: 0;
   border-radius: 20px; border-bottom-right-radius: 6px;
 }
 .mm-chat-bubble b, .mm-chat-bubble strong { font-weight: 800; }
@@ -1766,12 +1770,12 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   border: 1px solid var(--mm-border-dark); background: var(--mm-bg);
   font: inherit; font-size: 0.92rem; color: var(--mm-text); outline: none;
 }
-.mm-chat-input-box:focus { border-color: var(--mm-blue); background: var(--mm-card); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+.mm-chat-input-box:focus { border-color: var(--mm-blue); background: var(--mm-card); box-shadow: 0 0 0 3px var(--mm-focus); }
 .mm-chat-send-btn {
   width: 46px; height: 46px; flex-shrink: 0; border: 0; border-radius: 50%; cursor: pointer;
   display: grid; place-items: center; color: #fff;
-  background: linear-gradient(135deg, #3b82f6, var(--mm-blue));
-  box-shadow: 0 6px 14px rgba(37,99,235,0.35);
+  background: linear-gradient(135deg, var(--mm-accent), var(--mm-blue));
+  box-shadow: 0 6px 14px rgba(194,65,12,0.32);
   transition: transform 0.12s ease, filter 0.12s ease;
 }
 .mm-chat-send-btn:hover { filter: brightness(1.05); }
@@ -2138,16 +2142,6 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .mm-patty-filter { margin-left: auto; max-width: 190px; }
 
-/* A patty whose patti are all programmed: still listed, plainly spent. Kept legible rather
-   than faded to nothing — the operator needs to read that it WAS there. */
-.mm-patty-row-spent td { opacity: 0.55; }
-.mm-pick-row-spent { opacity: 0.55; cursor: not-allowed; background: var(--mm-bg-warm, transparent); }
-.mm-pick-row-spent:hover { border-color: var(--mm-border); }
-.mm-patty-spent-tag {
-  margin-left: 0.4rem; padding: 0.1rem 0.4rem; border-radius: 99px;
-  background: var(--mm-border); color: var(--mm-text-sec);
-  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-}
 
 /* Cutting roll picker (finish a planned cut): search row, roll table, patty stepper */
 .mm-cutpick-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
@@ -2183,10 +2177,17 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 
 /* The sheet reads machine by machine: the machine, then each program under it. */
 .mm-pvw-machine { margin-bottom: 1rem; }
+/* The machine number is the spine of this sheet — you read down the machines — so it is a
+   banded heading rather than another line of text. */
 .mm-pvw-machine-name {
-  display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.4rem;
-  font-weight: 800; font-size: 0.88rem; color: var(--mm-text);
+  display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.45rem;
+  padding: 0.3rem 0.55rem; border-radius: var(--mm-radius-sm);
+  background: var(--mm-accent-bg); color: var(--mm-accent-fg);
+  border-left: 3px solid var(--mm-accent);
+  font-weight: 800; font-size: 0.9rem; letter-spacing: 0.01em;
 }
+/* An idle machine keeps its height so the two shift columns stay readable side by side. */
+.mm-pvw-machine-idle { min-height: 1.35rem; }
 .mm-pvw-prog {
   border: 1px solid var(--mm-border); border-left: 3px solid var(--mm-accent);
   border-radius: var(--mm-radius-sm); padding: 0.5rem 0.6rem; margin-bottom: 0.5rem;
@@ -2195,14 +2196,6 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-pvw-prog-top { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .mm-pvw-prog-batch { font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--mm-accent-fg); }
 .mm-pvw-prog-meta { font-size: 0.76rem; color: var(--mm-text-sec); margin-top: 0.15rem; }
-/* One chip per batch, filled when that batch is done — countable at a glance. */
-.mm-pvw-batches { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.4rem 0 0.15rem; }
-.mm-pvw-batch {
-  min-width: 1.4rem; text-align: center; padding: 0.1rem 0.3rem; border-radius: 5px;
-  border: 1px solid var(--mm-border); font-size: 0.7rem; font-weight: 700;
-  color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
-}
-.mm-pvw-batch-done { background: var(--mm-accent); border-color: var(--mm-accent); color: #fff; }
 
 /* Sales Challan voucher: header grid, action row, sticky totals footer */
 .mm-scv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.7rem 0.9rem; align-items: end; }

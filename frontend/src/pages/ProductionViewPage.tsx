@@ -7,7 +7,6 @@ import { toast } from "@/components/Toaster";
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = () => new Date().toISOString().slice(0, 10);
-const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
 type Batch = { batch: number; done?: boolean };
 type ProgramRow = {
@@ -26,7 +25,7 @@ type ProgramRow = {
   remark?: string | null;
   batches: Batch[];
 };
-type MachineGroup = { machine_no: string; programs: ProgramRow[] };
+type MachineGroup = { machine_no: string; machine?: string; programs: ProgramRow[] };
 type InCutting = {
   cutting: string;
   color: string;
@@ -115,49 +114,48 @@ function ShiftColumn({ title, groups, onComplete }: {
   title: string; groups: MachineGroup[]; onComplete: (p: ProgramRow) => void;
 }) {
   const batches = groups.reduce((s, g) => s + g.programs.reduce((n, p) => n + (p.total_batches || 0), 0), 0);
+  const idle = groups.filter((g) => g.programs.length === 0).length;
   return (
     <section className="mm-pvw-col">
       <header className="mm-pvw-col-head">
         <h2>{title}</h2>
-        <span className="mm-pill mm-pill-muted">{batches} batch{batches === 1 ? "" : "es"}</span>
+        <span className="mm-pill mm-pill-muted">
+          {batches} batch{batches === 1 ? "" : "es"}{idle ? ` · ${idle} free` : ""}
+        </span>
       </header>
       {groups.length === 0 ? (
-        <p className="mm-pvw-empty">Nothing planned.</p>
+        <p className="mm-pvw-empty">No machines yet.</p>
       ) : (
         groups.map((g) => (
+          // Every machine is listed. An idle one keeps its heading and shows nothing under
+          // it — blank IS the reading: that machine is free.
           <div className="mm-pvw-machine" key={g.machine_no}>
             <div className="mm-pvw-machine-name"><Monitor size={14} /> Machine {g.machine_no}</div>
-            {g.programs.map((p) => (
-              <div className="mm-pvw-prog" key={p.program}>
-                <div className="mm-pvw-prog-top">
-                  <span className="mm-colour-name">{p.color}</span>
-                  <span className="mm-pvw-prog-batch">
-                    {p.completed_batches}/{p.total_batches} batch{p.total_batches === 1 ? "" : "es"}
-                  </span>
-                  {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : null}
-                  {p.reverted ? <span className="mm-state mm-state-open">Reverted</span> : null}
+            {g.programs.length === 0 ? (
+              <div className="mm-pvw-machine-idle" />
+            ) : (
+              g.programs.map((p) => (
+                // Colour, how many patty, and the one thing to do about it.
+                <div className="mm-pvw-prog" key={p.program}>
+                  <div className="mm-pvw-prog-top">
+                    <span className="mm-colour-name">{p.color}</span>
+                    <span className="mm-pvw-prog-batch">
+                      {p.total_batches} patty
+                      {p.completed_batches > 0 ? ` · ${p.completed_batches} done` : ""}
+                    </span>
+                    {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : null}
+                  </div>
+                  {p.remark ? <div className="mm-prog-card-remark">“{p.remark}”</div> : null}
+                  <div className="mm-prog-actions">
+                    <button className="mm-mini" disabled={!!p.unfinished}
+                      title={p.unfinished ? "The roll for this program hasn't been cut yet" : "Record how many batches are completed"}
+                      onClick={() => onComplete(p)}>
+                      <Check size={13} /> Complete
+                    </button>
+                  </div>
                 </div>
-                <div className="mm-pvw-prog-meta">
-                  {[p.lot_id, p.cut ? `cut ${p.cut}` : null, `${kg(p.completed_weight)} kg done`]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-                {/* One chip per batch, filled once that batch is done — the board read. */}
-                <div className="mm-pvw-batches">
-                  {p.batches.map((b) => (
-                    <span key={b.batch} className={`mm-pvw-batch ${b.done ? "mm-pvw-batch-done" : ""}`}>{b.batch}</span>
-                  ))}
-                </div>
-                {p.remark ? <div className="mm-prog-card-remark">“{p.remark}”</div> : null}
-                <div className="mm-prog-actions">
-                  <button className="mm-mini" disabled={!!p.reverted || !!p.unfinished}
-                    title={p.unfinished ? "The roll for this program hasn't been cut yet" : p.reverted ? "This program was reverted" : "Record how many batches are completed"}
-                    onClick={() => onComplete(p)}>
-                    <Check size={13} /> Complete
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         ))
       )}
@@ -258,23 +256,17 @@ export default function ProductionViewPage() {
           {!v || v.in_cutting.length === 0 ? (
             <p className="mm-empty">Nothing in cutting.</p>
           ) : (
+            // Colour and how many patty — that is the whole question this panel answers.
             <div className="mm-table-scroll">
               <table className="mm-table mm-table-dense">
                 <thead>
-                  <tr>
-                    <th>Color</th><th>Lot ID</th><th>Cut</th>
-                    <th className="mm-num">Patty</th><th className="mm-num">Weight (Kg)</th><th>Status</th>
-                  </tr>
+                  <tr><th>Color</th><th className="mm-num">No of patty</th></tr>
                 </thead>
                 <tbody>
                   {v.in_cutting.map((c) => (
                     <tr key={c.cutting}>
                       <td><span className="mm-colour-name">{c.color}</span></td>
-                      <td>{c.lot_id || "—"}</td>
-                      <td>{c.cut || "—"}</td>
                       <td className="mm-num">{c.patty ?? 0}</td>
-                      <td className="mm-num">{(c.weight ?? 0).toLocaleString()}</td>
-                      <td><span className="mm-state-chip mm-state-inventory">{c.status}</span></td>
                     </tr>
                   ))}
                 </tbody>
