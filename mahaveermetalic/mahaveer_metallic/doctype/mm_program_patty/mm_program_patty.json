@@ -1,0 +1,54 @@
+{
+  "actions": [],
+  "creation": "2026-08-17 12:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["cutting", "patti", "shade", "cut"],
+  "fields": [
+    {
+      "fieldname": "cutting",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Cutting",
+      "options": "MM Cutting",
+      "read_only": 1,
+      "description": "The cutting these patti were taken from."
+    },
+    {
+      "fieldname": "patti",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Patti Taken",
+      "precision": "3",
+      "read_only": 1,
+      "description": "How many patti this program took from that cutting. Reverting gives them back."
+    },
+    {
+      "fieldname": "shade",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Color",
+      "read_only": 1
+    },
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut",
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-08-17 12:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Program Patty",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

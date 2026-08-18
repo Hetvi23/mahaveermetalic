@@ -1,18 +1,17 @@
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Download, PackageCheck, Plus, ShoppingCart, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import LinkField from "@/components/LinkField";
 import SearchSelect from "@/components/SearchSelect";
-import SalesOrderPicker, { type SOOption } from "@/components/SalesOrderPicker";
+import type { SOOption } from "@/components/SalesOrderPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true };
-const F_BRANCH: FieldSchema = { fieldname: "branch", label: "Branch", fieldtype: "Link", options: "MM Branch", linkFilters: [{ field: "location", fromField: "location" }] };
 
 type ChallanItem = { roll?: string; color?: string; cut?: string; qty?: number; weight?: number };
 type MatchOrder = {
@@ -37,63 +36,89 @@ type ChallanVerify = {
   matching_orders: MatchOrder[];
 };
 
-/** One line of the entry grid = one MM Inward Item. */
+/** One weighed roll sitting behind an entry row. Roll numbers may repeat — the floor's
+ *  own numbering is not unique, and two rolls can legitimately carry the same one. */
+type RollLine = { roll: string; qty: number | ""; weight: number | "" };
+
+/**
+ * One line of the entry grid = one LOT.
+ *
+ * The challan, supplier, order and colour are keyed once, then any number of rolls are
+ * weighed under them. Posting expands the row into one MM Inward Item per roll — so the
+ * document is roll-wise, while the grid stays one line per lot with the totals on it.
+ */
 type Row = {
   job_work: boolean;
   challan_no: string;
+  supplier: string;
   customer_order: string;
-  roll: string;
   color: string;
   /** Not a column — carried through from a challan/order so cutting still gets the size. */
   cut: string;
-  qty: number | "";
-  weight: number | "";
+  lines: RollLine[];
 };
 
-const blankRow = (challan = ""): Row => ({
+const blankLine = (): RollLine => ({ roll: "", qty: "", weight: "" });
+
+const blankRow = (): Row => ({
   job_work: false,
-  challan_no: challan,
+  challan_no: "",
+  supplier: "",
   customer_order: "",
-  roll: "",
   color: "",
   cut: "",
-  qty: "",
-  weight: "",
+  lines: [blankLine()],
 });
+
+/** A roll counts as entered once anything has been typed on it. */
+const lineFilled = (l: RollLine) => l.roll.trim() !== "" || l.qty !== "" || l.weight !== "";
+const rollsOf = (r: Row) => r.lines.filter(lineFilled);
+const rowTotals = (r: Row) =>
+  r.lines.reduce(
+    (t, l) => ({ qty: t.qty + (Number(l.qty) || 0), weight: t.weight + (Number(l.weight) || 0) }),
+    { qty: 0, weight: 0 },
+  );
+const rowFilled = (r: Row) =>
+  !!(r.color.trim() || r.challan_no.trim() || r.supplier || r.customer_order || rollsOf(r).length);
 
 /**
  * Inward entry, one full-width grid.
  *
- * The floor keys rolls in a line at a time — jobwork flag, challan, order, roll, colour,
- * qty and weight all on one row — so the screen is that grid and nothing else: header
- * fields on top, running totals and Submit pinned at the bottom.
+ * A row is a LOT, not a roll: challan, supplier, order and colour on the line, and the
+ * rolls that arrived under them behind the cart button — roll no, qty and weight each.
+ * The line shows the roll numbers and the lot's totals; the posted inward is roll-wise,
+ * every roll stamped with the row's lot. Keying several rows therefore receives several
+ * lots in one document, which is why the lot id sits on the row and not on the header.
  *
- * Veermetlon stays optional rather than being the way in: type a challan number and hit
- * Fetch and the rolls come back from VM (and the post is verified against it, so
- * over-receipt and a closed challan are still blocked server-side). Leave it alone and
- * the inward is a plain manual one.
+ * The header is only what the whole document shares: the challan date and where the stock
+ * lands. Company and the lot ids are worked out from the rows.
+ *
+ * Veermetlon stays optional rather than being the way in: type a challan number on a row,
+ * hit its Fetch button and that challan's rolls come back from VM into the row (and the
+ * post is verified against it, so over-receipt and a closed challan are still blocked
+ * server-side). Leave it alone and the row is a plain manual entry.
  */
 export default function InwardWorkspace() {
   const [postingDate, setPostingDate] = useState(today());
   const [branch, setBranch] = useState("");
   const [location, setLocation] = useState("");
-  const [company, setCompany] = useState("");
-  const [salesOrder, setSalesOrder] = useState(""); // optional order for the whole inward
-  const [challanNo, setChallanNo] = useState("");
-  const [lot, setLot] = useState("");
   const [rows, setRows] = useState<Row[]>([blankRow()]);
-  const [orders, setOrders] = useState<MatchOrder[]>([]); // matching orders from a fetched challan
-  const [verify, setVerify] = useState<ChallanVerify | null>(null);
-  const [isPartial, setIsPartial] = useState(false); // "more rolls to come on this challan"
-  const [forceOpen, setForceOpen] = useState(false);
+  const [orders, setOrders] = useState<MatchOrder[]>([]); // matching orders from fetched challans
+  /** Veermetlon's answer per challan number, so each row's challan verifies on its own. */
+  const [verify, setVerify] = useState<Record<string, ChallanVerify>>({});
+  const [fetchingRow, setFetchingRow] = useState<number | null>(null);
+  const [isPartial, setIsPartial] = useState(false); // "more rolls to come on these challans"
+  const [forceOrder, setForceOrder] = useState<string | null>(null);
   const [forcePin, setForcePin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
-  // The bulk "Qty | Weight" dialog: which row it is filling, and the count/weight lines.
-  const [bulkRow, setBulkRow] = useState<number | null>(null);
-  const [bulkLines, setBulkLines] = useState<{ count: number | ""; weight: number | "" }[]>([]);
+  // The roll-wise "cart": which row it is filling, and the roll lines under it.
+  const [cartRow, setCartRow] = useState<number | null>(null);
+  const [cartLines, setCartLines] = useState<RollLine[]>([]);
+  const cartBody = useRef<HTMLDivElement>(null);
+  const [cartFocus, setCartFocus] = useState(0);
 
-  const { call: verifyCall, loading: fetching } = useFrappePostCall<{ message: ChallanVerify }>(
+  const { call: verifyCall } = useFrappePostCall<{ message: ChallanVerify }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.verify_challan",
   );
   const { call: postInward, loading: posting } = useFrappePostCall<{ message: { name: string; receipt_status?: string } }>(
@@ -103,19 +128,9 @@ export default function InwardWorkspace() {
     "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order.force_complete_order",
   );
 
-  // Rolls are received COMPANY-wise. Searchable by the company's own name or by the party
-  // it sits under, because operators know sites by either.
-  const companiesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
-    "mahaveermetalic.mahaveer_metallic.api.party.all_companies",
-    undefined,
-    "mm-all-companies",
-  );
-  const companies = companiesCall.data?.message ?? [];
-
-  // Open orders for the per-row Customer Order picker. Same cache key as SalesOrderPicker,
-  // so the header picker and every row share ONE fetch — and the option carries the
-  // order's colours, which is what lets picking an order fill the row's colour with no
-  // extra round trip.
+  // Open orders for the per-row Customer Order picker. The option carries the order's
+  // colours, which is what lets picking an order fill the row's colour with no extra
+  // round trip.
   const { data: soData } = useFrappeGetCall<{ message: SOOption[] }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.sales_order_options",
     undefined,
@@ -124,8 +139,8 @@ export default function InwardWorkspace() {
   const soOptions = useMemo(() => soData?.message ?? [], [soData]);
   const soByName = useMemo(() => new Map(soOptions.map((o) => [o.sales_order, o])), [soOptions]);
 
-  // Branch/Location default from the logged-in user's employee profile; editable here
-  // so users without a profile (e.g. Administrator) can still pick a location.
+  // Branch/Location default from the logged-in user's employee profile. Location is on the
+  // form (users without a profile still have to pick one); branch just rides along.
   const { data: defaults } = useFrappeGetCall<{ message: { branch: string | null; location: string | null } }>(
     "mahaveermetalic.api.session.get_branch_location",
     undefined,
@@ -138,90 +153,37 @@ export default function InwardWorkspace() {
     setLocation((l) => l || d.location || "");
   }, [defaults]);
 
-  // Show which lot this inward will land in — the challan's existing lot, or the next
-  // colour-wise LT id. Preview only: the authoritative lot is assigned on post.
-  const { call: previewLot } = useFrappePostCall<{ message: { lot_id?: string } }>(
-    "mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot.preview_lot",
+  /* ── Lot preview ──────────────────────────────────────── */
+
+  // Which lot each ROW will land in — the challan's existing lot, or the next colour-wise
+  // LT id. Previewed for the whole grid in one call so the numbers shown are the numbers
+  // posted: asked row by row, three new rows of one colour would all claim the same next
+  // number. Preview only — the authoritative lot is assigned on post.
+  const { call: previewLots } = useFrappePostCall<{ message: (string | null)[] }>(
+    "mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot.preview_lots",
   );
-  const [lotPreview, setLotPreview] = useState("");
-  const firstColour = rows.find((r) => r.color)?.color || "";
+  const [lots, setLots] = useState<(string | null)[]>([]);
+  // Keyed on colour + challan alone, so weighing rolls doesn't re-ask for the lots.
+  const lotKey = useMemo(() => JSON.stringify(rows.map((r) => [r.color, r.challan_no.trim()])), [rows]);
   useEffect(() => {
-    if (!firstColour) { setLotPreview(""); return; }
+    const groups = (JSON.parse(lotKey) as [string, string][]).map(([color, challan_number]) => ({ color, challan_number }));
+    if (!groups.some((g) => g.color)) {
+      setLots([]);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
-        const r = await previewLot({ color: firstColour, challan_number: challanNo.trim() || undefined, posting_date: postingDate });
-        if (!cancelled) setLotPreview(r?.message?.lot_id || "");
-      } catch { if (!cancelled) setLotPreview(""); }
+        const r = await previewLots({ groups, posting_date: postingDate });
+        if (!cancelled) setLots(r?.message ?? []);
+      } catch {
+        if (!cancelled) setLots([]);
+      }
     })();
-    return () => { cancelled = true; };
-  }, [firstColour, challanNo, postingDate, previewLot]);
-
-  // One source of truth for the lot — what the field shows, what the guard checks and what
-  // gets posted. (The field is read-only, so `lot` is only ever set by a challan fetch.)
-  const effectiveLot = (lotPreview || lot).trim();
-
-  /* ── Header actions ───────────────────────────────────── */
-
-  /** Pull the challan's rolls from Veermetlon into the grid. Optional: an inward typed by
-   *  hand never comes through here. */
-  async function onFetchChallan() {
-    const no = challanNo.trim();
-    if (!no) return setError("Enter a challan number to fetch, or just type the rolls in below.");
-    setError(null);
-    setFlash(null);
-    try {
-      const r = await verifyCall({ challan_no: no });
-      const m = r.message;
-      setVerify(m);
-      setOrders(m.matching_orders || []);
-      const fetched: Row[] = (m.items || []).map((it) => ({
-        job_work: false,
-        challan_no: no,
-        customer_order: "",
-        roll: it.roll || "",
-        color: it.color || "",
-        cut: it.cut || "",
-        qty: it.qty ?? "",
-        weight: it.weight ?? "",
-      }));
-      // Keep anything already keyed in that carries data, so a fetch never eats work.
-      setRows((prev) => {
-        const kept = prev.filter((r) => r.roll || r.color || r.qty !== "" || r.weight !== "");
-        return [...kept, ...(fetched.length ? fetched : [blankRow(no)])];
-      });
-      setLot(m.coating || m.challan_no || no);
-      if (m.closed) setError(`Challan ${m.challan_no} is already fully received — no further inward allowed.`);
-      else if ((m.items || []).length === 0) setError("Challan found but it has no rolls — enter them by hand.");
-      else setFlash(`Fetched ${fetched.length} roll(s) from challan ${m.challan_no}.`);
-    } catch (e) {
-      setVerify(null);
-      setOrders([]);
-      setError(extractErrorMessage(e));
-    }
-  }
-
-  /** Picking the header order fills Company and registers the whole inward against it. */
-  function pickSalesOrder(v: string, opt?: SOOption) {
-    setSalesOrder(v);
-    if (opt?.company_name) setCompany(opt.company_name);
-    setForceOpen(false);
-    setForcePin("");
-  }
-
-  async function submitForceComplete() {
-    setError(null);
-    if (!salesOrder) return;
-    try {
-      await forceComplete({ order: salesOrder, pin: forcePin });
-      setForceOpen(false);
-      setForcePin("");
-      setFlash(`Order ${salesOrder} force-completed.`);
-      toast(`Order ${salesOrder} completed`);
-    } catch (e) {
-      setError(extractErrorMessage(e));
-    }
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [lotKey, postingDate, previewLots]);
 
   /* ── Grid ─────────────────────────────────────────────── */
 
@@ -229,12 +191,20 @@ export default function InwardWorkspace() {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
 
+  function setLine(i: number, li: number, patch: Partial<RollLine>) {
+    setRows((prev) =>
+      prev.map((r, j) =>
+        j === i ? { ...r, lines: r.lines.map((l, k) => (k === li ? { ...l, ...patch } : l)) } : r,
+      ),
+    );
+  }
+
   function addRow() {
-    setRows((prev) => [...prev, blankRow(challanNo.trim())]);
+    setRows((prev) => [...prev, blankRow()]);
   }
 
   function removeRow(i: number) {
-    setRows((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [blankRow(challanNo.trim())]));
+    setRows((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [blankRow()]));
   }
 
   /** Order → colour. The order knows its colours, so picking one fills the row instead of
@@ -250,16 +220,56 @@ export default function InwardWorkspace() {
         j === i ? { ...r, customer_order: sales_order, color: r.color || colour, cut: r.cut || cut } : r,
       ),
     );
-    // The order carries its company, so picking the order settles it — no reason to make
-    // the operator choose it separately in the header. Only fills an empty one: an inward
-    // is a single document with a single company, so a second row for another customer's
-    // order must not silently re-stamp the first.
-    if (opt?.company_name) setCompany((c) => c || opt.company_name || "");
+  }
+
+  /** Pull one row's challan from Veermetlon into that row. Optional: a row typed by hand
+   *  never comes through here. */
+  async function onFetchRow(i: number) {
+    const no = rows[i].challan_no.trim();
+    if (!no) return setError(`Row ${i + 1}: enter a challan number to fetch, or just type the rolls in.`);
+    setError(null);
+    setFlash(null);
+    setFetchingRow(i);
+    try {
+      const r = await verifyCall({ challan_no: no });
+      const m = r.message;
+      const items = m.items || [];
+      setVerify((prev) => ({ ...prev, [no]: m }));
+      // One challan is one lot's worth of material, so its rolls all land on THIS row.
+      const lines: RollLine[] = items.map((it) => ({
+        roll: it.roll || "",
+        qty: it.qty ?? "",
+        weight: it.weight ?? "",
+      }));
+      setRow(i, {
+        color: rows[i].color || items.find((it) => it.color)?.color || "",
+        cut: rows[i].cut || items.find((it) => it.cut)?.cut || "",
+        lines: lines.length ? lines : rows[i].lines,
+      });
+      // A challan can serve several customers, so its open orders stay on offer for every
+      // row, not just the one fetched into.
+      setOrders((prev) => {
+        const seen = new Set(prev.map((o) => o.sales_order));
+        return [...prev, ...(m.matching_orders || []).filter((o) => !seen.has(o.sales_order))];
+      });
+      if (m.closed) setError(`Challan ${m.challan_no} is already fully received — no further inward allowed.`);
+      else if (items.length === 0) setError(`Challan ${m.challan_no} found but it has no rolls — enter them by hand.`);
+      else setFlash(`Fetched ${lines.length} roll(s) from challan ${m.challan_no} into row ${i + 1}.`);
+    } catch (e) {
+      setVerify((prev) => {
+        const next = { ...prev };
+        delete next[no];
+        return next;
+      });
+      setError(extractErrorMessage(e));
+    } finally {
+      setFetchingRow(null);
+    }
   }
 
   // Keyboard: Enter adds another row so material can be keyed in without reaching for the
   // mouse; Cmd/Ctrl+Enter submits. Enter is left alone while a dropdown is open so it can
-  // pick the highlighted suggestion.
+  // pick the highlighted suggestion, and the challan box handles its own Enter (Fetch).
   function onGridKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "Enter") return;
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); if (!busy) void onSubmit(); return; }
@@ -270,50 +280,65 @@ export default function InwardWorkspace() {
     addRow();
   }
 
-  /* ── Bulk "Qty | Weight" dialog ───────────────────────── */
+  /* ── Roll-wise cart ───────────────────────────────────── */
 
-  function openBulk(i: number) {
-    const r = rows[i];
-    setBulkLines([{ count: 1, weight: r.weight === "" ? "" : r.weight }]);
-    setBulkRow(i);
+  function openCart(i: number) {
+    const existing = rollsOf(rows[i]);
+    setCartLines(
+      existing.length
+        ? existing.map((l) => ({ ...l, qty: l.qty === "" ? 1 : l.qty }))
+        : [{ roll: "", qty: 1, weight: "" }],
+    );
+    setCartRow(i);
+    setCartFocus((n) => n + 1);
   }
 
-  const bulkTotals = useMemo(() => {
-    const n = bulkLines.reduce((s, l) => s + (Number(l.count) || 0), 0);
-    const w = bulkLines.reduce((s, l) => s + (Number(l.count) || 0) * (Number(l.weight) || 0), 0);
-    return { n, w };
-  }, [bulkLines]);
+  // Focus the newest roll line, so "next roll" is a keystroke and not a mouse trip.
+  useEffect(() => {
+    if (cartRow === null) return;
+    const inputs = cartBody.current?.querySelectorAll<HTMLInputElement>("[data-cart-roll]");
+    inputs?.[inputs.length - 1]?.focus();
+  }, [cartFocus, cartRow]);
 
-  /** Expand the dialog's count × weight lines into that many identical rows, copied from
-   *  the row the dialog was opened on (jobwork, challan, order, roll, colour). A source
-   *  row with nothing weighed on it yet is replaced rather than left behind empty. */
-  function applyBulk() {
-    if (bulkRow === null) return;
-    const src = rows[bulkRow];
-    const made: Row[] = [];
-    for (const l of bulkLines) {
-      const count = Math.max(0, Math.floor(Number(l.count) || 0));
-      const weight = Number(l.weight) || 0;
-      for (let k = 0; k < count; k++) made.push({ ...src, qty: 1, weight: weight || "" });
-    }
-    if (made.length === 0) { setBulkRow(null); return; }
-    const srcEmpty = src.qty === "" && src.weight === "";
-    setRows((prev) => {
-      const next = [...prev];
-      next.splice(bulkRow, srcEmpty ? 1 : 0, ...made);
-      return next;
-    });
-    setBulkRow(null);
-    toast(`Added ${made.length} row${made.length > 1 ? "s" : ""}`);
+  function addCartLine() {
+    setCartLines((p) => [...p, { roll: "", qty: 1, weight: "" }]);
+    setCartFocus((n) => n + 1);
+  }
+
+  const cartTotals = useMemo(
+    () => ({
+      qty: cartLines.reduce((s, l) => s + (Number(l.qty) || 0), 0),
+      weight: cartLines.reduce((s, l) => s + (Number(l.weight) || 0), 0),
+    }),
+    [cartLines],
+  );
+
+  /** The cart IS the row's roll list — saving replaces it, so reopening shows what is
+   *  there and corrections are made in place rather than by adding duplicates. */
+  function applyCart() {
+    if (cartRow === null) return;
+    const kept: RollLine[] = cartLines.filter(lineFilled).map((l) => ({
+      roll: l.roll.trim(),
+      // A weighed roll with no count typed is one roll — that is what a roll is.
+      qty: l.qty === "" ? (Number(l.weight) > 0 ? 1 : "") : l.qty,
+      weight: l.weight,
+    }));
+    setRow(cartRow, { lines: kept.length ? kept : [blankLine()] });
+    setCartRow(null);
+    toast(kept.length ? `Row ${cartRow + 1}: ${kept.length} roll${kept.length > 1 ? "s" : ""}` : `Row ${cartRow + 1} cleared`);
   }
 
   /* ── Totals + verification ────────────────────────────── */
 
   const totals = useMemo(
-    () => ({
-      qty: rows.reduce((s, r) => s + (Number(r.qty) || 0), 0),
-      weight: rows.reduce((s, r) => s + (Number(r.weight) || 0), 0),
-    }),
+    () =>
+      rows.reduce(
+        (t, r) => {
+          const rt = rowTotals(r);
+          return { qty: t.qty + rt.qty, weight: t.weight + rt.weight, rolls: t.rolls + rollsOf(r).length };
+        },
+        { qty: 0, weight: 0, rolls: 0 },
+      ),
     [rows],
   );
 
@@ -325,59 +350,112 @@ export default function InwardWorkspace() {
     "mm-inward-tolerances",
   );
   const overPct = (tolData?.message?.over ?? 20) / 100;
-  const overTol = verify ? Math.max(0.5, (verify.expected_weight || 0) * overPct) : 0.5;
-  const overReceipt = !!verify && totals.weight > verify.remaining_weight + overTol;
 
-  // Only a grid actually filled from the fetched challan is posted as VM-verified. Change
-  // the challan number after fetching and this is a plain manual inward again.
-  const vmVerified = !!verify && verify.challan_no === challanNo.trim();
+  // Only challans still typed on a row post as VM-verified. Change a challan number after
+  // fetching it and that row is a plain manual entry again.
+  const verifiedChallans = useMemo(() => {
+    const onRows = new Set(rows.map((r) => r.challan_no.trim()).filter(Boolean));
+    return Object.keys(verify).filter((ch) => onRows.has(ch));
+  }, [rows, verify]);
+
+  /** Weight being entered per challan — what each challan's own remaining is judged on. */
+  const enteredByChallan = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of rows) {
+      const ch = r.challan_no.trim();
+      if (ch) m[ch] = (m[ch] || 0) + rowTotals(r).weight;
+    }
+    return m;
+  }, [rows]);
+
+  const overTolFor = (v: ChallanVerify) => Math.max(0.5, (v.expected_weight || 0) * overPct);
+  const closedChallan = verifiedChallans.find((ch) => verify[ch]?.closed);
+
+  function clearVerify(challan: string) {
+    setVerify((prev) => {
+      const next = { ...prev };
+      delete next[challan];
+      return next;
+    });
+  }
+
+  /* ── Order actions ────────────────────────────────────── */
+
+  const rowOrders = useMemo(
+    () => [...new Set(rows.map((r) => r.customer_order).filter(Boolean))],
+    [rows],
+  );
+
+  async function submitForceComplete(order: string) {
+    setError(null);
+    try {
+      await forceComplete({ order, pin: forcePin });
+      setForceOrder(null);
+      setForcePin("");
+      setFlash(`Order ${order} force-completed.`);
+      toast(`Order ${order} completed`);
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    }
+  }
+
+  /* ── Submit ───────────────────────────────────────────── */
 
   function resetForm() {
     setRows([blankRow()]);
     setOrders([]);
-    setVerify(null);
-    setChallanNo("");
-    setLot("");
+    setVerify({});
     setIsPartial(false);
-    setSalesOrder("");
+    setForceOrder(null);
+    setForcePin("");
   }
 
   async function onSubmit() {
     setError(null);
     setFlash(null);
-    const filled = rows.filter((r) => r.color.trim() || r.roll.trim() || r.qty !== "" || r.weight !== "");
+    // Carry each row's own number, so a complaint about row 3 names row 3 and not
+    // "the third row that had something on it".
+    const filled = rows.map((r, i) => ({ r, no: i + 1 })).filter(({ r }) => rowFilled(r));
     if (filled.length === 0) return setError("Add at least one item row.");
-    if (verify?.closed && vmVerified) return setError("This challan is already fully received — no further inward allowed.");
     if (!location.trim()) return setError("Choose a location (roll stock is tracked per location).");
-    if (!company.trim()) return setError("Choose the company — rolls are received company-wise.");
-    if (!effectiveLot && !challanNo.trim()) return setError("No lot could be resolved — pick a colour on the item rows first.");
-    for (const [i, r] of filled.entries()) {
-      if (!r.color.trim()) return setError(`Row ${i + 1} needs a colour.`);
-      if (!(Number(r.weight) > 0) && !(Number(r.qty) > 0)) return setError(`Row ${i + 1} needs a weight or qty.`);
+    if (closedChallan) return setError(`Challan ${closedChallan} is already fully received — no further inward allowed.`);
+    for (const { r, no } of filled) {
+      if (!r.color.trim()) return setError(`Row ${no} needs a colour.`);
+      const lines = rollsOf(r);
+      if (lines.length === 0) return setError(`Row ${no} needs a roll — enter a weight or qty.`);
+      for (const [k, l] of lines.entries()) {
+        if (!(Number(l.weight) > 0) && !(Number(l.qty) > 0))
+          return setError(`Row ${no}, roll ${k + 1}${l.roll ? ` (${l.roll})` : ""} needs a weight or qty.`);
+      }
     }
+    // One MM Inward Item per ROLL, tagged with the row it was weighed on so the server
+    // gives that row's rolls one lot between them.
+    const items = filled
+      .flatMap(({ r, no }) =>
+        rollsOf(r).map((l) => ({
+          lot_group: no,
+          job_work: r.job_work ? 1 : 0,
+          supplier: r.supplier || null,
+          roll_name: l.roll,
+          color_name: r.color,
+          cut: r.cut,
+          qty_box: Number(l.qty) || 0,
+          weight: Number(l.weight) || 0,
+          customer_order: r.customer_order || null,
+          challan_number: r.challan_no.trim(),
+        })),
+      )
+      .map((it, i) => ({ ...it, idx: i + 1 }));
     const payload = {
       doctype: "MM Inward",
       posting_date: postingDate,
       branch: branch || null,
       location,
-      sales_order: salesOrder || null,
-      challan_number: challanNo.trim(),
-      lot_number: effectiveLot || challanNo.trim(),
-      company_name: company,
-      verify_against_vm: vmVerified,
+      // Challans, lots, the order and the company all come off the rows now — the server
+      // stamps the header from them.
+      verified_challans: verifiedChallans,
       is_partial: isPartial,
-      items: filled.map((r, i) => ({
-        idx: i + 1,
-        job_work: r.job_work ? 1 : 0,
-        roll_name: r.roll,
-        color_name: r.color,
-        cut: r.cut,
-        qty_box: Number(r.qty) || 0,
-        weight: Number(r.weight) || 0,
-        // Per-row allocation wins; otherwise fall back to the header order.
-        customer_order: r.customer_order || salesOrder || null,
-        challan_number: r.challan_no.trim() || challanNo.trim(),
-      })),
+      items,
     };
     try {
       const res = await postInward({ payload });
@@ -401,110 +479,89 @@ export default function InwardWorkspace() {
       <header className="mm-ws-head">
         <div>
           <h1 className="mm-page-title">Inward</h1>
-          <p className="mm-page-sub">Key the rolls in a line at a time. Fetch a Veermetlon challan to fill them in for you.</p>
+          <p className="mm-page-sub">
+            One line per lot — challan, supplier, order and colour on the line, its rolls behind the cart.
+            Fetch a Veermetlon challan on a line to fill its rolls in for you.
+          </p>
         </div>
       </header>
 
-      {/* Header fields — date, where it lands, and the optional challan fetch. */}
+      {/* Header fields — only what the whole document shares. */}
       <section className="mm-card mm-card-pad">
-        <div className="mm-iw-head-grid">
+        <div className="mm-iw-head-grid mm-iw-head-tight">
           <label className="mm-field">
             <span className="mm-field-label">Chalan date *</span>
             <input className="mm-input" type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} />
           </label>
           <FieldInput field={F_LOCATION} value={location} onChange={(v) => setLocation(String(v ?? ""))} />
-          <label className="mm-field">
-            <span className="mm-field-label">Company *</span>
-            <SearchSelect
-              value={company}
-              onChange={setCompany}
-              required
-              placeholder="Search company or party…"
-              options={companies.map((c) => ({ value: c.company_name, label: c.company_name, meta: c.party_name }))}
-            />
-          </label>
-          <FieldInput field={F_BRANCH} value={branch} onChange={(v) => setBranch(String(v ?? ""))} record={{ location }} />
-          {/* Lot is assigned automatically (colour-wise LT id, reused per challan) — shown
-              read-only so the operator can see which lot this will land in. */}
-          <label className="mm-field">
-            <span className="mm-field-label">Lot no</span>
-            <input className="mm-input" value={effectiveLot} readOnly
-              placeholder={rows.some((r) => r.color) ? "Resolving…" : "Auto — pick a colour"} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">Chalan no</span>
-            <div className="mm-iw-fetch">
-              <input
-                className="mm-input"
-                value={challanNo}
-                placeholder="Veermetlon challan"
-                onChange={(e) => setChallanNo(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onFetchChallan(); } }}
-              />
-              <button type="button" className="mm-btn-secondary mm-btn-compact" disabled={fetching} onClick={() => void onFetchChallan()}
-                title="Pull this challan's rolls from Veermetlon and verify the receipt against it">
-                {fetching ? "…" : (<><Download size={14} /> Fetch</>)}
-              </button>
-            </div>
-          </label>
-          <SalesOrderPicker wide label="Sales order (optional — per-row order overrides it)" value={salesOrder} onChange={pickSalesOrder} />
         </div>
 
-        {/* When an order is registered: it auto-completes once inward matches the ordered
-            weight (within tolerance); this closes it early with the Admin PIN. */}
-        {salesOrder && (
+        {/* When orders are on the rows: each completes once inward matches the ordered
+            weight (within tolerance); this closes one early with the Admin PIN. */}
+        {rowOrders.length > 0 && (
           <div className="mm-iw-force">
             <span className="mm-muted" style={{ fontSize: "0.82rem" }}>
-              Order <strong>{salesOrder}</strong> completes automatically when inward matches the ordered weight.
+              {rowOrders.length === 1 ? "Order " : "Orders "}
+              <strong>{rowOrders.join(", ")}</strong> complete automatically when inward matches the ordered weight.
             </span>
-            {!forceOpen ? (
-              <button type="button" className="mm-mini" onClick={() => setForceOpen(true)}>
-                <PackageCheck size={13} /> Force complete order
-              </button>
-            ) : (
-              <span style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
-                <input
-                  type="password"
-                  className="mm-input mm-input-compact"
-                  style={{ maxWidth: 150 }}
-                  placeholder="Admin Override PIN"
-                  value={forcePin}
-                  onChange={(e) => setForcePin(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") void submitForceComplete(); }}
-                />
-                <button type="button" className="mm-mini mm-mini-ok" disabled={forcing || !forcePin.trim()} onClick={() => void submitForceComplete()}>
-                  {forcing ? "…" : "Complete"}
+            {rowOrders.map((order) =>
+              forceOrder === order ? (
+                <span key={order} style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    type="password"
+                    className="mm-input mm-input-compact"
+                    style={{ maxWidth: 150 }}
+                    placeholder="Admin Override PIN"
+                    value={forcePin}
+                    autoFocus
+                    onChange={(e) => setForcePin(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void submitForceComplete(order); }}
+                  />
+                  <button type="button" className="mm-mini mm-mini-ok" disabled={forcing || !forcePin.trim()}
+                    onClick={() => void submitForceComplete(order)}>
+                    {forcing ? "…" : `Complete ${order}`}
+                  </button>
+                  <button type="button" className="mm-mini" onClick={() => { setForceOrder(null); setForcePin(""); }}>Cancel</button>
+                </span>
+              ) : (
+                <button key={order} type="button" className="mm-mini" onClick={() => { setForceOrder(order); setForcePin(""); }}>
+                  <PackageCheck size={13} /> Force complete {order}
                 </button>
-                <button type="button" className="mm-mini" onClick={() => { setForceOpen(false); setForcePin(""); }}>Cancel</button>
-              </span>
+              ),
             )}
           </div>
         )}
 
-        {/* Verify panel — challan expected vs entered, from Veermetlon */}
-        {verify && (
-          <div className={`mm-verify ${verify.closed ? "mm-verify-closed" : ""}`}>
-            <div className="mm-verify-row">
-              <span className="mm-verify-badge"><PackageCheck size={13} /> Verified from Veermetlon · {verify.challan_no}</span>
-              {verify.closed && <span className="mm-badge-low">Challan closed</span>}
-              {!vmVerified && <span className="mm-badge-low">Challan no changed — posting unverified</span>}
-              <button type="button" className="mm-mini" onClick={() => { setVerify(null); setOrders([]); }} title="Drop the challan verification">
-                Clear
-              </button>
-            </div>
-            <div className="mm-verify-stats">
-              <div><span>Challan expects</span><strong>{verify.expected_weight.toLocaleString()} kg · {verify.expected_rolls} rolls</strong></div>
-              <div><span>Already received</span><strong>{verify.received_weight.toLocaleString()} kg</strong></div>
-              <div><span>Remaining</span><strong>{verify.remaining_weight.toLocaleString()} kg</strong></div>
-              <div className={overReceipt ? "mm-verify-over" : "mm-verify-ok"}>
-                <span>Entering now</span><strong>{totals.weight.toLocaleString()} kg</strong>
+        {/* Verify panels — one per fetched challan: expected vs entered, from Veermetlon */}
+        {verifiedChallans.map((ch) => {
+          const v = verify[ch];
+          const entering = enteredByChallan[ch] || 0;
+          const over = entering > v.remaining_weight + overTolFor(v);
+          return (
+            <div key={ch} className={`mm-verify ${v.closed ? "mm-verify-closed" : ""}`}>
+              <div className="mm-verify-row">
+                <span className="mm-verify-badge"><PackageCheck size={13} /> Verified from Veermetlon · {v.challan_no}</span>
+                {v.closed && <span className="mm-badge-low">Challan closed</span>}
+                <button type="button" className="mm-mini" onClick={() => clearVerify(ch)} title="Drop this challan's verification">
+                  Clear
+                </button>
               </div>
+              <div className="mm-verify-stats">
+                <div><span>Challan expects</span><strong>{v.expected_weight.toLocaleString()} kg · {v.expected_rolls} rolls</strong></div>
+                <div><span>Already received</span><strong>{v.received_weight.toLocaleString()} kg</strong></div>
+                <div><span>Remaining</span><strong>{v.remaining_weight.toLocaleString()} kg</strong></div>
+                <div className={over ? "mm-verify-over" : "mm-verify-ok"}>
+                  <span>Entering now</span><strong>{entering.toLocaleString()} kg</strong>
+                </div>
+              </div>
+              {over && (
+                <p className="mm-verify-warn">
+                  Entered weight exceeds this challan's remaining {v.remaining_weight.toLocaleString()} kg — posting will be blocked.
+                </p>
+              )}
             </div>
-            {overReceipt && (
-              <p className="mm-verify-warn">Entered weight exceeds the challan's remaining {verify.remaining_weight.toLocaleString()} kg — posting will be blocked.</p>
-            )}
-          </div>
-        )}
+          );
+        })}
 
         {error && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{error}</p>}
         {flash && <p className="mm-banner mm-banner-ok" style={{ marginTop: "0.6rem" }}>{flash}</p>}
@@ -512,7 +569,7 @@ export default function InwardWorkspace() {
 
       {/* The entry grid. */}
       <section className="mm-card mm-iw-items-card">
-        <div className="mm-iw-band">Inward items</div>
+        <div className="mm-iw-band">Inward items — one line per lot</div>
         <div className="mm-table-scroll" onKeyDown={onGridKeyDown}>
           <table className="mm-table mm-table-dense mm-iw-grid-table">
             <thead>
@@ -520,108 +577,182 @@ export default function InwardWorkspace() {
                 <th className="mm-iw-c-no">No</th>
                 <th className="mm-iw-c-jw">JobWork</th>
                 <th className="mm-iw-c-chalan">Chalan No</th>
+                <th className="mm-iw-c-supplier">Supplier</th>
                 <th className="mm-iw-c-order">Customer Order</th>
-                <th className="mm-iw-c-roll">Roll</th>
                 <th className="mm-iw-c-color">Color *</th>
+                <th className="mm-iw-c-lot">Lot No</th>
+                <th className="mm-iw-c-roll">Roll</th>
                 <th className="mm-iw-c-qty">Qty | Weight (Kg) *</th>
                 <th className="mm-iw-c-act" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={i}>
-                  <td className="mm-iw-c-no">{i + 1}</td>
-                  <td className="mm-iw-c-jw" data-label="JobWork">
-                    <input
-                      type="checkbox"
-                      className="mm-iw-jw-box"
-                      checked={r.job_work}
-                      title="Job work — this material belongs to the customer"
-                      aria-label={`Job work, row ${i + 1}`}
-                      onChange={(e) => setRow(i, { job_work: e.target.checked })}
-                    />
-                  </td>
-                  <td className="mm-iw-c-chalan" data-label="Chalan No">
-                    <input className="mm-input mm-input-compact" value={r.challan_no} placeholder="Chalan No"
-                      onChange={(e) => setRow(i, { challan_no: e.target.value })} />
-                  </td>
-                  <td className="mm-iw-c-order" data-label="Customer Order">
-                    <SearchSelect
-                      compact
-                      value={r.customer_order}
-                      placeholder="Select Order"
-                      options={soOptions.map((o) => ({
-                        value: o.sales_order,
-                        label: o.sales_order,
-                        meta: [o.party_name || o.party, (o.colours || []).join(", ")].filter(Boolean).join(" · "),
-                      }))}
-                      onChange={(v) => pickOrder(i, v)}
-                    />
-                  </td>
-                  <td className="mm-iw-c-roll" data-label="Roll">
-                    <input className="mm-input mm-input-compact" value={r.roll} placeholder="Roll"
-                      onChange={(e) => setRow(i, { roll: e.target.value })} />
-                  </td>
-                  <td className="mm-iw-c-color" data-label="Color">
-                    {/* Once the row's order has supplied the colour it is the order's to
-                        decide — read-only, and disabled so Tab runs straight past it to
-                        the weight instead of stopping on a field nobody edits. It stays
-                        editable when there is no order, or the order names no colour. */}
-                    <LinkField
-                      compact
-                      label=""
-                      linkDoctype="MM Item Master"
-                      value={r.color}
-                      disabled={!!r.customer_order && !!r.color}
-                      placeholder="Select Color"
-                      createDefaults={{ item_type: "Roll" }}
-                      onChange={(v) => setRow(i, { color: v })}
-                    />
-                  </td>
-                  <td className="mm-iw-c-qty" data-label="Qty | Weight (Kg)">
-                    <div className="mm-iw-qtypair">
-                      <input className="mm-input mm-input-compact" type="number" value={r.qty} placeholder="Qty"
-                        onChange={(e) => setRow(i, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />
-                      <input className="mm-input mm-input-compact" type="number" value={r.weight} placeholder="Weight"
-                        onChange={(e) => setRow(i, { weight: e.target.value === "" ? "" : Number(e.target.value) })} />
-                      <button type="button" className="mm-iw-cart" title="Add several rolls at once — enter how many and the weight each"
-                        aria-label={`Add several rolls like row ${i + 1}`} onClick={() => openBulk(i)}>
-                        <ShoppingCart size={15} />
-                      </button>
-                    </div>
-                  </td>
-                  <td className="mm-iw-c-act">
-                    <div className="mm-iw-rowacts">
-                      <button type="button" className="mm-iw-add" title="Add row" aria-label="Add row" onClick={addRow}>
-                        <Plus size={16} />
-                      </button>
-                      <button type="button" className="mm-icon-btn" title="Remove row" aria-label={`Remove row ${i + 1}`} onClick={() => removeRow(i)}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r, i) => {
+                const t = rowTotals(r);
+                // One roll stays inline — that is the common case and it must key as fast
+                // as it ever did. Several become the row's total, edited in the cart.
+                const single = r.lines.length === 1;
+                const rollNos = r.lines.map((l) => l.roll.trim()).filter(Boolean);
+                const challan = r.challan_no.trim();
+                return (
+                  <tr key={i}>
+                    <td className="mm-iw-c-no">{i + 1}</td>
+                    <td className="mm-iw-c-jw" data-label="JobWork">
+                      <input
+                        type="checkbox"
+                        className="mm-iw-jw-box"
+                        checked={r.job_work}
+                        title="Job work — this material belongs to the customer"
+                        aria-label={`Job work, row ${i + 1}`}
+                        onChange={(e) => setRow(i, { job_work: e.target.checked })}
+                      />
+                    </td>
+                    <td className="mm-iw-c-chalan" data-label="Chalan No">
+                      <div className="mm-iw-rowfetch">
+                        <input className="mm-input mm-input-compact" value={r.challan_no} placeholder="Chalan No"
+                          onChange={(e) => setRow(i, { challan_no: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            // Enter here means Fetch, not "next row".
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void onFetchRow(i);
+                          }} />
+                        <button type="button" className="mm-iw-fetchbtn" disabled={fetchingRow !== null}
+                          title="Pull this challan's rolls from Veermetlon into this line, and verify the receipt against it"
+                          aria-label={`Fetch challan for row ${i + 1}`} onClick={() => void onFetchRow(i)}>
+                          {fetchingRow === i ? "…" : <Download size={14} />}
+                        </button>
+                        {challan && verify[challan] && (
+                          <span className="mm-iw-vmdot" title={`Verified from Veermetlon · ${challan}`}>
+                            <PackageCheck size={12} />
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="mm-iw-c-supplier" data-label="Supplier">
+                      <LinkField
+                        compact
+                        label=""
+                        linkDoctype="MM Vendor Master"
+                        value={r.supplier}
+                        placeholder="Supplier"
+                        onChange={(v) => setRow(i, { supplier: v })}
+                      />
+                    </td>
+                    <td className="mm-iw-c-order" data-label="Customer Order">
+                      <SearchSelect
+                        compact
+                        value={r.customer_order}
+                        placeholder="Select Order"
+                        options={soOptions.map((o) => ({
+                          value: o.sales_order,
+                          label: o.sales_order,
+                          meta: [o.party_name || o.party, (o.colours || []).join(", ")].filter(Boolean).join(" · "),
+                        }))}
+                        onChange={(v) => pickOrder(i, v)}
+                      />
+                    </td>
+                    <td className="mm-iw-c-color" data-label="Color">
+                      {/* Once the row's order has supplied the colour it is the order's to
+                          decide — read-only, and disabled so Tab runs straight past it to
+                          the weight instead of stopping on a field nobody edits. It stays
+                          editable when there is no order, or the order names no colour. */}
+                      <LinkField
+                        compact
+                        label=""
+                        linkDoctype="MM Item Master"
+                        value={r.color}
+                        disabled={!!r.customer_order && !!r.color}
+                        placeholder="Select Color"
+                        createDefaults={{ item_type: "Roll" }}
+                        onChange={(v) => setRow(i, { color: v })}
+                      />
+                    </td>
+                    <td className="mm-iw-c-lot" data-label="Lot No">
+                      {/* Assigned per row on post (colour-wise LT id, reused per challan) —
+                          shown so the operator can see which lot this line becomes. Lot
+                          numbers run per colour, so the tooltip names the colour: two
+                          different colours can legitimately show the same LT id. */}
+                      <span
+                        className="mm-iw-lot"
+                        title={
+                          lots[i]
+                            ? `Lot ${lots[i]} for ${r.color} — assigned when the inward is posted. Lot numbers run per colour, so another colour can show this same id.`
+                            : "Pick a colour and the lot for this line is worked out"
+                        }
+                      >
+                        {lots[i] || (r.color ? "…" : "Auto")}
+                      </span>
+                    </td>
+                    <td className="mm-iw-c-roll" data-label="Roll">
+                      {single ? (
+                        <input className="mm-input mm-input-compact" value={r.lines[0].roll} placeholder="Roll"
+                          onChange={(e) => setLine(i, 0, { roll: e.target.value })} />
+                      ) : (
+                        <span className="mm-iw-rolls"
+                          title={r.lines.map((l, k) => `${l.roll || `roll ${k + 1}`} — ${Number(l.qty) || 0} × ${Number(l.weight) || 0} kg`).join("\n")}>
+                          {rollNos.join(", ") || "—"}
+                          <em className="mm-iw-rollcount">×{r.lines.length}</em>
+                        </span>
+                      )}
+                    </td>
+                    <td className="mm-iw-c-qty" data-label="Qty | Weight (Kg)">
+                      <div className="mm-iw-qtypair">
+                        {single ? (
+                          <>
+                            <input className="mm-input mm-input-compact" type="number" value={r.lines[0].qty} placeholder="Qty"
+                              onChange={(e) => setLine(i, 0, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />
+                            <input className="mm-input mm-input-compact" type="number" value={r.lines[0].weight} placeholder="Weight"
+                              onChange={(e) => setLine(i, 0, { weight: e.target.value === "" ? "" : Number(e.target.value) })} />
+                          </>
+                        ) : (
+                          <>
+                            <span className="mm-iw-sum" title="Total qty of this lot's rolls">{t.qty.toLocaleString()}</span>
+                            <span className="mm-iw-sum" title="Total weight of this lot's rolls">{t.weight.toFixed(2)}</span>
+                          </>
+                        )}
+                        <button type="button" className="mm-iw-cart"
+                          title="Rolls under this lot — keep entering roll no, qty and weight"
+                          aria-label={`Rolls on row ${i + 1}`} onClick={() => openCart(i)}>
+                          <ShoppingCart size={15} />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="mm-iw-c-act">
+                      <div className="mm-iw-rowacts">
+                        <button type="button" className="mm-iw-add" title="Add row" aria-label="Add row" onClick={addRow}>
+                          <Plus size={16} />
+                        </button>
+                        <button type="button" className="mm-icon-btn" title="Remove row" aria-label={`Remove row ${i + 1}`} onClick={() => removeRow(i)}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
         {/* Totals + Submit, pinned to the bottom of the grid. */}
         <div className="mm-iw-footer">
+          <span className="mm-iw-total">Rolls: <strong>{totals.rolls.toLocaleString()}</strong></span>
           <span className="mm-iw-total">Total Qty: <strong>{totals.qty.toLocaleString()}</strong></span>
           <span className="mm-iw-total">Total Weight: <strong>{totals.weight.toFixed(2)}</strong></span>
-          <label className="mm-check" title="Tick if more rolls are still coming on this challan">
+          <label className="mm-check" title="Tick if more rolls are still coming on these challans">
             <input type="checkbox" checked={isPartial} onChange={(e) => setIsPartial(e.target.checked)} />
             Partial — more to come
           </label>
-          <button type="button" className="mm-btn-primary mm-iw-submit" disabled={busy || (vmVerified && !!verify?.closed)}
+          <button type="button" className="mm-btn-primary mm-iw-submit" disabled={busy || !!closedChallan}
             onClick={() => void onSubmit()}>
             {busy ? "Posting…" : "Submit"} <span aria-hidden>→</span>
           </button>
         </div>
       </section>
 
-      {/* Open orders for a fetched challan's coating — the allocation reference. */}
+      {/* Open orders for the fetched challans' coating — the allocation reference. */}
       {orders.length > 0 && (
         <section className="mm-card mm-card-pad">
           <div className="mm-iw-sec-head">
@@ -647,35 +778,51 @@ export default function InwardWorkspace() {
             </table>
           </div>
           <p className="mm-muted" style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>
-            One challan can serve several customers — set the order per row above.
+            One challan can serve several customers — set the order per line above.
           </p>
         </section>
       )}
 
-      {/* Bulk qty/weight — "10 rolls at 25 kg" becomes 10 rows without keying each one. */}
-      {bulkRow !== null && (
-        <div className="mm-modal-scrim" style={{ zIndex: 70 }} onClick={() => setBulkRow(null)}>
-          <div className="mm-modal mm-sheet mm-sheet-narrow" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Qty and weight">
+      {/* Roll-wise entry for one lot: roll no, qty and weight, as many as arrived. */}
+      {cartRow !== null && (
+        <div className="mm-modal-scrim" style={{ zIndex: 70 }} onClick={() => setCartRow(null)}>
+          <div className="mm-modal mm-sheet mm-sheet-narrow" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Rolls on this lot">
             <div className="mm-modal-head">
-              <span className="mm-modal-title">Qty | Weight (Kg)</span>
-              <button className="mm-icon-btn" onClick={() => setBulkRow(null)} aria-label="Close"><X size={16} /></button>
+              <span className="mm-modal-title">
+                Rolls — row {cartRow + 1}
+                {lots[cartRow] ? <span className="mm-iw-lot mm-iw-lot-head">{lots[cartRow]}</span> : null}
+              </span>
+              <button className="mm-icon-btn" onClick={() => setCartRow(null)} aria-label="Close"><X size={16} /></button>
             </div>
-            <div className="mm-modal-body">
+            <div className="mm-modal-body" ref={cartBody}>
               <p className="mm-muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-                How many rolls, and what each one weighs. Each line becomes that many rows, copied from row {bulkRow + 1}.
+                Roll no, qty and weight — one line per roll. Roll numbers may repeat. They all
+                land under this line's single lot, and the line shows their total.
+                <br />
+                Enter adds the next roll · {rows[cartRow].color || "no colour picked yet"}
+                {rows[cartRow].challan_no.trim() ? ` · challan ${rows[cartRow].challan_no.trim()}` : ""}
               </p>
-              {bulkLines.map((l, i) => (
-                <div className="mm-iw-bulk-line" key={i}>
-                  <input className="mm-input" type="number" min={1} value={l.count} placeholder="Qty" autoFocus={i === 0}
-                    aria-label={`How many, line ${i + 1}`}
-                    onChange={(e) => setBulkLines((p) => p.map((x, j) => (j === i ? { ...x, count: e.target.value === "" ? "" : Number(e.target.value) } : x)))} />
-                  <input className="mm-input" type="number" value={l.weight} placeholder="Weight"
-                    aria-label={`Weight each, line ${i + 1}`}
-                    onChange={(e) => setBulkLines((p) => p.map((x, j) => (j === i ? { ...x, weight: e.target.value === "" ? "" : Number(e.target.value) } : x)))}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyBulk(); } }} />
-                  {bulkLines.length > 1 ? (
-                    <button type="button" className="mm-icon-btn" title="Remove line" aria-label="Remove line"
-                      onClick={() => setBulkLines((p) => p.filter((_, j) => j !== i))}>
+              {cartLines.map((l, i) => (
+                <div className="mm-iw-cart-line" key={i}>
+                  <span className="mm-iw-cart-no">{i + 1}</span>
+                  <input className="mm-input" data-cart-roll value={l.roll} placeholder="Roll no"
+                    aria-label={`Roll no, line ${i + 1}`}
+                    onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, roll: e.target.value } : x)))} />
+                  <input className="mm-input mm-iw-cart-num" type="number" min={0} value={l.qty} placeholder="Qty"
+                    aria-label={`Qty, line ${i + 1}`}
+                    onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, qty: e.target.value === "" ? "" : Number(e.target.value) } : x)))} />
+                  <input className="mm-input mm-iw-cart-num" type="number" value={l.weight} placeholder="Weight"
+                    aria-label={`Weight, line ${i + 1}`}
+                    onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, weight: e.target.value === "" ? "" : Number(e.target.value) } : x)))}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      if (e.metaKey || e.ctrlKey) applyCart();
+                      else addCartLine();
+                    }} />
+                  {cartLines.length > 1 ? (
+                    <button type="button" className="mm-icon-btn" title="Remove roll" aria-label={`Remove roll line ${i + 1}`}
+                      onClick={() => setCartLines((p) => p.filter((_, j) => j !== i))}>
                       <X size={14} />
                     </button>
                   ) : (
@@ -683,16 +830,18 @@ export default function InwardWorkspace() {
                   )}
                 </div>
               ))}
-              <button type="button" className="mm-iw-add mm-iw-bulk-add" title="Add another qty / weight line" aria-label="Add another line"
-                onClick={() => setBulkLines((p) => [...p, { count: 1, weight: "" }])}>
+              <button type="button" className="mm-iw-add mm-iw-bulk-add" title="Add another roll" aria-label="Add another roll"
+                onClick={addCartLine}>
                 <Plus size={16} />
               </button>
               <p className="mm-muted" style={{ fontSize: "0.82rem" }}>
-                Adds <strong>{bulkTotals.n}</strong> row{bulkTotals.n === 1 ? "" : "s"} · <strong>{bulkTotals.w.toFixed(2)}</strong> kg
+                <strong>{cartLines.filter(lineFilled).length}</strong> roll(s) ·
+                qty <strong>{cartTotals.qty.toLocaleString()}</strong> ·
+                <strong> {cartTotals.weight.toFixed(2)}</strong> kg on this lot
               </p>
               <div className="mm-ow-po-actions">
-                <button type="button" className="mm-btn-primary" disabled={bulkTotals.n === 0} onClick={applyBulk}>Add Qty</button>
-                <button type="button" className="mm-btn-secondary" onClick={() => setBulkRow(null)}>Cancel</button>
+                <button type="button" className="mm-btn-primary" onClick={applyCart}>Save rolls</button>
+                <button type="button" className="mm-btn-secondary" onClick={() => setCartRow(null)}>Cancel</button>
               </div>
             </div>
           </div>

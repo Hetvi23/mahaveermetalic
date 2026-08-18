@@ -15,3 +15,7 @@ mahaveermetalic.patches.introduce_mm_branch
 mahaveermetalic.patches.create_mm_lot
 mahaveermetalic.patches.add_lot_links
 mahaveermetalic.patches.add_bobbin_ledger_and_barcode
+mahaveermetalic.patches.inward_lot_per_row
+mahaveermetalic.patches.patti_counted_per_program
+mahaveermetalic.patches.inward_gr_and_view_notes
+mahaveermetalic.patches.order_reject_keeps_number

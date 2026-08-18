@@ -661,7 +661,9 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				columns: [
 					{ fieldname: "job_work", label: "Job Work", fieldtype: "Check" },
 					{ fieldname: "challan_number", label: "Challan No", fieldtype: "Data" },
+					{ fieldname: "supplier", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
 					{ fieldname: "customer_order", label: "Customer Order", fieldtype: "Link", options: "MM Sales Order" },
+					{ fieldname: "lot_number", label: "Lot", fieldtype: "Data", readOnly: true },
 					{ fieldname: "item_type", label: "Item Type", fieldtype: "Select", options: "Cut\nPatti\nJari\nKasab\nRoll" },
 					{ fieldname: "roll_name", label: "Roll", fieldtype: "Data" },
 					{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },

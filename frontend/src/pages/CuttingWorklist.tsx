@@ -64,6 +64,10 @@ export default function CuttingWorklist() {
   const [active, setActive] = useState<Group | null>(null);
   const [adding, setAdding] = useState(false);
   const [finishing, setFinishing] = useState<BoardCard | null>(null);
+  // In-stock rolls are the FIRST STEP OF STARTING A CUT, not a permanent panel: the screen
+  // is otherwise about what is on the floor right now. "New cutting" opens the picker;
+  // creating a cutting (or closing it) puts the screen back to the in-cutting board.
+  const [picking, setPicking] = useState(false);
 
   const stock = useFrappeGetCall<{ message: Group[] }>(`${API}.inward_stock_by_order`, undefined, "cut-stock");
   const board = useFrappeGetCall<{ message: BoardCard[] }>(`${API}.cutting_board`, undefined, "cut-board");
@@ -111,7 +115,7 @@ export default function CuttingWorklist() {
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Cutting</h1>
-          <p className="mm-page-sub">Send in-stock rolls (grouped by order) into cutting; finished cuttings become patties.</p>
+          <p className="mm-page-sub">What is on the floor right now. Hit New cutting to pick an in-stock roll; finished cuttings become patty.</p>
         </div>
         <div className="mm-ws-toolbar-right">
           <div className="mm-seg" role="tablist">
@@ -122,7 +126,7 @@ export default function CuttingWorklist() {
               <List size={15} /> List
             </button>
           </div>
-          <button className="mm-btn-primary mm-btn-compact" onClick={() => setAdding(true)}>
+          <button className="mm-btn-primary mm-btn-compact" onClick={() => { setView("worklist"); setPicking(true); }}>
             <Plus size={15} /> New cutting
           </button>
         </div>
@@ -130,9 +134,20 @@ export default function CuttingWorklist() {
 
       {view === "worklist" ? (
         <>
-          {/* In stock rolls — send into cutting */}
+          {/* In stock rolls — the picker for starting a cut, shown only while doing that. */}
+          {picking && (
           <section className="mm-card mm-card-pad" style={{ marginBottom: "1.25rem" }}>
-            <div className="mm-cut-panel-head"><h2 className="mm-panel-title">In stock roll</h2></div>
+            <div className="mm-cut-panel-head">
+              <h2 className="mm-panel-title">In stock roll</h2>
+              <div className="mm-cut-panel-acts">
+                <button className="mm-mini" onClick={() => setAdding(true)} title="Cut something not tied to an inward entry">
+                  <Plus size={13} /> Cut by hand
+                </button>
+                <button className="mm-icon-btn" aria-label="Close the picker" title="Close" onClick={() => setPicking(false)}>
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
             {stock.isLoading && <p className="mm-muted">Loading…</p>}
             {!stock.isLoading && groups.length === 0 && <p className="mm-empty">No in-stock inward against any order.</p>}
             {groups.length > 0 && (
@@ -161,6 +176,7 @@ export default function CuttingWorklist() {
               </div>
             )}
           </section>
+          )}
 
           {/* In cutting — grouped by Cut (cut = column, each cutting = a card) */}
           <div className="mm-cut-panel-head"><h2 className="mm-panel-title"><Scissors size={16} /> In cutting — by cut</h2></div>
@@ -210,10 +226,12 @@ export default function CuttingWorklist() {
       )}
 
       {active && (
-        <CuttingModal group={active} onClose={() => setActive(null)} onDone={() => { setActive(null); refreshAll(); }} />
+        <CuttingModal group={active} onClose={() => setActive(null)}
+          onDone={() => { setActive(null); setPicking(false); refreshAll(); }} />
       )}
       {adding && (
-        <NewCuttingModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); refreshAll(); }} />
+        <NewCuttingModal onClose={() => setAdding(false)}
+          onDone={() => { setAdding(false); setPicking(false); refreshAll(); }} />
       )}
       {finishing && (
         <FinishRollModal card={finishing} onClose={() => setFinishing(null)} onDone={() => { setFinishing(null); refreshAll(); }} />

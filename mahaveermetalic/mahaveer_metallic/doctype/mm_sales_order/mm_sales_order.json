@@ -23,7 +23,12 @@
   "order_locked",
   "completed",
   "completion_mode",
-  "completed_on"
+  "completed_on",
+  "section_approval",
+  "order_state",
+  "state_reason",
+  "state_changed_on",
+  "state_changed_by"
  ],
  "fields": [
   {
@@ -149,12 +154,52 @@
    "fieldtype": "Datetime",
    "label": "Completed On",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_approval",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "fieldname": "order_state",
+   "fieldtype": "Select",
+   "label": "Order State",
+   "options": "Pending\nApproved\nRejected\nCancelled",
+   "default": "Pending",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Pending = waiting for approval. Approved = live. REJECTED = sent back, still editable and re-approvable by an admin (its number stays reserved). CANCELLED = closed for good; the number stays reserved but the order can never be edited or approved again."
+  },
+  {
+   "fieldname": "state_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "Why it was rejected or cancelled."
+  },
+  {
+   "fieldname": "state_changed_on",
+   "fieldtype": "Datetime",
+   "label": "State Changed On",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "state_changed_by",
+   "fieldtype": "Link",
+   "label": "State Changed By",
+   "options": "User",
+   "read_only": 1,
+   "allow_on_submit": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-08 10:00:00.000000",
+ "modified": "2026-08-17 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Order",

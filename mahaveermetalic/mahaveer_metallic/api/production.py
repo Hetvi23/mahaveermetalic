@@ -86,11 +86,13 @@ def order_options_for_party(party=None, customer_order=None):
 
 @frappe.whitelist()
 def production_view(date=None, branch=None):
-	"""Read-only production day sheet for one date.
+	"""Program day sheet for one date.
 
-	Returns what's currently IN CUTTING, plus the Day and Night programs for that date
-	grouped by colour — each batch listed as its own line with the lot id and cut, the
-	way the shop floor reads it off the board.
+	Returns what's currently IN CUTTING, the floor's shared notes, and the Day and Night
+	programs for that date grouped BY MACHINE — each machine listing its programs, each
+	program its colour, lot, cut and one line per batch, the way the floor reads it off the
+	board. Grouped by machine rather than colour because the sheet is read machine by
+	machine: what is that machine running, and how far through is it.
 	"""
 	day = date or frappe.utils.nowdate()
 
@@ -122,7 +124,7 @@ def production_view(date=None, branch=None):
 			}
 		)
 
-	# --- Programs planned for this date, split Day / Night and grouped by colour ---
+	# --- Programs planned for this date, split Day / Night and grouped by MACHINE ---
 	prog_filters = {"docstatus": 1, "program_date": day}
 	if branch:
 		prog_filters["branch"] = branch
@@ -131,38 +133,58 @@ def production_view(date=None, branch=None):
 		"MM Program",
 		filters=prog_filters,
 		fields=["name", "shade", "roll_no", "cut", "lot", "shift", "machine_no",
-			"total_batches", "completed_batches", "net_weight", "status", "unfinished"],
+			"total_batches", "completed_batches", "net_weight", "completed_weight",
+			"per_patty_weight", "status", "unfinished", "reverted", "released", "remark"],
 		order_by="machine_no asc, creation asc",
 		limit_page_length=500,
 	):
 		sk = p.shift or "Day"
 		if sk not in shifts:
 			shifts[sk] = {}
-		colour = p.shade or p.roll_no or "—"
-		grp = shifts[sk].setdefault(colour, {"color": colour, "rows": []})
-		lid = lot_id(p.lot)
+		machine = p.machine_no or "—"
+		grp = shifts[sk].setdefault(machine, {"machine_no": machine, "programs": []})
 		total = int(p.total_batches or 0) or 1
-		# One line per batch — one patty = one batch.
-		for i in range(1, total + 1):
-			grp["rows"].append(
-				{
-					"batch": i,
-					"lot_id": lid,
-					"cut": p.cut,
-					"machine_no": p.machine_no,
-					"program": p.name,
-					"status": p.status,
-					"done": i <= int(p.completed_batches or 0),
-					"unfinished": bool(p.unfinished),
-				}
-			)
+		done = int(p.completed_batches or 0)
+		grp["programs"].append(
+			{
+				"program": p.name,
+				"color": p.shade or p.roll_no or "—",
+				"cut": p.cut,
+				"lot_id": lot_id(p.lot),
+				"total_batches": total,
+				"completed_batches": done,
+				# What actually came off the machine, at the per-patty rate.
+				"completed_weight": p.completed_weight or 0,
+				"per_patty_weight": p.per_patty_weight or 0,
+				"status": p.status,
+				"unfinished": bool(p.unfinished),
+				"reverted": bool(p.reverted),
+				"released": bool(p.released),
+				"remark": p.remark,
+				# One line per batch — one patty = one batch.
+				"batches": [{"batch": i, "done": i <= done} for i in range(1, total + 1)],
+			}
+		)
 
 	return {
 		"date": day,
 		"in_cutting": in_cutting,
+		"notes": frappe.db.get_single_value("MM Settings", "program_view_notes") or "",
 		"day": list(shifts.get("Day", {}).values()),
 		"night": list(shifts.get("Night", {}).values()),
 	}
+
+
+@frappe.whitelist()
+def save_program_view_notes(notes=None):
+	"""Save the Program View notes — one shared box for the floor.
+
+	General on purpose: it is a scratchpad ("machine 3 belt slipping", "run the gold last"),
+	not a field on any one program, so it lives on MM Settings and everyone sees the same
+	note rather than each user keeping private ones.
+	"""
+	frappe.db.set_single_value("MM Settings", "program_view_notes", (notes or "").strip())
+	return {"notes": frappe.db.get_single_value("MM Settings", "program_view_notes") or ""}
 
 
 @frappe.whitelist()

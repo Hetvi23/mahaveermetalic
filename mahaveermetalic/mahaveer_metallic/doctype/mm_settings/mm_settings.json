@@ -10,7 +10,9 @@
   "inward_match_tolerance_percent",
   "inward_over_tolerance_percent",
   "auto_close_leftover",
-  "leftover_tolerance_kg"
+  "leftover_tolerance_kg",
+  "section_program_view",
+  "program_view_notes"
  ],
  "fields": [
   {
@@ -62,12 +64,23 @@
    "default": "1",
    "description": "Leftover at or below this weight counts as nothing left, so the cutting/production auto-closes.",
    "precision": 3
+  },
+  {
+   "fieldname": "section_program_view",
+   "fieldtype": "Section Break",
+   "label": "Program View"
+  },
+  {
+   "fieldname": "program_view_notes",
+   "fieldtype": "Small Text",
+   "label": "Program View Notes",
+   "description": "The general notes box on the Program View screen — a shared scratchpad for the floor, not tied to any one machine or program."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-15 12:00:00.000000",
+ "modified": "2026-08-17 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Settings",

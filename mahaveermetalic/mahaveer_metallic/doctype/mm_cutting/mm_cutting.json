@@ -22,6 +22,7 @@
   "section_totals",
   "roll_qty",
   "total_patti_qty",
+  "consumed_patti",
   "total_net_weight",
   "per_patty_weight",
   "lot",
@@ -141,6 +142,15 @@
    "read_only": 1
   },
   {
+   "fieldname": "consumed_patti",
+   "fieldtype": "Float",
+   "label": "Patti Consumed by Programs",
+   "precision": "3",
+   "default": "0",
+   "read_only": 1,
+   "description": "How many of this cutting's patti programs have taken. Total − consumed = still available to program; a cut that yielded more patti than the program planned leaves the rest here, available."
+  },
+  {
    "fieldname": "total_net_weight",
    "fieldtype": "Float",
    "label": "Total Net Weight (Kg)",
@@ -178,7 +188,7 @@
    "label": "Closed",
    "read_only": 1,
    "default": "0",
-   "description": "Leftover closed out \u2014 no further material is added to this record."
+   "description": "Leftover closed out — no further material is added to this record."
   },
   {
    "fieldname": "close_mode",
@@ -207,7 +217,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-15 18:00:00.000000",
+ "modified": "2026-08-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Cutting",

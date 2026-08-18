@@ -1,21 +1,32 @@
-import { useState } from "react";
-import { useFrappeGetCall } from "frappe-react-sdk";
-import { Scissors, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
+import { Check, Monitor, NotebookPen, RefreshCw, Scissors, X } from "lucide-react";
+import { extractErrorMessage } from "@/utils/frappeError";
+import { toast } from "@/components/Toaster";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
+const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = () => new Date().toISOString().slice(0, 10);
+const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-type Row = {
-  batch: number;
-  lot_id?: string | null;
+type Batch = { batch: number; done?: boolean };
+type ProgramRow = {
+  program: string;
+  color: string;
   cut?: string | null;
-  machine_no?: string | null;
-  program?: string;
+  lot_id?: string | null;
+  total_batches: number;
+  completed_batches: number;
+  completed_weight?: number;
+  per_patty_weight?: number;
   status?: string;
-  done?: boolean;
   unfinished?: boolean;
+  reverted?: boolean;
+  released?: boolean;
+  remark?: string | null;
+  batches: Batch[];
 };
-type ColourGroup = { color: string; rows: Row[] };
+type MachineGroup = { machine_no: string; programs: ProgramRow[] };
 type InCutting = {
   cutting: string;
   color: string;
@@ -26,11 +37,84 @@ type InCutting = {
   status?: string;
   customer_order?: string | null;
 };
-type ViewData = { date: string; in_cutting: InCutting[]; day: ColourGroup[]; night: ColourGroup[] };
+type ViewData = { date: string; in_cutting: InCutting[]; notes: string; day: MachineGroup[]; night: MachineGroup[] };
 
-/** Colour block: the colour name, then one line per batch — batch no, lot id, cut. */
-function ShiftColumn({ title, groups }: { title: string; groups: ColourGroup[] }) {
-  const batches = groups.reduce((s, g) => s + g.rows.length, 0);
+/**
+ * Complete a program from the view — the same question the Program board asks: how many
+ * batches are done. Fewer than planned closes the job out short (the machine frees and the
+ * unrun batches hand their patty back), which is why the count is asked for and not assumed.
+ */
+function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onClose: () => void; onDone: () => void }) {
+  const total = program.total_batches ?? 0;
+  const [completed, setCompleted] = useState<number | "">(total);
+  const { call, loading } = useFrappePostCall(`${PROGRAM_API}.complete_batches`);
+  const [err, setErr] = useState<string | null>(null);
+  const comp = completed === "" ? null : completed;
+
+  async function submit() {
+    if (comp === null) return setErr("Enter how many batches are completed.");
+    setErr(null);
+    try {
+      await call({ program: program.program, completed: comp });
+      toast(
+        comp >= total
+          ? "All batches done — sent to Production"
+          : `${comp}/${total} done · ${total - comp} batch${total - comp === 1 ? "" : "es"} returned to the patty shelf`,
+      );
+      onDone();
+    } catch (e) {
+      setErr(extractErrorMessage(e));
+    }
+  }
+
+  return (
+    <div className="mm-modal-scrim" onClick={onClose}>
+      <div className="mm-modal" style={{ width: "min(440px, 100%)" }} onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="mm-modal-head">
+          <span className="mm-modal-title">Complete — {program.color}</span>
+          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="mm-modal-body">
+          <p className="mm-page-sub" style={{ marginTop: 0 }}>
+            How many of the {total} batches are completed? All of them and the program goes to
+            Production. Fewer, and the job closes out short: the machine frees up and the batches
+            that never ran hand their patty back automatically.
+          </p>
+          <label className="mm-field">
+            <span className="mm-field-label">Batches completed</span>
+            <input className="mm-input" type="number" min={0} max={total} value={completed} autoFocus
+              onChange={(e) => setCompleted(e.target.value === "" ? "" : Math.max(0, Math.min(total, Number(e.target.value) || 0)))} />
+          </label>
+          {comp !== null && (
+            <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
+              {comp >= total ? (
+                <strong>All done → goes to Production</strong>
+              ) : (
+                <>
+                  {comp}/{total} done · machine frees up ·{" "}
+                  <strong>{total - comp} batch{total - comp === 1 ? "" : "es"}</strong> of patty returned
+                </>
+              )}
+            </p>
+          )}
+          {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
+        </div>
+        <div className="mm-modal-foot">
+          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="mm-btn-primary" disabled={loading || comp === null} onClick={() => void submit()}>
+            {loading ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One shift: a block per MACHINE, each listing its programs — colour, batches, Complete. */
+function ShiftColumn({ title, groups, onComplete }: {
+  title: string; groups: MachineGroup[]; onComplete: (p: ProgramRow) => void;
+}) {
+  const batches = groups.reduce((s, g) => s + g.programs.reduce((n, p) => n + (p.total_batches || 0), 0), 0);
   return (
     <section className="mm-pvw-col">
       <header className="mm-pvw-col-head">
@@ -41,23 +125,39 @@ function ShiftColumn({ title, groups }: { title: string; groups: ColourGroup[] }
         <p className="mm-pvw-empty">Nothing planned.</p>
       ) : (
         groups.map((g) => (
-          <div className="mm-pvw-colour" key={g.color}>
-            <div className="mm-pvw-colour-name">{g.color}</div>
-            <table className="mm-table mm-table-dense mm-pvw-table">
-              <thead>
-                <tr><th className="mm-num">Batch</th><th>Lot ID</th><th>Cut</th><th>Machine</th></tr>
-              </thead>
-              <tbody>
-                {g.rows.map((r, i) => (
-                  <tr key={`${r.program}-${r.batch}-${i}`} className={r.done ? "mm-pvw-done" : undefined}>
-                    <td className="mm-num">{r.batch}</td>
-                    <td>{r.lot_id || "—"}</td>
-                    <td>{r.cut || "—"}</td>
-                    <td>{r.machine_no || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mm-pvw-machine" key={g.machine_no}>
+            <div className="mm-pvw-machine-name"><Monitor size={14} /> Machine {g.machine_no}</div>
+            {g.programs.map((p) => (
+              <div className="mm-pvw-prog" key={p.program}>
+                <div className="mm-pvw-prog-top">
+                  <span className="mm-colour-name">{p.color}</span>
+                  <span className="mm-pvw-prog-batch">
+                    {p.completed_batches}/{p.total_batches} batch{p.total_batches === 1 ? "" : "es"}
+                  </span>
+                  {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : null}
+                  {p.reverted ? <span className="mm-state mm-state-open">Reverted</span> : null}
+                </div>
+                <div className="mm-pvw-prog-meta">
+                  {[p.lot_id, p.cut ? `cut ${p.cut}` : null, `${kg(p.completed_weight)} kg done`]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+                {/* One chip per batch, filled once that batch is done — the board read. */}
+                <div className="mm-pvw-batches">
+                  {p.batches.map((b) => (
+                    <span key={b.batch} className={`mm-pvw-batch ${b.done ? "mm-pvw-batch-done" : ""}`}>{b.batch}</span>
+                  ))}
+                </div>
+                {p.remark ? <div className="mm-prog-card-remark">“{p.remark}”</div> : null}
+                <div className="mm-prog-actions">
+                  <button className="mm-mini" disabled={!!p.reverted || !!p.unfinished}
+                    title={p.unfinished ? "The roll for this program hasn't been cut yet" : p.reverted ? "This program was reverted" : "Record how many batches are completed"}
+                    onClick={() => onComplete(p)}>
+                    <Check size={13} /> Complete
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         ))
       )}
@@ -65,12 +165,62 @@ function ShiftColumn({ title, groups }: { title: string; groups: ColourGroup[] }
   );
 }
 
+/** The floor's shared scratchpad. Saved on blur so nobody has to remember a Save click. */
+function NotesPanel({ value, onSaved }: { value: string; onSaved: () => void }) {
+  const [text, setText] = useState(value);
+  const [saved, setSaved] = useState(value);
+  const { call, loading } = useFrappePostCall(`${API}.save_program_view_notes`);
+
+  // Someone else's edit (or a date change) should win over an untouched local copy.
+  useEffect(() => {
+    setText((t) => (t === saved ? value : t));
+    setSaved(value);
+  }, [value, saved]);
+
+  async function save() {
+    if (text === saved) return;
+    try {
+      await call({ notes: text });
+      setSaved(text);
+      onSaved();
+      toast("Notes saved");
+    } catch (e) {
+      toast(extractErrorMessage(e), "error");
+    }
+  }
+
+  return (
+    <section className="mm-card mm-card-pad mm-pvw-notes">
+      <div className="mm-iw-sec-head">
+        <h2 className="mm-panel-title"><NotebookPen size={16} /> Notes</h2>
+        {text !== saved && <span className="mm-pill mm-pill-pending">{loading ? "saving…" : "unsaved"}</span>}
+      </div>
+      <textarea
+        className="mm-input mm-pvw-notes-box"
+        placeholder="Anything the floor should know — machine trouble, run order, a message for the next shift…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void save()}
+      />
+      <div className="mm-pvw-notes-foot">
+        <span className="mm-muted">Shared with everyone · saved when you click away</span>
+        <button className="mm-mini mm-mini-ok" disabled={loading || text === saved} onClick={() => void save()}>Save</button>
+      </div>
+    </section>
+  );
+}
+
 /**
- * Read-only production day sheet: pick a date, see what's in cutting, then the Day and
- * Night plan side by side — grouped by colour, one line per batch (batch · lot · cut).
+ * Program view — the day sheet.
+ *
+ * Top row: what is in cutting on the left, the floor's notes on the right. Below, the Day
+ * and Night plans side by side, each a block per MACHINE: the colour it is running, how far
+ * through its batches it is, and Complete to record that (which asks how many are done, the
+ * same question the Program board asks).
  */
 export default function ProductionViewPage() {
   const [date, setDate] = useState(today());
+  const [completing, setCompleting] = useState<ProgramRow | null>(null);
   const { data, isLoading, mutate } = useFrappeGetCall<{ message: ViewData }>(
     `${API}.production_view`,
     { date },
@@ -83,7 +233,7 @@ export default function ProductionViewPage() {
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Program view</h1>
-          <p className="mm-page-sub">What&apos;s in cutting, and the programmes on each machine by shift — view only.</p>
+          <p className="mm-page-sub">What&apos;s in cutting, the floor&apos;s notes, and each machine&apos;s programmes by shift.</p>
         </div>
         <div className="mm-ws-toolbar-right">
           <label className="mm-field mm-field-inline">
@@ -98,45 +248,57 @@ export default function ProductionViewPage() {
 
       {isLoading && <p className="mm-muted">Loading…</p>}
 
-      {/* In cutting */}
-      <section className="mm-card mm-card-pad" style={{ marginBottom: "1.25rem" }}>
-        <div className="mm-iw-sec-head">
-          <h2 className="mm-panel-title"><Scissors size={16} /> In cutting data</h2>
-          <span className="mm-pill mm-pill-muted">{v?.in_cutting.length ?? 0}</span>
-        </div>
-        {!v || v.in_cutting.length === 0 ? (
-          <p className="mm-empty">Nothing in cutting.</p>
-        ) : (
-          <div className="mm-table-scroll">
-            <table className="mm-table mm-table-dense">
-              <thead>
-                <tr>
-                  <th>Color</th><th>Lot ID</th><th>Cut</th>
-                  <th className="mm-num">Patty</th><th className="mm-num">Weight (Kg)</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {v.in_cutting.map((c) => (
-                  <tr key={c.cutting}>
-                    <td><span className="mm-colour-name">{c.color}</span></td>
-                    <td>{c.lot_id || "—"}</td>
-                    <td>{c.cut || "—"}</td>
-                    <td className="mm-num">{c.patty ?? 0}</td>
-                    <td className="mm-num">{(c.weight ?? 0).toLocaleString()}</td>
-                    <td><span className="mm-state-chip mm-state-inventory">{c.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* In cutting (left) · Notes (right) */}
+      <div className="mm-pvw-top">
+        <section className="mm-card mm-card-pad">
+          <div className="mm-iw-sec-head">
+            <h2 className="mm-panel-title"><Scissors size={16} /> In cutting</h2>
+            <span className="mm-pill mm-pill-muted">{v?.in_cutting.length ?? 0}</span>
           </div>
-        )}
-      </section>
+          {!v || v.in_cutting.length === 0 ? (
+            <p className="mm-empty">Nothing in cutting.</p>
+          ) : (
+            <div className="mm-table-scroll">
+              <table className="mm-table mm-table-dense">
+                <thead>
+                  <tr>
+                    <th>Color</th><th>Lot ID</th><th>Cut</th>
+                    <th className="mm-num">Patty</th><th className="mm-num">Weight (Kg)</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.in_cutting.map((c) => (
+                    <tr key={c.cutting}>
+                      <td><span className="mm-colour-name">{c.color}</span></td>
+                      <td>{c.lot_id || "—"}</td>
+                      <td>{c.cut || "—"}</td>
+                      <td className="mm-num">{c.patty ?? 0}</td>
+                      <td className="mm-num">{(c.weight ?? 0).toLocaleString()}</td>
+                      <td><span className="mm-state-chip mm-state-inventory">{c.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
-      {/* Day | Night */}
-      <div className="mm-pvw-grid">
-        <ShiftColumn title="Day" groups={v?.day ?? []} />
-        <ShiftColumn title="Night" groups={v?.night ?? []} />
+        <NotesPanel value={v?.notes ?? ""} onSaved={() => void mutate()} />
       </div>
+
+      {/* Day | Night — machine by machine */}
+      <div className="mm-pvw-grid">
+        <ShiftColumn title="Day" groups={v?.day ?? []} onComplete={setCompleting} />
+        <ShiftColumn title="Night" groups={v?.night ?? []} onComplete={setCompleting} />
+      </div>
+
+      {completing && (
+        <CompleteDialog
+          program={completing}
+          onClose={() => setCompleting(null)}
+          onDone={() => { setCompleting(null); void mutate(); }}
+        />
+      )}
     </div>
   );
 }

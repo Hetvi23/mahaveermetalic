@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { Download, Printer, ScrollText, X } from "lucide-react";
+import { Download, Printer, ScrollText } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -20,12 +20,18 @@ type Row = {
   qty_box?: number;
   weight?: number;
   job_work?: number;
+  supplier?: string;
   company_name?: string;
   party?: string;
   lot_number?: string;
   location?: string;
   receipt_status?: string;
   docstatus?: number;
+  /** A return's rows are negative; `gr_returned` marks the receipt one was raised against. */
+  is_gr?: number;
+  gr_returned?: number;
+  gr_against?: string;
+  gr_reason?: string;
 };
 type Report = {
   rows: Row[];
@@ -47,6 +53,10 @@ function isAdmin(): boolean {
  * on which challan, at what weight", which a per-inward summary can't tell them. Sorted
  * by when the line was keyed in, so the last thing entered is always the first thing on
  * screen. Cancelled inwards stay listed, struck through and out of the totals.
+ *
+ * A receipt is never cancelled from here — it is RETURNED (GR). The rolls did arrive, so the
+ * receipt keeps its place in the register, marked, and the return posts its own negative rows
+ * beneath it: the totals net down to what is really still in, and the history stays honest.
  */
 export default function InwardReportPage() {
   const [challan, setChallan] = useState("");
@@ -75,21 +85,30 @@ export default function InwardReportPage() {
   const companyOptions = data?.message?.companies ?? [];
   const maybeMore = rows.length >= limit;
 
-  const { call: cancelInwardCall, loading: cancelling } = useFrappePostCall(
-    "mahaveermetalic.mahaveer_metallic.api.inward.cancel_inward",
+  const { call: grCall, loading: returning } = useFrappePostCall<{ message: { gr: string; rolls: number; returned_weight: number } }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.post_gr",
   );
   const { call: setStatusCall } = useFrappePostCall<{ message: { receipt_status: string } }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.set_inward_status",
   );
 
-  /** Cancelling reverses the whole inward's rolls out of inventory, not just this line —
-   *  which is why the action sits on the first row of each inward, labelled with it. */
-  async function onCancel(inward: string) {
-    if (!window.confirm(`Cancel inward ${inward}? Every roll on it is reversed out of inventory.`)) return;
+  /** GR — goods return. Posts a NEGATIVE entry for the whole inward and marks the original
+   *  returned; the receipt stays on the record, its quantity netted off. Acts on the whole
+   *  inward, not just this line, which is why it sits on the inward's first row. */
+  async function onGR(inward: string) {
+    const reason = window.prompt(
+      `Goods return for inward ${inward}?\n\n` +
+        "Its rolls are posted back out of stock as a negative entry, and this inward is marked GR — " +
+        "so it stops counting as inward quantity, while the record of it arriving stays.\n\n" +
+        "Reason (optional):",
+      "",
+    );
+    if (reason === null) return; // cancelled the prompt
     try {
-      await cancelInwardCall({ inward });
+      const res = await grCall({ inward, reason });
+      const m = res?.message;
       await mutate();
-      toast(`Inward ${inward} cancelled`, "info");
+      toast(m ? `GR ${m.gr} posted — ${m.rolls} roll(s), ${kg(m.returned_weight)} kg returned` : `GR posted for ${inward}`);
     } catch (e) {
       toast(extractErrorMessage(e), "error");
     }
@@ -115,15 +134,16 @@ export default function InwardReportPage() {
 
   /** CSV of exactly what is on screen, so a printed copy and an exported one agree. */
   function exportCsv() {
-    const head = ["Chalan No", "Chalan Date", "Order", "Item", "Roll", "Size", "Qty", "Weight (Kg)", "JobWork", "Company", "Lot", "Inward", "Status"];
+    const head = ["Chalan No", "Chalan Date", "Supplier", "Order", "Item", "Roll", "Size", "Qty", "Weight (Kg)", "JobWork", "Company", "Lot", "Inward", "Status", "GR"];
     const esc = (v: unknown) => {
       const t = String(v ?? "");
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
     };
     const body = rows.map((r) => [
-      r.challan_no ?? "", r.chalan_date ?? "", r.customer_order ?? "", r.item ?? "", r.roll_name ?? "",
+      r.challan_no ?? "", r.chalan_date ?? "", r.supplier ?? "", r.customer_order ?? "", r.item ?? "", r.roll_name ?? "",
       r.cut ?? "", r.qty_box ?? 0, r.weight ?? 0, r.job_work ? "Yes" : "", r.company_name ?? "",
       r.lot_number ?? "", r.inward, r.docstatus === 2 ? "Cancelled" : r.receipt_status ?? "",
+      r.is_gr ? "GR entry" : r.gr_returned ? "Returned" : "",
     ].map(esc).join(","));
     const csv = [head.join(","), ...body].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -135,7 +155,7 @@ export default function InwardReportPage() {
   }
 
   const admin = isAdmin();
-  const cols = admin ? 8 : 7;
+  const cols = admin ? 9 : 8;
 
   return (
     <div className="mm-screen mm-page-enter">
@@ -197,6 +217,7 @@ export default function InwardReportPage() {
               <tr>
                 <th>Chalan No</th>
                 <th>Chalan Date</th>
+                <th>Supplier</th>
                 <th>Order</th>
                 <th>Item</th>
                 <th>Roll</th>
@@ -216,9 +237,11 @@ export default function InwardReportPage() {
                 // actions that act on the WHOLE inward are shown once, on its first row.
                 const firstOfInward = i === 0 || rows[i - 1].inward !== r.inward;
                 return (
-                  <tr key={r.row_id} className={cancelled ? "mm-row-cancelled" : undefined}>
+                  <tr key={r.row_id}
+                    className={cancelled ? "mm-row-cancelled" : r.is_gr ? "mm-row-gr" : r.gr_returned ? "mm-row-returned" : undefined}>
                     <td>{r.challan_no || "—"}</td>
                     <td className="mm-ow-cell-date">{r.chalan_date || "—"}</td>
+                    <td>{r.supplier || <span className="mm-muted">—</span>}</td>
                     <td>
                       {r.customer_order
                         ? <span className="mm-ow-cell-order">{r.customer_order}</span>
@@ -226,6 +249,11 @@ export default function InwardReportPage() {
                     </td>
                     <td>
                       <span className="mm-colour-name">{r.item || "—"}</span>
+                      {r.is_gr ? (
+                        <span className="mm-irep-gr" title={r.gr_reason || "Goods return — posted back out of stock"}>GR</span>
+                      ) : r.gr_returned ? (
+                        <span className="mm-irep-gr mm-irep-gr-src" title="A goods return was raised against this receipt">returned</span>
+                      ) : null}
                       {r.job_work ? <span className="mm-irep-jw" title="Job work — the customer's own material">JW</span> : null}
                       {r.cut ? <span className="mm-suggest-meta">{r.cut}</span> : null}
                     </td>
@@ -248,6 +276,10 @@ export default function InwardReportPage() {
                             <span className="mm-muted">{r.inward.split("-").pop()}</span>
                             {cancelled ? (
                               <span className="mm-state-chip mm-state-open">Cancelled</span>
+                            ) : r.is_gr ? (
+                              <span className="mm-state-chip mm-state-open" title={r.gr_against ? `Return against ${r.gr_against}` : undefined}>
+                                GR entry
+                              </span>
                             ) : (
                               <>
                                 <button
@@ -258,15 +290,19 @@ export default function InwardReportPage() {
                                 >
                                   {r.receipt_status === "Partial" ? "Partial" : "Complete"}
                                 </button>
+                                {/* GR, not Cancel: the rolls DID arrive. The return posts a
+                                    negative entry and this inward stays on the record. */}
                                 <button
                                   type="button"
-                                  className="mm-icon-btn"
-                                  disabled={cancelling}
-                                  aria-label={`Cancel inward ${r.inward}`}
-                                  title={`Cancel ${r.inward} — every roll on it is reversed out of inventory`}
-                                  onClick={() => void onCancel(r.inward)}
+                                  className="mm-mini mm-mini-warn"
+                                  disabled={returning || !!r.gr_returned}
+                                  aria-label={`Goods return for inward ${r.inward}`}
+                                  title={r.gr_returned
+                                    ? `${r.inward} has already been returned`
+                                    : `GR ${r.inward} — post its rolls back out of stock as a negative entry`}
+                                  onClick={() => void onGR(r.inward)}
                                 >
-                                  <X size={13} />
+                                  GR
                                 </button>
                               </>
                             )}

@@ -3,23 +3,24 @@
 """Program (planning) flow — the screen one step past Cutting.
 
   Entry picker → one list of roll entries, each tagged with a STATE chip:
-      "Cut"          a finished cutting (patty), ready to program
-      "In Cutting"   a cutting still in progress (also selectable — programming it
-                     is allowed while the physical cut is still running)
-      "In Inventory" a raw inward roll not yet cut → selecting it auto-creates and
-                     finishes its cutting, then programs it (the chain stays intact)
+      "Cut"          a finished cutting (patty) with patti still available
+      "In Inventory" a raw inward roll not yet cut → selecting it plans a "to cut"
+                     program, finished from Cutting once the roll is bound
   Create        → an MM Program on a Machine + Shift (Day/Night). One patty = one
                   batch; the program holds `total_batches`, status starts "Running".
   Batch actions → complete_batches / revert_batches drive the lifecycle:
-                  Running → Partially Done → Completed. Reverting takes the program
-                  OFF the machine and returns the roll to wherever it came from
-                  (cutting / inward), so it reappears in the entry picker; a
-                  reverted program can never be completed again.
+                  Running → Partially Done → Completed. Recording fewer batches than
+                  planned takes the program OFF the machine and hands the batches it
+                  did not run back to the picker; a reverted program can never be
+                  completed again.
   Close         → close_program locks the program (audit-tracked via track_changes).
 
-A finished cutting is an available patty once status='Completed' and its `program`
-link is empty (the authoritative signal). Multiple machines, and multiple programs
-per machine, are supported (each program is its own row).
+PATTI ARE COUNTED, NOT CLAIMED. A cutting is available while it has patti left —
+`total_patti_qty` minus `consumed_patti` — so one cut can feed several programs and a cut
+that yielded more patti than the program that ordered it (6 cut against 4 batches) leaves
+the rest available instead of losing them. `MM Program.patty_sources` records which
+cutting each program's patti came from, so reverting gives back exactly its own.
+Multiple machines, and multiple programs per machine, are supported.
 """
 
 import json
@@ -37,59 +38,190 @@ def _party_map(orders):
 	return out
 
 
+# ── Patti accounting ─────────────────────────────────────────────────────────────────
+# A cutting's patti are a countable stock, not a single claim: programs draw from it until
+# it runs out. These four helpers are the only place that count changes, so availability,
+# consumption and release can never drift apart.
+
+
+def available_patti(cutting: dict) -> float:
+	"""Patti of this cutting still available to program."""
+	return round(float(cutting.get("total_patti_qty") or 0) - float(cutting.get("consumed_patti") or 0), 3)
+
+
+def _cutting_for_patti(name: str) -> dict:
+	row = frappe.db.get_value(
+		"MM Cutting",
+		name,
+		["name", "docstatus", "status", "closed", "shade", "cut", "total_patti_qty", "consumed_patti",
+		 "total_net_weight", "per_patty_weight", "program", "customer_order", "roll_no", "lot",
+		 "branch", "location"],
+		as_dict=True,
+	)
+	if not row:
+		frappe.throw(_("Cutting {0} not found.").format(name))
+	return row
+
+
+def _take_patti(cutting_names, batches: int):
+	"""Take `batches` patti across these cuttings, in the order given.
+
+	Cuttings are offered to the picker merged by lot, so one card can stand for several
+	cuttings of the same material — a program taking 6 batches off a card made of two
+	3-patti cuts has to draw from both. Returns the per-cutting allocation; raises when
+	there aren't enough patti to cover the ask, which is the guard that stops a program
+	being planned against patti that don't exist.
+	"""
+	want = int(batches)
+	taken, short_of = [], 0.0
+	for name in cutting_names:
+		if want <= 0:
+			break
+		row = _cutting_for_patti(name)
+		free = available_patti(row)
+		short_of += max(0.0, free)
+		if free <= 0:
+			continue
+		use = min(float(want), free)
+		taken.append({"cutting": name, "patti": round(float(use), 3), "shade": row.shade, "cut": row.cut, "row": row})
+		want -= use
+	if want > 0:
+		frappe.throw(
+			_("Only {0} patti are still available on this cut — {1} batches cannot be programmed. "
+			  "Reduce the batches, or cut more.").format(round(short_of, 3), batches)
+		)
+	return taken
+
+
+def _apply_patti(program: str, allocation) -> None:
+	"""Record the take on the program and add it to each cutting's consumed count."""
+	for a in allocation:
+		frappe.get_doc(
+			{
+				"doctype": "MM Program Patty",
+				"parent": program,
+				"parenttype": "MM Program",
+				"parentfield": "patty_sources",
+				"cutting": a["cutting"],
+				"patti": a["patti"],
+				"shade": a.get("shade"),
+				"cut": a.get("cut"),
+			}
+		).insert(ignore_permissions=True)
+		row = _cutting_for_patti(a["cutting"])
+		frappe.db.set_value(
+			"MM Cutting",
+			a["cutting"],
+			"consumed_patti",
+			round(float(row.consumed_patti or 0) + float(a["patti"]), 3),
+			update_modified=False,
+		)
+		# The first program to draw from a cutting owns its `program` link — everything that
+		# reads the old one-cutting-one-program signal (the cutting board, the processing
+		# list) keeps working, while availability is now decided by the count.
+		if not row.program:
+			frappe.db.set_value("MM Cutting", a["cutting"], "program", program, update_modified=False)
+
+
+def _release_patti(program: str, count=None) -> float:
+	"""Hand patti back — the ones this program did not run.
+
+	`count` is how many to release (default: all of them). Released newest-take-first, so
+	what goes back is the tail of what was taken. The cutting's `program` link is cleared
+	once nothing of it is consumed any more, which is what puts it back in the picker under
+	the old signal too.
+	"""
+	rows = frappe.get_all(
+		"MM Program Patty",
+		filters={"parent": program, "parenttype": "MM Program"},
+		fields=["name", "cutting", "patti"],
+		order_by="idx desc",
+	)
+	left = float("inf") if count in (None, "") else max(0.0, float(count))
+	given_back = 0.0
+	for r in rows:
+		if left <= 0:
+			break
+		give = min(float(r.patti or 0), left)
+		if give <= 0:
+			continue
+		row = _cutting_for_patti(r.cutting) if frappe.db.exists("MM Cutting", r.cutting) else None
+		if row:
+			consumed = round(max(0.0, float(row.consumed_patti or 0) - give), 3)
+			frappe.db.set_value("MM Cutting", r.cutting, "consumed_patti", consumed, update_modified=False)
+			if consumed <= 0 and row.program == program:
+				frappe.db.set_value("MM Cutting", r.cutting, "program", None, update_modified=False)
+		kept = round(float(r.patti or 0) - give, 3)
+		if kept > 0:
+			frappe.db.set_value("MM Program Patty", r.name, "patti", kept, update_modified=False)
+		else:
+			frappe.delete_doc("MM Program Patty", r.name, ignore_permissions=True, force=True)
+		given_back += give
+		left -= give
+	return round(given_back, 3)
+
+
 @frappe.whitelist()
 def available_rolls(branch=None, location=None, finished_only=0):
 	"""Entry picker: one unified list of roll entries with a state chip.
 
-	Returns rows shaped for the modal — `state` is one of Cut / In Cutting / In
-	Inventory; `source_type` + (`cutting` | `inward_item`) say how to create the
-	program from that row. `finished_only` restricts to finished cuttings (Cut) — the
-	default Add-program list; the "search inventory" mode covers everything else.
+	Returns rows shaped for the modal — `state` is Cut (a finished patty) or In Inventory
+	(a roll not cut yet); `source_type` + (`cutting` | `roll_inventory`) say how to create
+	the program from that row. `finished_only` restricts to patties — the default
+	Add-program list; the "search inventory" mode covers everything else.
+
+	A patty is listed while any of it is left: `batches` is what is still AVAILABLE, and a
+	fully consumed one is still returned, flagged `consumed`, so the picker can grey it out
+	rather than have it vanish mid-shift. Cuttings still in progress are NOT offered — a
+	program runs on patti that exist.
 	"""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
 
 	rows = []
 	finished_only = int(finished_only or 0)
 
-	# --- Cut: finished cuttings (patties) not yet programmed ---
-	cut_filters = {"docstatus": 1, "status": "Completed", "program": ["is", "not set"], "closed": 0}
-	# --- In Cutting: cuttings still in progress (selectable — programming ahead of the cut is allowed) ---
-	prog_filters = {"docstatus": 1, "status": ["!=", "Completed"], "program": ["is", "not set"], "closed": 0}
-	states = (("Cut", cut_filters),) if finished_only else (("Cut", cut_filters), ("In Cutting", prog_filters))
-	for state, filters in states:
-		if branch:
-			filters["branch"] = branch
-		if location:
-			filters["location"] = location
-		for c in frappe.get_all(
-			"MM Cutting",
-			filters=filters,
-			fields=["name", "posting_date", "customer_order", "roll_no", "shade", "cut",
-				"job_work_flag", "total_patti_qty", "total_net_weight", "per_patty_weight", "lot"],
-			order_by="modified desc",
-			limit_page_length=500,
-		):
-			rows.append({
-				"state": state,
-				"source_type": "cutting",
-				"cutting": c.name,
-				"inward_item": None,
-				"date": c.posting_date,
-				"customer_order": c.customer_order,
-				"roll_no": c.roll_no,
-				"shade": c.shade,
-				"cut": c.cut,
-				"job_work": c.job_work_flag,
-				"batches": int(round(c.total_patti_qty or 0)),
-				"weight": c.total_net_weight or 0,
-				# A cutting is consumed PER PATTY (one patty = one batch), so the per-patty
-				# weight — not the cutting's total — is what a program actually takes.
-				"per_patty": float(c.per_patty_weight or 0) or (
-					ceil2(float(c.total_net_weight or 0) / float(c.total_patti_qty))
-					if c.total_patti_qty else 0.0
-				),
-				"lot": c.lot,
-			})
+	# --- Cut: finished cuttings (patties), with however many patti they have left ---
+	cut_filters = {"docstatus": 1, "status": "Completed", "closed": 0}
+	if branch:
+		cut_filters["branch"] = branch
+	if location:
+		cut_filters["location"] = location
+	for c in frappe.get_all(
+		"MM Cutting",
+		filters=cut_filters,
+		fields=["name", "posting_date", "customer_order", "roll_no", "shade", "cut",
+			"job_work_flag", "total_patti_qty", "consumed_patti", "total_net_weight",
+			"per_patty_weight", "lot"],
+		order_by="modified desc",
+		limit_page_length=500,
+	):
+		free = available_patti(c)
+		per_patty = float(c.per_patty_weight or 0) or (
+			ceil2(float(c.total_net_weight or 0) / float(c.total_patti_qty)) if c.total_patti_qty else 0.0
+		)
+		rows.append({
+			"state": "Cut",
+			"source_type": "cutting",
+			"cutting": c.name,
+			"inward_item": None,
+			"date": c.posting_date,
+			"customer_order": c.customer_order,
+			"roll_no": c.roll_no,
+			"shade": c.shade,
+			"cut": c.cut,
+			"job_work": c.job_work_flag,
+			# `batches` is what can still be programmed, which is what the picker offers.
+			"batches": int(free) if float(free).is_integer() else free,
+			"total_patti": int(round(c.total_patti_qty or 0)),
+			"consumed_patti": round(float(c.consumed_patti or 0), 3),
+			"consumed": 1 if free <= 0 else 0,
+			# The weight still on it, at the per-patty rate a program actually takes.
+			"weight": round(per_patty * free, 3) if per_patty else (c.total_net_weight or 0),
+			# A cutting is consumed PER PATTY (one patty = one batch), so the per-patty
+			# weight — not the cutting's total — is what a program actually takes.
+			"per_patty": per_patty,
+			"lot": c.lot,
+		})
 
 	# --- In Inventory: rolls physically in stock (MM Roll Inventory) — the same balances the
 	# Inventory screen shows, allocated to an order or not. Skipped for finished_only (that's the
@@ -147,6 +279,9 @@ def _merge_rows_by_lot(rows):
 	the operator had to add the batches up by eye before planning a program. Only rows
 	that carry a lot AND come from a cutting merge — an inventory roll is a distinct
 	physical roll, and rows without a lot can't be proven to be the same material.
+
+	`merged_from` carries every cutting behind the card, because a program taking more
+	batches than the first of them holds has to draw across the rest.
 	"""
 	merged = {}
 	out = []
@@ -162,10 +297,17 @@ def _merge_rows_by_lot(rows):
 			merged[key] = r
 			out.append(r)
 			continue
-		head["batches"] = int(head.get("batches") or 0) + int(r.get("batches") or 0)
+		head["batches"] = round(float(head.get("batches") or 0) + float(r.get("batches") or 0), 3)
+		head["total_patti"] = int(head.get("total_patti") or 0) + int(r.get("total_patti") or 0)
+		head["consumed_patti"] = round(float(head.get("consumed_patti") or 0) + float(r.get("consumed_patti") or 0), 3)
 		head["weight"] = round(float(head.get("weight") or 0) + float(r.get("weight") or 0), 3)
 		head["merged_from"].append(r["cutting"])
 		head["merged_count"] += 1
+		# A merged card is only spent when every cutting behind it is.
+		head["consumed"] = 1 if float(head.get("batches") or 0) <= 0 else 0
+	for r in out:
+		if r.get("source_type") == "cutting" and float(r.get("batches") or 0).is_integer():
+			r["batches"] = int(float(r["batches"] or 0))
 	return out
 
 
@@ -475,10 +617,16 @@ def create_program(
 	program_date=None,
 	shift=None,
 	job_work=0,
+	source_cuttings=None,
 ):
-	"""Send a roll into a new program on a machine. Accepts a finished cutting
-	(source_cutting) OR a raw inward roll (source_inward_item → cutting auto-created)."""
-	if not source_cutting and not source_inward_item:
+	"""Send patti into a new program on a machine.
+
+	Takes a finished patty (`source_cutting`, or `source_cuttings` for a card that stands
+	for several cuttings of one lot) OR a raw inward roll (`source_inward_item` → cutting
+	auto-created). The program draws its batches out of the patti still available: a cutting
+	with more patti than this program needs keeps the rest for the next one.
+	"""
+	if not source_cutting and not source_inward_item and not source_cuttings:
 		frappe.throw(_("Select a patty or an inventory roll to program."))
 	if machine_no and frappe.db.get_value("MM Machine", machine_no, "closed"):
 		frappe.throw(_("Machine {0} is closed. Reopen it before planning a program on it.").format(machine_no))
@@ -493,23 +641,27 @@ def create_program(
 			source_inward_item, customer_order, job_work, batches=req_batches, cut=machine_cut
 		)
 
-	cut = frappe.db.get_value(
-		"MM Cutting",
-		source_cutting,
-		["name", "docstatus", "status", "program", "customer_order", "roll_no", "shade",
-		 "cut", "total_patti_qty", "total_net_weight", "per_patty_weight", "lot", "branch", "location"],
-		as_dict=True,
-	)
-	if not cut:
-		frappe.throw(_("Cutting {0} not found.").format(source_cutting))
-	# Any submitted cutting can be programmed — finished (Cut) or still in progress
-	# (In Cutting); an inventory roll comes through as an Open cutting we just created.
+	# Every cutting the picked card stands for, first one first. A lot-merged card carries
+	# several; a single patty carries itself.
+	if isinstance(source_cuttings, str):
+		source_cuttings = json.loads(source_cuttings or "[]")
+	candidates = [c for c in ([source_cutting] + list(source_cuttings or [])) if c]
+	seen = set()
+	candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+	source_cutting = source_cutting or candidates[0]
+
+	cut = _cutting_for_patti(source_cutting)
+	# A cutting must be submitted to be programmed; an inventory roll comes through as an
+	# Open cutting we just created.
 	if not from_inventory and cut.docstatus != 1:
 		frappe.throw(_("Only a submitted cutting can be sent to program."))
-	if cut.program:
-		frappe.throw(_("This patty is already in a program ({0}).").format(cut.program))
 
-	batches = int(total_batches) if total_batches not in (None, "") else int(round(cut.total_patti_qty or 0)) or 1
+	batches = int(total_batches) if total_batches not in (None, "") else int(round(available_patti(cut) or 0)) or 1
+	if batches <= 0:
+		frappe.throw(_("Total Batches must be greater than 0."))
+	# Take the patti now — this is the guard that a program can only run on patti that exist,
+	# and it is what leaves a bigger cut's remainder available to the next program.
+	allocation = _take_patti(candidates, batches)
 	# One patty = one batch: the program carries per-patty weight × batches, which is what
 	# Production then consumes. Falls back to the cutting's own per-patty (or whole) weight.
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
@@ -555,30 +707,44 @@ def create_program(
 			"completed_batches": 0,
 			"patti_qty": batches,
 			"net_weight": round(final_weight, 3),
+			# The rate one batch runs at — what the completed weight is derived from.
+			"per_patty_weight": round(per_patty, 3) or round(final_weight / batches, 3),
 		}
 	)
 	program.insert(ignore_permissions=True)
 	program.submit()
-	frappe.db.set_value("MM Cutting", cut.name, "program", program.name, update_modified=False)
+	# Book the patti against the program: each cutting's consumed count goes up, and the
+	# rows say who took what so a revert can hand back exactly this program's share.
+	_apply_patti(program.name, allocation)
 
-	# The program may take fewer batches than this cutting could yield — the unused weight
-	# is a leftover. Close it out when it's within tolerance and no more of this colour+lot
-	# is on the way (otherwise it stays open so the next cutting adds onto it).
-	leftover = round(float(cut.total_net_weight or 0) - final_weight, 3)
-	if leftover > 0:
-		from mahaveermetalic.mahaveer_metallic.api.closeout import maybe_auto_close_cutting
-
-		frappe.db.set_value("MM Cutting", cut.name, "leftover_weight", leftover, update_modified=False)
-		maybe_auto_close_cutting(cut.name, leftover)
-	return {"program": program.name, "status": program.status, "total_batches": program.total_batches}
+	# Leftover weight is recorded, but programming NEVER closes a cutting out any more.
+	#
+	# It used to: taking fewer batches than a cutting could yield left "unused weight", which
+	# was closed out inside tolerance. Counted patti make that wrong twice over — patti the
+	# program didn't take are not waste, they are stock the picker is still offering, and a
+	# closed cutting drops out of the picker, so auto-closing would quietly delete the very
+	# remainder this change exists to keep. A spent patty stays listed (greyed) until someone
+	# closes it out deliberately from the Close-out Stack.
+	for a in allocation:
+		row = _cutting_for_patti(a["cutting"])
+		programmed = float(row.per_patty_weight or 0) * float(row.consumed_patti or 0)
+		leftover = max(0.0, round(float(row.total_net_weight or 0) - programmed, 3))
+		frappe.db.set_value("MM Cutting", a["cutting"], "leftover_weight", leftover, update_modified=False)
+	return {
+		"program": program.name,
+		"status": program.status,
+		"total_batches": program.total_batches,
+		"patti_taken": [{"cutting": a["cutting"], "patti": a["patti"]} for a in allocation],
+	}
 
 
 @frappe.whitelist()
 def available_colours(branch=None, location=None):
 	"""Colour-first picker for Add-program: the colours available to program right now,
-	aggregated across finished patties (Cut), in-progress cuttings (In Cutting) and
-	inventory rolls (In Inventory). Each colour lists its underlying source rows (so the
-	UI can show only the colour up front, then create from the right source)."""
+	aggregated across finished patties (Cut) and inventory rolls (In Inventory). Each colour
+	lists its underlying source rows (so the UI can show only the colour up front, then
+	create from the right source). Patties whose patti are all consumed come through flagged,
+	so the picker greys them instead of hiding them."""
 	rows = available_rolls(branch=branch, location=location)
 	groups = {}
 	order = []
@@ -606,8 +772,8 @@ def available_colours(branch=None, location=None):
 		g["total_weight"] = round(g["total_weight"], 3)
 		g["count"] = len(g["rows"])
 		# The weight actually available to a program: the best source that has any, in the
-		# same order the picker prefers them (patty → in cutting → inventory).
-		rank = {"Cut": 0, "In Cutting": 1, "In Inventory": 2}
+		# same order the picker prefers them (patty → inventory).
+		rank = {"Cut": 0, "In Inventory": 1}
 		usable = sorted(
 			(r for r in g["rows"] if float(r.get("weight") or 0) > 0),
 			key=lambda r: rank.get(r.get("state"), 9),
@@ -858,12 +1024,17 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 	# with db.set_value because net_weight / roll_no aren't allow_on_submit — a plain
 	# doc.save on the submitted program would raise UpdateAfterSubmitError. Status is
 	# re-derived here (same rule as MMProgram.derive_status) since we bypass validate.
-	# One patty = one batch: the actual cut decides how many batches run, and the program
-	# carries per-patty × batches (what Production consumes).
-	total = patty
+	#
+	# THE PROGRAM KEEPS THE BATCHES IT WAS PLANNED FOR. Cut 6 patti against a 4-batch
+	# program and the program still runs 4 — the other 2 patti are not swept into it; they
+	# stay on the cutting as available patty for whatever is programmed next. A cut that
+	# came up SHORT is the one case that moves the plan: there are only so many patti, so
+	# the program can't run more batches than exist.
+	planned = int(doc.total_batches or 0) or patty
+	total = min(planned, patty)
 	done = max(0, min(int(doc.completed_batches or 0), total))
 	status = "Completed" if (total and done >= total) else ("Partially Done" if done > 0 else "Running")
-	prog_weight = round(per_patty * patty, 3)
+	prog_weight = round(per_patty * total, 3)
 	frappe.db.set_value(
 		"MM Program",
 		doc.name,
@@ -876,11 +1047,27 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 			"unfinished": 0,
 			"is_running": 1,
 			"status": status,
+			"per_patty_weight": per_patty,
+			# Written here too: this path bypasses validate, so derive_completed_weight
+			# doesn't run for it.
+			"completed_weight": round(per_patty * done, 3),
 		},
 		update_modified=True,
 	)
+	# Book only this program's batches against the cut. The rest of the patti stay
+	# unconsumed, which is exactly what makes them available to program.
+	if doc.source_cutting:
+		frappe.db.sql(
+			"delete from `tabMM Program Patty` where parent = %s and parenttype = 'MM Program'", (doc.name,)
+		)
+		frappe.db.set_value("MM Cutting", doc.source_cutting, "consumed_patti", 0, update_modified=False)
+		_apply_patti(
+			doc.name,
+			[{"cutting": doc.source_cutting, "patti": total, "shade": doc.shade, "cut": cut or doc.cut}],
+		)
 	return {"program": doc.name, "net_weight": prog_weight, "per_patty_weight": per_patty,
-		"total_batches": total, "unfinished": False, "status": status}
+		"total_batches": total, "patti_cut": patty, "spare_patti": max(0, patty - total),
+		"unfinished": False, "status": status}
 
 
 def _save_batches(program, completed, is_running):
@@ -897,11 +1084,18 @@ def _save_batches(program, completed, is_running):
 
 
 @frappe.whitelist()
-def complete_batches(program, completed=None, count=None):
-	"""Record how many batches are completed (via the Complete dialog). Sets the count
-	directly. When ALL batches are done the program auto-frees to Production — no manual
-	Free step. A reverted program is off the machine — completing on it is blocked.
-	(`count` kept for backward-compat: increments by that many.)"""
+def complete_batches(program, completed=None, count=None, partial_keeps_machine=0):
+	"""Record how many batches are completed (via the Complete dialog).
+
+	All of them → the program frees off the machine to Production automatically, no manual
+	Free step. FEWER than planned → the program is done short: it leaves the machine and the
+	batches it never ran are handed straight back to the picker, so nobody has to remember
+	to Revert the remainder. (`partial_keeps_machine` keeps a short program on the machine —
+	for callers that record progress as it happens rather than closing the job out.)
+
+	A reverted program is off the machine — completing on it is blocked.
+	(`count` kept for backward-compat: increments by that many.)
+	"""
 	doc = frappe.db.get_value(
 		"MM Program", program, ["completed_batches", "total_batches", "reverted"], as_dict=True
 	)
@@ -914,6 +1108,14 @@ def complete_batches(program, completed=None, count=None):
 		comp = max(0, min(int(completed), total))
 	else:
 		comp = max(0, min((doc.completed_batches or 0) + int(count or 1), total))
+
+	if total > 0 and comp < total and not frappe.utils.cint(partial_keeps_machine):
+		# Short of plan: keep what ran, free the slot, and give the rest back.
+		res = revert_batches(program, completed=comp)
+		res["auto_reverted"] = True
+		res["returned_batches"] = total - comp
+		return res
+
 	res = _save_batches(program, comp, is_running=True)
 	if total > 0 and comp >= total:
 		# All done → free off the machine to Production automatically.
@@ -922,11 +1124,35 @@ def complete_batches(program, completed=None, count=None):
 	return res
 
 
-def _clear_cutting_link(doc):
-	"""Clear the cutting's program link so the patty reappears in the entry picker
-	(→ back to the Cut / In Cutting list)."""
-	if doc.source_cutting and frappe.db.exists("MM Cutting", doc.source_cutting):
-		frappe.db.set_value("MM Cutting", doc.source_cutting, "program", None, update_modified=False)
+def release_program_patti(doc, batches=None):
+	"""Give this program's unrun patti back to the picker.
+
+	`batches` is how many to return (None = all of them). The patti go back onto the
+	cuttings they came from, which is what puts them on offer again; the cutting's `program`
+	link is cleared once none of it is consumed any more, for everything still reading that
+	older signal.
+
+	Reverting a program and then cancelling it must not hand the same patti back twice, so a
+	full release stamps `patti_released` and any later one is a no-op.
+	"""
+	if doc.get("patti_released") and batches in (None, ""):
+		return 0.0
+	released = _release_patti(doc.name, batches)
+	# Programs created before patti were counted have no source rows: their whole claim is
+	# the cutting's consumed count, so subtract this program's own batches from it. Subtract
+	# — never zero — because another program may hold patti on the same cutting.
+	if not released and not doc.get("patti_released") and doc.source_cutting \
+			and frappe.db.exists("MM Cutting", doc.source_cutting):
+		row = _cutting_for_patti(doc.source_cutting)
+		give = float(batches) if batches not in (None, "") else float(doc.total_batches or row.total_patti_qty or 0)
+		consumed = round(max(0.0, float(row.consumed_patti or 0) - give), 3)
+		frappe.db.set_value("MM Cutting", doc.source_cutting, "consumed_patti", consumed, update_modified=False)
+		if consumed <= 0 and row.program == doc.name:
+			frappe.db.set_value("MM Cutting", doc.source_cutting, "program", None, update_modified=False)
+		released = give
+	if batches in (None, ""):
+		frappe.db.set_value("MM Program", doc.name, "patti_released", 1, update_modified=False)
+	return released
 
 
 def _unwind_inventory_cutting(doc):
@@ -947,11 +1173,12 @@ def _unwind_inventory_cutting(doc):
 def revert_batches(program, completed=None):
 	"""Revert the UNCOMPLETED batches. By default keeps whatever is already completed on
 	record and returns the rest to the Add-Program picker; the program leaves the machine.
-	  · nothing completed yet → the program is cancelled outright; an inventory pick's
-	    auto-created cutting is unwound so the roll returns to In Inventory, otherwise the
-	    patty returns to the Cut / In Cutting list.
+	  · nothing completed yet → the program is cancelled outright, ALL its patti go back;
+	    an inventory pick's auto-created cutting is unwound so the roll returns to In
+	    Inventory, otherwise the patty returns to the Cut list.
 	  · some completed → the done batches stay on record (flagged `reverted` — no further
-	    completes), the program leaves the machine, and the remainder returns to the picker.
+	    completes), the program leaves the machine, and only the patti of the batches it
+	    never ran go back to the picker. The ones it did run are spent.
 	(`completed` may be passed to override; when omitted the current completed count is used.)
 	"""
 	doc = frappe.get_doc("MM Program", program)
@@ -964,26 +1191,27 @@ def revert_batches(program, completed=None):
 		comp = max(0, min(int(completed), total))
 
 	if comp == 0:
-		# Nothing produced — the program never happened. Clear the cutting's link
-		# first (a submitted cutting pointing here would block the cancel), cancel
-		# the program, THEN unwind an inventory pick's auto-created cutting.
-		_clear_cutting_link(doc)
+		# Nothing produced — the program never happened. Hand every patty back and clear the
+		# cutting's link first (a submitted cutting pointing here would block the cancel),
+		# cancel the program, THEN unwind an inventory pick's auto-created cutting.
+		returned = release_program_patti(doc)
 		doc.flags.ignore_permissions = True
 		doc.cancel()
 		_unwind_inventory_cutting(doc)
 		return {"program": doc.name, "status": "Cancelled", "reverted": True,
-			"completed_batches": 0, "total_batches": total}
+			"completed_batches": 0, "total_batches": total, "returned_patti": returned}
 
-	# Partial: keep what was done, free the slot, lock further completes,
-	# and hand the patty back to the picker for the rest.
+	# Partial: keep what was done, free the slot, lock further completes, and hand back only
+	# the patti of the batches that never ran — what did run is spent material.
 	doc.completed_batches = comp
 	doc.is_running = 0
 	doc.reverted = 1
 	doc.released = 1
 	doc.save(ignore_permissions=True)
-	_clear_cutting_link(doc)
+	returned = release_program_patti(doc, batches=max(0, total - comp))
 	return {"program": doc.name, "status": doc.status, "reverted": True,
-		"completed_batches": doc.completed_batches, "total_batches": total}
+		"completed_batches": doc.completed_batches, "total_batches": total,
+		"returned_patti": returned}
 
 
 @frappe.whitelist()
@@ -1013,7 +1241,9 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 		filters=filters,
 		fields=["name", "program_date", "customer_order", "roll_no", "shade", "machine_no", "shift", "cut",
 			"status", "is_running", "closed", "released", "reverted", "unfinished", "remark",
-			"roll_inventory", "total_batches", "completed_batches", "patti_qty", "net_weight"],
+			"roll_inventory", "total_batches", "completed_batches", "patti_qty", "net_weight",
+			# What actually came off the machine, and the rate it runs at.
+			"completed_weight", "per_patty_weight"],
 		# Stable insertion order (creation asc), so an earlier program keeps its slot and a
 		# newly added one goes AFTER it — not the "modified desc" that reshuffled them.
 		order_by="machine_no asc, shift asc, creation asc",

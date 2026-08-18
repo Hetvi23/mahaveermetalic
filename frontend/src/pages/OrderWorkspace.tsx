@@ -72,6 +72,8 @@ type Row = {
   completed?: number;
   completion_mode?: string;
   docstatus?: number;
+  /** Pending / Approved / Rejected / Cancelled — approval, not dispatch. */
+  order_state?: string;
   company_name?: string;
 };
 
@@ -144,7 +146,7 @@ export default function OrderWorkspace() {
   // "completed" now means production 100% OR the inward/force completed flag (an OR the
   // list query can't express cleanly).
   const filters = useMemo(() => {
-    const f: unknown[] = [["docstatus", "<", 2]];
+    const f: unknown[] = [];
     if (q.trim()) f.push(["party", "like", `%${q.trim()}%`]);
     return f as unknown as undefined;
   }, [q]);
@@ -163,6 +165,7 @@ export default function OrderWorkspace() {
       "completed",
       "completion_mode",
       "docstatus",
+      "order_state",
       "company_name",
     ],
     filters,
@@ -213,6 +216,7 @@ export default function OrderWorkspace() {
   const SO_API = "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order";
   const { call: approveOrder, loading: approving } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.approve_order`);
   const { call: rejectOrder, loading: rejecting } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.reject_order`);
+  const { call: cancelOrder, loading: cancelling } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.cancel_order`);
   // One draft PO per short line, and ONLY for the lines the user ticked in the purchase
   // dialog — nothing is raised implicitly on save any more.
   const { call: syncShortagePos } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.stock.sync_shortage_pos");
@@ -394,10 +398,15 @@ export default function OrderWorkspace() {
     setProdPct(Math.round((doc.production_completed_percent as number) ?? 0));
   }, [doc, selected]);
 
-  // A submitted order is final: read-only for everyone. A draft locked at 5% production
-  // is read-only for non-admins.
+  // A submitted order is final: read-only for everyone. A CANCELLED order is closed for good,
+  // so read-only too. A REJECTED one is deliberately still editable — that is what makes it
+  // something the admin can fix and approve rather than a deletion. A draft locked at 5%
+  // production is read-only for non-admins.
   const submitted = !!selected && Number((doc as { docstatus?: number } | undefined)?.docstatus) === 1;
-  const ro = submitted || (locked && !isAdmin());
+  const orderState = String((doc as { order_state?: string } | undefined)?.order_state ?? "");
+  const cancelled = !!selected && (orderState === "Cancelled" || Number((doc as { docstatus?: number } | undefined)?.docstatus) === 2);
+  const rejected = !!selected && orderState === "Rejected";
+  const ro = submitted || cancelled || (locked && !isAdmin());
 
   function resetNew() {
     setSelected(null);
@@ -652,17 +661,48 @@ export default function OrderWorkspace() {
     } catch (e) { setFormError(extractErrorMessage(e)); }
   }
 
+  /** Reject = SEND BACK. The order keeps its number and stays editable, so the admin can fix
+   *  it and approve the same order. Nothing is deleted and no number is reused. */
   async function onReject() {
     if (!selected) return;
     const name = selected;
-    if (!window.confirm(`Reject order ${name}? A pending order is removed.`)) return;
+    const reason = window.prompt(
+      `Reject order ${name}?\n\n` +
+        "It keeps its number and stays editable — you can correct it and approve it afterwards.\n\n" +
+        "Reason (optional):",
+      "",
+    );
+    if (reason === null) return;
     setFormError(null);
     try {
-      await rejectOrder({ sales_order: name });
-      resetNew(); // the pending order is gone — clear the form rather than show a stale doc
-      await mutate();
-      setFlash(`Order ${name} rejected.`);
+      await rejectOrder({ sales_order: name, reason });
+      hydrated.current = null;
+      await Promise.all([mutateDoc(), mutate()]);
+      setFlash(`Order ${name} rejected — edit it and approve when it's right.`);
       toast(`Order ${name} rejected`, "info");
+    } catch (e) { setFormError(extractErrorMessage(e)); }
+  }
+
+  /** Cancel = CLOSED FOR GOOD. The number stays reserved; the order can never be edited or
+   *  approved again. Refused once inward has been received (GR that first). */
+  async function onCancelOrder() {
+    if (!selected) return;
+    const name = selected;
+    const reason = window.prompt(
+      `Cancel order ${name}?\n\n` +
+        "This is permanent — the order is closed for good and can't be edited or approved " +
+        "again. Its number stays reserved, so nothing else takes it.\n\n" +
+        "Reason (optional):",
+      "",
+    );
+    if (reason === null) return;
+    setFormError(null);
+    try {
+      await cancelOrder({ sales_order: name, reason });
+      hydrated.current = null;
+      await Promise.all([mutateDoc(), mutate()]);
+      setFlash(`Order ${name} cancelled.`);
+      toast(`Order ${name} cancelled`, "info");
     } catch (e) { setFormError(extractErrorMessage(e)); }
   }
 
@@ -679,7 +719,7 @@ export default function OrderWorkspace() {
     }
   }
 
-  const busy = creating || updating || deleting || approving || rejecting;
+  const busy = creating || updating || deleting || approving || rejecting || cancelling;
   const list = (rows ?? []).filter((o) => {
     if (chip === "completed") return isDone(o);
     if (chip === "pending") return !isDone(o);
@@ -709,7 +749,26 @@ export default function OrderWorkspace() {
           </div>
 
           {submitted && <div className="mm-banner mm-banner-ok">Approved — this order and its purchase order are locked.</div>}
-          {!submitted && ro && <div className="mm-banner mm-banner-warn">Locked (production started). Only an admin can edit.</div>}
+          {/* Say WHY it is read-only. A cancelled order isn't waiting on an admin — it is over,
+              and telling someone production started when it hasn't sends them looking for a
+              production run that doesn't exist. */}
+          {!submitted && cancelled && (
+            <div className="mm-banner mm-banner-warn">
+              Cancelled — closed for good. Order {selected} keeps its number so nothing else takes it.
+              {(doc as { state_reason?: string } | undefined)?.state_reason
+                ? ` Reason: ${(doc as { state_reason?: string }).state_reason}`
+                : ""}
+            </div>
+          )}
+          {!submitted && rejected && !cancelled && (
+            <div className="mm-banner mm-banner-warn">
+              Rejected — correct it and approve when it&apos;s right. It keeps order number {selected}.
+              {(doc as { state_reason?: string } | undefined)?.state_reason
+                ? ` Reason: ${(doc as { state_reason?: string }).state_reason}`
+                : ""}
+            </div>
+          )}
+          {!submitted && !cancelled && ro && <div className="mm-banner mm-banner-warn">Locked (production started). Only an admin can edit.</div>}
           {formError && <p className="mm-error">{formError}</p>}
 
           <div className="mm-form-grid">
@@ -907,19 +966,39 @@ export default function OrderWorkspace() {
             )}
             {selected && !ro && isAdmin() && (
               <>
-                <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onApprove()} title="Approve — makes the order usable in inward">
-                  {approving ? "Approving…" : "Approve"}
+                <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onApprove()}
+                  title={rejected
+                    ? "Approve this order now it has been corrected — same order, same number"
+                    : "Approve — makes the order usable in inward"}>
+                  {approving ? "Approving…" : rejected ? "Approve (re-approve)" : "Approve"}
                 </button>
-                <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onReject()}>
-                  {rejecting ? "…" : "Reject"}
+                {!rejected && (
+                  <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onReject()}
+                    title="Send it back — keeps its number and stays editable, so it can be approved later">
+                    {rejecting ? "…" : "Reject"}
+                  </button>
+                )}
+                <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onCancelOrder()}
+                  title="Close this order for good — permanent, and its number stays reserved">
+                  {cancelling ? "…" : "Cancel order"}
                 </button>
               </>
             )}
             {selected && !ro && !isAdmin() && (
-              <span className="mm-pill mm-pill-pending">Pending admin approval</span>
+              <span className="mm-pill mm-pill-pending">
+                {rejected ? "Rejected — an admin can correct and approve it" : "Pending admin approval"}
+              </span>
             )}
-            {selected && !ro && (
-              <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onDelete()}>
+            {/* The state and its reason are already spelled out in the banner above the form —
+                repeating them here only squeezed a paragraph into a button-row chip. */}
+            {cancelled && !isAdmin() && (
+              <span className="mm-pill mm-pill-muted">Cancelled — closed for good</span>
+            )}
+            {/* Deleting frees the number, which is exactly what rejection stopped doing —
+                so it stays an admin-only escape hatch and never shows for a cancelled order. */}
+            {selected && !ro && isAdmin() && (
+              <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onDelete()}
+                title="Delete this order outright — only do this if the number should be free">
                 <Trash2 size={14} /> Delete
               </button>
             )}
@@ -996,7 +1075,10 @@ export default function OrderWorkspace() {
                         {(() => {
                           // Approval outranks dispatch: an order nobody has approved has not
                           // failed to go out, it has not started.
-                          const b = Number(o.docstatus) === 2 ? { label: "Rejected", cls: "mm-pill-muted" }
+                          const st = o.order_state;
+                          const b = st === "Cancelled" || Number(o.docstatus) === 2
+                            ? { label: "Cancelled", cls: "mm-pill-muted" }
+                            : st === "Rejected" ? { label: "Rejected", cls: "mm-pill-low" }
                             : Number(o.docstatus) === 0 ? { label: "Pending Approval", cls: "mm-pill-pending" }
                             : salesBadge(stateByOrder[o.name]?.sales);
                           return <span className={`mm-pill ${b.cls}`}>{b.label}</span>;

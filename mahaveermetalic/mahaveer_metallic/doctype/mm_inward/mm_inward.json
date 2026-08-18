@@ -28,7 +28,12 @@
   "challan_expected_box",
   "challan_expected_rolls",
   "section_items",
-  "items"
+  "items",
+  "section_gr",
+  "is_gr",
+  "gr_against",
+  "gr_returned",
+  "gr_reason"
  ],
  "fields": [
   {
@@ -72,15 +77,15 @@
    "fieldname": "company_name",
    "fieldtype": "Data",
    "label": "Company",
-   "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Rolls are received company-wise, not party-wise. Derived from the party when they have only one company."
+   "description": "Rolls are received company-wise, not party-wise. Derived from the customer order on the rows (or the party, when they have only one company) — the entry screen no longer asks for it."
   },
   {
    "fieldname": "challan_number",
    "fieldtype": "Data",
-   "label": "Challan Number"
+   "label": "Challan Number",
+   "description": "Set only when the whole inward is one challan. Challans are entered per row, so a multi-challan inward carries them on the rows and leaves this blank."
   },
   {
    "fieldname": "veermetlon_delivery_challan",
@@ -115,7 +120,7 @@
    "label": "Lot Number",
    "reqd": 1,
    "read_only": 1,
-   "description": "Auto-assigned colour-wise lot id (LT1/26-27). Reused when the same challan is entered again."
+   "description": "The FIRST row's lot. Lots are assigned per entry row (see Lot Number on the rolls below), so this is the document's primary lot, not the only one."
   },
   {
    "fieldname": "section_receipt",
@@ -135,7 +140,7 @@
   {
    "fieldname": "is_partial",
    "fieldtype": "Check",
-   "label": "Partial receipt \u2014 more rolls to come",
+   "label": "Partial receipt — more rolls to come",
    "default": "0"
   },
   {
@@ -188,13 +193,51 @@
    "options": "MM Lot",
    "read_only": 1,
    "in_list_view": 1,
-   "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
+   "description": "The first row's lot. Each roll row carries its own."
+  },
+  {
+   "fieldname": "section_gr",
+   "fieldtype": "Section Break",
+   "label": "Goods Return"
+  },
+  {
+   "fieldname": "is_gr",
+   "fieldtype": "Check",
+   "label": "Is Goods Return (GR)",
+   "default": "0",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "This document is a RETURN: its rolls carry negative weight, so it takes the material back out of stock. The inward it returns stays submitted and is marked returned."
+  },
+  {
+   "fieldname": "gr_against",
+   "fieldtype": "Link",
+   "label": "GR Against Inward",
+   "options": "MM Inward",
+   "read_only": 1,
+   "description": "The inward this return reverses."
+  },
+  {
+   "fieldname": "gr_returned",
+   "fieldtype": "Check",
+   "label": "Returned (GR raised)",
+   "default": "0",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "Set on the ORIGINAL inward once a GR is raised against it. The inward stays submitted — its quantity is netted off by the GR rather than erased."
+  },
+  {
+   "fieldname": "gr_reason",
+   "fieldtype": "Small Text",
+   "label": "GR Reason",
+   "read_only": 1,
+   "allow_on_submit": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-07 12:00:00.000000",
+ "modified": "2026-08-17 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Inward",

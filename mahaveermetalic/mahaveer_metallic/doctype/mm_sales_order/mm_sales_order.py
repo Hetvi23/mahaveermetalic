@@ -23,22 +23,48 @@ class MMSalesOrder(Document):
 		self.name = str(int(raw[len("MMSO"):]))  # → 1
 
 	def validate(self):
+		self._guard_state()
 		self._validate_lines()
 		self._require_weight_or_box()
 		self._compute_ordered_weight()
 		self._prevent_duplicate_order()
 		self._enforce_lock_rules()
 
+	def _guard_state(self):
+		"""A new order starts Pending; a cancelled one is closed to further edits.
+
+		Rejected is deliberately NOT blocked — being editable, under its own number, is what
+		makes a rejection something the admin can fix and approve rather than a deletion.
+		Saving a rejected order leaves it rejected until an admin approves it, so nobody can
+		quietly slip a rejected order back into play by re-saving it.
+		"""
+		if self.is_new():
+			if not self.order_state:
+				self.order_state = "Pending"
+			return
+		prev = self.get_doc_before_save()
+		if prev and prev.order_state == "Cancelled":
+			frappe.throw(_("Order {0} is cancelled and can no longer be edited.").format(self.name))
+		if prev and prev.order_state and self.order_state != prev.order_state:
+			# The state moves through approve / reject / cancel, never by editing the field.
+			self.order_state = prev.order_state
+
 	def on_submit(self):
 		# Approving the order (submit) locks it AND submits its shortage purchase order(s).
 		for po in self._linked_pos(docstatus=0):
 			frappe.get_doc("MM Purchase Order", po).submit()
+		# Submitting IS approval, however it was reached (the API, or the desk) — so the state
+		# follows the docstatus rather than depending on which door was used.
+		self.db_set("order_state", "Approved", update_modified=False)
 
 	def on_cancel(self):
-		# Rejecting/cancelling the order cancels its purchase order(s) too.
+		# Cancelling the order cancels its purchase order(s) too.
 		self.ignore_linked_doctypes = ("MM Purchase Order",)
 		for po in self._linked_pos(docstatus=1):
 			frappe.get_doc("MM Purchase Order", po).cancel()
+		# Cancelled is final. `cancel_order` records who and why; this keeps the state honest
+		# even when someone cancels straight from the desk.
+		self.db_set("order_state", "Cancelled", update_modified=False)
 
 	def on_trash(self):
 		# Delete the linked purchase order(s) first — otherwise Frappe's link check blocks
@@ -260,67 +286,159 @@ def force_complete_order(order, pin):
 def approve_order(sales_order):
 	"""Admin approval: submit the order (docstatus 1 = Approved), which locks it and its
 	shortage purchase order(s). Only after approval can the order be used in inward /
-	cutting / production. Restricted to MM Admin (submit permission)."""
-	if not is_mm_admin() and "MM Admin" not in frappe.get_roles():
+	cutting / production. Restricted to MM Admin (submit permission).
+
+	A REJECTED order comes through here too — that is the whole point of rejecting rather
+	than deleting: the admin fixes what was wrong and approves the same order, under the same
+	number. A CANCELLED one never does; cancelling is final.
+	"""
+	if not is_mm_admin():
 		frappe.throw(_("Only an admin can approve orders."))
 	doc = frappe.get_doc("MM Sales Order", sales_order)
+	if doc.order_state == "Cancelled" or doc.docstatus == 2:
+		frappe.throw(_("Order {0} is cancelled and can't be approved.").format(doc.name))
 	if doc.docstatus == 0:
 		doc.submit()
-	return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Approved"}
+		doc.reload()
+	return _set_state(doc, "Approved", submitted=True)
+
+
+def _set_state(doc, state, reason=None, submitted=False):
+	"""Stamp the order's state, who changed it and why, and leave a comment behind.
+
+	Written with db_set because this runs on submitted documents too, and because the state
+	is an annotation on the order rather than a reason to re-run its validation.
+	"""
+	values = {
+		"order_state": state,
+		"state_reason": (reason or "").strip() or None,
+		"state_changed_on": frappe.utils.now(),
+		"state_changed_by": frappe.session.user,
+	}
+	for field, value in values.items():
+		doc.db_set(field, value, update_modified=False)
+	doc.add_comment("Comment", _("Order {0} by {1}{2}").format(
+		state.lower(), frappe.session.user, f": {reason}" if reason else ""
+	))
+	return {
+		"order": doc.name,
+		"docstatus": doc.docstatus,
+		"order_state": state,
+		"approval_status": state,
+		"submitted": submitted,
+	}
+
+
+def order_has_inward(order) -> bool:
+	"""Has anything been received against this order? Editing and cancelling stop there."""
+	return bool(
+		frappe.db.sql(
+			"""select 1 from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+			where ii.customer_order = %s and i.docstatus = 1 limit 1""",
+			(order,),
+		)
+	)
 
 
 @frappe.whitelist()
-def reject_order(sales_order):
-	"""Admin rejection of a PENDING order.
+def reject_order(sales_order, reason=None):
+	"""Admin rejection — SENT BACK, not destroyed.
 
-	Frappe forbids a direct 0 -> 2 (draft -> cancelled) docstatus transition, so a pending
-	order is rejected by deleting it (with its draft shortage PO first, otherwise the link
-	check blocks the delete). An already-approved order is cancelled normally."""
-	if not is_mm_admin() and "MM Admin" not in frappe.get_roles():
+	A rejected order keeps its number and stays a draft, so the admin can edit it and approve
+	it afterwards. It used to be DELETED and its number handed back to the counter for the
+	next order to reuse; that is gone. A number that was issued stays issued: reusing it made
+	two different orders share an id in the books, and there was nothing left to re-approve.
+
+	An APPROVED order cannot be rejected — approval has already sent it down the line. Kill
+	it with `cancel_order` instead, which says so permanently.
+	"""
+	if not is_mm_admin():
 		frappe.throw(_("Only an admin can reject orders."))
 	doc = frappe.get_doc("MM Sales Order", sales_order)
 	if doc.docstatus == 1:
-		doc.cancel()
-		return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Rejected"}
-	if doc.docstatus == 0:
-		for po in frappe.get_all("MM Purchase Order", filters={"sales_order": doc.name, "docstatus": 0}, pluck="name"):
-			frappe.delete_doc("MM Purchase Order", po, ignore_permissions=True, force=True)
-		rejected_name = doc.name
-		frappe.delete_doc("MM Sales Order", doc.name, ignore_permissions=True)
-		_release_order_number(rejected_name)
-		return {"order": sales_order, "docstatus": None, "approval_status": "Rejected", "deleted": True}
-	return {"order": doc.name, "docstatus": doc.docstatus, "approval_status": "Rejected"}
+		frappe.throw(
+			_("Order {0} is already approved, so it can't be sent back. Cancel it instead — "
+			  "that closes it for good.").format(doc.name)
+		)
+	if doc.docstatus == 2 or doc.order_state == "Cancelled":
+		frappe.throw(_("Order {0} is cancelled.").format(doc.name))
+	return _set_state(doc, "Rejected", reason)
 
 
-def _release_order_number(name):
-	"""Give a rejected order's number back so the next order reuses it.
+@frappe.whitelist()
+def cancel_order(sales_order, reason=None):
+	"""Cancel an order — closed for good.
 
-	Rejecting a pending order deletes it, but the naming counter had already moved on —
-	so rejecting 50 left the next order as 51 and a gap in the books. Only rolls back when
-	the deleted order was the LAST number issued; rejecting an older one leaves the counter
-	alone, since numbers above it are already in use.
+	Permanent by design, and the counterpart to a rejection: rejected means "fix it and bring
+	it back", cancelled means "this order is over". The number STAYS RESERVED either way, so
+	nothing else can ever be filed under it.
+
+	An approved order is cancelled properly (docstatus 2, its purchase orders with it). A
+	pending or rejected one has nothing submitted to reverse, so it stays a draft, marked
+	Cancelled and locked out of editing and approval. An order that has already received
+	material is refused: return the inward (GR) first, or the stock and the order disagree.
 	"""
-	try:
-		n = int(str(name))
-	except (TypeError, ValueError):
-		return  # not a plain running number — nothing to reclaim
-	current = frappe.db.sql("select current from `tabSeries` where name = %s for update", ("MMSO",))
-	if current and int(current[0][0] or 0) == n:
-		frappe.db.sql("update `tabSeries` set current = %s where name = %s", (n - 1, "MMSO"))
+	if not is_mm_admin():
+		frappe.throw(_("Only an admin can cancel orders."))
+	doc = frappe.get_doc("MM Sales Order", sales_order)
+	if doc.order_state == "Cancelled" or doc.docstatus == 2:
+		return {"order": doc.name, "docstatus": doc.docstatus, "order_state": "Cancelled",
+			"approval_status": "Cancelled", "already": True}
+	if order_has_inward(doc.name):
+		frappe.throw(
+			_("Order {0} has inward received against it, so it can't be cancelled. Raise a "
+			  "goods return (GR) for that inward first.").format(doc.name)
+		)
+	if doc.docstatus == 1:
+		doc.cancel()
+		doc.reload()
+		return _set_state(doc, "Cancelled", reason)
+	# A draft: nothing was submitted, so there is nothing to reverse — drop the shortage PO
+	# that was raised with it and close the order where it stands.
+	for po in frappe.get_all("MM Purchase Order", filters={"sales_order": doc.name, "docstatus": 0}, pluck="name"):
+		frappe.delete_doc("MM Purchase Order", po, ignore_permissions=True, force=True)
+	return _set_state(doc, "Cancelled", reason)
+
+
+def assert_order_editable(order):
+	"""An order may be changed while it is still a draft and nothing has arrived for it.
+
+	Approval and receipt are both points of no return: an approved order is already being
+	worked, and an order with inward against it has stock filed under its lines. A CANCELLED
+	order is closed for good — rejected is the state that comes back.
+	"""
+	if not order or not frappe.db.exists("MM Sales Order", order):
+		return
+	row = frappe.db.get_value("MM Sales Order", order, ["docstatus", "order_state"], as_dict=True)
+	if row.order_state == "Cancelled" or row.docstatus == 2:
+		frappe.throw(_("Order {0} is cancelled and can no longer be edited.").format(order))
+	if row.docstatus == 1:
+		frappe.throw(_("Order {0} is approved. It can't be edited any more.").format(order))
+	if order_has_inward(order):
+		frappe.throw(
+			_("Order {0} already has inward received against it, so its lines can't be "
+			  "changed. Return that inward (GR) first.").format(order)
+		)
+
 
 def assert_order_submitted(order):
 	"""Guard for downstream flows (inward / cutting / production): the referenced order
-	must be APPROVED (submitted). A pending (draft) order isn't usable yet; a rejected
-	(cancelled) order is closed."""
+	must be APPROVED (submitted). A pending order isn't usable yet; a rejected one is waiting
+	on the admin; a cancelled one is closed."""
 	if not order:
 		return
-	ds = frappe.db.get_value("MM Sales Order", order, "docstatus")
-	if ds is None:
+	row = frappe.db.get_value("MM Sales Order", order, ["docstatus", "order_state"], as_dict=True)
+	if not row:
 		return
-	if ds == 0:
+	if row.order_state == "Cancelled" or row.docstatus == 2:
+		frappe.throw(_("Order {0} is cancelled.").format(order))
+	if row.order_state == "Rejected":
+		frappe.throw(
+			_("Order {0} was rejected — an admin has to edit and approve it before it can be "
+			  "used.").format(order)
+		)
+	if row.docstatus == 0:
 		frappe.throw(_("Order {0} is pending admin approval — it can't be used until approved.").format(order))
-	if ds == 2:
-		frappe.throw(_("Order {0} is rejected/cancelled.").format(order))
 
 
 def recalculate_production_completed(order: str):

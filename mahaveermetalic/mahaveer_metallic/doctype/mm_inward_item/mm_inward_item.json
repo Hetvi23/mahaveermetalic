@@ -7,7 +7,10 @@
   "field_order": [
     "job_work",
     "challan_number",
+    "supplier",
     "customer_order",
+    "lot",
+    "lot_number",
     "item_type",
     "roll_name",
     "color_name",
@@ -31,11 +34,35 @@
       "label": "Challan No"
     },
     {
+      "fieldname": "supplier",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Supplier",
+      "options": "MM Vendor Master",
+      "description": "Who this material came from. Entered per row — one inward can receive from several suppliers."
+    },
+    {
       "fieldname": "customer_order",
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Customer Order",
       "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "lot",
+      "fieldtype": "Link",
+      "label": "Lot",
+      "options": "MM Lot",
+      "read_only": 1,
+      "description": "Lot this roll belongs to. Assigned per ENTRY ROW: every roll weighed under one row shares its lot."
+    },
+    {
+      "fieldname": "lot_number",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Lot Number",
+      "read_only": 1,
+      "description": "The lot's display id (LT1/26-27) — what flows into roll stock and the ledger."
     },
     {
       "fieldname": "item_type",
@@ -104,7 +131,7 @@
   "index_web_pages_for_search": 0,
   "istable": 1,
   "links": [],
-  "modified": "2026-06-04 00:00:00.000000",
+  "modified": "2026-08-17 10:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Inward Item",

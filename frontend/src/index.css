@@ -742,6 +742,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   margin-bottom: 0.75rem;
 }
 .mm-cut-panel-head .mm-panel-title { display: flex; align-items: center; gap: 0.35rem; margin: 0; }
+.mm-cut-panel-acts { display: flex; align-items: center; gap: 0.4rem; }
 .mm-cut-go {
   display: inline-flex;
   align-items: center;
@@ -975,6 +976,9 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
    Submit pinned to the bottom of the grid so they are in view however long the list runs. */
 .mm-iw-head-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.85rem; align-items: end; }
 .mm-iw-head-grid .mm-so-field-wide { grid-column: 1 / -1; }
+/* The header carries only what the whole document shares (date + location), so the fields
+   keep their own width instead of being stretched across an empty row. */
+.mm-iw-head-tight { grid-template-columns: repeat(auto-fit, minmax(190px, 260px)); }
 .mm-iw-fetch { display: flex; gap: 0.4rem; }
 .mm-iw-fetch .mm-input { flex: 1; min-width: 0; }
 .mm-iw-fetch .mm-btn-secondary { flex: 0 0 auto; white-space: nowrap; }
@@ -990,11 +994,46 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-iw-grid-table .mm-input { min-width: 0; width: 100%; }
 .mm-iw-c-no { width: 42px; color: var(--mm-text-sec); }
 .mm-iw-c-jw { width: 78px; text-align: center; }
-.mm-iw-c-chalan { width: 130px; }
+.mm-iw-c-chalan { width: 172px; }
+.mm-iw-c-supplier { width: 168px; }
+.mm-iw-c-lot { width: 104px; }
 .mm-iw-c-roll { width: 150px; }
 .mm-iw-c-qty { width: 210px; }
 .mm-iw-c-act { width: 84px; }
 .mm-iw-jw-box { width: 17px; height: 17px; accent-color: var(--mm-accent); cursor: pointer; }
+
+/* Challan + its own Fetch: the challan belongs to the line, so pulling it from Veermetlon
+   has to be on the line too. */
+.mm-iw-rowfetch { display: flex; align-items: center; gap: 0.25rem; }
+.mm-iw-rowfetch .mm-input { flex: 1; min-width: 0; }
+.mm-iw-fetchbtn {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 27px; height: 27px; border: 1px solid var(--mm-border); border-radius: 7px;
+  background: var(--mm-card); color: var(--mm-text-sec); cursor: pointer; font-size: 0.75rem;
+}
+.mm-iw-fetchbtn:hover:not(:disabled) { border-color: var(--mm-accent); color: var(--mm-accent-fg); }
+.mm-iw-fetchbtn:disabled { opacity: 0.5; cursor: default; }
+.mm-iw-vmdot { display: inline-flex; color: var(--mm-ok-fg, #15803d); }
+
+/* Lot id — assigned on post, so it reads as a stamp rather than a field. */
+.mm-iw-lot {
+  display: inline-block; padding: 0.18rem 0.45rem; border-radius: 6px;
+  background: var(--mm-accent-bg); color: var(--mm-accent-fg);
+  font-size: 0.74rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.mm-iw-lot-head { margin-left: 0.5rem; }
+
+/* Several rolls on one line: the roll numbers, then their count, then the totals. */
+.mm-iw-rolls {
+  display: inline-flex; align-items: baseline; gap: 0.35rem; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem;
+}
+.mm-iw-rollcount { font-style: normal; font-size: 0.7rem; font-weight: 700; color: var(--mm-accent-fg); }
+.mm-iw-sum {
+  flex: 1; min-width: 0; padding: 0.3rem 0.45rem; border: 1px dashed var(--mm-border);
+  border-radius: 8px; text-align: right; font-size: 0.82rem; font-variant-numeric: tabular-nums;
+  background: var(--mm-bg-warm, transparent);
+}
 /* A colour fixed by the row's order is read-only, not unimportant — it has to stay as
    readable as the rest of the line, so keep the text colour and only drop the chrome. */
 .mm-iw-c-color .mm-input:disabled {
@@ -1031,11 +1070,20 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-iw-bulk-spacer { width: 26px; flex: 0 0 26px; }
 .mm-iw-bulk-add { height: 32px; margin-bottom: 0.6rem; }
 
+/* Roll-wise entry for one lot: line no, roll no, then qty and weight. */
+.mm-iw-cart-line { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.5rem; }
+.mm-iw-cart-line .mm-input { flex: 1; min-width: 0; }
+.mm-iw-cart-no {
+  flex: 0 0 1.2rem; font-size: 0.72rem; font-weight: 700; color: var(--mm-text-sec);
+  font-variant-numeric: tabular-nums;
+}
+.mm-iw-cart-num { flex: 0 0 5.5rem; text-align: right; }
+
 @media (max-width: 900px) {
   .mm-iw-footer .mm-check { margin-left: 0; }
   .mm-iw-submit { flex: 1 1 100%; }
 
-  /* Tablet: eight columns cannot be a row on a 900px screen, so each roll becomes a
+  /* Tablet: ten columns cannot be a row on a 900px screen, so each lot becomes a
      card — the same fields, stacked, each labelled from its column heading. The floor
      enters rolls on tablets; a sideways-scrolling grid is unusable standing at a machine. */
   .mm-iw-grid-table thead { display: none; }
@@ -1578,6 +1626,8 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* ── Pills & badges ───────────────────────────────────── */
 .mm-pill { display: inline-flex; align-items: center; padding: 0.22rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
 .mm-pill-muted { background: var(--mm-bg); color: var(--mm-text-sec); border: 1px solid var(--mm-border); }
+/* Rejected: sent back, not dead — it reads as something to act on, where Cancelled is muted. */
+.mm-pill-low { background: var(--mm-danger-bg); color: var(--mm-danger-fg); border: 1px solid var(--mm-danger-fg); }
 
 /* ── Utilities ────────────────────────────────────────── */
 .mm-muted { color: var(--mm-text-sec); font-size: 0.85rem; }
@@ -2072,14 +2122,32 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-feeders > .mm-card > .mm-colour-list,
 .mm-feeders > .mm-card > .mm-table-scroll { scrollbar-gutter: stable; }
 /* Fixed column widths: without this the table re-fits its columns to whatever rows are
-   left, so "No of patty" and "Cut" slide sideways as you type in the colour filter. */
+   left, so "No of patty" slides sideways as you type in the colour filter. The shelf carries
+   three columns now — colour, patty count, and the action. */
 .mm-patty-table { table-layout: fixed; }
-.mm-patty-table th:nth-child(1), .mm-patty-table td:nth-child(1) { width: 32%; }
-.mm-patty-table th:nth-child(2), .mm-patty-table td:nth-child(2) { width: 17%; }
-.mm-patty-table th:nth-child(3), .mm-patty-table td:nth-child(3) { width: 14%; }
-.mm-patty-table th:nth-child(4), .mm-patty-table td:nth-child(4) { width: 21%; }
-.mm-patty-table th:nth-child(5), .mm-patty-table td:nth-child(5) { width: 16%; }
+.mm-patty-table th:nth-child(1), .mm-patty-table td:nth-child(1) { width: 46%; }
+.mm-patty-table th:nth-child(2), .mm-patty-table td:nth-child(2) { width: 30%; }
+.mm-patty-table th:nth-child(3), .mm-patty-table td:nth-child(3) { width: 24%; }
 .mm-patty-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The patty shelf stands alone now (In-cutting reads on Program View), so it keeps its own
+   height rather than borrowing the feeder grid's. */
+.mm-patty-shelf { display: flex; flex-direction: column; max-height: 320px; margin-bottom: 1.4rem; }
+.mm-patty-shelf > .mm-flow-shelf-head { flex: none; }
+.mm-patty-shelf > .mm-table-scroll,
+.mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.mm-patty-filter { margin-left: auto; max-width: 190px; }
+
+/* A patty whose patti are all programmed: still listed, plainly spent. Kept legible rather
+   than faded to nothing — the operator needs to read that it WAS there. */
+.mm-patty-row-spent td { opacity: 0.55; }
+.mm-pick-row-spent { opacity: 0.55; cursor: not-allowed; background: var(--mm-bg-warm, transparent); }
+.mm-pick-row-spent:hover { border-color: var(--mm-border); }
+.mm-patty-spent-tag {
+  margin-left: 0.4rem; padding: 0.1rem 0.4rem; border-radius: 99px;
+  background: var(--mm-border); color: var(--mm-text-sec);
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+}
 
 /* Cutting roll picker (finish a planned cut): search row, roll table, patty stepper */
 .mm-cutpick-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
@@ -2099,6 +2167,42 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-pvw-table { width: 100%; }
 .mm-pvw-done td { opacity: 0.55; text-decoration: line-through; }
 .mm-pvw-empty { color: var(--mm-text-sec); font-size: 0.85rem; padding: 0.5rem 0; }
+
+/* Top row of the day sheet: what is in cutting, and the floor's notes beside it. */
+.mm-pvw-top {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 1.1rem; align-items: start; margin-bottom: 1.25rem;
+}
+@media (max-width: 1000px) { .mm-pvw-top { grid-template-columns: 1fr; } }
+.mm-pvw-notes { display: flex; flex-direction: column; }
+.mm-pvw-notes-box { min-height: 132px; resize: vertical; line-height: 1.5; font-family: inherit; }
+.mm-pvw-notes-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  margin-top: 0.5rem; font-size: 0.75rem;
+}
+
+/* The sheet reads machine by machine: the machine, then each program under it. */
+.mm-pvw-machine { margin-bottom: 1rem; }
+.mm-pvw-machine-name {
+  display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.4rem;
+  font-weight: 800; font-size: 0.88rem; color: var(--mm-text);
+}
+.mm-pvw-prog {
+  border: 1px solid var(--mm-border); border-left: 3px solid var(--mm-accent);
+  border-radius: var(--mm-radius-sm); padding: 0.5rem 0.6rem; margin-bottom: 0.5rem;
+  background: var(--mm-bg-warm, transparent);
+}
+.mm-pvw-prog-top { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.mm-pvw-prog-batch { font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--mm-accent-fg); }
+.mm-pvw-prog-meta { font-size: 0.76rem; color: var(--mm-text-sec); margin-top: 0.15rem; }
+/* One chip per batch, filled when that batch is done — countable at a glance. */
+.mm-pvw-batches { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.4rem 0 0.15rem; }
+.mm-pvw-batch {
+  min-width: 1.4rem; text-align: center; padding: 0.1rem 0.3rem; border-radius: 5px;
+  border: 1px solid var(--mm-border); font-size: 0.7rem; font-weight: 700;
+  color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
+}
+.mm-pvw-batch-done { background: var(--mm-accent); border-color: var(--mm-accent); color: #fff; }
 
 /* Sales Challan voucher: header grid, action row, sticky totals footer */
 .mm-scv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.7rem 0.9rem; align-items: end; }
@@ -2390,6 +2494,17 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   margin-left: 0.35rem; padding: 0.05rem 0.3rem; border-radius: 5px; font-size: 0.62rem; font-weight: 800;
   letter-spacing: 0.04em; background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid var(--mm-accent-soft);
 }
+/* A goods return, and the receipt it was raised against. Marked rather than hidden: the
+   register has to show both the arrival and the hand-back for the totals to make sense. */
+.mm-irep-gr {
+  margin-left: 0.35rem; padding: 0.05rem 0.3rem; border-radius: 5px; font-size: 0.62rem; font-weight: 800;
+  letter-spacing: 0.04em; background: var(--mm-danger-bg, rgba(220,38,38,0.12));
+  color: var(--mm-danger-fg, #b91c1c); border: 1px solid var(--mm-danger-fg, #b91c1c);
+}
+.mm-irep-gr-src { background: transparent; border-style: dashed; }
+/* The return's own rows carry negative figures — tint them so a minus is never a typo. */
+.mm-row-gr td { color: var(--mm-danger-fg, #b91c1c); }
+.mm-row-returned td:not(:last-child) { opacity: 0.72; }
 .mm-orep-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .mm-orep-totals { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--mm-text-sec); }
 .mm-orep-totals b { color: var(--mm-text); font-variant-numeric: tabular-nums; }

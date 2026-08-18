@@ -32,7 +32,11 @@
   "completed_batches",
   "patti_qty",
   "net_weight",
-  "lot"
+  "completed_weight",
+  "per_patty_weight",
+  "lot",
+  "patti_released",
+  "patty_sources"
  ],
  "fields": [
   {
@@ -132,7 +136,7 @@
    "label": "Closed",
    "read_only": 1,
    "allow_on_submit": 1,
-   "description": "Closed (with audit trail) \u2014 the program is locked from further batch changes."
+   "description": "Closed (with audit trail) — the program is locked from further batch changes."
   },
   {
    "fieldname": "released",
@@ -140,7 +144,7 @@
    "label": "Freed from Machine",
    "read_only": 1,
    "allow_on_submit": 1,
-   "description": "A completed program manually freed off the machine \u2014 its slot is open for a new program."
+   "description": "A completed program manually freed off the machine — its slot is open for a new program."
   },
   {
    "fieldname": "reverted",
@@ -148,7 +152,7 @@
    "label": "Reverted",
    "read_only": 1,
    "allow_on_submit": 1,
-   "description": "Program was reverted \u2014 taken off the machine; batches can no longer be completed on it."
+   "description": "Program was reverted — taken off the machine; batches can no longer be completed on it."
   },
   {
    "fieldname": "unfinished",
@@ -166,7 +170,7 @@
    "options": "MM Roll Inventory",
    "read_only": 1,
    "allow_on_submit": 1,
-   "description": "The inventory roll bound at finish \u2014 its weight is pulled onto the program and consumed from stock."
+   "description": "The inventory roll bound at finish — its weight is pulled onto the program and consumed from stock."
   },
   {
    "fieldname": "remark",
@@ -234,13 +238,48 @@
    "read_only": 1,
    "in_list_view": 1,
    "description": "Lot this material belongs to (colour-wise LT id, carried down from inward)."
+  },
+  {
+   "fieldname": "patty_sources",
+   "fieldtype": "Table",
+   "label": "Patti Taken From",
+   "options": "MM Program Patty",
+   "read_only": 1,
+   "description": "Which cutting(s) this program's patti came from, and how many of each. Reverting hands exactly these back."
+  },
+  {
+   "fieldname": "patti_released",
+   "fieldtype": "Check",
+   "label": "Patti Released",
+   "default": "0",
+   "read_only": 1,
+   "description": "Set once this program's patti have been handed back, so a revert followed by a cancel cannot give the same patti back twice.",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "per_patty_weight",
+   "fieldtype": "Float",
+   "label": "Weight per Patty (Kg)",
+   "precision": "3",
+   "read_only": 1,
+   "description": "One patty's weight, taken from the cutting. One patty = one batch, so this is the weight of a single batch.",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "completed_weight",
+   "fieldtype": "Float",
+   "label": "Completed Weight (Kg)",
+   "precision": "3",
+   "read_only": 1,
+   "description": "Weight of the patty actually COMPLETED (per-patty x completed batches) — not the roll's weight. This is what Production consumes.",
+   "allow_on_submit": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "track_changes": 1,
  "links": [],
- "modified": "2026-08-02 12:00:00.000000",
+ "modified": "2026-08-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Program",

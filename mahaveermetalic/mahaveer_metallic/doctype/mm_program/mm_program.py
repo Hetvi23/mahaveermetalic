@@ -36,16 +36,38 @@ class MMProgram(Document):
 			self.status = "Running"
 		else:
 			self.status = "Open"
+		self.derive_completed_weight()
+
+	def derive_completed_weight(self):
+		"""The weight of the patty actually COMPLETED — what the screens show and what
+		Production consumes.
+
+		A program's `net_weight` is the plan: per-patty × the batches it set out to run. What
+		came off the machine is per-patty × the batches that finished, and quoting the roll's
+		weight for a job that ran three batches of four overstates it. Derived from the rate
+		so it can never disagree with the batch counters.
+		"""
+		rate = float(self.per_patty_weight or 0)
+		if not rate:
+			total = int(self.total_batches or 0)
+			rate = round(float(self.net_weight or 0) / total, 3) if total else 0.0
+		self.completed_weight = round(rate * int(self.completed_batches or 0), 3)
 
 	def on_cancel(self):
 		self._release_source_cutting()
 		self._cancel_placeholder_cutting()
 
 	def _release_source_cutting(self):
-		"""Cancelling a program returns its source cutting to the 'In Stock Patty'
-		list (clears the program link on the cutting)."""
-		if self.source_cutting and frappe.db.exists("MM Cutting", self.source_cutting):
-			frappe.db.set_value("MM Cutting", self.source_cutting, "program", None, update_modified=False)
+		"""Cancelling a program hands its patti back, so they are available to program again.
+
+		Patti are counted per cutting, so this returns exactly what this program took (and
+		nothing another program holds on the same cutting). Reverting already gives back the
+		unrun batches — `patti_released` is what stops a revert-then-cancel handing the same
+		patti back twice.
+		"""
+		from mahaveermetalic.mahaveer_metallic.api.program import release_program_patti
+
+		release_program_patti(self)
 
 	def _cancel_placeholder_cutting(self):
 		"""An unfinished program's source cutting is a 0-weight placeholder (the planned
