@@ -92,8 +92,6 @@ export default function ProgramScreen() {
   const [dayDate, setDayDate] = useState(tomorrow());
   const [nightDate, setNightDate] = useState(today());
   const [adding, setAdding] = useState<{ machine?: string; shift?: string; colour?: string } | null>(null);
-  /** Set the first time Add-program is opened — until then the patty shelf stays empty. */
-  const [pattyAsked, setPattyAsked] = useState(false);
   const [pattyColourFilter, setPattyColourFilter] = useState("");
   /** The machine the shelf is answering for. A patty count summed over every cut answers
    *  nobody's question — 9 patty of a colour is 6 this machine can run and 3 it cannot — so
@@ -108,18 +106,15 @@ export default function ProgramScreen() {
     `${API}.threads_processing`, undefined, "pg-threads",
     { refreshInterval: 20000, revalidateOnFocus: true, keepPreviousData: true },
   );
-  // Finished patty starts BLANK and is fetched the first time Add-program is used: the shelf
-  // answers "what can I put on a machine", which is a question you only ask while planning.
-  // A null swr key is what holds the request back.
-  //
-  // Once asked, it KEEPS ITSELF CURRENT. Patti are consumed and handed back by things that
-  // happen elsewhere — a cutting finished on the Cutting screen, a program completed or
-  // reverted by someone else — and a shelf that only moves when you press something is a
-  // shelf that quietly goes stale on a shift-long screen. It re-pulls on a timer and
-  // whenever the tab comes back into focus; SWR keeps the current rows on screen while it
-  // does, so nothing blinks.
+  // Finished patty loads WITH the screen and keeps itself current. It used to wait for
+  // Add-program to be pressed, which meant the one number the shelf exists to show was
+  // blank until you asked for it by hand. Patti are consumed and handed back by things
+  // that happen elsewhere — a cutting finished on the Cutting screen, a program completed
+  // or reverted by someone else — so it re-pulls on a timer, whenever the tab comes back
+  // into focus, and after anything on this screen moves. SWR keeps the current rows on
+  // screen while it refetches, so nothing blinks.
   const pattyCall = useFrappeGetCall<{ message: Roll[] }>(
-    `${API}.available_rolls`, { finished_only: 1 }, pattyAsked ? "pg-patties" : null,
+    `${API}.available_rolls`, { finished_only: 1 }, "pg-patties",
     { refreshInterval: 20000, revalidateOnFocus: true, keepPreviousData: true },
   );
 
@@ -133,15 +128,10 @@ export default function ProgramScreen() {
   const patties = pattyCall.data?.message ?? [];
 
   const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void pattyCall.mutate(); };
-  /** Add-program is also what fills the patty shelf — asking for it IS the planning step. */
-  const openAdd = (preset: { machine?: string; shift?: string; colour?: string }) => {
-    setPattyAsked(true);
-    setAdding(preset);
-  };
-  /** "What can THIS machine run, right now." Fills the shelf if it was blank, scopes it to
-   *  the machine's cut, and re-pulls — the patty count moves as programs take patti. */
+  const openAdd = (preset: { machine?: string; shift?: string; colour?: string }) => setAdding(preset);
+  /** "What can THIS machine run, right now." Scopes the shelf to the machine's cut and
+   *  re-pulls — the patty count moves as programs take patti. */
   const refreshPattyFor = (m: Machine) => {
-    setPattyAsked(true);
     setPattyScope({ machine: m.name, machineNo: m.machine_no, cut: (m.cut || "").trim() });
     setPattyColourFilter("");
     void pattyCall.mutate();
@@ -282,17 +272,11 @@ export default function ProgramScreen() {
                   </button>
                 </span>
               )}
-              {pattyAsked && (
-                <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour…"
-                  value={pattyColourFilter} onChange={(e) => setPattyColourFilter(e.target.value)} />
-              )}
+              <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour…"
+                value={pattyColourFilter} onChange={(e) => setPattyColourFilter(e.target.value)} />
             </div>
-            {!pattyAsked ? (
-              <p className="mm-flow-empty-state">
-                Add a program and the finished patty available to it is listed here.
-              </p>
-            ) : pattyCall.isLoading ? (
-              <p className="mm-muted">Loading…</p>
+            {pattyCall.isLoading && shownPatties.length === 0 ? (
+              <p className="mm-flow-empty-state">Loading…</p>
             ) : shownPatties.length === 0 ? (
               <p className="mm-flow-empty-state">
                 {pattyColours.length > 0
@@ -302,24 +286,21 @@ export default function ProgramScreen() {
                     : "No finished patty available — finish a cutting first."}
               </p>
             ) : (
-              <div className="mm-table-scroll">
-                <table className="mm-table mm-table-dense mm-patty-table">
-                  <thead>
-                    <tr><th>Color</th><th className="mm-num">No of patty</th><th /></tr>
-                  </thead>
-                  <tbody>
-                    {shownPatties.map((c) => (
-                      <tr key={c.colour}>
-                        <td><span className="mm-colour-name">{c.colour}</span></td>
-                        <td className="mm-num" title={`${c.count} of ${c.total} patti still available`}>{c.count}</td>
-                        <td className="mm-num">
-                          <button className="mm-mini mm-mini-ok" title="Program this patty"
-                            onClick={() => openAdd({ colour: c.colour })}>→ Program</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              /* Colour + patti count, one tile each. Two wide table columns made the card
+                 grow taller with every colour and shove the machine board down the page;
+                 tiles flow into MORE COLUMNS instead, inside a card of fixed height. */
+              <div className="mm-patty-scroll">
+                <div className="mm-patty-grid">
+                  {shownPatties.map((c) => (
+                    <button key={c.colour} type="button" className="mm-patty-tile"
+                      title={`${c.count} of ${c.total} patti still available — program this patty`}
+                      onClick={() => openAdd({ colour: c.colour })}>
+                      <span className="mm-patty-tile-name">{c.colour}</span>
+                      <span className="mm-patty-tile-count">{c.count}</span>
+                      <span className="mm-patty-tile-go" aria-hidden>→</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </section>
@@ -344,20 +325,21 @@ export default function ProgramScreen() {
                           <span className="mm-state mm-state-open">Not working</span>
                           <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
                             <button className="mm-mini mm-mini-ok" onClick={guard(() => reopen({ machine: m.name }))}><Power size={13} /> Reopen</button>
-                            <button className="mm-mini" title={`Show the finished patty Machine ${m.machine_no} can run`}
-                              aria-label={`Refresh finished patty for machine ${m.machine_no}`}
+                            <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run`}
+                              aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
                               onClick={() => refreshPattyFor(m)}>
-                              <RotateCcw size={13} /> Patty
+                              <Search size={13} /> Patty
                             </button>
                           </div>
                         </>
                       ) : (
                         <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                          {/* Refresh the patty shelf for THIS machine — what it can run, now. */}
-                          <button className="mm-mini" title={`Show the finished patty Machine ${m.machine_no} can run${m.cut ? ` (cut ${m.cut})` : ""}`}
-                            aria-label={`Refresh finished patty for machine ${m.machine_no}`}
+                          {/* Narrows the shelf to THIS machine's cut. The shelf keeps itself
+                              current on its own — this is a filter, not a refresh. */}
+                          <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run${m.cut ? ` (cut ${m.cut})` : ""}`}
+                            aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
                             onClick={() => refreshPattyFor(m)}>
-                            <RotateCcw size={13} /> Patty
+                            <Search size={13} /> Patty
                           </button>
                           <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
                           {Object.values(byMachineShift[m.name] || {}).flat().length === 0 && (
@@ -441,11 +423,6 @@ function CompleteDialog({ program, onClose, onDone }: { program: Program; onClos
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
-          <p className="mm-page-sub" style={{ marginTop: 0 }}>
-            How many of the {total} batches are completed? All of them and the program goes to
-            Production. Fewer, and the job is closed out short: the machine frees up and the
-            batches that never ran hand their patty back automatically.
-          </p>
           <label className="mm-field">
             <span className="mm-field-label">Batches completed</span>
             <input className="mm-input" type="number" min={0} max={total} value={completed}

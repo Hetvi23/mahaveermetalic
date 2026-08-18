@@ -1,13 +1,14 @@
 :root {
   /* Brand + structural */
-  /* Warm, not navy: the structural dark carries a brown cast so the app reads orange
-     even where it is nearly black — a slate primary is what made it look blue. */
-  --mm-primary:      #33261f;
-  --mm-primary-soft: #4a382e;
-  --mm-accent:       #d97757;
-  --mm-accent-soft:  #f0a88c;
-  --mm-accent-bg:    #fff5f0;
-  --mm-accent-fg:    #b4502f;
+  /* Mustard orange is the brand colour and the ONLY chromatic one. The structural dark
+     used to carry a brown cast, and a brown that large reads as the app's colour — so the
+     dark is a plain charcoal now and the mustard is the only thing on screen with a hue. */
+  --mm-primary:      #252a31;
+  --mm-primary-soft: #343c47;
+  --mm-accent:       #dd8613;
+  --mm-accent-soft:  #f2c179;
+  --mm-accent-bg:    #fff4e0;
+  --mm-accent-fg:    #9a5c05;
   --mm-bg:           #f6f8fb;
   --mm-bg-warm:      #fefce8;
   --mm-card:         #ffffff;
@@ -19,9 +20,9 @@
   /* Semantic (solid / bg tint / text fg / border) */
   /* The interactive colour — nav highlight, state chips, row hover, focus. It is named
      "blue" from when it was; every screen it touches is orange now. */
-  --mm-blue:         #c2410c;
-  --mm-blue-bg:      #fff3ec;
-  --mm-blue-border:  #fbcfb5;
+  --mm-blue:         #a25f04;
+  --mm-blue-bg:      #fff2da;
+  --mm-blue-border:  #f0cd90;
   --mm-danger:       #dc2626;
   --mm-danger-bg:    #fef2f2;
   --mm-danger-fg:    #b91c1c;
@@ -40,7 +41,11 @@
      cartoonish at this scale; a single hairline is what makes a dense form look composed. */
   --mm-hairline:     rgba(15, 23, 42, 0.10);
   --mm-hairline-str: rgba(15, 23, 42, 0.16);
-  --mm-focus:        rgba(217, 119, 87, 0.20);
+  --mm-focus:        rgba(221, 134, 19, 0.28);
+  /* Hover: one tint strong enough to SEE, and an ink dark enough to read on it. A hover
+     that only nudges the border by a shade is a hover nobody notices. */
+  --mm-hover-bg:     #ffeccd;
+  --mm-hover-fg:     #8a5305;
   --mm-material:     rgba(255, 255, 255, 0.72);
   /* Motion: critically damped by default; the momentum curve is for things that were
      thrown or dragged, never for something that merely appeared. */
@@ -62,29 +67,33 @@
 /* ── Dark theme: redefine tokens; components read tokens so they follow automatically.
    Order: OS preference (media), then explicit user toggle (data-theme) wins both ways. ── */
 :root[data-theme="dark"], .mm-dark {
-  --mm-primary: #2b211c; --mm-primary-soft: #3d2f27;
-  --mm-accent: #e8886a; --mm-accent-soft: #f0a88c; --mm-accent-bg: #33201a; --mm-accent-fg: #f0a88c;
+  --mm-primary: #1d222a; --mm-primary-soft: #2c333d;
+  --mm-accent: #f0a63a; --mm-accent-soft: #c9903f; --mm-accent-bg: #33260f; --mm-accent-fg: #f3b95f;
   --mm-bg: #0d1117; --mm-bg-warm: #221a0a; --mm-card: #161c26; --mm-surface2: #1c2530;
   --mm-text: #e6edf3; --mm-text-sec: #9aa7b8; --mm-border: #29323f; --mm-border-dark: #3a4552;
-  --mm-blue: #f0895f; --mm-blue-bg: #3a1f14; --mm-blue-border: #5c3221;
+  --mm-blue: #f2ab3f; --mm-blue-bg: #3a2b10; --mm-blue-border: #5c4318;
   --mm-danger: #ef4444; --mm-danger-bg: #2c1517; --mm-danger-fg: #f87171; --mm-danger-border: #5c2626;
   --mm-green: #22c55e; --mm-green-bg: #0f2a1c; --mm-green-fg: #4ade80; --mm-green-border: #1c5236;
   --mm-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.35);
   --mm-shadow-md: 0 6px 18px rgba(0,0,0,0.45); --mm-shadow-lg: 0 12px 34px rgba(0,0,0,0.5);
   --mm-hairline: rgba(255,255,255,0.12); --mm-hairline-str: rgba(255,255,255,0.20);
-  --mm-focus: rgba(232,136,106,0.26); --mm-material: rgba(22,28,38,0.72);
+  --mm-focus: rgba(240,166,58,0.30); --mm-material: rgba(22,28,38,0.72);
+  --mm-hover-bg: rgba(240,166,58,0.18); --mm-hover-fg: #f3b95f;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --mm-primary: #2b211c; --mm-primary-soft: #3d2f27;
-    --mm-accent: #e8886a; --mm-accent-soft: #f0a88c; --mm-accent-bg: #33201a; --mm-accent-fg: #f0a88c;
+    --mm-primary: #1d222a; --mm-primary-soft: #2c333d;
+    --mm-accent: #f0a63a; --mm-accent-soft: #c9903f; --mm-accent-bg: #33260f; --mm-accent-fg: #f3b95f;
     --mm-bg: #0d1117; --mm-bg-warm: #221a0a; --mm-card: #161c26; --mm-surface2: #1c2530;
     --mm-text: #e6edf3; --mm-text-sec: #9aa7b8; --mm-border: #29323f; --mm-border-dark: #3a4552;
-    --mm-blue: #f0895f; --mm-blue-bg: #3a1f14; --mm-blue-border: #5c3221;
+    --mm-blue: #f2ab3f; --mm-blue-bg: #3a2b10; --mm-blue-border: #5c4318;
     --mm-danger: #ef4444; --mm-danger-bg: #2c1517; --mm-danger-fg: #f87171; --mm-danger-border: #5c2626;
     --mm-green: #22c55e; --mm-green-bg: #0f2a1c; --mm-green-fg: #4ade80; --mm-green-border: #1c5236;
     --mm-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.35);
     --mm-shadow-md: 0 6px 18px rgba(0,0,0,0.45); --mm-shadow-lg: 0 12px 34px rgba(0,0,0,0.5);
+    --mm-hairline: rgba(255,255,255,0.12); --mm-hairline-str: rgba(255,255,255,0.20);
+    --mm-focus: rgba(240,166,58,0.30); --mm-material: rgba(22,28,38,0.72);
+    --mm-hover-bg: rgba(240,166,58,0.18); --mm-hover-fg: #f3b95f;
   }
 }
 
@@ -158,7 +167,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   color: var(--mm-text); text-decoration: none; font-size: 0.85rem; font-weight: 500;
 }
 .mm-rail-link span { flex: 1; }
-.mm-rail-link:hover { background: var(--mm-bg); }
+.mm-rail-link:hover { background: var(--mm-hover-bg); color: var(--mm-hover-fg); }
 
 /* Folding groups: the rail listed all thirty destinations at once, so finding one meant
    reading the lot. Headings fold (state kept in localStorage, the group holding the
@@ -170,7 +179,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
 }
 .mm-rail-group-btn span:first-of-type { flex: 1; text-align: left; }
-.mm-rail-group-btn:hover { background: var(--mm-bg); color: var(--mm-text); }
+.mm-rail-group-btn:hover { background: var(--mm-hover-bg); color: var(--mm-hover-fg); }
 .mm-rail-group-btn-on { color: var(--mm-text); }
 .mm-rail-group-mark {
   position: absolute; left: -0.15rem; top: 20%; bottom: 20%; width: 3px;
@@ -484,7 +493,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   white-space: nowrap;
   transition: all 0.12s;
 }
-.mm-dash-mob-tab:hover { border-color: var(--mm-border-dark); }
+.mm-dash-mob-tab:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
 .mm-dash-mob-tab-active {
   background: var(--mm-primary);
   border-color: var(--mm-text);
@@ -594,7 +603,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   background: var(--mm-accent-bg);
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
-  border: 1px solid rgba(217,119,87,0.12);
+  border: 1px solid rgba(221,134,19,0.16);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -707,7 +716,7 @@ body { margin: 0; min-height: 100vh; background: var(--mm-bg); }
   min-height: 48px;
 }
 .mm-open-row:last-child { border-bottom: 0; }
-a.mm-open-row:hover { background: var(--mm-accent-bg); }
+a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-open-head {
   background: var(--mm-bg);
   font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
@@ -872,7 +881,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-ws-list-head .mm-search-wrap { flex: 1; }
 .mm-ws-table-scroll { max-height: calc(100vh - 220px); overflow: auto; }
 .mm-ws-row { cursor: pointer; }
-.mm-ws-row:hover { background: var(--mm-accent-bg); }
+.mm-ws-row:hover { background: var(--mm-hover-bg); }
 .mm-ws-row-active { background: var(--mm-accent-bg); box-shadow: inset 3px 0 0 var(--mm-accent); }
 .mm-ws-row-active td:first-child { font-weight: 700; }
 
@@ -930,10 +939,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   padding: 0.35rem 0.8rem; border: 1px solid var(--mm-border); border-radius: 99px;
   background: var(--mm-card); color: var(--mm-text-sec); font-size: 0.8rem; font-weight: 650; cursor: pointer;
 }
-.mm-chip:hover { border-color: var(--mm-border-dark); }
+.mm-chip:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
 .mm-chip-active { background: var(--mm-primary); color: #fff; border-color: var(--mm-text); }
 
-.mm-pill-pending { background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid rgba(217,119,87,0.2); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
+.mm-pill-pending { background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid rgba(221,134,19,0.28); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
 
 @media (max-width: 980px) {
   .mm-ow-grid { grid-template-columns: 1fr; }
@@ -1139,9 +1148,9 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 	border-color: rgba(100,116,139,0.25);
 }
 .mm-mode-pill-edit {
-	background: rgba(217,119,87,0.14);
+	background: rgba(221,134,19,0.18);
 	color: var(--mm-accent-fg);
-	border-color: rgba(217,119,87,0.3);
+	border-color: rgba(221,134,19,0.38);
 }
 
 /* ── Cards ─────────────────────────────────────────────── */
@@ -1208,7 +1217,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   font-family: inherit;
   transition: all 0.15s;
 }
-.mm-btn-secondary:hover { background: var(--mm-bg); border-color: var(--mm-border-dark); }
+.mm-btn-secondary:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
 
 .mm-btn-ghost {
   background: transparent;
@@ -1255,7 +1264,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-input:focus {
   outline: none;
   border-color: var(--mm-accent);
-  box-shadow: 0 0 0 3px rgba(217,119,87,0.12);
+  box-shadow: 0 0 0 3px rgba(221,134,19,0.16);
 }
 .mm-input:disabled {
   background: var(--mm-bg);
@@ -1275,7 +1284,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   transition: border-color 0.15s;
   resize: vertical;
 }
-.mm-textarea:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 3px rgba(217,119,87,0.12); }
+.mm-textarea:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 3px rgba(221,134,19,0.16); }
 
 /* ── Forms ────────────────────────────────────────────── */
 .mm-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.65rem 0.85rem; margin-bottom: 0.65rem; }
@@ -1390,7 +1399,8 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-table thead th:first-child, .mm-table tbody td:first-child { padding-left: 0.95rem; }
 .mm-table thead th:last-child, .mm-table tbody td:last-child { padding-right: 0.95rem; }
 .mm-table tbody tr:last-child td { border-bottom: 0; }
-.mm-table-hover tbody tr:hover { background: var(--mm-accent-bg); }
+.mm-table-hover tbody tr:hover { background: var(--mm-hover-bg); }
+.mm-table-hover tbody tr:hover td { color: var(--mm-text); }
 .mm-table-rows tbody tr:last-child td { border-bottom: none; }
 .mm-td-actions { white-space: nowrap; text-align: right; }
 
@@ -1426,10 +1436,10 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   font-size: 0.75rem;
   font-weight: 600;
   text-decoration: none;
-  border: 1px solid rgba(217,119,87,0.15);
+  border: 1px solid rgba(221,134,19,0.18);
   transition: all 0.15s;
 }
-.mm-link-pill:hover { background: rgba(217,119,87,0.15); }
+.mm-link-pill:hover { background: rgba(221,134,19,0.18); }
 .mm-task-reminder-chat-link { margin-top: 0.4rem; }
 
 /* ── Autocomplete ─────────────────────────────────────── */
@@ -1455,7 +1465,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 	cursor: pointer;
 	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.mm-link-add:hover { background: rgba(217,119,87,0.12); border-color: rgba(217,119,87,0.4); }
+.mm-link-add:hover { background: rgba(221,134,19,0.16); border-color: rgba(221,134,19,0.5); }
 /* Clear button on every picker — a selected value can always be blanked again, not only
    swapped for another. Three affordances can share the right edge (clear, +, caret), so
    position them per combination. */
@@ -1486,7 +1496,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-modal-close:hover { background: var(--mm-bg, var(--mm-bg)); }
 .mm-suggest { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 0.2rem 0; background: var(--mm-card); border: 1.5px solid var(--mm-border); border-radius: var(--mm-radius-sm); box-shadow: var(--mm-shadow-lg); max-height: 200px; overflow-y: auto; list-style: none; }
 .mm-suggest-item { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.8rem; }
-.mm-suggest-item:hover { background: var(--mm-accent-bg); }
+.mm-suggest-item:hover { background: var(--mm-hover-bg); }
 .mm-suggest-muted { padding: 0.4rem 0.7rem; color: var(--mm-text-sec); font-size: 0.8rem; }
 /* Group heading inside a menu — e.g. the orders that want the colour being programmed,
    above the ones that don't. Sticky so the operator can still tell which half of a long
@@ -1760,7 +1770,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
   background: var(--mm-bg); border: 1px solid var(--mm-border);
   color: var(--mm-text-sec); font-size: 0.8rem; font-weight: 700;
 }
-.mm-chat-action-btn:hover { border-color: var(--mm-border-dark); }
+.mm-chat-action-btn:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
 .mm-chat-action-btn.active { background: var(--mm-blue-bg); border-color: var(--mm-blue-border); color: var(--mm-blue); }
 
 .mm-chat-input-row { display: flex; align-items: flex-end; gap: 0.55rem; }
@@ -1824,6 +1834,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* View toggle (Worklist / List) */
 .mm-seg { display: inline-flex; background: var(--mm-bg); border: 1px solid var(--mm-border); border-radius: 99px; padding: 3px; gap: 2px; }
 .mm-seg-btn { padding: 0.4rem 0.95rem; border: 0; background: transparent; border-radius: 99px; font-size: 0.82rem; font-weight: 650; color: var(--mm-text-sec); cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem; }
+.mm-seg-btn:hover:not(.mm-seg-btn-active) { background: var(--mm-hover-bg); color: var(--mm-hover-fg); }
 .mm-seg-btn-active { background: var(--mm-card); color: var(--mm-text); box-shadow: var(--mm-shadow); }
 
 /* Status / state chips */
@@ -1864,7 +1875,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 
 /* Picker rows inside a modal */
 .mm-pick-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; padding: 0.55rem 0.6rem; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); margin-bottom: 0.4rem; cursor: pointer; }
-.mm-pick-row:hover { border-color: var(--mm-border-dark); }
+.mm-pick-row:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); }
 .mm-pick-row-active { border-color: var(--mm-text); background: var(--mm-primary-soft); }
 
 /* Machine grid (Program) */
@@ -1881,11 +1892,14 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-prog-card-meta { font-size: 0.74rem; color: var(--mm-text-sec); }
 .mm-prog-actions { display: flex; gap: 0.3rem; margin-top: 0.45rem; flex-wrap: wrap; }
 .mm-mach-add { width: 100%; border: 1.5px dashed var(--mm-border-dark); background: transparent; color: var(--mm-text-sec); border-radius: var(--mm-radius); padding: 0.7rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
-.mm-mach-add:hover { border-color: var(--mm-text); color: var(--mm-text); }
+.mm-mach-add:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent); color: var(--mm-hover-fg); }
 
 /* Small action button used inside cards */
 .mm-mini { padding: 0.28rem 0.6rem; border-radius: 99px; border: 1px solid var(--mm-border); background: var(--mm-card); font-size: 0.74rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; color: var(--mm-text-sec); }
-.mm-mini:hover { border-color: var(--mm-border-dark); }
+.mm-mini:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
+.mm-mini-ok:hover { background: var(--mm-green-bg); border-color: var(--mm-green-border); color: var(--mm-green-fg); }
+.mm-mini-warn:hover { background: var(--mm-accent-bg); border-color: var(--mm-accent-soft); color: var(--mm-accent-fg); }
+.mm-mini-danger:hover { background: var(--mm-danger-bg); border-color: var(--mm-danger-border); color: var(--mm-danger-fg); }
 .mm-mini-ok { color: var(--mm-green); border-color: var(--mm-green-bg); }
 .mm-mini-warn { color: var(--mm-accent-fg); border-color: var(--mm-accent-bg); }
 .mm-mini-danger { color: var(--mm-danger); border-color: var(--mm-danger-bg); }
@@ -1919,7 +1933,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-prog-mname { font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
 .mm-prog-cell-empty { display: grid; place-items: center; min-height: 96px; }
 .mm-prog-addcol-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--mm-border); background: var(--mm-card); color: var(--mm-text-sec); cursor: pointer; display: grid; place-items: center; }
-.mm-prog-addcol-btn:hover { border-color: var(--mm-text); color: var(--mm-text); }
+.mm-prog-addcol-btn:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent); color: var(--mm-hover-fg); }
 .mm-prog-row-closed .mm-prog-mcell { color: var(--mm-text-sec); }
 .mm-prog-row-closed td:not(.mm-prog-mcell) { background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(148,163,184,0.06) 8px, rgba(148,163,184,0.06) 16px); }
 .mm-add-row { margin-top: 1rem; }
@@ -1969,7 +1983,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 .mm-check input { width: 15px; height: 15px; accent-color: var(--mm-blue, var(--mm-blue)); }
 .mm-check-partial { margin-left: auto; padding: 0.35rem 0.6rem; border-radius: var(--mm-radius-sm); background: var(--mm-accent-bg); color: var(--mm-accent-fg); font-weight: 600; }
 .mm-row-click { cursor: pointer; }
-.mm-row-click:hover { background: var(--mm-blue-bg); }
+.mm-row-click:hover { background: var(--mm-hover-bg); }
 .mm-badge-low { display: inline-flex; align-items: center; gap: 0.2rem; margin-left: 0.4rem; padding: 0.05rem 0.35rem; border-radius: 999px; background: var(--mm-danger-bg); color: var(--mm-danger-fg); font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
 .mm-vtag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.45rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
 .mm-vtag-in { background: var(--mm-green-bg); color: var(--mm-green-fg); }
@@ -2025,7 +2039,7 @@ a.mm-open-row:hover { background: var(--mm-accent-bg); }
 /* Tables — sticky header so column labels stay while scrolling, smoother rows */
 .mm-table thead th { position: sticky; top: 0; z-index: 2; }
 .mm-table tbody tr { transition: background 0.12s ease; }
-.mm-table tbody tr:hover td { background: var(--mm-surface2); }
+.mm-table tbody tr:hover td { background: var(--mm-hover-bg); color: var(--mm-text); }
 
 /* Inputs & selects — clearer focus ring, comfortable touch height */
 .mm-input:focus, select.mm-input:focus, textarea.mm-input:focus { outline: none; border-color: var(--mm-blue); box-shadow: 0 0 0 3px var(--mm-blue-bg); }
@@ -2125,21 +2139,42 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
    short one doesn't, and the table columns jump by the scrollbar's width. */
 .mm-feeders > .mm-card > .mm-colour-list,
 .mm-feeders > .mm-card > .mm-table-scroll { scrollbar-gutter: stable; }
-/* Fixed column widths: without this the table re-fits its columns to whatever rows are
-   left, so "No of patty" slides sideways as you type in the colour filter. The shelf carries
-   three columns now — colour, patty count, and the action. */
-.mm-patty-table { table-layout: fixed; }
-.mm-patty-table th:nth-child(1), .mm-patty-table td:nth-child(1) { width: 46%; }
-.mm-patty-table th:nth-child(2), .mm-patty-table td:nth-child(2) { width: 30%; }
-.mm-patty-table th:nth-child(3), .mm-patty-table td:nth-child(3) { width: 24%; }
-.mm-patty-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* The patty shelf stands alone now (In-cutting reads on Program View), so it keeps its own
-   height rather than borrowing the feeder grid's. */
-.mm-patty-shelf { display: flex; flex-direction: column; max-height: 320px; margin-bottom: 1.4rem; }
+/* The patty shelf holds ONE height whatever is on it — 3 colours or 30, loading, empty or
+   filtered to nothing. It used to size to its rows, so every finished cutting shoved the
+   machine board down the page and the whole screen moved under the operator's cursor.
+   Colours flow into MORE COLUMNS as they arrive and the shelf scrolls inside itself. */
+.mm-patty-shelf { display: flex; flex-direction: column; height: 160px; margin-bottom: 1.4rem; }
 .mm-patty-shelf > .mm-flow-shelf-head { flex: none; }
-.mm-patty-shelf > .mm-table-scroll,
-.mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.mm-patty-shelf > .mm-patty-scroll,
+.mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* Always reserve the scrollbar gutter: otherwise the tiles re-flow by a scrollbar's width
+   the moment the list crosses two rows. */
+.mm-patty-scroll { scrollbar-gutter: stable; }
+.mm-patty-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  gap: 0.45rem; align-content: start;
+}
+/* The tile IS the action — the old third column spent a quarter of the width saying so. */
+.mm-patty-tile {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%; min-width: 0;
+  padding: 0.45rem 0.55rem 0.45rem 0.7rem; border: 1px solid var(--mm-border);
+  border-radius: var(--mm-radius-sm); background: var(--mm-card);
+  font-family: inherit; text-align: left; cursor: pointer;
+}
+.mm-patty-tile-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.85rem; font-weight: 700; color: var(--mm-text);
+}
+.mm-patty-tile-count {
+  flex: none; font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--mm-accent-fg); background: var(--mm-accent-bg);
+  border: 1px solid var(--mm-accent-soft); border-radius: 99px; padding: 0.05rem 0.5rem;
+}
+.mm-patty-tile-go { flex: none; font-size: 0.8rem; font-weight: 800; color: var(--mm-blue); opacity: 0.35; }
+.mm-patty-tile:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent); }
+.mm-patty-tile:hover .mm-patty-tile-name { color: var(--mm-hover-fg); }
+.mm-patty-tile:hover .mm-patty-tile-go { opacity: 1; }
+.mm-patty-tile:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
 .mm-patty-filter { margin-left: auto; max-width: 190px; }
 /* Which machine the shelf is answering for — a count summed over every cut answers nobody. */
 .mm-patty-scope {
@@ -2331,7 +2366,7 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-btn-primary, .mm-btn-secondary, .mm-btn-danger { font-weight: 590; letter-spacing: 0.002em; }
 .mm-btn-primary { box-shadow: 0 1px 2px rgba(15,23,42,0.16); }
 .mm-btn-secondary { border-width: 1px; border-color: var(--mm-hairline); }
-.mm-btn-secondary:hover { border-color: var(--mm-hairline-str); }
+.mm-btn-secondary:hover { border-color: var(--mm-accent-soft); }
 
 /* Keyboard focus should be obvious; a mouse press should not draw a ring. */
 .mm-btn-primary:focus-visible, .mm-btn-secondary:focus-visible,
