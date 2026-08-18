@@ -767,16 +767,17 @@ def create_program(
 
 @frappe.whitelist()
 def available_colours(branch=None, location=None):
-	"""Colour-first picker for Add-program: FINISHED PATTY, and only what is left of it.
+	"""Colour-first picker for Add-program: finished patty AND inventory rolls.
 
-	Patty only — an uncut roll is not something a machine can run, so it is not offered here.
-	It used to be, as a way of planning a program before the cut ("to cut"); that plan starts
-	from Cutting now, and `create_unfinished_program` is still here for it. A patty with no
-	patti left is not listed either: it cannot go on a machine, so it is not an option.
+	Both, on purpose. A patty can go on a machine as it is; a roll cannot, but picking one
+	plans the cut and the program together ("to cut"), which is a real way to fill a shift
+	that has not been cut for yet. The PATTY SHELF on the page behind this is the patty-only
+	view — this picker is where everything programmable is offered.
 
-	Each colour lists its underlying source rows, so the UI can show the colour up front and
-	still create from the right cutting."""
-	rows = available_rolls(branch=branch, location=location, finished_only=1)
+	A patty with no patti left is not listed either way: it cannot go on a machine, so it is
+	not an option. Each colour lists its underlying source rows, so the UI can show the colour
+	up front and still create from the right source."""
+	rows = available_rolls(branch=branch, location=location)
 	groups = {}
 	order = []
 	for r in rows:

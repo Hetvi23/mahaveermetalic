@@ -501,8 +501,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const q = search.trim().toLowerCase();
   const searched = q ? sources.filter((s) => s.colour.toLowerCase().includes(q)) : sources;
 
-  // A machine runs one cut, and everything offered here is already cut, so a patty must
-  // match the machine's cut exactly to be a job it can physically run.
+  // A machine runs one cut. Offering it a patty cut to something else is offering a job it
+  // cannot physically run, so the list narrows to what this machine can take:
+  //
+  //   a patty is already cut — it must match the machine's cut exactly;
+  //   a roll is not cut yet — it can be cut to the machine's size, so it always qualifies
+  //   (create_unfinished_program stamps the planned cutting with the machine's cut).
   //
   // A machine with no cut set filters nothing. "Show all cuts" is there because the rule
   // is strict enough to hide a patty whose cut was never recorded, and a list that can
@@ -582,7 +586,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
 
   async function submit() {
     setErr(null);
-    if (!sel || !bestRow) return setErr("Pick a finished patty to program.");
+    if (!sel || !bestRow) return setErr("Pick what to program.");
     if (Number(bestRow.weight || 0) <= 0 && bestRow.source_type === "cutting") {
       return setErr(
         `${sel.colour} has no weight recorded on its cutting, so there is nothing to ` +
@@ -644,7 +648,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
         </div>
         <div className="mm-modal-body">
           <div className="mm-prog-picklabel">
-            <span className="mm-field-label" style={{ margin: 0 }}>Pick a finished patty</span>
+            <span className="mm-field-label" style={{ margin: 0 }}>Pick what to program</span>
             {machineCut && (
               allCuts ? (
                 <button type="button" className="mm-mini" onClick={() => setAllCuts(false)}>
@@ -672,7 +676,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
             <p className="mm-empty">
               {machineCut && !allCuts && hiddenByCut > 0
                 ? `Nothing cut to ${machineCut} is available — that is the cut set on this machine.`
-                : "No finished patty available to program — finish a cutting first."}
+                : "No colours available to program."}
             </p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
