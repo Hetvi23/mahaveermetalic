@@ -1032,6 +1032,13 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-iw-vmdot { display: inline-flex; color: var(--mm-ok-fg, #15803d); }
 
 /* Lot id — assigned on post, so it reads as a stamp rather than a field. */
+/* The colour-scope switch on the Customer Order header — an action inside a column
+   label, so it carries the accent at rest rather than looking like part of the heading. */
+.mm-iw-seeall {
+  margin-left: 0.4rem; padding: 0.02rem 0.35rem; font-size: 0.6rem;
+  text-transform: none; letter-spacing: 0; font-weight: 700;
+  background: var(--mm-accent-bg); color: var(--mm-accent-fg); border-color: var(--mm-accent);
+}
 .mm-iw-lot {
   display: inline-block; padding: 0.18rem 0.45rem; border-radius: 6px;
   background: var(--mm-accent-bg); color: var(--mm-accent-fg);

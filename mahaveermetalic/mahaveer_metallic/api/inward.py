@@ -251,11 +251,35 @@ def supplier_options():
 			as_dict=True,
 		)
 	)
+
+	# Who is actually owed to us right now. Inward receives against a purchase order, so a
+	# supplier with nothing on order is not a candidate for a delivery — the picker leads
+	# with these and the screen can scope to them entirely. "Received" is the only closed
+	# state; Pending and Partially Received both still have material to come.
+	open_po = {}
+	for r in frappe.db.sql(
+		"""
+		select po.supplier as supplier, po.color as colour, count(*) as pos
+		from `tabMM Purchase Order` po
+		where po.docstatus < 2 and ifnull(po.supplier, '') != ''
+			and ifnull(po.status, 'Pending') != 'Received'
+		group by po.supplier, po.color
+		""",
+		as_dict=True,
+	):
+		e = open_po.setdefault(r.supplier, {"pos": 0, "colours": set()})
+		e["pos"] += int(r.pos or 0)
+		if r.colour:
+			e["colours"].add(r.colour)
+
 	return [
 		{
 			"vendor": v.name,
 			"vendor_name": v.vendor_name or v.name,
 			"colours": sorted(colours.get(v.name, ())),
+			"open_po": 1 if v.name in open_po else 0,
+			"open_po_count": open_po.get(v.name, {}).get("pos", 0),
+			"open_colours": sorted(open_po.get(v.name, {}).get("colours", ())),
 		}
 		for v in vendors
 	]

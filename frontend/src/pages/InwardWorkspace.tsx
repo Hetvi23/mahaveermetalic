@@ -15,7 +15,11 @@ const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fiel
 
 type ChallanItem = { roll?: string; color?: string; cut?: string; qty?: number; weight?: number };
 /** A vendor plus the colours it has supplied before — what orders the Supplier picker. */
-type SupplierOption = { vendor: string; vendor_name?: string; colours?: string[] };
+type SupplierOption = {
+  vendor: string; vendor_name?: string; colours?: string[];
+  /** Whether anything is still on order from this supplier, and for which colours. */
+  open_po?: number; open_po_count?: number; open_colours?: string[];
+};
 type MatchOrder = {
   sales_order: string;
   party?: string;
@@ -141,6 +145,12 @@ export default function InwardWorkspace() {
     "mm-inward-so-options",
   );
   const soOptions = useMemo(() => soData?.message ?? [], [soData]);
+  // Orders are scoped to the row's colour; this lifts that scope when the data disagrees
+  // with reality. One switch for the grid, not one per row — it answers "the picker is
+  // hiding my order", which is about the grid, not about a line.
+  const [seeAllOrders, setSeeAllOrders] = useState(false);
+  // Same escape hatch for suppliers, scoped by open purchase orders rather than colour.
+  const [seeAllSuppliers, setSeeAllSuppliers] = useState(false);
   const soByName = useMemo(() => new Map(soOptions.map((o) => [o.sales_order, o])), [soOptions]);
 
   // Suppliers, each carrying the colours it has supplied before, so the row's colour can
@@ -153,6 +163,26 @@ export default function InwardWorkspace() {
   const supplierOptions = useMemo(() => supData?.message ?? [], [supData]);
 
   /**
+   * Suppliers worth offering: the ones something is still on order from.
+   *
+   * Inward receives against a purchase order, so a supplier with nothing outstanding is
+   * not a candidate for today's delivery — the full vendor list buries the handful that
+   * are. Scoped here rather than server-side so "See all" costs no round trip.
+   *
+   * If nothing at all is on order the full list stands: an empty picker would block the
+   * screen, and a delivery arriving without a PO behind it is unusual, not impossible.
+   */
+  const suppliersInScope = useMemo(() => {
+    if (seeAllSuppliers) return supplierOptions;
+    const open = supplierOptions.filter((v) => v.open_po);
+    return open.length ? open : supplierOptions;
+  }, [supplierOptions, seeAllSuppliers]);
+  const openSupplierCount = useMemo(
+    () => supplierOptions.filter((v) => v.open_po).length,
+    [supplierOptions],
+  );
+
+  /**
    * Options for one row's picker, colour first.
    *
    * The colour is keyed before the supplier and the order now, so both lists lead with
@@ -161,6 +191,35 @@ export default function InwardWorkspace() {
    * never sent it, or against an order the picker doesn't associate with it, is ordinary
    * and has to stay one click away.
    */
+  /**
+   * Options for a colour-scoped picker: only what matches the row's colour, unless the
+   * operator has asked to see everything.
+   *
+   * Grouping the matches to the top still listed every other order, and the one being
+   * looked for was rarely the first — on a row whose colour is already known, an order
+   * that does not carry that colour is not a candidate. `seeAll` is the escape hatch for
+   * the case the data is wrong or the order simply has not been amended yet, and a colour
+   * with no matching order at all falls back to the full list rather than an empty one.
+   */
+  function colourOnly<T>(
+    all: T[],
+    colour: string,
+    matches: (o: T, colour: string) => boolean,
+    toOption: (o: T, group?: string) => { value: string; label: string; meta?: string; group?: string },
+    labels: { hit: string; rest: string },
+    seeAll: boolean,
+  ) {
+    const c = colour.trim().toLowerCase();
+    if (!c) return all.map((o) => toOption(o));
+    const hit = all.filter((o) => matches(o, c));
+    if (hit.length === 0) return all.map((o) => toOption(o));
+    if (!seeAll) return hit.map((o) => toOption(o));
+    return [
+      ...hit.map((o) => toOption(o, labels.hit)),
+      ...all.filter((o) => !matches(o, c)).map((o) => toOption(o, labels.rest)),
+    ];
+  }
+
   function colourFirst<T>(
     all: T[],
     colour: string,
@@ -626,8 +685,26 @@ export default function InwardWorkspace() {
                 {/* Colour is keyed before supplier and order because it is what narrows
                     both of them — the two pickers to its right lead with what matches it. */}
                 <th className="mm-iw-c-color">Color *</th>
-                <th className="mm-iw-c-supplier">Supplier</th>
-                <th className="mm-iw-c-order">Customer Order</th>
+                <th className="mm-iw-c-supplier">
+                  Supplier
+                  <button type="button" className="mm-mini mm-iw-seeall"
+                    title={seeAllSuppliers
+                      ? `Showing every supplier — go back to the ${openSupplierCount} with an open purchase order`
+                      : `Only the ${openSupplierCount} supplier${openSupplierCount === 1 ? "" : "s"} with an open purchase order are listed — show every supplier`}
+                    onClick={() => setSeeAllSuppliers((v) => !v)}>
+                    {seeAllSuppliers ? "open POs" : "See all"}
+                  </button>
+                </th>
+                <th className="mm-iw-c-order">
+                  Customer Order
+                  <button type="button" className="mm-mini mm-iw-seeall"
+                    title={seeAllOrders
+                      ? "Showing every open order — go back to only those ordering the row's colour"
+                      : "Only orders for the row's colour are listed — show every open order"}
+                    onClick={() => setSeeAllOrders((v) => !v)}>
+                    {seeAllOrders ? "colour only" : "See all"}
+                  </button>
+                </th>
                 <th className="mm-iw-c-lot">Lot No</th>
                 <th className="mm-iw-c-roll">Roll</th>
                 <th className="mm-iw-c-qty">Qty | Weight (Kg) *</th>
@@ -703,16 +780,19 @@ export default function InwardWorkspace() {
                         createDoctype="MM Vendor Master"
                         emptyText="No vendors yet"
                         options={colourFirst(
-                          supplierOptions,
+                          suppliersInScope,
                           r.color,
                           (v, c) => (v.colours || []).some((x) => x.toLowerCase() === c),
                           (v, group) => ({
                             value: v.vendor,
                             label: v.vendor_name || v.vendor,
-                            meta: (v.colours || []).slice(0, 3).join(", ") || undefined,
+                            meta: [
+                              v.open_po ? `${v.open_po_count} open PO` : null,
+                              (v.colours || []).slice(0, 3).join(", ") || null,
+                            ].filter(Boolean).join(" · ") || undefined,
                             group,
                           }),
-                          { hit: `Supplied ${r.color}`, rest: "All suppliers" },
+                          { hit: `Supplied ${r.color}`, rest: "Other suppliers" },
                         )}
                         onChange={(v) => setRow(i, { supplier: v })}
                       />
@@ -723,7 +803,7 @@ export default function InwardWorkspace() {
                         value={r.customer_order}
                         placeholder="Select Order"
                         emptyText="No open orders"
-                        options={colourFirst(
+                        options={colourOnly(
                           soOptions,
                           r.color,
                           (o, c) => (o.colours || []).some((x) => x.toLowerCase() === c),
@@ -733,7 +813,8 @@ export default function InwardWorkspace() {
                             meta: [o.party_name || o.party, (o.colours || []).join(", ")].filter(Boolean).join(" · "),
                             group,
                           }),
-                          { hit: `Ordering ${r.color}`, rest: "All open orders" },
+                          { hit: `Ordering ${r.color}`, rest: "Other open orders" },
+                          seeAllOrders,
                         )}
                         onChange={(v) => pickOrder(i, v)}
                       />
