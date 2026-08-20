@@ -1882,30 +1882,61 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
    underneath it. It starts where the CONTENT starts instead, past the rail, reading the
    same custom property the rail's own width comes from so the two cannot drift.
 
-   Side by side only when there is genuinely room for both. Below that the voucher gets
-   the screen and the box form overlays it from the right, as it did before — an overlap
-   you can close beats a form half of which is behind the navigation. */
+   Side by side without waiting for a screen wide enough to hold both panels at full
+   size: the voucher gives up its left edge — it narrows by exactly the width of the box
+   form and stays hard against the right edge — so packing a box never hides the figures
+   being copied into it. Below the breakpoint the voucher keeps the screen and the box
+   form overlays it from the right, as it did before: an overlap you can close beats a
+   form half of which is behind the navigation. */
+:root { --mm-box-panel-w: clamp(360px, 24vw, 500px); }
 .mm-modal-scrim.mm-scrim-left { padding: 0; place-items: stretch end; }
-@media (min-width: 1840px) {
-  .mm-modal-scrim.mm-scrim-left { place-items: stretch start; padding-left: var(--mm-rail-w, 0px); }
-  /* Never wider than the gap the voucher sheet leaves — the sheet is 1240px on the right. */
-  .mm-modal.mm-sheet.mm-sheet-narrow {
-    width: clamp(360px, calc(100vw - var(--mm-rail-w, 0px) - 1240px), 560px);
+@media (min-width: 1500px) {
+  .mm-modal-scrim.mm-scrim-left {
+    place-items: stretch start; padding-left: var(--mm-rail-w, 0px);
+    /* Undimmed and click-through: the voucher behind stays readable AND editable, which
+       is the whole point of docking rather than stacking. */
+    background: transparent; pointer-events: none;
+  }
+  .mm-modal-scrim.mm-scrim-left > * { pointer-events: auto; }
+  .mm-scrim-left .mm-modal.mm-sheet.mm-sheet-narrow { width: var(--mm-box-panel-w); }
+  /* The voucher steps aside for the box form instead of hiding under it. */
+  .mm-modal.mm-sheet.mm-sheet-shifted {
+    width: min(1240px, calc(100vw - var(--mm-rail-w, 0px) - var(--mm-box-panel-w)));
   }
 }
-/* The voucher is two columns — details, boxes — so nothing scrolls out of sight. */
+.mm-modal.mm-sheet.mm-sheet-shifted { transition: width var(--mm-dur) var(--mm-ease); }
+@media (prefers-reduced-motion: reduce) { .mm-modal.mm-sheet.mm-sheet-shifted { transition: none; } }
+
+/* The voucher is two columns — details, boxes — so nothing scrolls out of sight.
+   The compound selector is deliberate: `.mm-sheet .mm-modal-body` below sets
+   display:flex and out-ranks a lone `.mm-pv-split`, which silently stacked the two
+   columns into one narrow strip and left half the sheet empty. */
+.mm-sheet .mm-modal-body.mm-pv-split,
 .mm-pv-split {
-  display: grid; grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
-  gap: 1.1rem; align-items: start; min-height: 0;
+  display: grid;
+  /* Weighted toward the boxes: the header fields are read once, the box table is
+     worked in all night — and twelve columns need the width more than a date field. */
+  grid-template-columns: minmax(300px, 0.82fr) minmax(460px, 1.18fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-rows: auto;
+  gap: 0.7rem 1.4rem; align-items: stretch; min-height: 0; overflow: hidden;
 }
-.mm-pv-col-details { min-width: 0; }
+/* Each column scrolls on its own, so a long box list never pushes the header fields off
+   the top and the voucher never reads as one tall page. */
+.mm-pv-col-details { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 0.4rem; }
 .mm-pv-col-boxes { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.mm-pv-col-boxes.mm-pv-boxes { margin-top: 0; }
+/* Full-width rows beneath both columns — the PIN and the error belong to the voucher,
+   not to either side of it. */
+.mm-pv-span { grid-column: 1 / -1; }
 /* Two columns halves the width each field gets, so the header grid drops to two up. */
 .mm-pv-split .mm-pv-grid { grid-template-columns: repeat(2, 1fr); }
 .mm-pv-boxcolour { display: flex; align-items: baseline; gap: 0.4rem; margin-right: auto; }
 .mm-bx-returns { display: flex; gap: 1rem; align-items: center; }
 @media (max-width: 1100px) {
-  .mm-pv-split { grid-template-columns: 1fr; }
+  .mm-sheet .mm-modal-body.mm-pv-split,
+  .mm-pv-split { grid-template-columns: 1fr; grid-template-rows: none; overflow: auto; }
+  .mm-pv-col-details { overflow: visible; padding-right: 0; }
   .mm-modal-scrim.mm-scrim-left { place-items: stretch end; }
 }
 .mm-sheet .mm-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; }
@@ -2359,8 +2390,13 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* The box table carries 11 columns inside a drawer, so it must scroll rather than wrap
    every cell into an unreadable stack. */
 .mm-pv-boxtable { overflow-x: auto; }
-.mm-pv-boxtable table { min-width: 620px; }
+.mm-pv-boxtable table { min-width: 600px; }
 .mm-pv-boxtable th, .mm-pv-boxtable td { white-space: nowrap; }
+/* Twelve columns inside a side panel: the box table buys its width back from padding
+   rather than from a horizontal scrollbar, so a packer reads Net Wt without dragging. */
+.mm-pv-boxtable th, .mm-pv-boxtable td { padding: 0.4rem 0.32rem; }
+.mm-pv-boxtable thead th:first-child, .mm-pv-boxtable tbody td:first-child { padding-left: 0.6rem; }
+.mm-pv-boxtable thead th:last-child, .mm-pv-boxtable tbody td:last-child { padding-right: 0.6rem; }
 .mm-pv-rowacts { display: flex; gap: 0.3rem; justify-content: flex-end; align-items: center; }
 
 /* The picker sheets' search box stretched to fill the whole header (flex: 1 1 260px). It

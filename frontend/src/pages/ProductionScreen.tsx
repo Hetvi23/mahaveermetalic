@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { Factory, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
+import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
@@ -369,8 +369,14 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   }
 
   return (
-    <div className="mm-modal-scrim mm-scrim-right" onClick={onClose}>
-      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
+    /* The box form renders INSIDE this scrim, so a click meant to dismiss it used to
+       bubble up here and close the whole voucher — losing every box already weighed.
+       While a box is open the backdrop is inert; the voucher closes from its own X. */
+    <div className="mm-modal-scrim mm-scrim-right" onClick={() => { if (!adding) onClose(); }}>
+      {/* While the box form is docked alongside, the voucher narrows to make room for
+          it rather than sitting underneath it — the figures being copied into the box
+          stay on screen. */}
+      <div className={`mm-modal mm-sheet${adding ? " mm-sheet-shifted" : ""}`} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -564,7 +570,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                             onClick={() => printBoxStickers([stickerFor(b, i)])}>
                             <Printer size={13} />
                           </button>
-                          <button className="mm-mini" onClick={() => { setEditing(i); setAdding(true); }} aria-label="Edit box">Edit</button>
+                          <button className="mm-mini" onClick={() => { setEditing(i); setAdding(true); }} title="Edit this box" aria-label={`Edit box ${i + 1}`}><Pencil size={13} /></button>
                           <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
                         </td>
                       </tr>
@@ -576,13 +582,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           </div>
 
           {overTol && (
-            <label className="mm-field" style={{ marginTop: "0.8rem" }}>
+            <label className="mm-field mm-pv-span">
               <span className="mm-field-label"><ShieldAlert size={13} style={{ verticalAlign: "middle" }} /> Admin Override PIN (variance over tolerance)</span>
               <input className="mm-input" type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Required to accept this variance" />
             </label>
           )}
 
-          {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+          {err && <p className="mm-error mm-pv-span">{err}</p>}
         </div>
         <div className="mm-modal-foot mm-foot-split">
           {boxes.length > 0 && (
