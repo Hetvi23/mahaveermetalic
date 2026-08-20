@@ -1,6 +1,8 @@
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { getMasterByDoctype } from "@/config/registry";
 import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import QuickCreateMaster from "./QuickCreateMaster";
 
 export type SelectOption = {
 	value: string;
@@ -27,6 +29,10 @@ type Props = {
 	 *  a failed search when the list was empty to begin with. */
 	emptyText?: string;
 	className?: string;
+	/** Offer an inline "+ New <master>" for this doctype, the way LinkField does. Needed
+	 *  where a fixed option list replaced a link field but creating the master in place
+	 *  must not be lost. */
+	createDoctype?: string;
 };
 
 /**
@@ -49,11 +55,14 @@ export default function SearchSelect({
 	noClear,
 	emptyText,
 	className,
+	createDoctype,
 }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
 	const [dirty, setDirty] = useState(false);
+	const [quickCreate, setQuickCreate] = useState(false);
 	const wrap = useRef<HTMLDivElement>(null);
+	const master = createDoctype ? getMasterByDoctype(createDoctype) : undefined;
 
 	useEffect(() => {
 		function onDoc(e: MouseEvent) {
@@ -86,9 +95,11 @@ export default function SearchSelect({
 		setOpen(false);
 	}
 
-	return (
+	const body = (
 		<div
-			className={`mm-link-wrap${value && !disabled && !noClear ? " mm-link-wrap-clearable" : ""}${className ? ` ${className}` : ""}`}
+			className={`mm-link-wrap${value && !disabled && !noClear ? " mm-link-wrap-clearable" : ""}${
+				master && !disabled ? " mm-link-wrap-addable" : ""
+			}${className ? ` ${className}` : ""}`}
 			ref={wrap}
 		>
 			<input
@@ -117,6 +128,13 @@ export default function SearchSelect({
 				</button>
 			)}
 			<ChevronDown size={15} className="mm-link-caret" aria-hidden />
+			{master && !disabled && (
+				<button type="button" className="mm-link-add"
+					title={`Create new ${master.title}`} aria-label={`Create new ${master.title}`}
+					onClick={() => setQuickCreate(true)}>
+					<Plus size={15} />
+				</button>
+			)}
 			<AnchoredMenu anchor={wrap} open={open} className={options.some((o) => o.meta) ? "mm-suggest-rich" : undefined}>
 				<>
 					{!noClear && (
@@ -147,5 +165,19 @@ export default function SearchSelect({
 				</>
 			</AnchoredMenu>
 		</div>
+	);
+
+	return (
+		<>
+			{body}
+			{quickCreate && master && (
+				<QuickCreateMaster
+					meta={master}
+					seed={dirty ? text.trim() : ""}
+					onClose={() => setQuickCreate(false)}
+					onCreated={(name) => { pick(name); setQuickCreate(false); }}
+				/>
+			)}
+		</>
 	);
 }

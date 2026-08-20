@@ -21,10 +21,10 @@ function stickerHtml(b: StickerBox): string {
   const bars = b.barcode ? code128Svg(b.barcode, { height: 44, module: 1.6, quiet: 6 }) : "";
   return `
   <div class="sticker">
-    <div class="hdr">
-      <div class="brand">MAHAVIR METALIC</div>
-      <div class="size">Size: ${b.size ?? ""}</div>
-    </div>
+    <table class="hdr"><tr>
+      <td class="brand">MAHAVIR METALIC</td>
+      <td class="size">Size: ${b.size ?? ""}</td>
+    </tr></table>
     <div class="item">${b.item ?? ""}</div>
     <table class="wt">
       <tr><td class="k">Grs Wt.</td><td class="c">:</td><td class="v">${kg(b.gross)}</td><td class="x"></td></tr>
@@ -35,7 +35,7 @@ function stickerHtml(b: StickerBox): string {
       <tr><td class="k">Operator</td><td class="c">:</td><td class="v">${b.operator ?? ""}</td><td class="x"></td></tr>
     </table>
     <div class="bars">${bars}</div>
-    <div class="foot"><span>${b.barcode ?? ""}</span><span>${b.date ?? ""}</span></div>
+    <table class="foot"><tr><td>${b.barcode ?? ""}</td><td class="rt">${b.date ?? ""}</td></tr></table>
   </div>`;
 }
 
@@ -55,9 +55,10 @@ export function printBoxStickers(boxes: StickerBox[]) {
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #000; }
     .sticker { width: 100mm; height: 75mm; padding: 4mm 5mm; page-break-after: always; display: flex; flex-direction: column; }
-    .hdr { display: flex; align-items: baseline; justify-content: space-between; }
-    .brand { font-weight: 700; font-size: 13pt; text-decoration: underline; }
-    .size { font-size: 10pt; font-weight: 600; }
+    .hdr { width: 100%; border-collapse: collapse; }
+    .hdr td { vertical-align: baseline; }
+    .brand { font-weight: 700; font-size: 13pt; text-decoration: underline; white-space: nowrap; }
+    .size { font-size: 10pt; font-weight: 600; text-align: right; white-space: nowrap; }
     .item { font-size: 10pt; font-weight: 600; margin-top: 1mm; }
     table.wt { width: 100%; margin-top: 1mm; font-size: 10pt; border-collapse: collapse; }
     table.wt td { padding: 0.4mm 0; vertical-align: top; }
@@ -65,7 +66,8 @@ export function printBoxStickers(boxes: StickerBox[]) {
     td.x { font-size: 10pt; }
     .bars { margin-top: auto; text-align: center; }
     .bars svg { max-width: 100%; height: 12mm; }
-    .foot { display: flex; justify-content: space-between; font-size: 8pt; margin-top: 0.5mm; }
+    .foot { width: 100%; border-collapse: collapse; font-size: 8pt; margin-top: 0.5mm; }
+    .foot .rt { text-align: right; white-space: nowrap; }
     @media print { .sticker:last-child { page-break-after: auto; } }
   </style></head><body>${boxes.map(stickerHtml).join("")}</body></html>`);
   w.document.close();

@@ -14,7 +14,9 @@
   "bobbin_pcs_weight",
   "total_bobbin_weight",
   "box_weight",
-  "net_weight"
+  "net_weight",
+  "box_return",
+  "bobbin_return"
  ],
  "fields": [
   {
@@ -93,12 +95,24 @@
    "in_list_view": 1,
    "unique": 1,
    "description": "Per-box barcode printed on the sticker and used by Scan Box."
+  },
+  {
+   "fieldname": "box_return",
+   "fieldtype": "Check",
+   "label": "R.Box",
+   "description": "This box's packaging comes back."
+  },
+  {
+   "fieldname": "bobbin_return",
+   "fieldtype": "Check",
+   "label": "R.Bobbin",
+   "description": "This box's bobbins come back."
   }
  ],
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-08-02 19:00:00.000000",
+ "modified": "2026-08-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Production Box",

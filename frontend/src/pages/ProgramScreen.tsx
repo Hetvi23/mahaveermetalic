@@ -487,6 +487,9 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   const [remark, setRemark] = useState("");
   const [jobWork, setJobWork] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Raised when a roll is programmed while patty of the same colour and cut is already
+  // sitting free — answered before anything is created.
+  const [askPatty, setAskPatty] = useState(false);
 
   // One row per FORM of a colour, not one per colour: the 1,200 kg LGDT BSM roll and the
   // LGDT BSM already cut to 50/1.5 are two different things to program, and which one is
@@ -548,12 +551,43 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   );
   const shown = searched.filter(fitsMachine);
   const hiddenByCut = searched.length - shown.length;
+  // The list starts EMPTY and appears on search. Every colour on the floor is a long
+  // scroll to land on one known name in, and this dialog is opened knowing that name.
+  // Nothing about the filtering changes — searching still runs through the same machine-cut
+  // rule, so what a search returns is exactly what the list would have shown.
+  const browsing = q !== "";
+  const available = sources.filter(fitsMachine).length;
+
+  /**
+   * Patty of the picked colour, already cut to the cut this program will run.
+   *
+   * A roll is programmed as "to cut": it goes to the Cutting board and is cut to the
+   * machine's cut. If patty of that colour is ALREADY cut to that size and free, cutting
+   * a fresh roll makes a second pile of the same thing and leaves the first on the shelf.
+   * That is a real decision — sometimes the roll is wanted anyway — so it is asked, not
+   * blocked. Searched across the whole source list, not just what the search box is
+   * showing, or hiding the patty behind a search term would hide the question with it.
+   */
+  const pattyOnShelf = useMemo(() => {
+    if (!sel || sel.kind !== "inventory") return null;
+    const same = sources.filter(
+      (s) => s.kind === "cutting" && s.colour === sel.colour && s.batches > 0 && (!machineCut || s.cut === machineCut),
+    );
+    if (same.length === 0) return null;
+    return {
+      source: same[0],
+      batches: same.reduce((n, x) => n + x.batches, 0),
+      cut: same[0].cut,
+    };
+  }, [sel, sources, machineCut]);
 
   // Changing the machine can invalidate what is already picked — drop it rather than let
   // a 50/85 patty be submitted to a machine running 50/1.5.
   useEffect(() => {
     if (sel && !fitsMachine(sel)) setSel(null);
   }, [sel, fitsMachine]);
+  // A question about THIS pick dies with it — re-picking has to ask again.
+  useEffect(() => { setAskPatty(false); }, [sel, machine]);
   const orderCtx = sel?.rows[0]?.customer_order || "";
   const [order, setOrder] = useState("");
 
@@ -613,8 +647,9 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
 
   const date = shift === "Night" ? nightDate : dayDate;
 
-  async function submit() {
+  async function submit(confirmedOverPatty = false) {
     setErr(null);
+    setAskPatty(false);
     if (!sel || !bestRow) return setErr("Pick what to program.");
     if (Number(bestRow.weight || 0) <= 0 && bestRow.source_type === "cutting") {
       return setErr(
@@ -627,6 +662,10 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     if (sel.kind === "cutting" && batches > sel.batches) {
       return setErr(`Only ${sel.batches} patty of ${sel.colour} ${sel.cut ? `at cut ${sel.cut} ` : ""}are still available.`);
     }
+    // Last thing before creating anything: cutting a roll when the same patty is already
+    // on the shelf is worth one question. Everything else has already validated, so
+    // answering it goes straight through rather than re-running the gauntlet.
+    if (pattyOnShelf && !confirmedOverPatty) return setAskPatty(true);
     try {
       if (bestRow.source_type === "cutting" && bestRow.cutting) {
         // A finished patty → program it directly. No explicit weight: the server derives it
@@ -701,11 +740,31 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
           </div>
           {coloursCall.isLoading ? (
             <p className="mm-muted">Loading…</p>
+          ) : !browsing ? (
+            // Nothing until something is typed. What is already picked still shows, so
+            // clearing the box never leaves the choice invisible.
+            <div className="mm-prog-pickidle">
+              {sel ? (
+                <div className="mm-pick-row mm-pick-row-active" onClick={() => setSearch(sel.colour)}>
+                  <span className="mm-colour-name">{sel.colour}</span>
+                  <span className="mm-prog-card-meta">{formLabel(sel)}</span>
+                </div>
+              ) : null}
+              <p className="mm-muted" style={{ margin: sel ? "0.5rem 0 0" : 0 }}>
+                {available === 0
+                  ? machineCut && !allCuts && hiddenByCut > 0
+                    ? `Nothing cut to ${machineCut} is available — that is the cut set on this machine.`
+                    : "No colours available to program."
+                  : `Search a colour to pick it — ${available} available${
+                      machineCut && !allCuts ? ` for cut ${machineCut}` : ""
+                    }.`}
+              </p>
+            </div>
           ) : shown.length === 0 ? (
             <p className="mm-empty">
               {machineCut && !allCuts && hiddenByCut > 0
-                ? `Nothing cut to ${machineCut} is available — that is the cut set on this machine.`
-                : "No colours available to program."}
+                ? `Nothing matching “${search.trim()}” is cut to ${machineCut} — that is the cut set on this machine.`
+                : `No colour matches “${search.trim()}”.`}
             </p>
           ) : (
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
@@ -779,6 +838,35 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
                   ? ` — already cut, so only orders wanting ${sel.colour} at ${sel.cut}`
                   : ""}
             </p>
+          )}
+          {/* Standing note the moment a roll is picked over available patty — the question
+              on Add program is then a confirmation, not a surprise. */}
+          {sel?.kind === "inventory" && pattyOnShelf && !askPatty && (
+            <p className="mm-prog-pattynote">
+              {pattyOnShelf.batches} patty of {sel.colour}
+              {pattyOnShelf.cut ? ` at cut ${pattyOnShelf.cut}` : ""} is already cut and free.
+            </p>
+          )}
+          {askPatty && sel && pattyOnShelf && (
+            <div className="mm-banner mm-banner-warn mm-prog-pattyask">
+              <span>
+                <strong>{pattyOnShelf.batches} patty</strong> of {sel.colour}
+                {pattyOnShelf.cut ? ` at cut ${pattyOnShelf.cut}` : ""} is already cut and free.
+                Programming this roll cuts more and leaves that patty on the shelf. Proceed?
+              </span>
+              <span className="mm-prog-pattyask-acts">
+                <button type="button" className="mm-mini mm-mini-ok"
+                  title="Program the patty that is already cut instead of cutting this roll"
+                  onClick={() => { setSel(pattyOnShelf.source); setOrder(""); setAskPatty(false); }}>
+                  Use the patty
+                </button>
+                <button type="button" className="mm-mini" disabled={creating || creatingU}
+                  onClick={() => void submit(true)}>
+                  Program the roll anyway
+                </button>
+                <button type="button" className="mm-mini" onClick={() => setAskPatty(false)}>Cancel</button>
+              </span>
+            </div>
           )}
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>

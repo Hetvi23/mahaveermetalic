@@ -1,0 +1,59 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:cut",
+  "creation": "2026-08-19 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": ["cut", "no_of_patty", "weight_per_patty", "notes"],
+  "fields": [
+    {
+      "fieldname": "cut",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Cut",
+      "reqd": 1,
+      "unique": 1,
+      "description": "The cut / size this configuration is for, e.g. 50/85."
+    },
+    {
+      "fieldname": "no_of_patty",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "No of Patty",
+      "description": "How many patty this cut normally yields. Fetched into cutting as the starting figure and still editable there."
+    },
+    {
+      "fieldname": "weight_per_patty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Weight per Patty (Kg)",
+      "description": "Optional. When No of Patty is blank, the count is worked out from the roll weight and this rate instead."
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-08-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Mahaveer Metallic",
+  "name": "MM Cut Patty Config",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
+    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Operations", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
+    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "cut"
+}

@@ -463,10 +463,25 @@ def challan_for_print(challan):
 	party = frappe.db.get_value(
 		"MM Party Master", doc.party, ["party_name", "address", "mobile_number"], as_dict=True
 	) or {}
+	# Company address and terms are CONFIGURED, never hardcoded: printing an address the
+	# shop never gave us would put a wrong one on every delivery. Blank simply omits it.
+	settings = frappe.db.get_value(
+		"MM Settings", "MM Settings", ["company_address", "challan_terms"], as_dict=True
+	) or {}
 	return {
 		"name": doc.name,
 		"challan_type": doc.challan_type or "Sales",
 		"challan_no": doc.challan_no or doc.name,
+		"company_address": settings.get("company_address") or None,
+		"challan_terms": settings.get("challan_terms") or None,
+		# The reference challan foots with what comes BACK, counted off the rows.
+		"return_box": sum(1 for it in doc.items if frappe.utils.cint(it.get("r_box"))),
+		"return_bobbin": sum(
+			frappe.utils.flt(it.get("bobbin_pcs") or 0)
+			for it in doc.items
+			if frappe.utils.cint(it.get("r_bobbin"))
+		),
+		"total_bobbin": sum(frappe.utils.flt(it.get("bobbin_pcs") or 0) for it in doc.items),
 		"transaction_date": str(doc.transaction_date or ""),
 		"party": doc.party,
 		"party_name": party.get("party_name") or doc.party,
@@ -493,6 +508,8 @@ def challan_for_print(challan):
 				"box_weight": it.box_weight,
 				"net_weight": it.net_weight,
 				"weight": it.weight,
+				"r_box": it.r_box,
+				"r_bobbin": it.r_bobbin,
 			}
 			for it in doc.items
 		],
@@ -629,3 +646,232 @@ def orders_for_challan(party=None):
 		as_dict=True,
 	)
 	return rows
+
+
+# ── Sales Challan Voucher report ──────────────────────────────────────────────────
+# The voucher screen ISSUES a challan; this reads back every one issued and lets a
+# weighing mistake be corrected on it. Re-issuing is not an option — the number is
+# already with the customer — so the correction happens in place, under the same rules.
+
+
+def _order_cover(sales_order, exclude_challan=None):
+	"""What an order has been inwarded, and what has already left against it.
+
+	`exclude_challan` drops one challan from the dispatched figure, so a challan being
+	edited is measured against everything EXCEPT itself — otherwise its own old weight
+	counts against its new one and any increase looks like an over-dispatch.
+	"""
+	if not sales_order:
+		return None
+	so = frappe.db.get_value(
+		"MM Sales Order", sales_order, ["name", "inwarded_weight", "ordered_weight"], as_dict=True
+	)
+	if not so:
+		return None
+	dispatched = float(
+		frappe.db.sql(
+			"""select coalesce(sum(ci.weight), 0)
+			from `tabMM Sales Challan Item` ci join `tabMM Sales Challan` c on c.name = ci.parent
+			where c.docstatus = 1 and c.name != %(me)s
+				and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %(so)s""",
+			{"so": sales_order, "me": exclude_challan or ""},
+		)[0][0]
+		or 0
+	)
+	inwarded = float(so.inwarded_weight or 0)
+	return {
+		"sales_order": so.name,
+		"ordered_weight": round(float(so.ordered_weight or 0), 3),
+		"inwarded_weight": round(inwarded, 3),
+		"dispatched_weight": round(dispatched, 3),
+		"balance_weight": round(inwarded - dispatched, 3),
+	}
+
+
+@frappe.whitelist()
+def challan_report(from_date=None, to_date=None, party=None, challan_type=None, sales_order=None, limit=300):
+	"""Every challan issued, newest first, with its order's dispatch balance beside it."""
+	conds = ["c.docstatus < 2"]
+	vals = {}
+	if from_date:
+		conds.append("c.transaction_date >= %(fd)s")
+		vals["fd"] = from_date
+	if to_date:
+		conds.append("c.transaction_date <= %(td)s")
+		vals["td"] = to_date
+	if party:
+		conds.append("c.party = %(party)s")
+		vals["party"] = party
+	if challan_type:
+		conds.append("c.challan_type = %(ct)s")
+		vals["ct"] = challan_type
+	if sales_order:
+		conds.append("c.sales_order = %(so)s")
+		vals["so"] = sales_order
+
+	rows = frappe.db.sql(
+		f"""
+		select c.name, c.challan_type, c.challan_no, c.transaction_date, c.party,
+			c.sales_order, c.total_box, c.total_weight, c.docstatus, c.job_work_flag,
+			-- `lines` is reserved in MariaDB; naming it that failed the whole query.
+			(select count(*) from `tabMM Sales Challan Item` ci where ci.parent = c.name) as line_count
+		from `tabMM Sales Challan` c
+		where {" and ".join(conds)}
+		order by c.transaction_date desc, c.creation desc
+		limit {int(limit or 300)}
+		""",
+		vals,
+		as_dict=True,
+	)
+	names = {r.party for r in rows if r.party}
+	party_names = {}
+	if names:
+		for p in frappe.get_all(
+			"MM Party Master", filters={"name": ["in", list(names)]}, fields=["name", "party_name"]
+		):
+			party_names[p.name] = p.party_name or p.name
+	# One cover lookup per ORDER, not per row — a party's twenty challans share one order.
+	covers = {}
+	for r in rows:
+		r["party_name"] = party_names.get(r.party, r.party)
+		if r.sales_order and r.sales_order not in covers:
+			covers[r.sales_order] = _order_cover(r.sales_order)
+		r["cover"] = covers.get(r.sales_order)
+	return rows
+
+
+@frappe.whitelist()
+def challan_lines(challan):
+	"""The editable rows of one challan, plus the order cover its weights must fit."""
+	doc = frappe.get_doc("MM Sales Challan", challan)
+	return {
+		"challan": doc.name,
+		"challan_no": doc.challan_no or doc.name,
+		"challan_type": doc.challan_type,
+		"transaction_date": str(doc.transaction_date or ""),
+		"party": doc.party,
+		"sales_order": doc.sales_order,
+		"docstatus": doc.docstatus,
+		"total_box": doc.total_box,
+		"total_weight": doc.total_weight,
+		# Measured WITHOUT this challan, so its own rows don't count against themselves.
+		"cover": _order_cover(doc.sales_order, exclude_challan=doc.name),
+		"items": [
+			{
+				"name": it.name,
+				"idx": it.idx,
+				"barcode": it.barcode,
+				"color_name": it.color_name,
+				"cut": it.cut,
+				"qty_box": it.qty_box,
+				"gross_weight": it.gross_weight,
+				"bobbin": it.bobbin,
+				"bobbin_pcs": it.bobbin_pcs,
+				"bobbin_pcs_weight": it.bobbin_pcs_weight,
+				"total_bobbin_weight": it.total_bobbin_weight,
+				"box_weight": it.box_weight,
+				"net_weight": it.net_weight,
+				"weight": it.weight,
+				"r_box": it.r_box,
+				"r_bobbin": it.r_bobbin,
+				"sales_order": it.sales_order,
+			}
+			for it in doc.items
+		],
+	}
+
+
+@frappe.whitelist()
+def update_challan_weights(challan, lines):
+	"""Correct the weights on an already-issued challan.
+
+	A weighing mistake is found after the paper has gone out, and re-issuing is not an
+	option — the number is already with the customer. So only the WEIGHTS move: which
+	boxes are on the challan, and which order it answers, are fixed here.
+
+	The inward cover still has to hold. A challan can never send out more than the order
+	took in, and that rule does not soften because the challan is being corrected rather
+	than created — it is re-checked against everything dispatched on OTHER challans, so a
+	correction is measured against the same ceiling a new challan would be.
+
+	Totals are recomputed from the corrected rows and written through the document, so the
+	order's dispatched figure — and the balance the report shows — move with them.
+	"""
+	rows = json.loads(lines) if isinstance(lines, str) else (lines or [])
+	if not rows:
+		frappe.throw(_("Nothing to update."))
+	doc = frappe.get_doc("MM Sales Challan", challan)
+	if doc.docstatus == 2:
+		frappe.throw(_("Challan {0} is cancelled — its weights can no longer be corrected.").format(doc.name))
+
+	by_name = {str(r.get("name")): r for r in rows if r.get("name")}
+	unknown = [n for n in by_name if not any(it.name == n for it in doc.items)]
+	if unknown:
+		frappe.throw(_("These rows are not on challan {0}: {1}").format(doc.name, ", ".join(unknown)))
+
+	new_total = 0.0
+	for it in doc.items:
+		r = by_name.get(it.name)
+		if r is not None:
+			net = frappe.utils.flt(r.get("net_weight", it.net_weight))
+			if net < 0:
+				frappe.throw(_("Row #{0}: weight cannot be negative.").format(it.idx))
+			it.net_weight = net
+			# `weight` is the dispatch figure every balance is summed from; net is what the
+			# box actually holds. They are the same number here and must stay in step, or
+			# the report and the order would disagree about what left.
+			it.weight = net
+			if r.get("gross_weight") is not None:
+				it.gross_weight = frappe.utils.flt(r.get("gross_weight"))
+			if r.get("box_weight") is not None:
+				it.box_weight = frappe.utils.flt(r.get("box_weight"))
+			if r.get("r_box") is not None:
+				it.r_box = 1 if frappe.utils.cint(r.get("r_box")) else 0
+			if r.get("r_bobbin") is not None:
+				it.r_bobbin = 1 if frappe.utils.cint(r.get("r_bobbin")) else 0
+		new_total += float(it.weight or 0)
+
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import is_dispatch
+
+	order = doc.sales_order or next((it.sales_order for it in doc.items if it.sales_order), None)
+	# A job challan sends material to a worker, so it never eats the customer's cover.
+	if order and is_dispatch(doc.challan_type):
+		cover = _order_cover(order, exclude_challan=doc.name)
+		if cover and cover["inwarded_weight"] > 0:
+			available = round(cover["inwarded_weight"] - cover["dispatched_weight"], 3)
+			if round(new_total, 3) > available:
+				frappe.throw(
+					_(
+						"{0} kg is more than order {1} can still send out. It has taken in "
+						"{2} kg, {3} kg has already gone on other challans, so {4} kg is left."
+					).format(
+						round(new_total, 3), order, cover["inwarded_weight"],
+						cover["dispatched_weight"], available,
+					)
+				)
+
+	doc.total_weight = round(new_total, 3)
+	doc.total_box = round(sum(float(i.qty_box or 0) for i in doc.items), 3)
+	# A submitted challan is not re-validated by save(); write the corrected rows through
+	# directly so the correction lands whether it is a draft or already issued.
+	for it in doc.items:
+		frappe.db.set_value(
+			"MM Sales Challan Item", it.name,
+			{
+				"net_weight": it.net_weight, "weight": it.weight,
+				"gross_weight": it.gross_weight, "box_weight": it.box_weight,
+				"r_box": it.r_box, "r_bobbin": it.r_bobbin,
+			},
+			update_modified=False,
+		)
+	frappe.db.set_value(
+		"MM Sales Challan", doc.name,
+		{"total_weight": doc.total_weight, "total_box": doc.total_box},
+		update_modified=True,
+	)
+	return {
+		"challan": doc.name,
+		"total_weight": doc.total_weight,
+		"total_box": doc.total_box,
+		"cover": _order_cover(order) if order else None,
+	}

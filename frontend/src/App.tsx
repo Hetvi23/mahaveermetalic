@@ -16,6 +16,7 @@ import JobReportPage from "./pages/JobReportPage";
 import OrderReportPage from "./pages/OrderReportPage";
 import InwardReportPage from "./pages/InwardReportPage";
 import SalesChallanVoucher from "./pages/SalesChallanVoucher";
+import ChallanReportPage from "./pages/ChallanReportPage";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
 import InwardWorkspace from "./pages/InwardWorkspace";
@@ -104,6 +105,7 @@ export default function App() {
             <Route path="/order-report" element={<OrderReportPage />} />
             <Route path="/inward-report" element={<InwardReportPage />} />
             <Route path="/sales-challan-voucher" element={<SalesChallanVoucher />} />
+            <Route path="/challan-report" element={<ChallanReportPage />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
             <Route path="/inward" element={<InwardWorkspace />} />
             <Route path="/inventory" element={<InventoryScreen />} />

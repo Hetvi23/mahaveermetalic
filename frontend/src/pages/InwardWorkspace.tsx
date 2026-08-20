@@ -14,6 +14,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true };
 
 type ChallanItem = { roll?: string; color?: string; cut?: string; qty?: number; weight?: number };
+/** A vendor plus the colours it has supplied before — what orders the Supplier picker. */
+type SupplierOption = { vendor: string; vendor_name?: string; colours?: string[] };
 type MatchOrder = {
   sales_order: string;
   party?: string;
@@ -24,6 +26,8 @@ type MatchOrder = {
 };
 type ChallanVerify = {
   challan_no: string;
+  /** The VM vendor, resolved server-side — fetched from VM means supplied by VM. */
+  supplier?: string | null;
   expected_weight: number;
   expected_box: number;
   expected_rolls: number;
@@ -139,6 +143,42 @@ export default function InwardWorkspace() {
   const soOptions = useMemo(() => soData?.message ?? [], [soData]);
   const soByName = useMemo(() => new Map(soOptions.map((o) => [o.sales_order, o])), [soOptions]);
 
+  // Suppliers, each carrying the colours it has supplied before, so the row's colour can
+  // order the picker without ever removing an option from it.
+  const { data: supData, mutate: mutateSuppliers } = useFrappeGetCall<{ message: SupplierOption[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.inward.supplier_options",
+    undefined,
+    "mm-inward-supplier-options",
+  );
+  const supplierOptions = useMemo(() => supData?.message ?? [], [supData]);
+
+  /**
+   * Options for one row's picker, colour first.
+   *
+   * The colour is keyed before the supplier and the order now, so both lists lead with
+   * what matches it — under a heading that says so — and keep everything else below.
+   * Filtering by hiding would be wrong here: a colour arriving from a supplier that has
+   * never sent it, or against an order the picker doesn't associate with it, is ordinary
+   * and has to stay one click away.
+   */
+  function colourFirst<T>(
+    all: T[],
+    colour: string,
+    matches: (o: T, colour: string) => boolean,
+    toOption: (o: T, group?: string) => { value: string; label: string; meta?: string; group?: string },
+    labels: { hit: string; rest: string },
+  ) {
+    const c = colour.trim().toLowerCase();
+    if (!c) return all.map((o) => toOption(o));
+    const hit = all.filter((o) => matches(o, c));
+    const rest = all.filter((o) => !matches(o, c));
+    if (hit.length === 0) return all.map((o) => toOption(o));
+    return [
+      ...hit.map((o) => toOption(o, labels.hit)),
+      ...rest.map((o) => toOption(o, labels.rest)),
+    ];
+  }
+
   // Branch/Location default from the logged-in user's employee profile. Location is on the
   // form (users without a profile still have to pick one); branch just rides along.
   const { data: defaults } = useFrappeGetCall<{ message: { branch: string | null; location: string | null } }>(
@@ -244,8 +284,14 @@ export default function InwardWorkspace() {
       setRow(i, {
         color: rows[i].color || items.find((it) => it.color)?.color || "",
         cut: rows[i].cut || items.find((it) => it.cut)?.cut || "",
+        // Material off a VM challan came from VM. A supplier already typed on the row
+        // wins — someone who named one meant it.
+        supplier: rows[i].supplier || m.supplier || "",
         lines: lines.length ? lines : rows[i].lines,
       });
+      // The vendor may have just been created by the fetch, so the picker has to hear
+      // about it or it shows an id it can't name.
+      if (m.supplier && !supplierOptions.some((v) => v.vendor === m.supplier)) void mutateSuppliers();
       // A challan can serve several customers, so its open orders stay on offer for every
       // row, not just the one fetched into.
       setOrders((prev) => {
@@ -577,9 +623,11 @@ export default function InwardWorkspace() {
                 <th className="mm-iw-c-no">No</th>
                 <th className="mm-iw-c-jw">JobWork</th>
                 <th className="mm-iw-c-chalan">Chalan No</th>
+                {/* Colour is keyed before supplier and order because it is what narrows
+                    both of them — the two pickers to its right lead with what matches it. */}
+                <th className="mm-iw-c-color">Color *</th>
                 <th className="mm-iw-c-supplier">Supplier</th>
                 <th className="mm-iw-c-order">Customer Order</th>
-                <th className="mm-iw-c-color">Color *</th>
                 <th className="mm-iw-c-lot">Lot No</th>
                 <th className="mm-iw-c-roll">Roll</th>
                 <th className="mm-iw-c-qty">Qty | Weight (Kg) *</th>
@@ -630,13 +678,42 @@ export default function InwardWorkspace() {
                         )}
                       </div>
                     </td>
-                    <td className="mm-iw-c-supplier" data-label="Supplier">
+                    <td className="mm-iw-c-color" data-label="Color">
+                      {/* Always editable. Picking an order still FILLS the colour in, but
+                          it no longer owns it: what arrived is what arrived, and a colour
+                          the order got wrong has to be correctable on the line receiving
+                          it rather than by changing the order. */}
                       <LinkField
                         compact
                         label=""
-                        linkDoctype="MM Vendor Master"
+                        linkDoctype="MM Item Master"
+                        value={r.color}
+                        placeholder="Select Color"
+                        createDefaults={{ item_type: "Roll" }}
+                        onChange={(v) => setRow(i, { color: v })}
+                      />
+                    </td>
+                    <td className="mm-iw-c-supplier" data-label="Supplier">
+                      {/* Suppliers that have sent this colour before come first, the rest
+                          stay under their own heading — narrowed, never hidden. */}
+                      <SearchSelect
+                        compact
                         value={r.supplier}
                         placeholder="Supplier"
+                        createDoctype="MM Vendor Master"
+                        emptyText="No vendors yet"
+                        options={colourFirst(
+                          supplierOptions,
+                          r.color,
+                          (v, c) => (v.colours || []).some((x) => x.toLowerCase() === c),
+                          (v, group) => ({
+                            value: v.vendor,
+                            label: v.vendor_name || v.vendor,
+                            meta: (v.colours || []).slice(0, 3).join(", ") || undefined,
+                            group,
+                          }),
+                          { hit: `Supplied ${r.color}`, rest: "All suppliers" },
+                        )}
                         onChange={(v) => setRow(i, { supplier: v })}
                       />
                     </td>
@@ -645,40 +722,32 @@ export default function InwardWorkspace() {
                         compact
                         value={r.customer_order}
                         placeholder="Select Order"
-                        options={soOptions.map((o) => ({
-                          value: o.sales_order,
-                          label: o.sales_order,
-                          meta: [o.party_name || o.party, (o.colours || []).join(", ")].filter(Boolean).join(" · "),
-                        }))}
+                        emptyText="No open orders"
+                        options={colourFirst(
+                          soOptions,
+                          r.color,
+                          (o, c) => (o.colours || []).some((x) => x.toLowerCase() === c),
+                          (o, group) => ({
+                            value: o.sales_order,
+                            label: o.sales_order,
+                            meta: [o.party_name || o.party, (o.colours || []).join(", ")].filter(Boolean).join(" · "),
+                            group,
+                          }),
+                          { hit: `Ordering ${r.color}`, rest: "All open orders" },
+                        )}
                         onChange={(v) => pickOrder(i, v)}
                       />
                     </td>
-                    <td className="mm-iw-c-color" data-label="Color">
-                      {/* Once the row's order has supplied the colour it is the order's to
-                          decide — read-only, and disabled so Tab runs straight past it to
-                          the weight instead of stopping on a field nobody edits. It stays
-                          editable when there is no order, or the order names no colour. */}
-                      <LinkField
-                        compact
-                        label=""
-                        linkDoctype="MM Item Master"
-                        value={r.color}
-                        disabled={!!r.customer_order && !!r.color}
-                        placeholder="Select Color"
-                        createDefaults={{ item_type: "Roll" }}
-                        onChange={(v) => setRow(i, { color: v })}
-                      />
-                    </td>
                     <td className="mm-iw-c-lot" data-label="Lot No">
-                      {/* Assigned per row on post (colour-wise LT id, reused per challan) —
-                          shown so the operator can see which lot this line becomes. Lot
-                          numbers run per colour, so the tooltip names the colour: two
-                          different colours can legitimately show the same LT id. */}
+                      {/* Assigned per row on post (reused when a challan is entered again) —
+                          shown so the operator can see which lot this line becomes. The
+                          number runs per FINANCIAL YEAR across every colour, so an id
+                          identifies one lot on its own. */}
                       <span
                         className="mm-iw-lot"
                         title={
                           lots[i]
-                            ? `Lot ${lots[i]} for ${r.color} — assigned when the inward is posted. Lot numbers run per colour, so another colour can show this same id.`
+                            ? `Lot ${lots[i]} for ${r.color} — assigned when the inward is posted. Lot numbers run per financial year across all colours, so this id belongs to this lot alone.`
                             : "Pick a colour and the lot for this line is worked out"
                         }
                       >

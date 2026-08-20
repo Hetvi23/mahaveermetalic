@@ -12,7 +12,10 @@
   "auto_close_leftover",
   "leftover_tolerance_kg",
   "section_program_view",
-  "program_view_notes"
+  "program_view_notes",
+  "section_print",
+  "company_address",
+  "challan_terms"
  ],
  "fields": [
   {
@@ -74,13 +77,30 @@
    "fieldname": "program_view_notes",
    "fieldtype": "Small Text",
    "label": "Program View Notes",
-   "description": "The general notes box on the Program View screen — a shared scratchpad for the floor, not tied to any one machine or program."
+   "description": "The general notes box on the Program View screen \u2014 a shared scratchpad for the floor, not tied to any one machine or program."
+  },
+  {
+   "fieldname": "section_print",
+   "fieldtype": "Section Break",
+   "label": "Printing"
+  },
+  {
+   "fieldname": "company_address",
+   "fieldtype": "Small Text",
+   "label": "Company Address",
+   "description": "Printed under the brand on the challan. Left blank, the challan simply omits it \u2014 nothing is invented."
+  },
+  {
+   "fieldname": "challan_terms",
+   "fieldtype": "Small Text",
+   "label": "Challan Terms",
+   "description": "One line per term, printed at the foot of every challan. Blank falls back to the standard Jari/bobbin terms in English and Gujarati."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-17 13:00:00.000000",
+ "modified": "2026-08-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Settings",

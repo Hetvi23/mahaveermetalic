@@ -24,6 +24,107 @@ from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 )
 
 
+def program_input_weight(prog) -> float:
+	"""The weight this program hands to Production.
+
+	A part-done program hands over only what actually ran: 2 of 3 patty is two patty's
+	worth of thread, not three. Shared by the queue (which shows it) and create_production
+	(which gates variance on it) so the figure the operator saw is the figure they are
+	measured against — they used to differ, and a part-done program was judged against the
+	full plan it never ran.
+	"""
+	planned = int(prog.get("total_batches") or 0) or int(round(float(prog.get("patti_qty") or 0)))
+	done = int(prog.get("completed_batches") or 0)
+	full = float(prog.get("net_weight") or 0)
+	if not (0 < done < planned):
+		return round(full, 3)
+	per_patty = float(prog.get("per_patty_weight") or 0)
+	return round(
+		float(prog.get("completed_weight") or 0)
+		or (per_patty * done)
+		or (full * done / planned if planned else 0),
+		3,
+	)
+
+
+def program_lots(program_names):
+	"""The lot each program's material came from, keyed by program.
+
+	The lot is carried on the program, but it is the PATTY that actually knows it: a
+	program is patty drawn off one or more cuttings, and a cutting is stamped with the lot
+	its roll was inwarded under. So the program's own field is used when it has one, and
+	otherwise the answer is read back through the patty it took — which is also the only
+	way a program planned off an uncut roll (its lot is only known once the roll is picked)
+	ever resolves.
+
+	A program CAN draw patty from several cuttings of one colour, and those can be
+	different lots. All of them are returned; the display id is the single lot when there
+	is one and a joined list when there are more, because collapsing two lots to one would
+	name the wrong lot on the production.
+	"""
+	if not program_names:
+		return {}
+	names = list(program_names)
+	out = {n: {"lot": None, "lot_id": None, "lot_ids": []} for n in names}
+
+	# The program's own lot first — it is the authoritative one when it is set.
+	own = {}
+	for r in frappe.get_all(
+		"MM Program", filters={"name": ["in", names]}, fields=["name", "lot", "source_cutting"]
+	):
+		own[r.name] = r
+
+	# …then every cutting the patty came from, for the programs still without one.
+	by_program = {}
+	for r in frappe.db.sql(
+		"""
+		select pp.parent as program, c.lot as lot
+		from `tabMM Program Patty` pp
+		join `tabMM Cutting` c on c.name = pp.cutting
+		where pp.parent in %(names)s and ifnull(c.lot, '') != ''
+		""",
+		{"names": tuple(names)},
+		as_dict=True,
+	):
+		by_program.setdefault(r.program, []).append(r.lot)
+
+	# A program created before patty were counted has no rows — its single source cutting
+	# is the whole story.
+	solo = [n for n in names if not by_program.get(n) and own.get(n, {}).get("source_cutting")]
+	if solo:
+		for r in frappe.get_all(
+			"MM Cutting",
+			filters={"name": ["in", [own[n]["source_cutting"] for n in solo]]},
+			fields=["name", "lot"],
+		):
+			for n in solo:
+				if own[n]["source_cutting"] == r.name and r.lot:
+					by_program.setdefault(n, []).append(r.lot)
+
+	wanted = set()
+	for n in names:
+		lots = []
+		if own.get(n, {}).get("lot"):
+			lots = [own[n]["lot"]]
+		else:
+			# dict.fromkeys, not set(): the first lot the patty came off stays first, so a
+			# joined id reads in the order the material was taken.
+			lots = list(dict.fromkeys(by_program.get(n) or []))
+		out[n]["lot"] = lots[0] if lots else None
+		out[n]["_lots"] = lots
+		wanted.update(lots)
+
+	ids = {}
+	if wanted:
+		for r in frappe.get_all("MM Lot", filters={"name": ["in", list(wanted)]}, fields=["name", "lot_id"]):
+			ids[r.name] = r.lot_id
+	for n in names:
+		lots = out[n].pop("_lots", [])
+		out[n]["lot_ids"] = [ids.get(x) for x in lots if ids.get(x)]
+		out[n]["lot_id"] = ", ".join(out[n]["lot_ids"]) or None
+	return out
+
+
 @frappe.whitelist()
 def threads_processing(branch=None, location=None):
 	"""Left panel: programs being/already worked and not yet produced, one row per program."""
@@ -51,6 +152,10 @@ def threads_processing(branch=None, location=None):
 			"job_work_flag",
 			"patti_qty",
 			"net_weight",
+			"total_batches",
+			"completed_batches",
+			"completed_weight",
+			"per_patty_weight",
 		],
 		order_by="modified desc",
 		limit_page_length=500,
@@ -62,9 +167,33 @@ def threads_processing(branch=None, location=None):
 			"MM Sales Order", filters={"name": ["in", list(orders)]}, fields=["name", "party"]
 		):
 			order_party[o.name] = o.party
+	lots = program_lots([r.name for r in rows])
 	for r in rows:
 		r["party"] = order_party.get(r.customer_order)
-		r["input_weight"] = r.get("net_weight") or 0
+		# Lot id, fetched for the screen rather than left for the operator to look up —
+		# read off the patty when the program never carried one itself.
+		lot = lots.get(r.name) or {}
+		r["lot"] = lot.get("lot")
+		r["lot_id"] = lot.get("lot_id")
+		r["lot_ids"] = lot.get("lot_ids") or []
+		# Show what has actually been FORMED, not what was planned.
+		#
+		# A program running 3 patty with 2 done has 2 to wind, not 3 — offering the planned
+		# figure sends the floor looking for a patty that is still on the machine. The count
+		# rises on its own as each one comes off, because it is read from the program's
+		# completed_batches every time this list is asked for.
+		#
+		# A program with no completed count recorded is an older one that only ever moved
+		# here fully done: its planned figure IS what was formed.
+		planned = int(r.get("total_batches") or 0) or int(round(float(r.get("patti_qty") or 0)))
+		done = int(r.get("completed_batches") or 0)
+		formed = done if done > 0 else planned
+		# Part-done hands over only what ran — the same rule create_production gates on.
+		r["input_weight"] = program_input_weight(r)
+		r["formed_patti"] = formed
+		r["planned_patti"] = planned
+		r["patti_qty"] = formed
+		r["part_done"] = 1 if (0 < done < planned) else 0
 	return rows
 
 
@@ -448,7 +577,7 @@ def create_production(
 
 	box_rows = _coerce_boxes(boxes)
 	bobbin_rows = _coerce_bobbins(bobbins)
-	input_weight = float(prog.net_weight or 0)
+	input_weight = program_input_weight(prog)
 
 	# Compute the produced Net up front (matches the controller) so we can gate on variance
 	# and set pin_override before the doc validates.
@@ -465,6 +594,18 @@ def create_production(
 				w = round(float(b.get("qty") or 0) * float(mwt), 3)
 			bobbin_total += w
 		net = round(float(gross_weight or 0) - bobbin_total - float(box_weight or 0), 3)
+
+	# You cannot wind more thread out of a program than went into it. Variance and its PIN
+	# cover the two sides differently on purpose: producing LESS is ordinary (waste, a short
+	# run) and an override can accept it, but producing MORE is not a tolerance question —
+	# the weight came from somewhere else and the voucher is wrong. Refused outright.
+	if input_weight and net > input_weight:
+		frappe.throw(
+			_("Total net {0} kg is more than the {1} kg that went into this program. "
+			  "Correct the box weights — a voucher cannot produce more than its input.").format(
+				round(net, 3), round(input_weight, 3)
+			)
+		)
 
 	variance = round((net - input_weight) / input_weight * 100, 2) if input_weight else 0.0
 	tol = get_tolerance_percent()
@@ -490,7 +631,10 @@ def create_production(
 			"party": party or (frappe.db.get_value("MM Sales Order", customer_order, "party") if customer_order else None),
 			"company_name": company_name or None,
 			"source_program": prog.name,
-			"lot": prog.lot,
+			# The program's lot when it has one, otherwise the one its patty came off —
+			# the same answer the screen showed, so the production is stamped with the lot
+			# the operator was looking at.
+			"lot": prog.lot or (program_lots([prog.name]).get(prog.name) or {}).get("lot"),
 			"roll_no": prog.roll_no,
 			"shade": prog.shade,
 			"cut": cut if cut not in (None, "") else prog.cut,
@@ -519,6 +663,16 @@ def create_production(
 					"bobbin_pcs_weight": float(b.get("bobbin_pcs_weight") or 0),
 					"total_bobbin_weight": float(b.get("total_bobbin_weight") or 0),
 					"box_weight": float(b.get("box_weight") or 0),
+					# Returns are per BOX now: one voucher can send some boxes whose
+					# packaging comes back and others whose doesn't, which a single
+					# header flag could not say. The header flags stay as the default
+					# every new row is stamped with.
+					"box_return": 1 if frappe.utils.cint(
+						b.get("box_return", frappe.utils.cint(box_return))
+					) else 0,
+					"bobbin_return": 1 if frappe.utils.cint(
+						b.get("bobbin_return", frappe.utils.cint(bobbin_return))
+					) else 0,
 				}
 				for b in box_rows
 			],

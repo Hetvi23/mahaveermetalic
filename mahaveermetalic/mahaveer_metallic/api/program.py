@@ -744,19 +744,29 @@ def create_program(
 	# rows say who took what so a revert can hand back exactly this program's share.
 	_apply_patti(program.name, allocation)
 
-	# Leftover weight is recorded, but programming NEVER closes a cutting out any more.
+	# Leftover weight is recorded, and a cutting is closed out ONLY once it has no patty
+	# left to offer.
 	#
-	# It used to: taking fewer batches than a cutting could yield left "unused weight", which
-	# was closed out inside tolerance. Counted patti make that wrong twice over — patti the
-	# program didn't take are not waste, they are stock the picker is still offering, and a
-	# closed cutting drops out of the picker, so auto-closing would quietly delete the very
-	# remainder this change exists to keep. A spent patty stays listed (greyed) until someone
-	# closes it out deliberately from the Close-out Stack.
+	# Taking fewer batches than a cutting could yield never closes it: patti the program
+	# didn't take are not waste, they are stock the picker is still offering, and a closed
+	# cutting drops out of the picker. But once every patty is spoken for, what remains is
+	# a sliver of weight no patty can be made from — and if that sliver is inside the
+	# configured tolerance it is closed out rather than left to clutter the shelf forever.
+	#
+	# `maybe_auto_close_cutting` applies the tolerance AND the rule that matters more here:
+	# if an uncut roll of the same colour and lot is still in the system, nothing is closed.
+	# That leftover is kept open deliberately so the next cutting of that lot adds onto it
+	# instead of stranding it.
+	from mahaveermetalic.mahaveer_metallic.api.closeout import maybe_auto_close_cutting
+
 	for a in allocation:
 		row = _cutting_for_patti(a["cutting"])
 		programmed = float(row.per_patty_weight or 0) * float(row.consumed_patti or 0)
 		leftover = max(0.0, round(float(row.total_net_weight or 0) - programmed, 3))
 		frappe.db.set_value("MM Cutting", a["cutting"], "leftover_weight", leftover, update_modified=False)
+		free_patti = float(row.total_patti_qty or 0) - float(row.consumed_patti or 0)
+		if free_patti <= 0:
+			maybe_auto_close_cutting(a["cutting"], leftover)
 	return {
 		"program": program.name,
 		"status": program.status,

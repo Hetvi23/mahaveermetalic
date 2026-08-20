@@ -5,8 +5,8 @@
 Unlike the Roll-Inventory cutting (api is in the MM Cutting doctype controller via
 `source_roll`), this flow is driven by **inward entries grouped by their order**:
 
-  Left list   → in-stock inward entries grouped one-row-per-order
-  Arrow modal → the individual inward entries that belong to that order
+  Left list   → in-stock inward rolls, one row per roll
+  Arrow modal → that roll's order's in-stock rolls, one of which is cut
   Submit      → create an MM Cutting (records the order on the cutting only) and
                 flag the selected inward entries as "In Cutting" so they leave the
                 left list and surface on the right "In Cutting Processing" panel.
@@ -29,12 +29,16 @@ def _party_name(party):
 
 
 @frappe.whitelist()
-def inward_stock_by_order(branch=None, location=None):
-	"""Left panel: in-stock inward entries collapsed to one row per customer order.
+def inward_stock_rolls(branch=None, location=None):
+	"""Left panel: every in-stock inward roll, ONE ROW PER ROLL.
 
-	Returns, per order: the party, a roll summary, entry count (Qty), total weight
-	and the latest challan date — enough to render the grouped list and open the
-	drill-down modal.
+	Inward is roll-wise — a lot is many rolls weighed under one line — so collapsing the
+	panel to one row per order (which is what it used to do) showed a lot's rolls as a
+	single figure and made the operator open a modal to find out what was actually there.
+	A cut is started against a roll, so the roll is the row.
+
+	A roll with no number of its own is still a roll; it comes back with an empty
+	`roll_name` and the screen renders it as a dash rather than dropping it.
 	"""
 	# A child row is "in stock" (available to cut) until it's linked to a cutting.
 	# We key off the `cutting` link rather than `cut_status` so rows that predate the
@@ -51,53 +55,32 @@ def inward_stock_by_order(branch=None, location=None):
 	rows = frappe.db.sql(
 		f"""
 		select
+			item.name                  as inward_item,
+			inw.name                   as inward,
 			item.customer_order        as customer_order,
 			inw.party                  as party,
 			item.roll_name             as roll_name,
+			item.lot_number            as lot_number,
 			item.color_name            as color_name,
+			item.cut                   as cut,
 			item.challan_number        as challan_number,
 			inw.posting_date           as inward_date,
 			item.qty_box               as qty_box,
-			item.weight                as weight
+			item.weight                as weight,
+			item.job_work              as job_work
 		from `tabMM Inward Item` item
 		join `tabMM Inward` inw on inw.name = item.parent
 		where {" and ".join(conditions)}
-		order by inw.posting_date desc, item.idx asc
+		order by inw.posting_date desc, inw.name desc, item.idx asc
 		""",
 		values,
 		as_dict=True,
 	)
-
-	groups = {}
 	for r in rows:
-		order = r.customer_order
-		g = groups.get(order)
-		if not g:
-			g = groups[order] = {
-				"customer_order": order,
-				"party": r.party,
-				"party_name": _party_name(r.party),
-				"rolls": [],
-				"entry_count": 0,
-				"total_qty_box": 0.0,
-				"total_weight": 0.0,
-				"latest_inward_date": r.inward_date,
-			}
-		if r.roll_name and r.roll_name not in g["rolls"]:
-			g["rolls"].append(r.roll_name)
-		g["entry_count"] += 1
-		g["total_qty_box"] += float(r.qty_box or 0)
-		g["total_weight"] += float(r.weight or 0)
-		if r.inward_date and (not g["latest_inward_date"] or r.inward_date > g["latest_inward_date"]):
-			g["latest_inward_date"] = r.inward_date
-
-	out = list(groups.values())
-	for g in out:
-		g["total_weight"] = round(g["total_weight"], 3)
-		g["total_qty_box"] = round(g["total_qty_box"], 3)
-		g["roll_display"] = ", ".join(g["rolls"]) if g["rolls"] else None
-	out.sort(key=lambda g: (g["latest_inward_date"] or ""), reverse=True)
-	return out
+		r["party_name"] = _party_name(r.party)
+		r["weight"] = round(float(r.weight or 0), 3)
+		r["qty_box"] = round(float(r.qty_box or 0), 3)
+	return rows
 
 
 @frappe.whitelist()

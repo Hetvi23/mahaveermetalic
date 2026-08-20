@@ -54,11 +54,15 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
     if (comp === null) return setErr("Enter how many batches are completed.");
     setErr(null);
     try {
-      await call({ program: program.program, completed: comp });
+      // partial_keeps_machine: recording 2 of 3 is PROGRESS, not a short close-out. The
+      // job stays on the machine and the 2 formed patty show on Production straight away;
+      // the third is added when it comes off. Closing a job out short is the machine's
+      // own Close action, which is a different decision from "two are done".
+      await call({ program: program.program, completed: comp, partial_keeps_machine: 1 });
       toast(
         comp >= total
           ? "All batches done — sent to Production"
-          : `${comp}/${total} done · ${total - comp} batch${total - comp === 1 ? "" : "es"} returned to the patty shelf`,
+          : `${comp}/${total} done — ${comp} patty on Production, machine still running`,
       );
       onDone();
     } catch (e) {
@@ -75,9 +79,9 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
         </div>
         <div className="mm-modal-body">
           <p className="mm-page-sub" style={{ marginTop: 0 }}>
-            How many of the {total} batches are completed? All of them and the program goes to
-            Production. Fewer, and the job closes out short: the machine frees up and the batches
-            that never ran hand their patty back automatically.
+            How many of the {total} batches are completed? Whatever is done goes to Production
+            straight away — record 2 of 3 and Production shows 2, then come back and make it 3
+            when the last one comes off. The machine keeps the job until every batch is done.
           </p>
           <label className="mm-field">
             <span className="mm-field-label">Batches completed</span>
@@ -87,11 +91,11 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
           {comp !== null && (
             <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
               {comp >= total ? (
-                <strong>All done → goes to Production</strong>
+                <strong>All done → goes to Production, machine frees up</strong>
               ) : (
                 <>
-                  {comp}/{total} done · machine frees up ·{" "}
-                  <strong>{total - comp} batch{total - comp === 1 ? "" : "es"}</strong> of patty returned
+                  <strong>{comp} patty</strong> to Production now ·{" "}
+                  {total - comp} still to run · machine keeps the job
                 </>
               )}
             </p>
@@ -135,24 +139,23 @@ function ShiftColumn({ title, groups, onComplete }: {
               <div className="mm-pvw-machine-idle" />
             ) : (
               g.programs.map((p) => (
-                // Colour, how many patty, and the one thing to do about it.
+                // Colour and the one thing to do about it on the top line; how many patty
+                // reads underneath it — the same two facts, in the order they're asked for.
                 <div className="mm-pvw-prog" key={p.program}>
                   <div className="mm-pvw-prog-top">
                     <span className="mm-colour-name">{p.color}</span>
-                    <span className="mm-pvw-prog-batch">
-                      {p.total_batches} patty
-                      {p.completed_batches > 0 ? ` · ${p.completed_batches} done` : ""}
-                    </span>
                     {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : null}
-                  </div>
-                  {p.remark ? <div className="mm-prog-card-remark">“{p.remark}”</div> : null}
-                  <div className="mm-prog-actions">
-                    <button className="mm-mini" disabled={!!p.unfinished}
+                    <button className="mm-mini mm-pvw-prog-act" disabled={!!p.unfinished}
                       title={p.unfinished ? "The roll for this program hasn't been cut yet" : "Record how many batches are completed"}
                       onClick={() => onComplete(p)}>
                       <Check size={13} /> Complete
                     </button>
                   </div>
+                  <div className="mm-pvw-prog-batch">
+                    {p.total_batches} patty
+                    {p.completed_batches > 0 ? ` · ${p.completed_batches} done` : ""}
+                  </div>
+                  {p.remark ? <div className="mm-prog-card-remark">“{p.remark}”</div> : null}
                 </div>
               ))
             )}
@@ -256,17 +259,18 @@ export default function ProductionViewPage() {
           {!v || v.in_cutting.length === 0 ? (
             <p className="mm-empty">Nothing in cutting.</p>
           ) : (
-            // Colour and how many patty — that is the whole question this panel answers.
+            // Colour and the size it is being cut to — that is the whole question this
+            // panel answers. How many patty it will yield is not known until it is cut.
             <div className="mm-table-scroll">
               <table className="mm-table mm-table-dense">
                 <thead>
-                  <tr><th>Color</th><th className="mm-num">No of patty</th></tr>
+                  <tr><th>Color</th><th>Size</th></tr>
                 </thead>
                 <tbody>
                   {v.in_cutting.map((c) => (
                     <tr key={c.cutting}>
                       <td><span className="mm-colour-name">{c.color}</span></td>
-                      <td className="mm-num">{c.patty ?? 0}</td>
+                      <td>{c.cut || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

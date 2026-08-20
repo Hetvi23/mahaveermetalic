@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus, Search, PackageSearch } from "lucide-react";
@@ -9,15 +9,22 @@ const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = () => new Date().toISOString().slice(0, 10);
 
-type Group = {
+/** One in-stock roll on the left panel — inward is roll-wise, so the list is too. */
+type StockRoll = {
+  inward_item: string;
+  inward?: string;
   customer_order: string;
   party?: string;
   party_name?: string;
-  rolls?: string[];
-  roll_display?: string;
-  entry_count: number;
-  total_weight: number;
-  latest_inward_date?: string;
+  roll_name?: string;
+  lot_number?: string;
+  color_name?: string;
+  cut?: string;
+  challan_number?: string;
+  inward_date?: string;
+  qty_box?: number;
+  weight?: number;
+  job_work?: number;
 };
 type Entry = {
   inward_item: string;
@@ -50,6 +57,28 @@ type BoardCard = {
 
 const stateClass = (s?: string) => `mm-state mm-state-${(s || "").toLowerCase().replace(/\s+/g, "")}`;
 const CUT_STATUSES = ["Draft", "Open", "In Progress", "Completed"];
+const CONFIG_API = "mahaveermetalic.mahaveer_metallic.doctype.mm_cut_patty_config.mm_cut_patty_config";
+type PattyConfig = { cut: string; no_of_patty: number | null; weight_per_patty: number | null; source: string };
+
+/**
+ * The configured No of Patty for a cut, fetched so it doesn't have to be remembered.
+ *
+ * It fills the box and nothing more: the operator overrides it whenever the roll in front
+ * of them disagrees, and an override is never re-fetched over. A cut with no row
+ * configured returns nothing, so "the shop says 6" stays distinguishable from "nobody has
+ * said" — the box just keeps whatever it had.
+ */
+function usePattyConfig(cut: string, weight: number) {
+  const c = (cut || "").trim();
+  const { data } = useFrappeGetCall<{ message: PattyConfig | null }>(
+    `${CONFIG_API}.patty_for_cut`,
+    c ? { cut: c, weight: weight || 0 } : undefined,
+    // Weight is in the key deliberately: a config held as kg-per-patty re-answers as
+    // rolls are picked, while a plain count answers the same every time regardless.
+    c ? `patty-cfg-${c}-${Math.round(weight || 0)}` : null,
+  );
+  return data?.message ?? null;
+}
 
 /**
  * Cutting screen: send order-grouped inward rolls into cutting (worklist), and a flat
@@ -61,7 +90,7 @@ export default function CuttingWorklist() {
   const [view, setView] = useState<"worklist" | "list">(
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "list" ? "list" : "worklist",
   );
-  const [active, setActive] = useState<Group | null>(null);
+  const [active, setActive] = useState<StockRoll | null>(null);
   const [adding, setAdding] = useState(false);
   const [finishing, setFinishing] = useState<BoardCard | null>(null);
   // In-stock rolls are the FIRST STEP OF STARTING A CUT, not a permanent panel: the screen
@@ -69,12 +98,12 @@ export default function CuttingWorklist() {
   // creating a cutting (or closing it) puts the screen back to the in-cutting board.
   const [picking, setPicking] = useState(false);
 
-  const stock = useFrappeGetCall<{ message: Group[] }>(`${API}.inward_stock_by_order`, undefined, "cut-stock");
+  const stock = useFrappeGetCall<{ message: StockRoll[] }>(`${API}.inward_stock_rolls`, undefined, "cut-stock");
   const board = useFrappeGetCall<{ message: BoardCard[] }>(`${API}.cutting_board`, undefined, "cut-board");
   const { call: finish } = useFrappePostCall(`${API}.complete_cutting`);
   const { call: forceClose } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.closeout.force_close");
 
-  const groups = stock.data?.message ?? [];
+  const rolls = stock.data?.message ?? [];
   const cards = board.data?.message ?? [];
 
   // group cutting cards by Cut → columns
@@ -149,23 +178,34 @@ export default function CuttingWorklist() {
               </div>
             </div>
             {stock.isLoading && <p className="mm-muted">Loading…</p>}
-            {!stock.isLoading && groups.length === 0 && <p className="mm-empty">No in-stock inward against any order.</p>}
-            {groups.length > 0 && (
+            {!stock.isLoading && rolls.length === 0 && <p className="mm-empty">No in-stock inward against any order.</p>}
+            {rolls.length > 0 && (
+              // One line per ROLL. It used to be one line per order with the lot's rolls
+              // added up behind it, which hid the very thing being picked.
               <div className="mm-table-scroll">
                 <table className="mm-table mm-table-hover">
                   <thead>
-                    <tr><th>Chalan Date</th><th>Order</th><th>Roll</th><th className="mm-num">Qty</th><th className="mm-num">Weight (Kg)</th><th /></tr>
+                    <tr>
+                      <th>Chalan Date</th><th>Chalan No</th><th>Order</th><th>Roll</th>
+                      <th>Colour</th><th>Lot</th><th className="mm-num">Qty</th>
+                      <th className="mm-num">Weight (Kg)</th><th />
+                    </tr>
                   </thead>
                   <tbody>
-                    {groups.map((g) => (
-                      <tr key={g.customer_order}>
-                        <td>{g.latest_inward_date || "—"}</td>
-                        <td>{g.party_name || g.customer_order}</td>
-                        <td>{g.roll_display || "—"}</td>
-                        <td className="mm-num">{g.entry_count}</td>
-                        <td className="mm-num">{(g.total_weight ?? 0).toLocaleString()}</td>
+                    {rolls.map((r) => (
+                      <tr key={r.inward_item}>
+                        <td>{r.inward_date || "—"}</td>
+                        <td>{r.challan_number || "—"}</td>
+                        <td title={r.customer_order}>{r.party_name || r.customer_order}</td>
+                        {/* A roll that came in without a number is still a roll — it reads
+                            as a dash, it is not dropped from the list. */}
+                        <td>{r.roll_name || "—"}</td>
+                        <td>{r.color_name || "—"}</td>
+                        <td>{r.lot_number || "—"}</td>
+                        <td className="mm-num">{(r.qty_box ?? 0).toLocaleString()}</td>
+                        <td className="mm-num">{(r.weight ?? 0).toLocaleString()}</td>
                         <td className="mm-td-actions">
-                          <button type="button" className="mm-cut-go" title="Send to cutting" onClick={() => setActive(g)}>
+                          <button type="button" className="mm-cut-go" title="Send this roll to cutting" onClick={() => setActive(r)}>
                             <ArrowRight size={16} />
                           </button>
                         </td>
@@ -226,7 +266,7 @@ export default function CuttingWorklist() {
       )}
 
       {active && (
-        <CuttingModal group={active} onClose={() => setActive(null)}
+        <CuttingModal roll={active} onClose={() => setActive(null)}
           onDone={() => { setActive(null); setPicking(false); refreshAll(); }} />
       )}
       {adding && (
@@ -269,6 +309,7 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
   const [picked, setPicked] = useState<Record<string, InvRoll>>({});
   const [patty, setPatty] = useState<number>(1);
   const [cut, setCut] = useState<string>(card.cut || "");
+  const pattyTouched = useRef(false);
   const [cuttingDate, setCuttingDate] = useState<string>(today());
   const [order, setOrder] = useState<string>(card.customer_order || "");
   const [jobWork, setJobWork] = useState(false);
@@ -282,6 +323,12 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
   const chosen = Object.values(picked);
   const totalWeight = chosen.reduce((s, r) => s + Number(r.stock_weight || 0), 0);
   const perPatty = patty > 0 ? ceil2(totalWeight / patty) : 0;
+
+  const cfg = usePattyConfig(cut, totalWeight);
+  useEffect(() => {
+    if (pattyTouched.current) return;
+    if (cfg?.no_of_patty) setPatty(cfg.no_of_patty);
+  }, [cfg]);
   const toggle = (r: InvRoll) =>
     setPicked((p) => {
       const n = { ...p };
@@ -372,12 +419,21 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
               <input className="mm-input" value={`${chosen.length} | ${totalWeight.toLocaleString()}`} readOnly />
             </label>
             <label className="mm-field">
-              <span className="mm-field-label">No of Patty *</span>
+              <span className="mm-field-label">
+                No of Patty *
+                {cfg?.no_of_patty ? (
+                  <span className="mm-patty-cfg">
+                    {cfg.source === "weight"
+                      ? `${cfg.weight_per_patty} kg/patty for cut ${cfg.cut}`
+                      : `cut ${cfg.cut} is set to ${cfg.no_of_patty}`}
+                  </span>
+                ) : null}
+              </span>
               <span className="mm-patty-step">
-                <button type="button" className="mm-mini" onClick={() => setPatty((p) => Math.max(1, p - 1))}>−</button>
+                <button type="button" className="mm-mini" onClick={() => { pattyTouched.current = true; setPatty((p) => Math.max(1, p - 1)); }}>−</button>
                 <input className="mm-input" type="number" min={1} value={patty}
-                  onChange={(e) => setPatty(Math.max(1, Number(e.target.value) || 1))} />
-                <button type="button" className="mm-mini" onClick={() => setPatty((p) => p + 1)}>+</button>
+                  onChange={(e) => { pattyTouched.current = true; setPatty(Math.max(1, Number(e.target.value) || 1)); }} />
+                <button type="button" className="mm-mini" onClick={() => { pattyTouched.current = true; setPatty((p) => p + 1); }}>+</button>
               </span>
             </label>
             <label className="mm-field">
@@ -420,6 +476,13 @@ function NewCuttingModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [weight, setWeight] = useState<number | "">("");
   const [jobWork, setJobWork] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const pattyTouched = useRef(false);
+
+  const cfg = usePattyConfig(cut, Number(weight) || 0);
+  useEffect(() => {
+    if (pattyTouched.current) return;
+    if (cfg?.no_of_patty) setPatti(cfg.no_of_patty);
+  }, [cfg]);
 
   async function submit() {
     setErr(null);
@@ -457,8 +520,12 @@ function NewCuttingModal({ onClose, onDone }: { onClose: () => void; onDone: () 
               <input className="mm-input" value={rollNo} onChange={(e) => setRollNo(e.target.value)} />
             </label>
             <label className="mm-field">
-              <span className="mm-field-label">No of Patty *</span>
-              <input className="mm-input" type="number" min={1} value={patti} onChange={(e) => setPatti(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1))} />
+              <span className="mm-field-label">
+                No of Patty *
+                {cfg?.no_of_patty ? <span className="mm-patty-cfg">cut {cfg.cut} is set to {cfg.no_of_patty}</span> : null}
+              </span>
+              <input className="mm-input" type="number" min={1} value={patti}
+                onChange={(e) => { pattyTouched.current = true; setPatti(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1)); }} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Weight (Kg) *</span>
@@ -480,43 +547,61 @@ function NewCuttingModal({ onClose, onDone }: { onClose: () => void; onDone: () 
 }
 
 /* ── Assign modal ───────────────────────────────────────── */
-function CuttingModal({ group, onClose, onDone }: { group: Group; onClose: () => void; onDone: () => void }) {
+/**
+ * Send ONE roll into cutting.
+ *
+ * A cutting is a roll being cut, so exactly one roll is chosen here — the one whose arrow
+ * was clicked, with the order's other in-stock rolls listed so a mis-click is corrected
+ * without closing the sheet. Picking a second roll replaces the first rather than adding
+ * to it.
+ */
+function CuttingModal({ roll, onClose, onDone }: { roll: StockRoll; onClose: () => void; onDone: () => void }) {
   const entries = useFrappeGetCall<{ message: Entry[] }>(
-    `${API}.inward_entries_for_order`, { customer_order: group.customer_order }, `cut-entries-${group.customer_order}`,
+    `${API}.inward_entries_for_order`, { customer_order: roll.customer_order }, `cut-entries-${roll.customer_order}`,
   );
   const orderOpts = useFrappeGetCall<{ message: OrderOpt[] }>(
-    `${API}.order_options_for_party`, { party: group.party ?? "", customer_order: group.customer_order }, `cut-orders-${group.customer_order}`,
+    `${API}.order_options_for_party`, { party: roll.party ?? "", customer_order: roll.customer_order }, `cut-orders-${roll.customer_order}`,
   );
   const { call: create, loading } = useFrappePostCall(`${API}.create_cutting`);
 
   const rows = entries.data?.message ?? [];
   const orders = orderOpts.data?.message ?? [];
 
-  const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [order, setOrder] = useState(group.customer_order);
-  const [jobWork, setJobWork] = useState(false);
+  const [pickedItem, setPickedItem] = useState<string>(roll.inward_item);
+  const [order, setOrder] = useState(roll.customer_order);
+  const [jobWork, setJobWork] = useState(!!roll.job_work);
   const [cuttingDate, setCuttingDate] = useState(today());
   const [weight, setWeight] = useState<number | "">("");
   const [noPatty, setNoPatty] = useState(1);
-  const [cut, setCut] = useState("");
+  const [cut, setCut] = useState(roll.cut || "");
   const [err, setErr] = useState<string | null>(null);
+  // Touched once the operator types a patty count of their own — from then on the config
+  // stops filling it in, or a considered override would be undone by the next fetch.
+  const pattyTouched = useRef(false);
 
-  const selected = useMemo(() => rows.filter((r) => picked[r.inward_item]), [rows, picked]);
-  const selWeight = selected.reduce((s, r) => s + (r.weight || 0), 0);
+  // The clicked roll IS the selection; the list only lets it be swapped for another.
+  const selected = useMemo(() => rows.find((r) => r.inward_item === pickedItem) ?? null, [rows, pickedItem]);
+  const selWeight = selected?.weight ?? roll.weight ?? 0;
 
   function toggle(r: Entry) {
-    setPicked((p) => ({ ...p, [r.inward_item]: !p[r.inward_item] }));
-    if (!cut && r.cut) setCut(r.cut);
+    setPickedItem(r.inward_item);
+    if (r.cut) setCut(r.cut);
   }
+
+  const cfg = usePattyConfig(cut, Number(weight) || selWeight);
+  useEffect(() => {
+    if (pattyTouched.current) return;
+    if (cfg?.no_of_patty) setNoPatty(cfg.no_of_patty);
+  }, [cfg]);
 
   async function submit() {
     setErr(null);
-    if (selected.length === 0) return setErr("Select at least one inward entry.");
+    if (!pickedItem) return setErr("Select the roll to cut.");
     try {
       await create({
-        inward_items: selected.map((r) => r.inward_item),
+        inward_items: [pickedItem],
         customer_order: order,
-        cut: cut || selected[0].cut,
+        cut: cut || selected?.cut,
         weight: weight === "" ? selWeight : weight,
         no_of_patty: noPatty,
         cutting_date: cuttingDate,
@@ -532,7 +617,10 @@ function CuttingModal({ group, onClose, onDone }: { group: Group; onClose: () =>
     <div className="mm-modal-scrim" onClick={onClose}>
       <div className="mm-modal mm-modal-wide" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
-          <span className="mm-modal-title">Cutting — {group.party_name || group.customer_order}</span>
+          <span className="mm-modal-title">
+            Cutting — roll {roll.roll_name || "—"}
+            {roll.color_name ? ` · ${roll.color_name}` : ""}
+          </span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
@@ -548,8 +636,13 @@ function CuttingModal({ group, onClose, onDone }: { group: Group; onClose: () =>
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.inward_item} className={picked[r.inward_item] ? "mm-ws-row-active" : undefined} onClick={() => toggle(r)} style={{ cursor: "pointer" }}>
-                      <td><input type="checkbox" checked={!!picked[r.inward_item]} onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} /></td>
+                    <tr key={r.inward_item} className={pickedItem === r.inward_item ? "mm-ws-row-active" : undefined} onClick={() => toggle(r)} style={{ cursor: "pointer" }}>
+                      {/* Radio, not a checkbox: one cutting cuts one roll, and the control
+                          has to say so before the operator ticks three of them. */}
+                      <td>
+                        <input type="radio" name="mm-cut-roll" checked={pickedItem === r.inward_item}
+                          onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} />
+                      </td>
                       <td>{r.inward_date || "—"}</td>
                       <td>{r.challan_number || "—"}</td>
                       <td>{r.roll_name || "—"}</td>
@@ -579,8 +672,18 @@ function CuttingModal({ group, onClose, onDone }: { group: Group; onClose: () =>
               <input className="mm-input" type="number" placeholder={String(selWeight || "")} value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
             </label>
             <label className="mm-field">
-              <span className="mm-field-label">No of Patty *</span>
-              <input className="mm-input" type="number" min={1} value={noPatty} onChange={(e) => setNoPatty(Math.max(1, Number(e.target.value) || 1))} />
+              <span className="mm-field-label">
+                No of Patty *
+                {cfg?.no_of_patty ? (
+                  <span className="mm-patty-cfg">
+                    {cfg.source === "weight"
+                      ? `${cfg.weight_per_patty} kg/patty for cut ${cfg.cut}`
+                      : `cut ${cfg.cut} is set to ${cfg.no_of_patty}`}
+                  </span>
+                ) : null}
+              </span>
+              <input className="mm-input" type="number" min={1} value={noPatty}
+                onChange={(e) => { pattyTouched.current = true; setNoPatty(Math.max(1, Number(e.target.value) || 1)); }} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Cut</span>
@@ -590,9 +693,11 @@ function CuttingModal({ group, onClose, onDone }: { group: Group; onClose: () =>
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
-          <span className="mm-muted" style={{ marginRight: "auto" }}>{selected.length} selected · {selWeight.toLocaleString()} kg</span>
+          <span className="mm-muted" style={{ marginRight: "auto" }}>
+            Roll {selected?.roll_name || roll.roll_name || "—"} · {selWeight.toLocaleString()} kg
+          </span>
           <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Submit"}</button>
+          <button className="mm-btn-primary" disabled={loading || !pickedItem} onClick={() => void submit()}>{loading ? "Saving…" : "Submit"}</button>
         </div>
       </div>
     </div>

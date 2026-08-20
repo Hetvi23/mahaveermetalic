@@ -171,6 +171,96 @@ def _assign_lots(data):
 		data["lot_number"] = first["lot_id"]
 
 
+def _veermetlon_supplier():
+	"""The MM Vendor Master row that IS Veermetlon.
+
+	Material fetched off a VM challan came from VM, so making the operator also pick the
+	supplier is asking them to retype what the fetch already knows. Matched loosely (case
+	and spacing) so an existing "veer metlon" / "VeerMetlon" row is reused instead of
+	duplicated, and created once if the site has neither.
+	"""
+	rows = frappe.db.sql(
+		"""
+		select name from `tabMM Vendor Master`
+		where replace(lower(ifnull(vendor_name, name)), ' ', '') like %(pat)s
+		order by creation asc
+		limit 1
+		""",
+		{"pat": "%veermetlon%"},
+	)
+	if rows:
+		return rows[0][0]
+	try:
+		doc = frappe.get_doc({"doctype": "MM Vendor Master", "vendor_name": "Veer Metlon"})
+		# The master wants a mobile number and the challan fetch has no way to know one.
+		# Inventing a number would be worse than leaving it blank: the row is real and
+		# whoever maintains the vendor list fills the contact in.
+		doc.flags.ignore_mandatory = True
+		doc.insert(ignore_permissions=True)
+		return doc.name
+	except Exception:
+		# A supplier we couldn't resolve is a blank cell the operator fills in — never a
+		# reason to fail the challan fetch itself.
+		frappe.log_error(title="Veermetlon vendor could not be resolved")
+		return None
+
+
+@frappe.whitelist()
+def supplier_options():
+	"""Suppliers for the Inward grid's Supplier picker, each with the colours it has
+	supplied before.
+
+	The grid keys the colour first, so the picker can lift the suppliers that have
+	supplied THAT colour to the top and keep every other one below it — filtered without
+	hiding anything, because a colour arriving from a new supplier is ordinary.
+
+	History is both sides: what was bought (purchase orders) and what was received
+	(submitted inward rows). A supplier that has done neither still appears, with no
+	colours against it.
+	"""
+	vendors = frappe.get_all(
+		"MM Vendor Master",
+		fields=["name", "vendor_name"],
+		order_by="vendor_name asc, name asc",
+		limit_page_length=0,
+	)
+	colours = {}
+
+	def collect(rows):
+		for r in rows:
+			colours.setdefault(r.supplier, set()).add(r.colour)
+
+	collect(
+		frappe.db.sql(
+			"""
+			select distinct po.supplier as supplier, po.color as colour
+			from `tabMM Purchase Order` po
+			where po.docstatus < 2 and ifnull(po.supplier, '') != '' and ifnull(po.color, '') != ''
+			""",
+			as_dict=True,
+		)
+	)
+	collect(
+		frappe.db.sql(
+			"""
+			select distinct ii.supplier as supplier, ii.color_name as colour
+			from `tabMM Inward Item` ii
+			join `tabMM Inward` i on i.name = ii.parent
+			where i.docstatus = 1 and ifnull(ii.supplier, '') != '' and ifnull(ii.color_name, '') != ''
+			""",
+			as_dict=True,
+		)
+	)
+	return [
+		{
+			"vendor": v.name,
+			"vendor_name": v.vendor_name or v.name,
+			"colours": sorted(colours.get(v.name, ())),
+		}
+		for v in vendors
+	]
+
+
 @frappe.whitelist()
 def verify_challan(challan_no):
 	"""Verify a challan against Veermetlon and report expected vs already-received, so the
@@ -193,6 +283,8 @@ def verify_challan(challan_no):
 		"matching_orders": exp["matching_orders"],
 		"coating": exp["coating"],
 		"sales_order": exp["sales_order"],
+		# Fetched from VM means supplied by VM — the row's Supplier fills itself in.
+		"supplier": _veermetlon_supplier(),
 	}
 
 

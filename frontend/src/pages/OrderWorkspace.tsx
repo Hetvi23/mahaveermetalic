@@ -178,7 +178,7 @@ export default function OrderWorkspace() {
   // parent), which left the list's Color column blank — so ask the server for the map.
   type Rate = { lo: number; hi: number; same: boolean } | null;
   type LineSummary = { colours: string[]; cuts: string[]; purchase_rate: Rate; sale_rate: Rate };
-  const { data: colourData } = useFrappeGetCall<{ message: Record<string, LineSummary> }>(
+  const { data: colourData, mutate: mutateLines } = useFrappeGetCall<{ message: Record<string, LineSummary> }>(
     `${SO_API_PATH}.order_line_summary`,
     undefined,
     "mm-so-lines",
@@ -209,6 +209,20 @@ export default function OrderWorkspace() {
     selected ? `mm-so-pos-${selected}` : null,
   );
   const orderPos = useMemo(() => poRows ?? [], [poRows]);
+
+  /**
+   * Re-read everything a save can change, in one call.
+   *
+   * The order list, the colour/rate summary behind it, both status columns, the open
+   * order itself and its purchase orders come from five separate requests. Saving used
+   * to refresh only some of them, so the purchase details just entered were still the
+   * pre-save ones until the order was closed and re-opened.
+   */
+  const refreshOrder = useCallback(
+    () => Promise.all([mutate(), mutateLines(), mutatePoStatus(), mutatePos(), mutateDoc()]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mutate, mutateLines, mutatePoStatus, mutatePos, mutateDoc],
+  );
 
   const { createDoc, loading: creating } = useFrappeCreateDoc();
   const { updateDoc, loading: updating } = useFrappeUpdateDoc();
@@ -309,19 +323,40 @@ export default function OrderWorkspace() {
     () => JSON.stringify(orderPos.map((p) => [p.name, p.qty_kg, p.rate, p.supplier])),
     [orderPos],
   );
+  /** What one purchase row starts out holding: the saved PO, or the line's own fields. */
+  const seedPo = (r: (typeof purchaseLines)[number]) => ({
+    weight: (r.po?.qty_kg as number | undefined) ?? ("" as number | ""),
+    rate: (r.po?.rate as number | undefined) ?? r.item.purchase_rate ?? "",
+    vendor: r.po?.supplier || r.item.purchase_party || "",
+  });
   useEffect(() => {
-    setPoEdit(
-      Object.fromEntries(
-        purchaseLines.map((r) => [r.idx, {
-          weight: (r.po?.qty_kg as number | undefined) ?? ("" as number | ""),
-          rate: (r.po?.rate as number | undefined) ?? r.item.purchase_rate ?? "",
-          vendor: r.po?.supplier || r.item.purchase_party || "",
-        }]),
-      ),
-    );
+    setPoEdit(Object.fromEntries(purchaseLines.map((r) => [r.idx, seedPo(r)])));
     // purchaseLines is deliberately NOT a dependency — see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, poSignature]);
+
+  /**
+   * …and fill in a line that has no editor yet.
+   *
+   * The purchase orders and the order document are two separate requests, and the small
+   * PO query usually answers first. When it does, the effect above runs while the form
+   * still holds no lines and seeds nothing — then the document lands, changing neither of
+   * its dependencies, so the purchase row rendered EMPTY. Re-opening the order fixed it
+   * only because both requests were cached by then and arrived in one go, which is
+   * exactly the "click another order and come back" the floor was doing.
+   *
+   * Additive on purpose: only rows with no editor are filled, so nothing being typed into
+   * is ever overwritten — the race this guards against and the stale-supplier bug the
+   * effect above guards against are different bugs, and both fixes have to hold.
+   */
+  useEffect(() => {
+    setPoEdit((prev) => {
+      const missing = purchaseLines.filter((r) => prev[r.idx] === undefined);
+      if (missing.length === 0) return prev;
+      return { ...prev, ...Object.fromEntries(missing.map((r) => [r.idx, seedPo(r)])) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseLines]);
 
   /** Save the purchase details typed into the order view. Weight 0 removes the PO. */
   async function savePurchase() {
@@ -338,8 +373,7 @@ export default function OrderWorkspace() {
       // clamp_to_shortage=0: the weight typed here is deliberate, so don't shrink it
       // against stock that arrived after the purchase order was raised.
       await syncShortagePos({ sales_order: selected, lines: JSON.stringify(lines), clamp_to_shortage: 0 });
-      await mutatePos();
-      await mutatePoStatus();
+      await refreshOrder();
       setFlash(lines.length ? "Purchase details saved." : "Purchase order removed.");
       toast(lines.length ? "Purchase saved" : "Purchase order removed");
     } catch (e) {
@@ -591,10 +625,7 @@ export default function OrderWorkspace() {
         if (withPo) {
           await raisePos(selected, effectiveItems.map((it, i) => ({ idx: i + 1, builderIndex: i, item: it })));
         }
-        await mutate();
-        await mutateDoc();
-        await mutatePos();
-      await mutatePoStatus();
+        await refreshOrder();
         setFlash(withPo ? "Saved — purchase order raised, pending admin approval." : "Saved — pending admin approval.");
         toast(`Order ${selected} saved`);
         return;
@@ -619,11 +650,13 @@ export default function OrderWorkspace() {
         }
       }
       if (created.length === 0) {
-        await mutate();
+        await refreshOrder();
         setFormError(`No orders created. ${skippedMsgs.join("; ")}`);
         return;
       }
-      await mutate();
+      // A brand-new order's colours, rates and purchase status all live in list-wide
+      // summaries — without this the row it just created shows blank columns.
+      await refreshOrder();
       if (skippedItems.length > 0) {
         setItems(skippedItems);
         setDraft(blankItem());
@@ -655,7 +688,7 @@ export default function OrderWorkspace() {
       // Revalidate the SINGLE-doc cache too, else the form keeps the pre-approval
       // docstatus and stays editable with Approve/Reject showing.
       hydrated.current = null;
-      await Promise.all([mutateDoc(), mutate()]);
+      await refreshOrder();
       setFlash(`Order ${name} approved.`);
       toast(`Order ${name} approved`);
     } catch (e) { setFormError(extractErrorMessage(e)); }
@@ -677,7 +710,7 @@ export default function OrderWorkspace() {
     try {
       await rejectOrder({ sales_order: name, reason });
       hydrated.current = null;
-      await Promise.all([mutateDoc(), mutate()]);
+      await refreshOrder();
       setFlash(`Order ${name} rejected — edit it and approve when it's right.`);
       toast(`Order ${name} rejected`, "info");
     } catch (e) { setFormError(extractErrorMessage(e)); }
@@ -700,7 +733,7 @@ export default function OrderWorkspace() {
     try {
       await cancelOrder({ sales_order: name, reason });
       hydrated.current = null;
-      await Promise.all([mutateDoc(), mutate()]);
+      await refreshOrder();
       setFlash(`Order ${name} cancelled.`);
       toast(`Order ${name} cancelled`, "info");
     } catch (e) { setFormError(extractErrorMessage(e)); }
@@ -713,7 +746,7 @@ export default function OrderWorkspace() {
       await deleteDoc("MM Sales Order", selected);
       resetNew();
       setFlash("Deleted.");
-      await mutate();
+      await refreshOrder();
     } catch (e) {
       setFormError(extractErrorMessage(e));
     }

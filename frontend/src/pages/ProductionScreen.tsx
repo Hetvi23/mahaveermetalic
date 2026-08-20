@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { Factory, Plus, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
+import { Factory, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
@@ -26,8 +26,18 @@ type Program = {
   shift?: string;
   job_work_flag?: number;
   patti_qty?: number;
+  /** What has actually come off the machine, and what the program planned. A part-done
+   *  program lists the formed count — the rest arrives as it is completed. */
+  formed_patti?: number;
+  planned_patti?: number;
+  part_done?: number;
   net_weight?: number;
   input_weight?: number;
+  /** Fetched from the patty this program took — the lot its material was inwarded under.
+   *  A program drawing patty off two lots carries both. */
+  lot?: string | null;
+  lot_id?: string | null;
+  lot_ids?: string[];
 };
 type Produced = {
   name: string;
@@ -49,8 +59,18 @@ export default function ProductionScreen() {
   const queueCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "prod-queue");
   const doneCall = useFrappeGetCall<{ message: Produced[] }>(`${API}.production_done`, undefined, "prod-done");
   const [producing, setProducing] = useState<Program | null>(null);
+  const [q, setQ] = useState("");
 
   const queue = queueCall.data?.message ?? [];
+  // Same fields the row prints, so what is searched is what is on screen.
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (!t) return queue;
+    return queue.filter((p) =>
+      [p.shade, p.roll_no, p.cut, p.party, p.customer_order, p.lot_id, p.machine_no, p.shift]
+        .filter(Boolean).join(" ").toLowerCase().includes(t),
+    );
+  }, [queue, q]);
   const done = doneCall.data?.message ?? [];
 
   const refresh = () => { void queueCall.mutate(); void doneCall.mutate(); };
@@ -71,18 +91,31 @@ export default function ProductionScreen() {
             <h2 className="mm-panel-title"><Factory size={16} /> In threads processing</h2>
             <span className="mm-pill mm-pill-muted">{queue.length}</span>
           </div>
+          {/* Search — the queue runs to dozens of programs and the one being wound is
+              known by its colour, its machine or the party it is for. */}
+          <div className="mm-search-wrap" style={{ marginBottom: "0.6rem" }}>
+            <Search size={15} className="mm-search-icon" aria-hidden />
+            <input className="mm-input mm-search-pill" value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Search colour / roll / cut / party / machine / order / lot…" />
+          </div>
           {queueCall.isLoading ? (
             <p className="mm-muted">Loading…</p>
-          ) : queue.length === 0 ? (
-            <p className="mm-empty">No programs waiting to be produced.</p>
+          ) : shown.length === 0 ? (
+            <p className="mm-empty">{queue.length === 0 ? "No programs waiting to be produced." : `Nothing matches “${q.trim()}”.`}</p>
           ) : (
             <div className="mm-pick-list">
-              {queue.map((p) => (
+              {shown.map((p) => (
                 <div key={p.name} className="mm-pick-row" onClick={() => setProducing(p)}>
                   <div style={{ flex: 1 }}>
-                    <div><strong>{p.roll_no || p.shade || "—"}</strong> · {p.cut || "—"}{p.party ? ` · ${p.party}` : ""}</div>
+                    <div>
+                      <strong>{p.roll_no || p.shade || "—"}</strong> · {p.cut || "—"}{p.party ? ` · ${p.party}` : ""}
+                      {p.lot_id ? <span className="mm-prod-lot" title={`Lot ${p.lot_id} — from the patty this program took`}>{p.lot_id}</span> : null}
+                    </div>
                     <div className="mm-prog-card-meta">
-                      {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} · {p.patti_qty ?? 0} patty · input {(p.input_weight ?? 0).toLocaleString()} kg
+                      {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
+                      {p.patti_qty ?? 0} patty
+                      {p.part_done ? <span className="mm-prod-partdone"> of {p.planned_patti} — rest still running</span> : ""}
+                      {" "}· input {(p.input_weight ?? 0).toLocaleString()} kg
                       {p.job_work_flag ? " · job work" : ""}
                     </div>
                   </div>
@@ -150,6 +183,9 @@ export default function ProductionScreen() {
 type BoxRow = {
   item?: string; gross: number; qty: number; bobbin: string;
   bobbinPcs: number; perPcsWeight: number; totalBobbin: number; boxWeight: number; net: number;
+  /** Returns are per BOX: one voucher can mix boxes whose packaging comes back with ones
+   *  whose doesn't. The header pair seeds each new row and toggles them all. */
+  boxReturn: boolean; bobbinReturn: boolean;
 };
 type Calc = { net_weight: number; variance_percent: number; tolerance: number; pin_required: boolean };
 
@@ -192,6 +228,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // mean deleting it and keying everything again.
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  // Bumped each time a box is added, so the dialog remounts blank-but-seeded for the next.
+  const [boxSeq, setBoxSeq] = useState(0);
   const [pin, setPin] = useState("");
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -262,9 +300,33 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
   const overTol = !!calc?.pin_required && boxes.length > 0;
 
+  /** One box as a sticker. Barcodes only exist once the voucher is submitted, so before
+   *  that a PREVIEW code stands in — the label is otherwise the one that gets stuck on. */
+  const stickerFor = (b: BoxRow, i: number) => ({
+    barcode: `PREVIEW-${i + 1}`,
+    item: b.item || program.shade,
+    size: size || program.cut,
+    gross: b.gross,
+    boxWeight: b.boxWeight,
+    bobbinWeight: b.totalBobbin,
+    net: b.net,
+    no: b.bobbinPcs,
+    batch: batchNo,
+    operator,
+    date: vdate,
+  });
+
   async function submit() {
     setErr(null);
     if (boxes.length === 0) return setErr("Add at least one box.");
+    // Producing MORE than went in is not a variance to be overridden — the weight came
+    // from somewhere else. Refused here and again server-side.
+    if (inputWeight > 0 && totalNet > inputWeight) {
+      return setErr(
+        `Total net ${totalNet.toLocaleString()} kg is more than the ${inputWeight.toLocaleString()} kg ` +
+        "that went into this program. Correct the box weights.",
+      );
+    }
     if (overTol && !pin.trim()) return setErr("Variance is over tolerance — an Admin Override PIN is required.");
     try {
       const res = await create({
@@ -274,6 +336,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             item: b.item, gross_weight: b.gross, qty: b.qty, bobbin: b.bobbin || undefined,
             bobbin_pcs: b.bobbinPcs, bobbin_pcs_weight: b.perPcsWeight,
             total_bobbin_weight: b.totalBobbin, box_weight: b.boxWeight,
+            box_return: b.boxReturn ? 1 : 0, bobbin_return: b.bobbinReturn ? 1 : 0,
           })),
         ),
         operator: operator || undefined,
@@ -312,7 +375,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
-        <div className="mm-modal-body">
+        {/* Two columns, not two stacked halves: the voucher details on the left and the
+            boxes on the right, so weighing a box never scrolls the header out of sight
+            and the whole voucher reads on one screen. */}
+        <div className="mm-modal-body mm-pv-split">
+          <div className="mm-pv-col-details">
           {/* Top: Item + Is Job Work (mirrors the legacy voucher header bar) */}
           <div className="mm-pv-top">
             <label className="mm-field" style={{ flex: 1, maxWidth: 360 }}>
@@ -363,7 +430,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 }} />
             </label>
             <label className="mm-field">
-              <span className="mm-field-label">Select Order (remaining only)</span>
+              <span className="mm-field-label">Select Order</span>
               <SearchSelect
                 value={order}
                 disabled={!party}
@@ -382,6 +449,16 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             <label className="mm-field">
               <span className="mm-field-label">Batch No</span>
               <input className="mm-input" value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="Optional" />
+            </label>
+            {/* Fetched, not typed: the lot comes off the patty this program took, and the
+                production is stamped with the same one — so it is shown rather than asked
+                for, and cannot drift from what is actually being wound. */}
+            <label className="mm-field">
+              <span className="mm-field-label">Lot No</span>
+              <input className="mm-input" value={program.lot_id || "—"} readOnly
+                title={program.lot_ids && program.lot_ids.length > 1
+                  ? `This program's patty came off ${program.lot_ids.length} lots: ${program.lot_ids.join(", ")}`
+                  : "Fetched from the patty this program took"} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Size</span>
@@ -413,18 +490,32 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
           </div>
 
+          {/* The header pair is now a DEFAULT and a toggle-all — the flags that count are
+              the per-row ones, because one voucher can mix boxes whose packaging comes
+              back with ones whose doesn't. */}
           <div className="mm-pv-checks">
-            <label className="mm-field mm-field-inline">
-              <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} /> <span className="mm-field-label">Box Return</span>
+            <label className="mm-field mm-field-inline" title="Default for new boxes — and ticks/unticks every row">
+              <input type="checkbox" checked={boxReturn}
+                onChange={(e) => { setBoxReturn(e.target.checked); setBoxes((p) => p.map((b) => ({ ...b, boxReturn: e.target.checked }))); }} />
+              <span className="mm-field-label">Box Return (all)</span>
             </label>
-            <label className="mm-field mm-field-inline">
-              <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} /> <span className="mm-field-label">Bobbin Return</span>
+            <label className="mm-field mm-field-inline" title="Default for new boxes — and ticks/unticks every row">
+              <input type="checkbox" checked={bobbinReturn}
+                onChange={(e) => { setBobbinReturn(e.target.checked); setBoxes((p) => p.map((b) => ({ ...b, bobbinReturn: e.target.checked }))); }} />
+              <span className="mm-field-label">Bobbin Return (all)</span>
             </label>
           </div>
+          </div>
 
-          {/* Boxes — the main work area */}
-          <div className="mm-pv-boxes">
+          {/* Boxes — the main work area, its own column */}
+          <div className="mm-pv-boxes mm-pv-col-boxes">
             <div className="mm-pv-boxhead">
+              {/* Colour above the table: every row is the same colour, so printing it in
+                  each row spent the width the weights need. */}
+              <span className="mm-pv-boxcolour">
+                <span className="mm-colour-name">{program.shade || program.roll_no || "—"}</span>
+                {size ? <span className="mm-suggest-meta">{size}</span> : null}
+              </span>
               <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
               <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Add box</button>
             </div>
@@ -439,16 +530,18 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 <table className="mm-table mm-table-dense">
                   <thead>
                     <tr>
-                      <th>#</th><th>Item</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
-                      <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
-                      <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th><th />
+                      <th>#</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
+                      <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">B/Pcs</th>
+                      <th className="mm-num">Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th>
+                      <th className="mm-num" title="This box's packaging comes back">R.Box</th>
+                      <th className="mm-num" title="This box's bobbins come back">R.Bob</th>
+                      <th />
                     </tr>
                   </thead>
                   <tbody>
                     {boxes.map((b, i) => (
                       <tr key={i}>
                         <td>{i + 1}</td>
-                        <td>{b.item || "—"}</td>
                         <td className="mm-num">{b.gross.toLocaleString()}</td>
                         <td className="mm-num">{b.qty || "—"}</td>
                         <td>{b.bobbin || "—"}</td>
@@ -457,7 +550,20 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                         <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
                         <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
                         <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
+                        <td className="mm-num">
+                          <input type="checkbox" checked={b.boxReturn} aria-label={`Box ${i + 1} packaging returns`}
+                            onChange={(e) => setBoxes((p) => p.map((x, j) => (j === i ? { ...x, boxReturn: e.target.checked } : x)))} />
+                        </td>
+                        <td className="mm-num">
+                          <input type="checkbox" checked={b.bobbinReturn} aria-label={`Box ${i + 1} bobbins return`}
+                            onChange={(e) => setBoxes((p) => p.map((x, j) => (j === i ? { ...x, bobbinReturn: e.target.checked } : x)))} />
+                        </td>
                         <td className="mm-num mm-pv-rowacts">
+                          <button className="mm-mini" title="Print this box's sticker"
+                            aria-label={`Print sticker for box ${i + 1}`}
+                            onClick={() => printBoxStickers([stickerFor(b, i)])}>
+                            <Printer size={13} />
+                          </button>
                           <button className="mm-mini" onClick={() => { setEditing(i); setAdding(true); }} aria-label="Edit box">Edit</button>
                           <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
                         </td>
@@ -481,12 +587,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         <div className="mm-modal-foot mm-foot-split">
           {boxes.length > 0 && (
             <button className="mm-btn-secondary mm-btn-compact" title="Print a sticker for each box"
-              onClick={() => printBoxStickers(boxes.map((b, i) => ({
-                barcode: `PREVIEW-${i + 1}`, item: b.item || program.shade, size: size || program.cut,
-                gross: b.gross, boxWeight: b.boxWeight, bobbinWeight: b.totalBobbin, net: b.net,
-                no: b.bobbinPcs, batch: batchNo, operator, date: vdate,
-              })))}>
-              Print stickers
+              onClick={() => printBoxStickers(boxes.map(stickerFor))}>
+              Print all stickers
             </button>
           )}
           <div className="mm-pv-totals">
@@ -508,12 +610,22 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           availableNet={availableNet}
           defaultItem={program.shade || program.roll_no || ""}
           edit={editing != null ? boxes[editing] : undefined}
+          // Boxes on one voucher are packed the same way, so the bobbin, its per-piece
+          // weight and the box tare carry over from the last one keyed. Only the gross
+          // weight is asked for again — it is the only thing that really changes.
+          prev={editing == null ? boxes[boxes.length - 1] : undefined}
+          defaultReturns={{ box: boxReturn, bobbin: bobbinReturn }}
           onClose={() => { setAdding(false); setEditing(null); }}
           onAdd={(b) => {
-            setBoxes((p) => (editing != null ? p.map((x, j) => (j === editing ? b : x)) : [...p, b]));
-            setAdding(false);
+            const wasEdit = editing != null;
+            setBoxes((p) => (wasEdit ? p.map((x, j) => (j === editing ? b : x)) : [...p, b]));
             setEditing(null);
+            // Packing runs box after box, so adding one opens the next straight away.
+            // Editing does not — that was a correction, not a new box.
+            if (wasEdit) setAdding(false);
+            else setBoxSeq((n) => n + 1);
           }}
+          key={editing != null ? `edit-${editing}` : `add-${boxSeq}`}
         />
       )}
     </div>
@@ -522,10 +634,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
 /* ── Box Details popup: the per-box calculator (Net = Gross − Bobbin − Box) ── */
 function BoxDialog({
-  bobbinMasters, availableNet, defaultItem, edit, onClose, onAdd,
+  bobbinMasters, availableNet, defaultItem, edit, prev, defaultReturns, onClose, onAdd,
 }: {
   bobbinMasters: BobbinMaster[]; availableNet: number; defaultItem: string;
   edit?: BoxRow;
+  /** The last box keyed, when adding a new one — its packing carries over. */
+  prev?: BoxRow;
+  defaultReturns: { box: boolean; bobbin: boolean };
   onClose: () => void; onAdd: (b: BoxRow) => void;
 }) {
   const [extraBobbins, setExtraBobbins] = useState<BobbinMaster[]>([]);
@@ -540,12 +655,16 @@ function BoxDialog({
   const [printer, setPrinter] = useState<string>(
     () => (typeof window !== "undefined" && window.localStorage.getItem("mm-box-printer")) || "TSC TE244",
   );
-  // Seeded from the box being edited, so Edit reopens exactly what was entered.
+  // Seeded from the box being edited, so Edit reopens exactly what was entered — and
+  // otherwise from the LAST box added, because the next box is packed the same way. The
+  // gross weight is never carried: that is the one figure that must be weighed afresh.
   const [gross, setGross] = useState<number | "">(edit?.gross ?? "");
-  const [bobbin, setBobbin] = useState(edit?.bobbin ?? "");
-  const [pcs, setPcs] = useState<number | "">(edit?.bobbinPcs ?? "");
-  const [perPcs, setPerPcs] = useState<number | "">(edit?.perPcsWeight ?? "");
-  const [boxWeight, setBoxWeight] = useState<number | "">(edit?.boxWeight ?? "");
+  const [bobbin, setBobbin] = useState(edit?.bobbin ?? prev?.bobbin ?? "");
+  const [pcs, setPcs] = useState<number | "">(edit?.bobbinPcs ?? prev?.bobbinPcs ?? "");
+  const [perPcs, setPerPcs] = useState<number | "">(edit?.perPcsWeight ?? prev?.perPcsWeight ?? "");
+  const [boxWeight, setBoxWeight] = useState<number | "">(edit?.boxWeight ?? prev?.boxWeight ?? "");
+  const [boxReturn, setBoxReturn] = useState<boolean>(edit?.boxReturn ?? prev?.boxReturn ?? defaultReturns.box);
+  const [bobbinReturn, setBobbinReturn] = useState<boolean>(edit?.bobbinReturn ?? prev?.bobbinReturn ?? defaultReturns.bobbin);
   const [quick, setQuick] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -570,11 +689,15 @@ function BoxDialog({
       totalBobbin,
       boxWeight: Number(boxWeight) || 0,
       net,
+      boxReturn,
+      bobbinReturn,
     });
   }
 
   return (
-    <div className="mm-modal-scrim mm-scrim-right" style={{ zIndex: 70 }} onClick={onClose}>
+    /* Docked LEFT on purpose: the voucher sheet sits on the right, so a box popup on the
+       same side covered the very figures being copied from. */
+    <div className="mm-modal-scrim mm-scrim-left" style={{ zIndex: 70 }} onClick={onClose}>
       <div className="mm-modal mm-sheet mm-sheet-narrow" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title"><Package size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />Box Details</span>
@@ -632,6 +755,19 @@ function BoxDialog({
             <div className="mm-bx-row">
               <span className="mm-bx-label">Net Weight</span>
               <input className={`mm-input mm-bx-ro ${net < 0 ? "mm-input-warn" : ""}`} value={net.toLocaleString()} readOnly />
+            </div>
+            <div className="mm-bx-row">
+              <span className="mm-bx-label">Returns</span>
+              <div className="mm-bx-returns">
+                <label className="mm-field-inline">
+                  <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} />
+                  <span className="mm-field-label">R.Box</span>
+                </label>
+                <label className="mm-field-inline">
+                  <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} />
+                  <span className="mm-field-label">R.Bobbin</span>
+                </label>
+              </div>
             </div>
           </div>
 

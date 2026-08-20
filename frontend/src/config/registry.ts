@@ -183,6 +183,37 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 	},
 	{
+		slug: "cut-patty",
+		routeBase: "/masters/cut-patty",
+		doctype: "MM Cut Patty Config",
+		title: "Cut · Patty Config",
+		listTagline: "How many patty a cut normally yields — the figure cutting starts from.",
+		navGroup: "masters",
+		formSections: [
+			{
+				id: "cp1",
+				title: "Cut",
+				description:
+					"Set a count, a per-patty weight, or both. Cutting fetches this as the starting " +
+					"figure and the operator can still change it on the day.",
+				fieldnames: ["cut", "no_of_patty", "weight_per_patty"],
+			},
+			{ id: "cp2", title: "Notes", fieldnames: ["notes"] },
+		],
+		listColumns: [
+			{ fieldname: "cut", label: "Cut" },
+			{ fieldname: "no_of_patty", label: "No of Patty" },
+			{ fieldname: "weight_per_patty", label: "Kg / Patty" },
+		],
+		searchField: "cut",
+		fields: [
+			{ fieldname: "cut", label: "Cut", fieldtype: "Data", reqd: true },
+			{ fieldname: "no_of_patty", label: "No of Patty", fieldtype: "Int" },
+			{ fieldname: "weight_per_patty", label: "Weight per Patty (Kg)", fieldtype: "Float" },
+			{ fieldname: "notes", label: "Notes", fieldtype: "Small Text" },
+		],
+	},
+	{
 		slug: "vendor",
 		routeBase: "/masters/vendor",
 		doctype: "MM Vendor Master",
