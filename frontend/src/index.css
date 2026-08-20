@@ -1004,6 +1004,22 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
   background: var(--mm-primary); color: #fff; font-size: 0.72rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em; padding: 0.6rem 0.9rem;
 }
+/* The band carries the grid's scope switches on its right. They sit here rather than in
+   the column headers because those columns are fixed widths on nowrap cells — anything
+   added inside one widens it and knocks the whole grid out of alignment. */
+.mm-iw-band-split { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.mm-iw-scopes { display: flex; gap: 0.4rem; }
+.mm-iw-scope {
+  padding: 0.15rem 0.55rem; border-radius: 999px; cursor: pointer;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: none;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: transparent; color: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mm-iw-scope:hover { background: rgba(255, 255, 255, 0.16); }
+/* Scoped (the default) reads as the active state — filtering is ON, not a limitation. */
+.mm-iw-scope.is-on { background: #fff; color: var(--mm-primary); border-color: #fff; }
+
 .mm-iw-grid-table { width: 100%; }
 .mm-iw-grid-table th, .mm-iw-grid-table td { white-space: nowrap; vertical-align: middle; }
 .mm-iw-grid-table td { padding: 0.35rem 0.5rem; }
@@ -1032,13 +1048,6 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-iw-vmdot { display: inline-flex; color: var(--mm-ok-fg, #15803d); }
 
 /* Lot id — assigned on post, so it reads as a stamp rather than a field. */
-/* The colour-scope switch on the Customer Order header — an action inside a column
-   label, so it carries the accent at rest rather than looking like part of the heading. */
-.mm-iw-seeall {
-  margin-left: 0.4rem; padding: 0.02rem 0.35rem; font-size: 0.6rem;
-  text-transform: none; letter-spacing: 0; font-weight: 700;
-  background: var(--mm-accent-bg); color: var(--mm-accent-fg); border-color: var(--mm-accent);
-}
 .mm-iw-lot {
   display: inline-block; padding: 0.18rem 0.45rem; border-radius: 6px;
   background: var(--mm-accent-bg); color: var(--mm-accent-fg);

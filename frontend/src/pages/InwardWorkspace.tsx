@@ -674,7 +674,27 @@ export default function InwardWorkspace() {
 
       {/* The entry grid. */}
       <section className="mm-card mm-iw-items-card">
-        <div className="mm-iw-band">Inward items — one line per lot</div>
+        {/* Scope switches live here, NOT in the column headers. The grid's columns are
+            fixed widths on nowrap cells, so a button inside a header forced its column
+            wider and pushed every other one out of line — the alignment is the point of
+            a grid this dense. */}
+        <div className="mm-iw-band mm-iw-band-split">
+          <span>Inward items — one line per lot</span>
+          <span className="mm-iw-scopes">
+            <button type="button" className={`mm-iw-scope${seeAllSuppliers ? "" : " is-on"}`}
+              aria-pressed={!seeAllSuppliers}
+              title={`Supplier picker: ${seeAllSuppliers ? "every supplier" : `only the ${openSupplierCount} with an open purchase order`}. Click to switch.`}
+              onClick={() => setSeeAllSuppliers((v) => !v)}>
+              Suppliers: {seeAllSuppliers ? "all" : `open PO (${openSupplierCount})`}
+            </button>
+            <button type="button" className={`mm-iw-scope${seeAllOrders ? "" : " is-on"}`}
+              aria-pressed={!seeAllOrders}
+              title={`Order picker: ${seeAllOrders ? "every open order" : "only orders for the row's colour"}. Click to switch.`}
+              onClick={() => setSeeAllOrders((v) => !v)}>
+              Orders: {seeAllOrders ? "all" : "row colour"}
+            </button>
+          </span>
+        </div>
         <div className="mm-table-scroll" onKeyDown={onGridKeyDown}>
           <table className="mm-table mm-table-dense mm-iw-grid-table">
             <thead>
@@ -685,26 +705,8 @@ export default function InwardWorkspace() {
                 {/* Colour is keyed before supplier and order because it is what narrows
                     both of them — the two pickers to its right lead with what matches it. */}
                 <th className="mm-iw-c-color">Color *</th>
-                <th className="mm-iw-c-supplier">
-                  Supplier
-                  <button type="button" className="mm-mini mm-iw-seeall"
-                    title={seeAllSuppliers
-                      ? `Showing every supplier — go back to the ${openSupplierCount} with an open purchase order`
-                      : `Only the ${openSupplierCount} supplier${openSupplierCount === 1 ? "" : "s"} with an open purchase order are listed — show every supplier`}
-                    onClick={() => setSeeAllSuppliers((v) => !v)}>
-                    {seeAllSuppliers ? "open POs" : "See all"}
-                  </button>
-                </th>
-                <th className="mm-iw-c-order">
-                  Customer Order
-                  <button type="button" className="mm-mini mm-iw-seeall"
-                    title={seeAllOrders
-                      ? "Showing every open order — go back to only those ordering the row's colour"
-                      : "Only orders for the row's colour are listed — show every open order"}
-                    onClick={() => setSeeAllOrders((v) => !v)}>
-                    {seeAllOrders ? "colour only" : "See all"}
-                  </button>
-                </th>
+                <th className="mm-iw-c-supplier">Supplier</th>
+                <th className="mm-iw-c-order">Customer Order</th>
                 <th className="mm-iw-c-lot">Lot No</th>
                 <th className="mm-iw-c-roll">Roll</th>
                 <th className="mm-iw-c-qty">Qty | Weight (Kg) *</th>
