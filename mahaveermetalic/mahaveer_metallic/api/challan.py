@@ -364,7 +364,7 @@ def next_job_challan_no(challan_type="Job Out"):
 
 @frappe.whitelist()
 def create_job_challan(challan_type="Job Out", party=None, challan_date=None, challan_no=None,
-	rolls=None, bobbins=None, remark=None, location=None, branch=None):
+	rolls=None, bobbins=None, remark=None, location=None, branch=None, against_job_out=None):
 	"""Create a Job Out / Job In challan from the picked rolls and bobbins.
 
 	Stock and the bobbin ledger both move on submit (see MMSalesChallan.on_submit), so
@@ -427,6 +427,9 @@ def create_job_challan(challan_type="Job Out", party=None, challan_date=None, ch
 		"job_work_flag": 1,
 		"location": location,
 		"branch": branch,
+		# A Job In names the Job Out it answers, which is what makes "still with the
+		# worker" a per-challan fact rather than a party-level guess.
+		"against_job_out": against_job_out if challan_type == "Job In" else None,
 		"items": rows,
 		"bobbins": bobbin_rows,
 	})
@@ -874,4 +877,125 @@ def update_challan_weights(challan, lines):
 		"total_weight": doc.total_weight,
 		"total_box": doc.total_box,
 		"cover": _order_cover(order) if order else None,
+	}
+
+
+# ── Job In: what is still out with a worker ───────────────────────────────────────
+
+
+@frappe.whitelist()
+def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=None,
+	party=None, start=0, page_length=10):
+	"""Job Out challans whose material has not fully come back.
+
+	Job In answers a Job Out, so this is the list it picks from — not in-stock rolls,
+	which is what went out in the first place. A Job Out is "in progress" until the Job
+	Ins booked against it account for its weight; anything still short is with the worker.
+
+	Job Ins made before `against_job_out` existed name no Job Out, so they cannot be
+	credited to one. They are left out of the per-challan figure rather than spread across
+	challans arbitrarily — an old Job Out may therefore read as still open. The party-level
+	`job_report` remains the answer for the overall balance.
+	"""
+	conds = ["c.docstatus = 1", "c.challan_type = 'Job Out'"]
+	vals = {}
+	if challan_date:
+		conds.append("c.transaction_date = %(cd)s")
+		vals["cd"] = challan_date
+	if challan_no:
+		conds.append("c.challan_no like %(cn)s")
+		vals["cn"] = f"%{challan_no}%"
+	if party:
+		conds.append("c.party = %(party)s")
+		vals["party"] = party
+	if company:
+		# The screen filters by COMPANY, which sits under a party — resolve it to its
+		# party, because that is what the challan carries.
+		owner = frappe.db.get_value(
+			"MM Party Company", {"company_name": company, "parenttype": "MM Party Master"}, "parent"
+		)
+		conds.append("c.party = %(cparty)s")
+		vals["cparty"] = owner or "__none__"
+	if item:
+		conds.append(
+			"exists (select 1 from `tabMM Sales Challan Item` ci"
+			" where ci.parent = c.name and ci.color_name = %(item)s)"
+		)
+		vals["item"] = item
+	where = " and ".join(conds)
+
+	rows = frappe.db.sql(
+		f"""
+		select c.name, c.challan_no, c.transaction_date, c.party, c.total_weight, c.total_box,
+			(select group_concat(distinct ci.color_name order by ci.color_name separator ', ')
+				from `tabMM Sales Challan Item` ci where ci.parent = c.name) as rolls,
+			coalesce((
+				select sum(ji.weight) from `tabMM Sales Challan Item` ji
+				join `tabMM Sales Challan` jc on jc.name = ji.parent
+				where jc.docstatus = 1 and jc.challan_type = 'Job In' and jc.against_job_out = c.name
+			), 0) as received_weight
+		from `tabMM Sales Challan` c
+		where {where}
+		order by c.transaction_date desc, c.creation desc
+		""",
+		vals,
+		as_dict=True,
+	)
+	# Outstanding is decided in Python, not SQL: the same expression would otherwise be
+	# repeated in a HAVING and in the select, and drift the day one of them changed.
+	open_rows = []
+	for r in rows:
+		out = round(float(r.total_weight or 0) - float(r.received_weight or 0), 3)
+		if out <= 0.0005:
+			continue
+		r["outstanding_weight"] = out
+		open_rows.append(r)
+
+	total = len(open_rows)
+	start = int(start or 0)
+	page_length = max(1, int(page_length or 10))
+	page = open_rows[start:start + page_length]
+
+	parties = {r["party"] for r in page if r.get("party")}
+	labels = {}
+	if parties:
+		for p in frappe.get_all(
+			"MM Party Master", filters={"name": ["in", list(parties)]}, fields=["name", "party_name"]
+		):
+			labels[p.name] = p.party_name or p.name
+		for pc in frappe.get_all(
+			"MM Party Company",
+			filters={"parent": ["in", list(parties)], "parenttype": "MM Party Master"},
+			fields=["parent", "company_name"],
+		):
+			# The reference reads "PARTY (COMPANY)" — the worker and the firm they trade as.
+			base = labels.get(pc.parent, pc.parent)
+			if pc.company_name and pc.company_name != base:
+				labels[pc.parent] = f"{base} ({pc.company_name})"
+	for r in page:
+		r["party_label"] = labels.get(r["party"], r["party"])
+	return {"rows": page, "total": total}
+
+
+@frappe.whitelist()
+def job_out_rolls(challan):
+	"""The rolls on one Job Out, ready to be brought back in."""
+	doc = frappe.get_doc("MM Sales Challan", challan)
+	if doc.challan_type != "Job Out":
+		frappe.throw(_("{0} is not a Job Out.").format(challan))
+	return {
+		"challan": doc.name,
+		"challan_no": doc.challan_no or doc.name,
+		"transaction_date": str(doc.transaction_date or ""),
+		"party": doc.party,
+		"rows": [
+			{
+				"roll_inventory": it.roll_inventory,
+				"color_name": it.color_name,
+				"cut": it.cut,
+				"qty_box": it.qty_box,
+				"weight": it.weight,
+			}
+			for it in doc.items
+		],
 	}

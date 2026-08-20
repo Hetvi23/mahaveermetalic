@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
-  ArrowDownFromLine, ArrowUpFromLine, Check, Disc3, Package, Plus, Search, Trash2, X,
+  ArrowDownFromLine, ArrowRight, ArrowUpFromLine, Check, Disc3, Package, Plus, Search, Trash2, X,
 } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
@@ -32,6 +32,14 @@ type PickedBobbin = { bobbin: string; qty: number };
  * worker, Job In receives them back). Pick from the left, the challan builds on the
  * right, totals and Submit along the bottom.
  */
+/** A Job Out still holding material — one row of the Job In picker. */
+type JobOutRow = {
+  name: string; challan_no?: string; transaction_date?: string;
+  party?: string; party_label?: string; rolls?: string;
+  total_weight?: number; total_box?: number;
+  received_weight?: number; outstanding_weight?: number;
+};
+
 export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" }) {
   const outward = type === "Job Out";
   const [challanDate, setChallanDate] = useState(today());
@@ -50,6 +58,9 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  // Job In picks a Job Out to answer, and records which one — see againstJobOut below.
+  const [fCompany, setFCompany] = useState("");
+  const [againstJobOut, setAgainstJobOut] = useState<string | null>(null);
 
   // Job selection is company-first, and the company is findable by its own name OR by the
   // party it sits under — picking one fills in the party it belongs to.
@@ -68,10 +79,29 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
       item: fItem || undefined, challan_date: fDate || undefined, search: q.trim() || undefined,
       start: (page - 1) * pageSize, page_length: pageSize,
     },
-    `job-stock-${fItem}-${fDate}-${q.trim()}-${page}-${pageSize}`,
+    outward ? `job-stock-${fItem}-${fDate}-${q.trim()}-${page}-${pageSize}` : null,
   );
   const stockRows = stockCall.data?.message?.rows ?? [];
-  const total = stockCall.data?.message?.total ?? 0;
+
+  /**
+   * Job In picks from the Job Outs still with a worker, not from stock.
+   *
+   * Stock is what a Job Out SENT — offering it again on the way back would have the
+   * receiving screen list the very rolls that already left. What Job In answers is an
+   * outstanding Job Out, so that is what it lists.
+   */
+  const jobOutsCall = useFrappeGetCall<{ message: { rows: JobOutRow[]; total: number } }>(
+    `${API}.in_progress_job_outs`,
+    {
+      challan_date: fDate || undefined, challan_no: q.trim() || undefined,
+      company: fCompany || undefined, item: fItem || undefined,
+      start: (page - 1) * pageSize, page_length: pageSize,
+    },
+    outward ? null : `job-outs-${fDate}-${q.trim()}-${fCompany}-${fItem}-${page}-${pageSize}`,
+  );
+  const jobOutRows = jobOutsCall.data?.message?.rows ?? [];
+
+  const total = outward ? (stockCall.data?.message?.total ?? 0) : (jobOutsCall.data?.message?.total ?? 0);
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
   const nextNo = useFrappeGetCall<{ message: string }>(
@@ -93,6 +123,40 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   }), [picked, bobbins]);
 
   const isPicked = (name: string) => picked.some((p) => p.name === name);
+
+  const { call: fetchJobOut } = useFrappePostCall<{
+    message: { challan: string; party: string; rows: { roll_inventory: string; color_name?: string; cut?: string; qty_box?: number; weight?: number }[] };
+  }>(`${API}.job_out_rolls`);
+
+  /**
+   * Bring one Job Out back in: its rolls become the Job In's lines and the challan
+   * records which Job Out it answers.
+   *
+   * One at a time on purpose. A Job In is a receipt against a Job Out, so mixing two
+   * would leave neither properly accounted for — picking a second replaces the first
+   * rather than adding to it.
+   */
+  async function pullJobOut(r: JobOutRow) {
+    setError(null);
+    try {
+      const res = await fetchJobOut({ challan: r.name });
+      const m = res?.message;
+      if (!m) return;
+      setPicked(m.rows.filter((x) => x.roll_inventory).map((x) => ({
+        name: x.roll_inventory,
+        roll_no: x.color_name || "",
+        color_name: x.color_name,
+        cut: x.cut || "",
+        stock_box: Number(x.qty_box || 0),
+        stock_weight: Number(x.weight || 0),
+        weight: Number(x.weight || 0),
+      } as PickedRoll)));
+      setAgainstJobOut(m.challan);
+      if (m.party) setParty(m.party);
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    }
+  }
 
   /** The row button toggles, so a roll added by mistake comes straight back off. */
   function toggleRoll(r: StockRoll) {
@@ -117,6 +181,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
     setBobbinQty("");
   }
   function clearChallan() {
+    setAgainstJobOut(null);
     setPicked([]);
     setBobbins([]);
     setError(null);
@@ -135,6 +200,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
         challan_no: challanNo || undefined,
         rolls: JSON.stringify(picked.map((r) => ({ roll_inventory: r.name, weight: r.weight, cut: r.cut }))),
         bobbins: JSON.stringify(bobbins),
+        // Which Job Out this receipt answers — the server ignores it on a Job Out.
+        against_job_out: againstJobOut || undefined,
       });
       const name = res?.message?.challan;
       toast(`${type} challan ${name} submitted`);
@@ -148,6 +215,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
       clearChallan();
       setChallanNo("");
       void stockCall.mutate();
+      // The Job Out just received is no longer outstanding — refresh so it drops off.
+      void jobOutsCall.mutate();
       void nextNo.mutate();
     } catch (e) {
       const msg = extractErrorMessage(e);
@@ -211,10 +280,78 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
 
           <section className="mm-card mm-card-pad">
             <div className="mm-iw-sec-head">
-              <h2 className="mm-panel-title"><Package size={15} /> In stock roll</h2>
+              <h2 className="mm-panel-title">
+                <Package size={15} /> {outward ? "In stock roll" : "In progress job outs"}
+              </h2>
               <span className="mm-pill mm-pill-muted">{total}</span>
             </div>
 
+            {!outward ? (
+              <>
+                {/* Filters sit in the table head, one under each column it filters —
+                    the way the book the floor already works from lays them out. */}
+                <div className="mm-table-scroll">
+                  <table className="mm-table mm-table-dense mm-table-hover mm-job-outs">
+                    <thead>
+                      <tr><th>C.Date</th><th>C.No</th><th>Party</th><th>Roll</th><th className="mm-num">Weight (Kg)</th><th /></tr>
+                      <tr className="mm-job-filterrow">
+                        <th>
+                          <input className="mm-input mm-input-compact" type="date" value={fDate}
+                            onChange={(e) => { setFDate(e.target.value); setPage(1); }} />
+                        </th>
+                        <th>
+                          <input className="mm-input mm-input-compact" placeholder="Ch.No" value={q}
+                            onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+                        </th>
+                        <th>
+                          <SearchSelect compact value={fCompany} placeholder="Company"
+                            options={companies.map((c) => ({ value: c.company_name, label: c.company_name, meta: c.party_name }))}
+                            onChange={(v) => { setFCompany(v); setPage(1); }} />
+                        </th>
+                        <th>
+                          <SearchSelect compact value={fItem} placeholder="Item"
+                            options={(items.data ?? []).map((i) => ({ value: i.name, label: i.name }))}
+                            onChange={(v) => { setFItem(v); setPage(1); }} />
+                        </th>
+                        <th /><th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jobOutsCall.isLoading && <tr><td colSpan={6} className="mm-muted">Loading…</td></tr>}
+                      {!jobOutsCall.isLoading && jobOutRows.length === 0 && (
+                        <tr><td colSpan={6} className="mm-empty">Nothing is out with a worker.</td></tr>
+                      )}
+                      {jobOutRows.map((r) => (
+                        <tr key={r.name} className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
+                          <td className="mm-job-date">{r.transaction_date || "—"}</td>
+                          <td>{r.challan_no || r.name}</td>
+                          <td>{r.party_label || r.party || "—"}</td>
+                          <td><span className="mm-colour-name">{r.rolls || "—"}</span></td>
+                          <td className="mm-num">
+                            {kg(Number(r.outstanding_weight || 0))}
+                            {/* A part-received Job Out says so, or the smaller figure
+                                reads as the challan having been raised light. */}
+                            {Number(r.received_weight || 0) > 0 && (
+                              <span className="mm-suggest-meta"> of {kg(Number(r.total_weight || 0))}</span>
+                            )}
+                          </td>
+                          <td className="mm-num">
+                            <button type="button"
+                              className={`mm-btn-icon ${againstJobOut === r.name ? "" : "mm-btn-icon-danger"}`}
+                              title={againstJobOut === r.name ? "Already loaded into this Job In" : "Bring this Job Out back in"}
+                              aria-label={`Receive job out ${r.challan_no || r.name}`}
+                              onClick={() => void pullJobOut(r)}>
+                              {againstJobOut === r.name ? <Check size={15} /> : <ArrowRight size={15} />}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+            <>
             <div className="mm-job-filters-row">
               <div className="mm-search-wrap mm-job-search">
                 <Search size={15} className="mm-search-icon" aria-hidden />
@@ -268,6 +405,9 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                 </tbody>
               </table>
             </div>
+
+            </>
+            )}
 
             <div className="mm-job-pager">
               <select className="mm-input mm-input-compact mm-job-pagesize" value={pageSize}

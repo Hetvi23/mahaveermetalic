@@ -1245,6 +1245,11 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-btn-icon:hover { background: var(--mm-primary-soft); }
 .mm-btn-icon-danger { background: var(--mm-danger); }
 .mm-btn-icon-danger:hover { background: var(--mm-danger-fg); }
+/* Icon buttons carry real actions in the order action row, so they need the same
+   "you cannot press me" the text buttons beside them have. */
+.mm-btn-icon:disabled { opacity: 0.45; cursor: not-allowed; }
+.mm-btn-icon:disabled:hover { background: var(--mm-primary); }
+.mm-btn-icon-danger:disabled:hover { background: var(--mm-danger); }
 .mm-btn-compact { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
 
 /* ── Inputs ───────────────────────────────────────────── */
@@ -1547,6 +1552,11 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-job-company { grid-column: 1 / -1; }
 .mm-job-partyhint { margin-top: 0.25rem; font-size: 0.74rem; color: var(--mm-text-sec); }
 
+/* Job In's picker filters live in a second header row, one under each column they
+   filter — the layout the floor already reads from the book. */
+.mm-job-filterrow th { padding: 0.25rem 0.4rem 0.45rem; background: var(--mm-bg); }
+.mm-job-filterrow .mm-input { width: 100%; min-width: 0; }
+.mm-job-outs td { vertical-align: middle; }
 .mm-job-pager { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; font-size: 0.8rem; }
 .mm-job-pagesize { width: 68px; }
 .mm-job-pages { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
@@ -1851,8 +1861,22 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-modal-scrim.mm-scrim-right { padding: 0; place-items: stretch end; }
 .mm-modal.mm-sheet { width: min(1240px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; box-shadow: -12px 0 44px rgba(0,0,0,0.28); animation: mm-sheet-in 0.22s cubic-bezier(0.2,0.7,0.3,1); }
 .mm-modal.mm-sheet.mm-sheet-narrow { width: min(560px, 100vw); }
-/* Box popup docks on the LEFT so it never sits on top of the voucher sheet. */
-.mm-modal-scrim.mm-scrim-left { padding: 0; place-items: stretch start; }
+/* Box popup docks on the LEFT so it never sits on top of the voucher sheet — but the
+   rail owns the left edge, and docking to the viewport put the box form's labels
+   underneath it. It starts where the CONTENT starts instead, past the rail, reading the
+   same custom property the rail's own width comes from so the two cannot drift.
+
+   Side by side only when there is genuinely room for both. Below that the voucher gets
+   the screen and the box form overlays it from the right, as it did before — an overlap
+   you can close beats a form half of which is behind the navigation. */
+.mm-modal-scrim.mm-scrim-left { padding: 0; place-items: stretch end; }
+@media (min-width: 1840px) {
+  .mm-modal-scrim.mm-scrim-left { place-items: stretch start; padding-left: var(--mm-rail-w, 0px); }
+  /* Never wider than the gap the voucher sheet leaves — the sheet is 1240px on the right. */
+  .mm-modal.mm-sheet.mm-sheet-narrow {
+    width: clamp(360px, calc(100vw - var(--mm-rail-w, 0px) - 1240px), 560px);
+  }
+}
 /* The voucher is two columns — details, boxes — so nothing scrolls out of sight. */
 .mm-pv-split {
   display: grid; grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);

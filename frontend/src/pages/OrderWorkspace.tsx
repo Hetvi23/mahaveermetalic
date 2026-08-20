@@ -8,7 +8,7 @@ import {
   useFrappePostCall,
   useFrappeUpdateDoc,
 } from "frappe-react-sdk";
-import { Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import PartyPicker from "@/components/PartyPicker";
@@ -999,16 +999,24 @@ export default function OrderWorkspace() {
             )}
             {selected && !ro && isAdmin() && (
               <>
-                <button type="button" className="mm-btn-primary" disabled={busy} onClick={() => void onApprove()}
+                {/* Icon-only, so the row fits on one line — but never unlabelled: each
+                    carries the same sentence it used to spell out, as a tooltip and as
+                    the accessible name. A destructive button a screen reader announces
+                    as "button" is not a button anyone can use safely. */}
+                <button type="button" className="mm-btn-icon" disabled={busy} aria-busy={approving}
+                  onClick={() => void onApprove()}
+                  aria-label={rejected ? "Approve (re-approve)" : "Approve"}
                   title={rejected
                     ? "Approve this order now it has been corrected — same order, same number"
                     : "Approve — makes the order usable in inward"}>
-                  {approving ? "Approving…" : rejected ? "Approve (re-approve)" : "Approve"}
+                  <Check size={16} />
                 </button>
                 {!rejected && (
-                  <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onReject()}
+                  <button type="button" className="mm-btn-icon mm-btn-icon-danger" disabled={busy} aria-busy={rejecting}
+                    onClick={() => void onReject()}
+                    aria-label="Reject"
                     title="Send it back — keeps its number and stays editable, so it can be approved later">
-                    {rejecting ? "…" : "Reject"}
+                    <X size={16} />
                   </button>
                 )}
                 <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onCancelOrder()}
@@ -1030,9 +1038,11 @@ export default function OrderWorkspace() {
             {/* Deleting frees the number, which is exactly what rejection stopped doing —
                 so it stays an admin-only escape hatch and never shows for a cancelled order. */}
             {selected && !ro && isAdmin() && (
-              <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onDelete()}
+              <button type="button" className="mm-btn-icon mm-btn-icon-danger" disabled={busy}
+                onClick={() => void onDelete()}
+                aria-label="Delete order"
                 title="Delete this order outright — only do this if the number should be free">
-                <Trash2 size={14} /> Delete
+                <Trash2 size={16} />
               </button>
             )}
             {flash && <span className="mm-ws-flash">{flash}</span>}
