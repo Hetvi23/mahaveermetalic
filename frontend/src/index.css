@@ -1877,35 +1877,45 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-modal-scrim.mm-scrim-right { padding: 0; place-items: stretch end; }
 .mm-modal.mm-sheet { width: min(1240px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; box-shadow: -12px 0 44px rgba(0,0,0,0.28); animation: mm-sheet-in 0.22s cubic-bezier(0.2,0.7,0.3,1); }
 .mm-modal.mm-sheet.mm-sheet-narrow { width: min(560px, 100vw); }
-/* Box popup docks on the LEFT so it never sits on top of the voucher sheet — but the
-   rail owns the left edge, and docking to the viewport put the box form's labels
-   underneath it. It starts where the CONTENT starts instead, past the rail, reading the
-   same custom property the rail's own width comes from so the two cannot drift.
-
-   Side by side without waiting for a screen wide enough to hold both panels at full
-   size: the voucher gives up its left edge — it narrows by exactly the width of the box
-   form and stays hard against the right edge — so packing a box never hides the figures
-   being copied into it. Below the breakpoint the voucher keeps the screen and the box
-   form overlays it from the right, as it did before: an overlap you can close beats a
-   form half of which is behind the navigation. */
-:root { --mm-box-panel-w: clamp(360px, 24vw, 500px); }
-.mm-modal-scrim.mm-scrim-left { padding: 0; place-items: stretch end; }
-@media (min-width: 1500px) {
-  .mm-modal-scrim.mm-scrim-left {
-    place-items: stretch start; padding-left: var(--mm-rail-w, 0px);
-    /* Undimmed and click-through: the voucher behind stays readable AND editable, which
-       is the whole point of docking rather than stacking. */
-    background: transparent; pointer-events: none;
-  }
-  .mm-modal-scrim.mm-scrim-left > * { pointer-events: auto; }
-  .mm-scrim-left .mm-modal.mm-sheet.mm-sheet-narrow { width: var(--mm-box-panel-w); }
-  /* The voucher steps aside for the box form instead of hiding under it. */
-  .mm-modal.mm-sheet.mm-sheet-shifted {
-    width: min(1240px, calc(100vw - var(--mm-rail-w, 0px) - var(--mm-box-panel-w)));
-  }
+/* Box Details is an inline PANEL heading the boxes column, not a popup. Every earlier
+   attempt floated it — left, right, wider breakpoints — and each one covered something
+   the packer is reading off at that exact moment. Sitting it in the flow costs nothing
+   and covers nothing: the voucher header stays to the left, the boxes already weighed
+   list directly beneath. */
+.mm-bx-panel {
+  flex: none;
+  border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius);
+  background: var(--mm-card); box-shadow: var(--mm-shadow);
+  padding: 0.7rem 0.85rem 0.75rem; margin-bottom: 0.7rem;
+  animation: mm-bx-panel-in 0.16s var(--mm-ease-out, ease-out);
 }
-.mm-modal.mm-sheet.mm-sheet-shifted { transition: width var(--mm-dur) var(--mm-ease); }
-@media (prefers-reduced-motion: reduce) { .mm-modal.mm-sheet.mm-sheet-shifted { transition: none; } }
+@keyframes mm-bx-panel-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mm-bx-panel { animation: none; } }
+.mm-bx-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+.mm-bx-panel-title { font-weight: 800; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem; }
+.mm-bx-panel-foot { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
+.mm-bx-panel-err { margin-top: 0.6rem; }
+/* Fields go label-over-input and flow across the column: nine stacked label-beside-input
+   rows would fill the panel top to bottom and push the box table off the screen — which
+   is the whole thing this layout exists to prevent. */
+.mm-bx-panel .mm-bx {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 0.55rem 0.9rem; align-items: start;
+}
+.mm-bx-panel .mm-bx-row { grid-template-columns: 1fr; gap: 0.22rem; align-content: start; }
+/* Two cells wide: the gross weight carries the scale controls beneath it (baud picker
+   and Connect scale belong on one line), and the printer name is a long string. Spanning
+   these two also squares the flow off — three tracks, no holes mid-panel. */
+.mm-bx-panel .mm-bx-row-wide { grid-column: span 2; }
+.mm-bx-panel .mm-bx-label { font-size: 0.72rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.03em; }
+.mm-bx-panel .mm-scale { margin-top: 0.3rem; }
+.mm-bx-panel .mm-bx-hi { background: var(--mm-accent-bg); color: var(--mm-accent-fg); border-color: var(--mm-accent-soft); }
+.mm-bx-panel .mm-bx-hi::placeholder { color: var(--mm-text-sec); }
+.mm-pv-boxempty { margin: 0.2rem 0 0; font-size: 0.82rem; }
+@media (max-width: 560px) {
+  .mm-bx-panel .mm-bx { grid-template-columns: 1fr; }
+  .mm-bx-panel .mm-bx-row-wide { grid-column: auto; }
+}
 
 /* The voucher is two columns — details, boxes — so nothing scrolls out of sight.
    The compound selector is deliberate: `.mm-sheet .mm-modal-body` below sets
@@ -1937,7 +1947,6 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
   .mm-sheet .mm-modal-body.mm-pv-split,
   .mm-pv-split { grid-template-columns: 1fr; grid-template-rows: none; overflow: auto; }
   .mm-pv-col-details { overflow: visible; padding-right: 0; }
-  .mm-modal-scrim.mm-scrim-left { place-items: stretch end; }
 }
 .mm-sheet .mm-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; }
 

@@ -373,10 +373,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
        bubble up here and close the whole voucher — losing every box already weighed.
        While a box is open the backdrop is inert; the voucher closes from its own X. */
     <div className="mm-modal-scrim mm-scrim-right" onClick={() => { if (!adding) onClose(); }}>
-      {/* While the box form is docked alongside, the voucher narrows to make room for
-          it rather than sitting underneath it — the figures being copied into the box
-          stay on screen. */}
-      <div className={`mm-modal mm-sheet${adding ? " mm-sheet-shifted" : ""}`} onClick={(e) => e.stopPropagation()} role="dialog">
+      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -523,14 +520,51 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 {size ? <span className="mm-suggest-meta">{size}</span> : null}
               </span>
               <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
-              <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Add box</button>
+              {/* Hidden while the form is open — it would re-key the form and throw away
+                  whatever has already been weighed into it. */}
+              {!adding && (
+                <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Add box</button>
+              )}
             </div>
+
+            {/* The box form sits at the TOP of this column and the boxes already weighed
+                list directly beneath it — no overlay, so the voucher header stays read-
+                able while a box is being keyed. */}
+            {adding && (
+              <BoxDialog
+                bobbinMasters={bobbinMasters.data ?? []}
+                availableNet={availableNet}
+                defaultItem={program.shade || program.roll_no || ""}
+                edit={editing != null ? boxes[editing] : undefined}
+                // Boxes on one voucher are packed the same way, so the bobbin, its per-piece
+                // weight and the box tare carry over from the last one keyed. Only the gross
+                // weight is asked for again — it is the only thing that really changes.
+                prev={editing == null ? boxes[boxes.length - 1] : undefined}
+                defaultReturns={{ box: boxReturn, bobbin: bobbinReturn }}
+                onClose={() => { setAdding(false); setEditing(null); }}
+                onAdd={(bx) => {
+                  const wasEdit = editing != null;
+                  setBoxes((p) => (wasEdit ? p.map((x, j) => (j === editing ? bx : x)) : [...p, bx]));
+                  setEditing(null);
+                  // Packing runs box after box, so adding one opens the next straight away.
+                  // Editing does not — that was a correction, not a new box.
+                  if (wasEdit) setAdding(false);
+                  else setBoxSeq((n) => n + 1);
+                }}
+                key={editing != null ? `edit-${editing}` : `add-${boxSeq}`}
+              />
+            )}
+
             {boxes.length === 0 ? (
-              <button type="button" className="mm-box-zone" onClick={() => setAdding(true)}>
-                <span><Package size={22} /></span>
-                <span>No boxes yet — weigh each box as you pack it.</span>
-                <span className="mm-box-zone-cta"><Plus size={14} /> Add box</span>
-              </button>
+              adding ? (
+                <p className="mm-empty mm-pv-boxempty">Boxes list here as you add them.</p>
+              ) : (
+                <button type="button" className="mm-box-zone" onClick={() => setAdding(true)}>
+                  <span><Package size={22} /></span>
+                  <span>No boxes yet — weigh each box as you pack it.</span>
+                  <span className="mm-box-zone-cta"><Plus size={14} /> Add box</span>
+                </button>
+              )
             ) : (
               <div className="mm-table-scroll mm-pv-boxtable">
                 <table className="mm-table mm-table-dense">
@@ -610,30 +644,6 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         </div>
       </div>
 
-      {adding && (
-        <BoxDialog
-          bobbinMasters={bobbinMasters.data ?? []}
-          availableNet={availableNet}
-          defaultItem={program.shade || program.roll_no || ""}
-          edit={editing != null ? boxes[editing] : undefined}
-          // Boxes on one voucher are packed the same way, so the bobbin, its per-piece
-          // weight and the box tare carry over from the last one keyed. Only the gross
-          // weight is asked for again — it is the only thing that really changes.
-          prev={editing == null ? boxes[boxes.length - 1] : undefined}
-          defaultReturns={{ box: boxReturn, bobbin: bobbinReturn }}
-          onClose={() => { setAdding(false); setEditing(null); }}
-          onAdd={(b) => {
-            const wasEdit = editing != null;
-            setBoxes((p) => (wasEdit ? p.map((x, j) => (j === editing ? b : x)) : [...p, b]));
-            setEditing(null);
-            // Packing runs box after box, so adding one opens the next straight away.
-            // Editing does not — that was a correction, not a new box.
-            if (wasEdit) setAdding(false);
-            else setBoxSeq((n) => n + 1);
-          }}
-          key={editing != null ? `edit-${editing}` : `add-${boxSeq}`}
-        />
-      )}
     </div>
   );
 }
@@ -701,88 +711,85 @@ function BoxDialog({
   }
 
   return (
-    /* Docked LEFT on purpose: the voucher sheet sits on the right, so a box popup on the
-       same side covered the very figures being copied from. */
-    <div className="mm-modal-scrim mm-scrim-left" style={{ zIndex: 70 }} onClick={onClose}>
-      <div className="mm-modal mm-sheet mm-sheet-narrow" onClick={(e) => e.stopPropagation()} role="dialog">
-        <div className="mm-modal-head">
-          <span className="mm-modal-title"><Package size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />Box Details</span>
-          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+    /* An inline panel, not a popup: it heads its own column, so nothing it needs to be
+       read against — the voucher header on the left, the boxes already weighed below —
+       is ever covered by it. */
+    <section className="mm-bx-panel" aria-label={edit ? "Edit box" : "New box"}>
+      <div className="mm-bx-panel-head">
+        <span className="mm-bx-panel-title"><Package size={15} /> {edit ? "Edit Box" : "Box Details"}</span>
+        <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close box details"><X size={16} /></button>
+      </div>
+      <div className="mm-bx">
+        <div className="mm-bx-row mm-bx-row-wide">
+          <span className="mm-bx-label">Box Sticker Printer</span>
+          <input className="mm-input mm-bx-hi" value={printer}
+            onChange={(e) => { setPrinter(e.target.value); window.localStorage.setItem("mm-box-printer", e.target.value); }} />
         </div>
-        <div className="mm-modal-body">
-          <div className="mm-bx">
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Box Sticker Printer</span>
-              <input className="mm-input mm-bx-hi" value={printer}
-                onChange={(e) => { setPrinter(e.target.value); window.localStorage.setItem("mm-box-printer", e.target.value); }} />
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Available Net Weight</span>
-              <input className="mm-input mm-bx-hi" value={availableNet.toLocaleString()} readOnly />
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Total Weight</span>
-              <div>
-                <input className="mm-input" type="number" value={gross} placeholder="0.000"
-                  onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
-                <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
-              </div>
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Bobbin</span>
-              <div className="mm-bx-bobbin">
-                <SearchSelect value={bobbin} placeholder="— none —"
-                  options={allBobbins.map((b) => ({ value: b.name, label: b.name }))} onChange={setBobbin} />
-                {bobbinMaster && (
-                  <button type="button" className="mm-link-add mm-bx-add" title="New bobbin" onClick={() => setQuick(true)}><Plus size={15} /></button>
-                )}
-              </div>
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Bobbin Weight</span>
-              <div className="mm-bx-pcs">
-                <span className="seg">Pcs</span>
-                <input type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
-                <span className="seg">×</span>
-                <input type="number" value={perPcs} placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "0.000"}
-                  onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
-                <span className="seg">Kg</span>
-              </div>
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Total Bobbin Weight</span>
-              <input className="mm-input mm-bx-ro" value={totalBobbin.toLocaleString()} readOnly />
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Box Weight</span>
-              <input className="mm-input" type="number" value={boxWeight}
-                onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Net Weight</span>
-              <input className={`mm-input mm-bx-ro ${net < 0 ? "mm-input-warn" : ""}`} value={net.toLocaleString()} readOnly />
-            </div>
-            <div className="mm-bx-row">
-              <span className="mm-bx-label">Returns</span>
-              <div className="mm-bx-returns">
-                <label className="mm-field-inline">
-                  <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} />
-                  <span className="mm-field-label">R.Box</span>
-                </label>
-                <label className="mm-field-inline">
-                  <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} />
-                  <span className="mm-field-label">R.Bobbin</span>
-                </label>
-              </div>
-            </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Available Net Weight</span>
+          <input className="mm-input mm-bx-hi" value={availableNet.toLocaleString()} readOnly />
+        </div>
+        <div className="mm-bx-row mm-bx-row-wide">
+          <span className="mm-bx-label">Total Weight</span>
+          <div>
+            <input className="mm-input" type="number" value={gross} placeholder="0.000"
+              onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
+            <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
           </div>
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Bobbin</span>
+          <div className="mm-bx-bobbin">
+            <SearchSelect value={bobbin} placeholder="— none —"
+              options={allBobbins.map((b) => ({ value: b.name, label: b.name }))} onChange={setBobbin} />
+            {bobbinMaster && (
+              <button type="button" className="mm-link-add mm-bx-add" title="New bobbin" onClick={() => setQuick(true)}><Plus size={15} /></button>
+            )}
+          </div>
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Bobbin Weight</span>
+          <div className="mm-bx-pcs">
+            <span className="seg">Pcs</span>
+            <input type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+            <span className="seg">×</span>
+            <input type="number" value={perPcs} placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "0.000"}
+              onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+            <span className="seg">Kg</span>
+          </div>
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Total Bobbin Weight</span>
+          <input className="mm-input mm-bx-ro" value={totalBobbin.toLocaleString()} readOnly />
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Box Weight</span>
+          <input className="mm-input" type="number" value={boxWeight}
+            onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Net Weight</span>
+          <input className={`mm-input mm-bx-ro ${net < 0 ? "mm-input-warn" : ""}`} value={net.toLocaleString()} readOnly />
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Returns</span>
+          <div className="mm-bx-returns">
+            <label className="mm-field-inline">
+              <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} />
+              <span className="mm-field-label">R.Box</span>
+            </label>
+            <label className="mm-field-inline">
+              <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} />
+              <span className="mm-field-label">R.Bobbin</span>
+            </label>
+          </div>
+        </div>
+      </div>
 
-          {err && <p className="mm-error" style={{ marginTop: "0.7rem" }}>{err}</p>}
-        </div>
-        <div className="mm-modal-foot">
-          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" onClick={add}>Submit</button>
-        </div>
+      {err && <p className="mm-error mm-bx-panel-err">{err}</p>}
+      <div className="mm-bx-panel-foot">
+        <button className="mm-btn-ghost mm-btn-compact" onClick={onClose}>Cancel</button>
+        <button className="mm-btn-primary mm-btn-compact" onClick={add}>{edit ? "Save box" : "Add box"}</button>
       </div>
 
       {quick && bobbinMaster && (
@@ -797,7 +804,7 @@ function BoxDialog({
           }}
         />
       )}
-    </div>
+    </section>
   );
 }
 
