@@ -178,7 +178,8 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
       {groups.length === 0 ? (
         <p className="mm-pvw-empty">No machines yet.</p>
       ) : (
-        groups.map((g) => (
+        <div className="mm-pvw-machines">
+        {groups.map((g) => (
           // Every machine is listed, running or not. An idle one still gets a box with its
           // number in it and nothing beside it — blank IS the reading ("that machine is
           // free"), and a machine that simply vanishes makes the floor count to notice.
@@ -231,7 +232,8 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
               ))
             )}
           </div>
-        ))
+        ))}
+        </div>
       )}
     </section>
   );

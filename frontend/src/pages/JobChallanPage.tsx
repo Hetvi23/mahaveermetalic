@@ -397,13 +397,12 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                             <span className="mm-colour-name">{r.color_name || "—"}</span>
                             {r.roll_no ? <span className="mm-suggest-meta"> {r.roll_no}</span> : null}
                           </td>
-                          <td className="mm-num">
+                          {/* The roll's own weight, and nothing else. The challan-level
+                              "x of y due" repeated the same two figures on every roll of a
+                              challan and said nothing about the roll the line is for. */}
+                          <td className="mm-num"
+                            title={`Challan ${r.challan_no || r.name}: ${kg(Number(r.outstanding_weight || 0))} of ${kg(Number(r.total_weight || 0))} kg still due`}>
                             {kg(Number(r.weight || 0))}
-                            {/* What the whole challan still owes, so picking any roll of it
-                                says what the receipt will be measured against. */}
-                            <span className="mm-suggest-meta">
-                              {kg(Number(r.outstanding_weight || 0))} of {kg(Number(r.total_weight || 0))} due
-                            </span>
                           </td>
                           <td className="mm-num">
                             <button type="button"

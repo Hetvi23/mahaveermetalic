@@ -601,7 +601,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "bb1",
 				title: "Challan",
 				description: "Branch & location (auto-filled), direction of movement and counterparty.",
-				fieldnames: ["branch", "location", "challan_number", "chalan_date", "given_received", "party", "note"],
+				fieldnames: ["branch", "location", "challan_number", "chalan_date", "given_received", "party", "job_work_flag", "note"],
 			},
 		],
 		listColumns: [
@@ -609,6 +609,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "chalan_date", label: "Date" },
 			{ fieldname: "given_received", label: "Given/Recv" },
 			{ fieldname: "party", label: "Party" },
+			{ fieldname: "job_work_flag", label: "Job work" },
 		],
 		searchField: "challan_number",
 		fields: [
@@ -625,6 +626,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				default: "Given",
 			},
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
+			{ fieldname: "job_work_flag", label: "Is Job Work", fieldtype: "Check" },
 			{ fieldname: "note", label: "Note", fieldtype: "Small Text" },
 		],
 		childTables: [
