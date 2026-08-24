@@ -43,6 +43,10 @@ def post_bobbin_challan(doc):
 			# Carried so job-work bobbins can be told apart in the ledger and the report;
 			# the movement is otherwise identical to an ordinary give/receive.
 			job_work_flag=1 if frappe.utils.cint(doc.get("job_work_flag")) else 0,
+			# WHICH Job Out these belong to. Without it the movement reaches the ledger
+			# attached to nothing and the hisab — which counts bobbins per Job Out — cannot
+			# see it, so bobbins sent this way looked like they were never sent.
+			against_job_out=doc.get("against_job_out") or None,
 			in_qty=qty if receiving else 0,
 			out_qty=0 if receiving else qty,
 			box_in=box if receiving else 0,

@@ -15,7 +15,8 @@
   "out_qty",
   "box_in",
   "box_out",
-  "job_work_flag"
+  "job_work_flag",
+  "against_job_out"
  ],
  "fields": [
   {
@@ -95,6 +96,13 @@
    "label": "Is Job Work",
    "default": "0",
    "description": "Carried from the voucher, so job-work bobbins can be told apart in the report."
+  },
+  {
+   "fieldname": "against_job_out",
+   "fieldtype": "Link",
+   "label": "Against Job Out",
+   "options": "MM Sales Challan",
+   "description": "Carried from the voucher, so the hisab can attribute the movement."
   }
  ],
  "index_web_pages_for_search": 0,

@@ -13,6 +13,7 @@
   "given_received",
   "party",
   "job_work_flag",
+  "against_job_out",
   "note",
   "bobbin_type_section",
   "lines"
@@ -68,6 +69,14 @@
    "label": "Is Job Work",
    "default": "0",
    "description": "These bobbins are going to (or coming back from) a job worker, rather than an ordinary give/receive. Every other movement in the app carries this \u2014 inward, cutting, program, production and the challans \u2014 so the bobbin ledger can be read the same way."
+  },
+  {
+   "fieldname": "against_job_out",
+   "fieldtype": "Link",
+   "label": "Against Job Out",
+   "options": "MM Sales Challan",
+   "depends_on": "eval:doc.job_work_flag",
+   "description": "Which Job Out these bobbins belong to. Without it the movement lands in the bobbin ledger attached to nothing, and the job hisab \u2014 which counts bobbins sent against bobbins returned per Job Out \u2014 cannot see it."
   },
   {
    "fieldname": "note",

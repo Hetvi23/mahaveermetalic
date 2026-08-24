@@ -1482,6 +1482,21 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 	):
 		ins.setdefault(c.against_job_out, []).append(c)
 
+	# Bobbins also move on their own, through Bobbin In / Out, against a named Job Out.
+	# Counting only the challans' bobbin tables missed every one of those — the shop would
+	# send a dozen more bobbins on Thursday and the hisab would still say what went out on
+	# Monday. Given adds to what was sent, Received to what came back.
+	loose_out, loose_in = {}, {}
+	for e in frappe.get_all(
+		"MM Bobbin Ledger Entry",
+		filters={"against_job_out": ["in", names]},
+		fields=["against_job_out", "in_qty", "out_qty"],
+		limit_page_length=0,
+	):
+		jo = e.against_job_out
+		loose_out[jo] = loose_out.get(jo, 0.0) + frappe.utils.flt(e.out_qty)
+		loose_in[jo] = loose_in.get(jo, 0.0) + frappe.utils.flt(e.in_qty)
+
 	in_names = [c.name for v in ins.values() for c in v]
 	bob_in = {}
 	if in_names:
@@ -1507,8 +1522,9 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 
 		out_w = round(frappe.utils.flt(o.total_weight), 3)
 		in_w = round(sum(r["weight"] for r in in_rows), 3)
-		b_out = round(bob_out.get(o.name, {}).get("qty", 0.0), 3)
-		b_in = round(sum(r["bobbin"] for r in in_rows), 3)
+		# Challan bobbins PLUS anything moved separately against this Job Out.
+		b_out = round(bob_out.get(o.name, {}).get("qty", 0.0) + loose_out.get(o.name, 0.0), 3)
+		b_in = round(sum(r["bobbin"] for r in in_rows) + loose_in.get(o.name, 0.0), 3)
 
 		row = {
 			"job_out": o.name,
@@ -1518,6 +1534,10 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 			"party_name": o.party_name or o.party,
 			"rolls": rolls.get(o.name, []),
 			"bobbins_out": bob_out.get(o.name, {}).get("rows", []),
+			# Split out so the register can say where a figure came from — the challan it
+			# went on, or a bobbin movement raised against it afterwards.
+			"bobbin_out_loose": round(loose_out.get(o.name, 0.0), 3),
+			"bobbin_in_loose": round(loose_in.get(o.name, 0.0), 3),
 			"job_ins": in_rows,
 			"out_weight": out_w,
 			"in_weight": in_w,

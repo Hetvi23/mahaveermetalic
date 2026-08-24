@@ -601,7 +601,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "bb1",
 				title: "Challan",
 				description: "Branch & location (auto-filled), direction of movement and counterparty.",
-				fieldnames: ["branch", "location", "challan_number", "chalan_date", "given_received", "party", "job_work_flag", "note"],
+				fieldnames: ["branch", "location", "challan_number", "chalan_date", "given_received", "party", "job_work_flag", "against_job_out", "note"],
 			},
 		],
 		listColumns: [
@@ -627,6 +627,15 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			},
 			{ fieldname: "party", label: "Party", fieldtype: "Link", options: "MM Party Master", reqd: true },
 			{ fieldname: "job_work_flag", label: "Is Job Work", fieldtype: "Check" },
+			// Only asked for once the tick is on, and scoped to the party's own Job Outs:
+			// this is what lets the job hisab attribute the bobbins to a challan. Without
+			// it the movement reaches the ledger attached to nothing.
+			{
+				fieldname: "against_job_out", label: "Against Job Out", fieldtype: "Link",
+				options: "MM Sales Challan",
+				dependsOn: { field: "job_work_flag", in: ["1"] },
+				linkFilters: [{ field: "party", fromField: "party" }],
+			},
 			{ fieldname: "note", label: "Note", fieldtype: "Small Text" },
 		],
 		childTables: [
