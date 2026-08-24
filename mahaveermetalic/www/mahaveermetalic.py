@@ -25,18 +25,34 @@ def get_context(context):
 	return context
 
 
+# Both halves of the built bundle. The version was read off index.js ALONE, and the asset
+# URLs are fixed names — /assets/.../index.css never changes. So a deploy that touched only
+# the stylesheet left index.js untouched, git left its mtime alone, the version came back
+# identical, and every browser and proxy went on serving the CSS it already had. A
+# CSS-only release was invisible on the live site while being correct on disk.
+_BUNDLE = ("index.js", "index.css")
+
+
 def _asset_version() -> str:
-	"""Mtime of the built SPA bundle, used to cache-bust the asset URLs so a new
-	`yarn build` is picked up without a manual hard refresh."""
+	"""A version that changes whenever EITHER built file does.
+
+	Newest mtime across the bundle, with each file's size folded in: a checkout that
+	preserves timestamps can leave mtime alone while the contents differ, and size catches
+	that far more cheaply than hashing 700 KB on every page load.
+	"""
 	import os
 
-	try:
-		path = frappe.get_app_path(
-			"mahaveermetalic", "public", "mahaveermetalic", "assets", "index.js"
-		)
-		return str(int(os.path.getmtime(path)))
-	except Exception:
-		return frappe.utils.get_build_version()
+	stamps = []
+	for name in _BUNDLE:
+		try:
+			path = frappe.get_app_path(
+				"mahaveermetalic", "public", "mahaveermetalic", "assets", name
+			)
+			st = os.stat(path)
+			stamps.append(f"{int(st.st_mtime)}-{st.st_size}")
+		except Exception:
+			continue
+	return ".".join(stamps) if stamps else frappe.utils.get_build_version()
 
 
 @frappe.whitelist(methods=["POST"], allow_guest=True)
