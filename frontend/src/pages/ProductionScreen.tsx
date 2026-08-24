@@ -661,9 +661,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                       <th>#</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
                       <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">B/Pcs</th>
                       <th className="mm-num">Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th>
-                      <th className="mm-num" title="This box's packaging comes back">R.Box</th>
-                      <th className="mm-num" title="This box's bobbins come back">R.Bob</th>
-                      <th />
+                      <th className="mm-pv-check" title="This box's packaging comes back">R.Box</th>
+                      <th className="mm-pv-check" title="This box's bobbins come back">R.Bob</th>
+                      <th className="mm-pv-actcell" />
                     </tr>
                   </thead>
                   <tbody>
@@ -678,27 +678,41 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                         <td className="mm-num">{b.totalBobbin.toLocaleString()}</td>
                         <td className="mm-num">{b.boxWeight.toLocaleString()}</td>
                         <td className="mm-num"><strong>{b.net.toLocaleString()}</strong></td>
-                        <td className="mm-num">
+                        <td className="mm-pv-check">
                           <input type="checkbox" checked={b.boxReturn} aria-label={`Box ${i + 1} packaging returns`}
                             onChange={(e) => setBoxes((p) => p.map((x, j) => (j === i ? { ...x, boxReturn: e.target.checked } : x)))} />
                         </td>
-                        <td className="mm-num">
+                        <td className="mm-pv-check">
                           <input type="checkbox" checked={b.bobbinReturn} aria-label={`Box ${i + 1} bobbins return`}
                             onChange={(e) => setBoxes((p) => p.map((x, j) => (j === i ? { ...x, bobbinReturn: e.target.checked } : x)))} />
                         </td>
-                        <td className="mm-num mm-pv-rowacts">
-                          <button className="mm-mini" title="Print this box's sticker"
-                            aria-label={`Print sticker for box ${i + 1}`}
-                            onClick={() => printBoxStickers([stickerFor(b, i)])}>
-                            <Printer size={13} />
-                          </button>
-                          <button className="mm-mini" title="Save this box's sticker as a file"
-                            aria-label={`Download sticker for box ${i + 1}`}
-                            onClick={() => downloadBoxStickers([stickerFor(b, i)], `sticker-box-${i + 1}`)}>
-                            <Download size={13} />
-                          </button>
-                          <button className="mm-mini" onClick={() => { setEditing(i); setAdding(true); }} title="Edit this box" aria-label={`Edit box ${i + 1}`}><Pencil size={13} /></button>
-                          <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
+                        {/* The buttons live in a DIV inside the cell, never on the cell
+                            itself: `display:flex` on a <td> takes it out of the table
+                            layout, so it stops sizing as a column and shoves the two
+                            checkboxes beside it out of their own. */}
+                        <td className="mm-pv-actcell">
+                          <div className="mm-pv-rowacts">
+                            <button className="mm-icon-btn" title="Print this box's sticker"
+                              aria-label={`Print sticker for box ${i + 1}`}
+                              onClick={() => printBoxStickers([stickerFor(b, i)])}>
+                              <Printer size={14} />
+                            </button>
+                            <button className="mm-icon-btn" title="Save this box's sticker as a file"
+                              aria-label={`Download sticker for box ${i + 1}`}
+                              onClick={() => downloadBoxStickers([stickerFor(b, i)], `sticker-box-${i + 1}`)}>
+                              <Download size={14} />
+                            </button>
+                            <button className="mm-icon-btn" title="Edit this box"
+                              aria-label={`Edit box ${i + 1}`}
+                              onClick={() => { setEditing(i); setAdding(true); }}>
+                              <Pencil size={14} />
+                            </button>
+                            <button className="mm-icon-btn mm-icon-btn-danger" title="Remove this box"
+                              aria-label={`Remove box ${i + 1}`}
+                              onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

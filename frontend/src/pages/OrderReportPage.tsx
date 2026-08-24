@@ -349,7 +349,7 @@ function OrderSummaryModal({ order, onClose }: { order: string; onClose: () => v
                 </div>
               ))}
 
-              <div className="mm-osum-grid">
+              <div className="mm-osum-grid mm-osum-grid-2">
                 <Log title="INWARDS" count={d.inwards.length}
                   foot={<><span>TOTAL</span><span><strong>{kg(t.inwarded)}</strong> kg</span></>}>
                   {d.inwards.map((r, i) => (
@@ -362,20 +362,11 @@ function OrderSummaryModal({ order, onClose }: { order: string; onClose: () => v
                   ))}
                 </Log>
 
-                <Log title="PRODUCTION" count={d.productions.length}
-                  foot={<><span>TOTAL</span><span><strong>{kg(t.produced)}</strong> kg</span></>}>
-                  {d.productions.map((r) => (
-                    <div className="mm-osum-row" key={r.name}
-                      title={`${r.name}${r.machine_no ? ` · machine ${r.machine_no}` : ""}${r.batch_no ? ` · batch ${r.batch_no}` : ""}`}>
-                      <span className="mm-osum-when">{r.date || "—"}</span>
-                      <span className="mm-osum-what">{r.box_qty ? `${r.box_qty} box` : ""}</span>
-                      <span className="mm-osum-kg">{kg(r.net_weight)}kg</span>
-                    </div>
-                  ))}
-                </Log>
-
                 <Log title="SALES" count={d.sales.length}
-                  foot={<><span>TOTAL</span><span><strong>{kg(t.dispatched)}</strong> kg</span></>}>
+                  foot={<>
+                    <span>TOTAL{d.productions.length > 0 ? ` · from ${d.productions.length} production${d.productions.length === 1 ? "" : "s"}` : ""}</span>
+                    <span><strong>{kg(t.dispatched)}</strong> kg</span>
+                  </>}>
                   {d.sales.map((r, i) => (
                     <div className="mm-osum-row" key={`${r.doc}-${i}`} title={r.doc}>
                       <span className="mm-osum-when">

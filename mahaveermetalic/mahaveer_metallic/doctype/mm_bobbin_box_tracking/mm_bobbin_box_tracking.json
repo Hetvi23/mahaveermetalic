@@ -1,100 +1,159 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "hash",
-  "creation": "2026-05-03 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "branch",
-    "location",
-    "challan_number",
-    "chalan_date",
-    "given_received",
-    "party",
-    "note",
-    "bobbin_type_section",
-    "lines"
-  ],
-  "fields": [
-    {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "label": "Branch",
-      "options": "MM Branch"
-    },
-    {
-      "fieldname": "location",
-      "fieldtype": "Link",
-      "label": "Location",
-      "options": "MM Location Master"
-    },
-    {
-      "fieldname": "challan_number",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Challan Number",
-      "reqd": 1
-    },
-    {
-      "fieldname": "chalan_date",
-      "fieldtype": "Date",
-      "in_list_view": 1,
-      "label": "Chalan Date",
-      "reqd": 1,
-      "default": "Today"
-    },
-    {
-      "fieldname": "given_received",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "label": "Given / Received",
-      "options": "Given\nReceived",
-      "reqd": 1,
-      "default": "Given"
-    },
-    {
-      "fieldname": "party",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Party",
-      "options": "MM Party Master",
-      "reqd": 1
-    },
-    {
-      "fieldname": "note",
-      "fieldtype": "Small Text",
-      "label": "Note"
-    },
-    {
-      "fieldname": "bobbin_type_section",
-      "fieldtype": "Section Break",
-      "label": "Bobbin / Box Quantities"
-    },
-    {
-      "fieldname": "lines",
-      "fieldtype": "Table",
-      "label": "Lines",
-      "options": "MM Bobbin Box Line",
-      "reqd": 1
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Bobbin Box Tracking",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-05-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "location",
+  "challan_number",
+  "chalan_date",
+  "given_received",
+  "party",
+  "job_work_flag",
+  "note",
+  "bobbin_type_section",
+  "lines"
+ ],
+ "fields": [
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "MM Branch"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "label": "Location",
+   "options": "MM Location Master"
+  },
+  {
+   "fieldname": "challan_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Challan Number",
+   "reqd": 1
+  },
+  {
+   "fieldname": "chalan_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Chalan Date",
+   "reqd": 1,
+   "default": "Today"
+  },
+  {
+   "fieldname": "given_received",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Given / Received",
+   "options": "Given\nReceived",
+   "reqd": 1,
+   "default": "Given"
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Party",
+   "options": "MM Party Master",
+   "reqd": 1
+  },
+  {
+   "fieldname": "job_work_flag",
+   "fieldtype": "Check",
+   "label": "Is Job Work",
+   "default": "0",
+   "description": "These bobbins are going to (or coming back from) a job worker, rather than an ordinary give/receive. Every other movement in the app carries this \u2014 inward, cutting, program, production and the challans \u2014 so the bobbin ledger can be read the same way."
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note"
+  },
+  {
+   "fieldname": "bobbin_type_section",
+   "fieldtype": "Section Break",
+   "label": "Bobbin / Box Quantities"
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "MM Bobbin Box Line",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Bobbin Box Tracking",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

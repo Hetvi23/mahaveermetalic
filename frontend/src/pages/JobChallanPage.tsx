@@ -42,9 +42,14 @@ type PickedBobbin = { bobbin: string; qty: number };
  * right, totals and Submit along the bottom.
  */
 /** A Job Out still holding material — one row of the Job In picker. */
+/** One ROLL still with a worker. `name` is the Job Out it belongs to — a Job In answers
+ *  the whole challan — while `line` is this roll's own identity on the list. */
 type JobOutRow = {
-  name: string; challan_no?: string; transaction_date?: string;
-  party?: string; party_label?: string; rolls?: string;
+  name: string; line?: string; challan_no?: string; transaction_date?: string;
+  party?: string; party_label?: string;
+  color_name?: string; cut?: string; roll_no?: string | null;
+  /** This roll's weight. `total_weight` is the whole challan's. */
+  weight?: number; qty_box?: number;
   total_weight?: number; total_box?: number;
   received_weight?: number; outstanding_weight?: number;
 };
@@ -379,19 +384,26 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                       {!jobOutsCall.isLoading && jobOutRows.length === 0 && (
                         <tr><td colSpan={6} className="mm-empty">Nothing is out with a worker.</td></tr>
                       )}
-                      {jobOutRows.map((r) => (
-                        <tr key={r.name} className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
+                      {jobOutRows.map((r, i) => (
+                        <tr key={r.line || `${r.name}-${i}`}
+                          className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
                           <td className="mm-job-date">{r.transaction_date || "—"}</td>
                           <td>{r.challan_no || r.name}</td>
                           <td>{r.party_label || r.party || "—"}</td>
-                          <td><span className="mm-colour-name">{r.rolls || "—"}</span></td>
+                          {/* The ROLL, at its own weight. This column used to carry the
+                              challan's comma-joined colours against the challan's total,
+                              so eleven rolls read as one line and named none of them. */}
+                          <td title={`${r.roll_no || ""}${r.cut ? ` · ${r.cut}` : ""}`}>
+                            <span className="mm-colour-name">{r.color_name || "—"}</span>
+                            {r.roll_no ? <span className="mm-suggest-meta"> {r.roll_no}</span> : null}
+                          </td>
                           <td className="mm-num">
-                            {kg(Number(r.outstanding_weight || 0))}
-                            {/* A part-received Job Out says so, or the smaller figure
-                                reads as the challan having been raised light. */}
-                            {Number(r.received_weight || 0) > 0 && (
-                              <span className="mm-suggest-meta"> of {kg(Number(r.total_weight || 0))}</span>
-                            )}
+                            {kg(Number(r.weight || 0))}
+                            {/* What the whole challan still owes, so picking any roll of it
+                                says what the receipt will be measured against. */}
+                            <span className="mm-suggest-meta">
+                              {kg(Number(r.outstanding_weight || 0))} of {kg(Number(r.total_weight || 0))} due
+                            </span>
                           </td>
                           <td className="mm-num">
                             <button type="button"

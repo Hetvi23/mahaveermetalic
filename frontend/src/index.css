@@ -918,7 +918,14 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
   width: 26px; height: 26px; border: 1px solid var(--mm-border); border-radius: 6px;
   background: var(--mm-card); color: var(--mm-danger); cursor: pointer;
 }
-.mm-icon-btn:hover { background: var(--mm-danger-bg); }
+/* The base button was coloured danger-red for everything, so a Print and a Delete looked
+   identical — in a row of four actions that is the one distinction that has to hold. The
+   neutral ones are neutral; only the destructive one is red. */
+.mm-icon-btn { color: var(--mm-text-sec); }
+.mm-icon-btn:hover { background: var(--mm-hover-bg); color: var(--mm-text); border-color: var(--mm-border-dark); }
+.mm-icon-btn-danger { color: var(--mm-danger); }
+.mm-icon-btn-danger:hover { background: var(--mm-danger-bg); color: var(--mm-danger); border-color: var(--mm-danger); }
+.mm-icon-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--mm-focus); }
 .mm-ow-prod { margin-top: 1rem; font-size: 0.85rem; color: var(--mm-text-sec); }
 .mm-ow-po { margin-top: 1rem; border: 1px solid var(--mm-accent-soft); background: var(--mm-accent-bg); border-radius: var(--mm-radius); padding: 0.8rem 0.9rem; }
 .mm-ow-po-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
@@ -2441,7 +2448,16 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-pv-boxtable th, .mm-pv-boxtable td { padding: 0.45rem 0.5rem; }
 .mm-pv-boxtable thead th:first-child, .mm-pv-boxtable tbody td:first-child { padding-left: 0.6rem; }
 .mm-pv-boxtable thead th:last-child, .mm-pv-boxtable tbody td:last-child { padding-right: 0.6rem; }
-.mm-pv-rowacts { display: flex; gap: 0.3rem; justify-content: flex-end; align-items: center; }
+/* The row's actions. The flex belongs to a DIV inside the cell — putting display:flex on
+   a <td> takes it out of the table layout, so it stops sizing as a column and drags the
+   cells beside it out of alignment. Four small buttons in a twelve-column table is also
+   the point at which they need a floor width and a no-wrap, or the last one drops. */
+.mm-pv-actcell { white-space: nowrap; width: 1%; text-align: right; }
+.mm-pv-rowacts { display: flex; gap: 0.15rem; justify-content: flex-end; align-items: center; }
+/* The two return ticks are a column of their own; centring them under the heading is what
+   makes a glance down the column readable. */
+.mm-pv-check { text-align: center; width: 1%; white-space: nowrap; }
+.mm-pv-check input { margin: 0; }
 
 /* The picker sheets' search box stretched to fill the whole header (flex: 1 1 260px). It
    only needs to be wide enough to type a roll or colour into. */
@@ -2714,6 +2730,9 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 /* Three logs on a wide sheet; they stack rather than squeeze, because a two-character
    column of kilograms is not a column anybody can read. */
 .mm-osum-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
+/* Two columns, because there is one inward side and one outward side. A production and
+   the challan it auto-raises are the same movement, so they were never two answers. */
+.mm-osum-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 820px) { .mm-osum-grid { grid-template-columns: 1fr; } }
 .mm-osum-log {
   display: flex; flex-direction: column; min-width: 0;

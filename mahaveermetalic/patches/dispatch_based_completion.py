@@ -29,7 +29,10 @@ import frappe
 
 
 def execute():
-	for doctype in ("mm_lot_remark", "mm_settings", "mm_sales_order", "mm_sales_order_item"):
+	for doctype in (
+		"mm_lot_remark", "mm_settings", "mm_sales_order", "mm_sales_order_item",
+		"mm_bobbin_box_tracking", "mm_bobbin_ledger_entry",
+	):
 		try:
 			frappe.reload_doc("mahaveer_metallic", "doctype", doctype, force=True)
 		except Exception:

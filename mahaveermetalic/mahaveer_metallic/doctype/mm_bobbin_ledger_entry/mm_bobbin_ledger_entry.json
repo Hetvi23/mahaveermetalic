@@ -14,7 +14,8 @@
   "in_qty",
   "out_qty",
   "box_in",
-  "box_out"
+  "box_out",
+  "job_work_flag"
  ],
  "fields": [
   {
@@ -87,6 +88,13 @@
    "in_list_view": 1,
    "precision": 3,
    "default": "0"
+  },
+  {
+   "fieldname": "job_work_flag",
+   "fieldtype": "Check",
+   "label": "Is Job Work",
+   "default": "0",
+   "description": "Carried from the voucher, so job-work bobbins can be told apart in the report."
   }
  ],
  "index_web_pages_for_search": 0,

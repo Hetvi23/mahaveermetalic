@@ -40,6 +40,9 @@ def post_bobbin_challan(doc):
 			party=doc.party,
 			bobbin=row.bobbin_type,
 			note=doc.note,
+			# Carried so job-work bobbins can be told apart in the ledger and the report;
+			# the movement is otherwise identical to an ordinary give/receive.
+			job_work_flag=1 if frappe.utils.cint(doc.get("job_work_flag")) else 0,
 			in_qty=qty if receiving else 0,
 			out_qty=0 if receiving else qty,
 			box_in=box if receiving else 0,
@@ -221,6 +224,8 @@ def post_job_challan(doc):
 			party=doc.party,
 			bobbin=row.bobbin,
 			note=doc.remarks,
+			# A Job Out / Job In IS job work — the ledger records it without being asked.
+			job_work_flag=1,
 			in_qty=0 if going_out else qty,
 			out_qty=qty if going_out else 0,
 		)

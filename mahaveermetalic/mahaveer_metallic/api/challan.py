@@ -1008,11 +1008,19 @@ def update_challan_weights(challan, lines):
 @frappe.whitelist()
 def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=None,
 	party=None, start=0, page_length=10):
-	"""Job Out challans whose material has not fully come back.
+	"""Rolls still with a job worker — ROLL BY ROLL, one line each.
 
 	Job In answers a Job Out, so this is the list it picks from — not in-stock rolls,
 	which is what went out in the first place. A Job Out is "in progress" until the Job
 	Ins booked against it account for its weight; anything still short is with the worker.
+
+	It used to return one line per CHALLAN: the colours comma-joined into a "Roll" column
+	that therefore showed a colour rather than a roll, and the challan's total weight
+	against it. A Job Out carrying eleven rolls read as a single 1,290 kg line, which is
+	the same complaint the Job Out picker had — the operator recognises a ROLL, and cannot
+	tell which of them is coming back from a total. Each roll is its own line now, at its
+	own weight, and picking any of them still receives against the whole Job Out because
+	that is what a Job In reconciles against.
 
 	Job Ins made before `against_job_out` existed name no Job Out, so they cannot be
 	credited to one. They are left out of the per-challan figure rather than spread across
@@ -1073,10 +1081,57 @@ def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=
 		r["outstanding_weight"] = out
 		open_rows.append(r)
 
-	total = len(open_rows)
+	# …then expand each open challan into the rolls that went out on it.
+	by_challan = {r["name"]: r for r in open_rows}
+	roll_rows = []
+	if by_challan:
+		items = frappe.get_all(
+			"MM Sales Challan Item",
+			filters={"parent": ["in", list(by_challan)], "parenttype": "MM Sales Challan"},
+			fields=["name", "parent", "color_name", "cut", "weight", "qty_box", "roll_inventory"],
+			order_by="parent asc, idx asc",
+			limit_page_length=0,
+		)
+		# One lookup for every roll on the page rather than one per line. The COLOUR comes
+		# from here too, not only the roll number: the challan line's `color_name` is a Link
+		# and `_valid_colour` leaves it blank for any shade not in MM Item Master, so the
+		# picker showed "—" for exactly the colours nobody had set up as an item.
+		inv_names = {i.roll_inventory for i in items if i.roll_inventory}
+		inv = {}
+		if inv_names:
+			inv = {
+				x.name: x
+				for x in frappe.get_all(
+					"MM Roll Inventory", filters={"name": ["in", list(inv_names)]},
+					fields=["name", "roll_no", "color_name"],
+				)
+			}
+		for i in items:
+			c = by_challan[i.parent]
+			roll_rows.append({
+				# The Job Out is still the identity for receiving — a Job In answers the
+				# challan, not one roll of it — but the LINE is what the operator reads.
+				"name": c["name"],
+				"line": i.name,
+				"challan_no": c["challan_no"],
+				"transaction_date": c["transaction_date"],
+				"party": c["party"],
+				"total_weight": c["total_weight"],
+				"total_box": c["total_box"],
+				"received_weight": c["received_weight"],
+				"outstanding_weight": c["outstanding_weight"],
+				"color_name": i.color_name or (inv.get(i.roll_inventory) or {}).get("color_name"),
+				"cut": i.cut,
+				"roll_no": (inv.get(i.roll_inventory) or {}).get("roll_no"),
+				# This roll's own weight, which is what "roll wise" means.
+				"weight": round(frappe.utils.flt(i.weight), 3),
+				"qty_box": frappe.utils.flt(i.qty_box),
+			})
+
+	total = len(roll_rows)
 	start = int(start or 0)
 	page_length = max(1, int(page_length or 10))
-	page = open_rows[start:start + page_length]
+	page = roll_rows[start:start + page_length]
 
 	parties = {r["party"] for r in page if r.get("party")}
 	labels = {}
