@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Check, Monitor, NotebookPen, RefreshCw, Scissors, X } from "lucide-react";
+import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
 
@@ -13,7 +14,11 @@ type ProgramRow = {
   program: string;
   color: string;
   cut?: string | null;
+  lot?: string | null;
   lot_id?: string | null;
+  /** The LIST — `lot_id` is a joined display string once a program drew from several
+   *  cuttings, and a remark lookup keyed on that string matches nothing. */
+  lot_ids?: string[];
   total_batches: number;
   completed_batches: number;
   completed_weight?: number;
@@ -45,20 +50,35 @@ type ViewData = { date: string; in_cutting: InCutting[]; notes: string; day: Mac
  */
 function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onClose: () => void; onDone: () => void }) {
   const total = program.total_batches ?? 0;
+  const already = program.completed_batches ?? 0;
   const [completed, setCompleted] = useState<number | "">(total);
+  const [reason, setReason] = useState("");
   const { call, loading } = useFrappePostCall(`${PROGRAM_API}.complete_batches`);
   const [err, setErr] = useState<string | null>(null);
   const comp = completed === "" ? null : completed;
+  // Recording FEWER than are already banked is not progress, it is work being taken back
+  // — a patty that was reported done is being un-reported, and the next shift will find
+  // the count lower than they left it. That is the one case worth making somebody type a
+  // reason for; an ordinary 2-of-3 here keeps the machine running and explains itself.
+  const takingBack = comp !== null && comp < already;
 
   async function submit() {
     if (comp === null) return setErr("Enter how many batches are completed.");
+    if (takingBack && reason.trim().length < 3) {
+      return setErr(`${already} already recorded as done — say why it is coming down to ${comp}.`);
+    }
     setErr(null);
     try {
       // partial_keeps_machine: recording 2 of 3 is PROGRESS, not a short close-out. The
       // job stays on the machine and the 2 formed patty show on Production straight away;
       // the third is added when it comes off. Closing a job out short is the machine's
       // own Close action, which is a different decision from "two are done".
-      await call({ program: program.program, completed: comp, partial_keeps_machine: 1 });
+      await call({
+        program: program.program,
+        completed: comp,
+        partial_keeps_machine: 1,
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+      });
       toast(
         comp >= total
           ? "All batches done — sent to Production"
@@ -92,6 +112,11 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
             <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
               {comp >= total ? (
                 <strong>All done → goes to Production, machine frees up</strong>
+              ) : takingBack ? (
+                <>
+                  <strong>{already - comp} patty comes back off Production</strong> ·{" "}
+                  {comp} stays done · machine keeps the job
+                </>
               ) : (
                 <>
                   <strong>{comp} patty</strong> to Production now ·{" "}
@@ -100,6 +125,20 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
               )}
             </p>
           )}
+          {/* Optional on an ordinary partial — 2 of 3 is progress and explains itself. Asked
+              for, and insisted on, only when the count goes DOWN: that is work being taken
+              back off Production and the next shift deserves the sentence. */}
+          <label className="mm-field" style={{ marginTop: "0.6rem" }}>
+            <span className="mm-field-label">
+              Reason{" "}
+              {takingBack
+                ? <span className="mm-pvw-need">— needed, this is below the {already} already recorded</span>
+                : <span className="mm-muted">(optional)</span>}
+            </span>
+            <input className="mm-input" value={reason}
+              placeholder={takingBack ? "Why is the count coming down?" : "Anything the next shift should know"}
+              onChange={(e) => setReason(e.target.value)} />
+          </label>
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
@@ -113,9 +152,18 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
   );
 }
 
-/** One shift: a block per MACHINE, each listing its programs — colour, batches, Complete. */
-function ShiftColumn({ title, groups, onComplete }: {
+/**
+ * One shift, read as a stack of BOXES — one box per PROGRAM, three columns across it:
+ * the machine number, then what that machine is running (colour, how many patty, the note
+ * the program was planned with), then the tick that records it done.
+ *
+ * A box is a JOB, not a machine: a machine running two programmes is two boxes one under
+ * the other, which is the only way the floor can tell two jobs apart at a glance. The old
+ * layout hung both under a single machine heading and they read as one.
+ */
+function ShiftColumn({ title, groups, onComplete, remarksFor }: {
   title: string; groups: MachineGroup[]; onComplete: (p: ProgramRow) => void;
+  remarksFor: (p: ProgramRow) => LotRemark[];
 }) {
   const batches = groups.reduce((s, g) => s + g.programs.reduce((n, p) => n + (p.total_batches || 0), 0), 0);
   const idle = groups.filter((g) => g.programs.length === 0).length;
@@ -131,31 +179,54 @@ function ShiftColumn({ title, groups, onComplete }: {
         <p className="mm-pvw-empty">No machines yet.</p>
       ) : (
         groups.map((g) => (
-          // Every machine is listed. An idle one keeps its heading and shows nothing under
-          // it — blank IS the reading: that machine is free.
+          // Every machine is listed, running or not. An idle one still gets a box with its
+          // number in it and nothing beside it — blank IS the reading ("that machine is
+          // free"), and a machine that simply vanishes makes the floor count to notice.
           <div className="mm-pvw-machine" key={g.machine_no}>
-            <div className="mm-pvw-machine-name"><Monitor size={14} /> Machine {g.machine_no}</div>
             {g.programs.length === 0 ? (
-              <div className="mm-pvw-machine-idle" />
+              <div className="mm-pvw-box mm-pvw-box-idle">
+                <div className="mm-pvw-box-machine"><Monitor size={14} />{g.machine_no}</div>
+                <div className="mm-pvw-box-body">
+                  <div className="mm-pvw-box-colour mm-pvw-box-free">Free</div>
+                </div>
+              </div>
             ) : (
-              g.programs.map((p) => (
-                // Colour and the one thing to do about it on the top line; how many patty
-                // reads underneath it — the same two facts, in the order they're asked for.
-                <div className="mm-pvw-prog" key={p.program}>
-                  <div className="mm-pvw-prog-top">
-                    <span className="mm-colour-name">{p.color}</span>
-                    {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : null}
-                    <button className="mm-mini mm-pvw-prog-act" disabled={!!p.unfinished}
+              g.programs.map((p, i) => (
+                // The machine number repeats on every box on purpose: a box has to be
+                // readable on its own from across the floor. `-more` only softens the
+                // repeat so a run of boxes still reads as one machine.
+                <div className={i ? "mm-pvw-box mm-pvw-box-more" : "mm-pvw-box"} key={p.program}>
+                  <div className="mm-pvw-box-machine"><Monitor size={14} />{g.machine_no}</div>
+                  {/* The three lines and the tick share one grid so the tick lands on the
+                      patty line whether or not there is a note under it. */}
+                  <div className="mm-pvw-box-body">
+                    <div className="mm-pvw-box-colour">
+                      <span className="mm-colour-name">{p.color}</span>
+                      {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : null}
+                      {p.lot_id ? <span className="mm-pvw-box-lot">{p.lot_id}</span> : null}
+                      {/* Why an EARLIER program on this lot stopped short. Deliberately not
+                          `p.remark` below, which is this program's own planning note — the
+                          two have different authors and mean different things. */}
+                      <LotRemarkBadge remarks={remarksFor(p)} label={`Lot ${p.lot_id || ""}`} />
+                    </div>
+                    <div className="mm-pvw-box-patti">
+                      <strong>{p.total_batches}</strong> patty
+                      {p.completed_batches > 0
+                        ? <span className="mm-pvw-box-done"> · {p.completed_batches} done</span>
+                        : null}
+                    </div>
+                    {p.remark ? (
+                      // Labelled, not just quoted. A bare quote in this box reads as a message
+                      // about the material; this one is the note the PROGRAM was planned with.
+                      <div className="mm-pvw-box-note"><span>Program note</span>{p.remark}</div>
+                    ) : null}
+                    <button className="mm-mini mm-mini-ok mm-pvw-box-tick" disabled={!!p.unfinished}
+                      aria-label={`Complete ${p.color}`}
                       title={p.unfinished ? "The roll for this program hasn't been cut yet" : "Record how many batches are completed"}
                       onClick={() => onComplete(p)}>
-                      <Check size={13} /> Complete
+                      <Check size={16} />
                     </button>
                   </div>
-                  <div className="mm-pvw-prog-batch">
-                    {p.total_batches} patty
-                    {p.completed_batches > 0 ? ` · ${p.completed_batches} done` : ""}
-                  </div>
-                  {p.remark ? <div className="mm-prog-card-remark">“{p.remark}”</div> : null}
                 </div>
               ))
             )}
@@ -215,8 +286,8 @@ function NotesPanel({ value, onSaved }: { value: string; onSaved: () => void }) 
  * Program view — the day sheet.
  *
  * Top row: what is in cutting on the left, the floor's notes on the right. Below, the Day
- * and Night plans side by side, each a block per MACHINE: the colour it is running, how far
- * through its batches it is, and Complete to record that (which asks how many are done, the
+ * and Night plans side by side, each a stack of BOXES — one per programme: machine number,
+ * colour / patty / note, and a tick to record it done (which asks how many are done, the
  * same question the Program board asks).
  */
 export default function ProductionViewPage() {
@@ -228,6 +299,31 @@ export default function ProductionViewPage() {
     `prod-view-${date}`,
   );
   const v = data?.message;
+
+  // Every lot on the page, in one request: the machines' programs and the cutting list all
+  // draw on the same lots, and a hook per row would make this page dozens of round trips.
+  const progs = [...(v?.day ?? []), ...(v?.night ?? [])].flatMap((g) => g.programs);
+  const { maps, forLotId } = useLotRemarks({
+    lots: progs.map((p) => p.lot),
+    lotIds: [
+      ...progs.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
+      ...(v?.in_cutting ?? []).map((c) => c.lot_id),
+    ],
+  });
+  /** Every reason on any lot this program's material came off, deduplicated. */
+  const remarksForProgram = (p: ProgramRow): LotRemark[] => {
+    const seen = new Set<string>();
+    const out: LotRemark[] = [];
+    for (const r of [
+      ...(p.lot ? maps.by_lot[p.lot] ?? [] : []),
+      ...(p.lot_ids?.length ? p.lot_ids : [p.lot_id]).flatMap((id) => (id ? maps.by_lot_id[id] ?? [] : [])),
+    ]) {
+      if (seen.has(r.name)) continue;
+      seen.add(r.name);
+      out.push(r);
+    }
+    return out;
+  };
 
   return (
     <div className="mm-screen mm-page-enter">
@@ -269,7 +365,12 @@ export default function ProductionViewPage() {
                 <tbody>
                   {v.in_cutting.map((c) => (
                     <tr key={c.cutting}>
-                      <td><span className="mm-colour-name">{c.color}</span></td>
+                      <td>
+                        <span className="mm-colour-name">{c.color}</span>
+                        {/* The cutter meets the material again here, so the lot's carried-over
+                            reason has to be here too. */}
+                        <LotRemarkBadge remarks={forLotId(c.lot_id)} label={`Lot ${c.lot_id || ""}`} />
+                      </td>
                       <td>{c.cut || "—"}</td>
                     </tr>
                   ))}
@@ -284,8 +385,8 @@ export default function ProductionViewPage() {
 
       {/* Day | Night — machine by machine */}
       <div className="mm-pvw-grid">
-        <ShiftColumn title="Day" groups={v?.day ?? []} onComplete={setCompleting} />
-        <ShiftColumn title="Night" groups={v?.night ?? []} onComplete={setCompleting} />
+        <ShiftColumn title="Day" groups={v?.day ?? []} onComplete={setCompleting} remarksFor={remarksForProgram} />
+        <ShiftColumn title="Night" groups={v?.night ?? []} onComplete={setCompleting} remarksFor={remarksForProgram} />
       </div>
 
       {completing && (

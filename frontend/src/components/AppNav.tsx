@@ -65,40 +65,17 @@ const PRIMARY: NavItem[] = [
  * everything not built yet is collected in one "Coming soon" group so the full
  * scope stays visible without cluttering the working sections.
  */
+/**
+ * Navigation in the three groups the shop actually thinks in.
+ *
+ * It used to be split by department — "Orders & Purchase" and "Shop Floor" — which put
+ * the Order Report under Orders and the Inward Report under the Floor, so "where are the
+ * reports" had five different answers and half of them were three clicks apart. The
+ * split is now by what you are DOING: setting something up, running the day, or reading
+ * back what happened. Everything not built yet stays in one "Coming soon" group so the
+ * full scope remains visible without cluttering the working sections.
+ */
 const SECTIONS: Section[] = [
-  {
-    key: "commerce",
-    label: "Orders & Purchase",
-    icon: ShoppingCart,
-    items: [
-      { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
-      { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
-      { label: "Order Report", icon: ScrollText, to: "/order-report" },
-      { label: "Sales Challan Voucher", icon: FileText, to: "/sales-challan-voucher" },
-      { label: "Sales Challan Report", icon: ScrollText, to: "/challan-report" },
-    ],
-  },
-  {
-    key: "floor",
-    label: "Shop Floor",
-    icon: Factory,
-    items: [
-      { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
-      { label: "Inward Report", icon: ScrollText, to: "/inward-report" },
-      { label: "Cutting", icon: Scissors, to: "/cutting" },
-      { label: "Program", icon: Monitor, to: "/program" },
-      { label: "Program View", icon: Monitor, to: "/production-view" },
-      { label: "Production", icon: Factory, to: "/production" },
-      { label: "Bobbin In / Out", icon: Disc3, to: "/bobbin-tracking" },
-      { label: "Bobbin Report", icon: Disc3, to: "/bobbin-report" },
-      { label: "Inventory", icon: Boxes, to: "/inventory" },
-      { label: "Stock Ledger", icon: ScrollText, to: "/stock-ledger" },
-      { label: "Close-out Stack", icon: ScrollText, to: "/closeout" },
-      { label: "Job Out", icon: ArrowUpFromLine, to: "/job-out" },
-      { label: "Job In", icon: ArrowDownFromLine, to: "/job-in" },
-      { label: "Job Report", icon: ScrollText, to: "/job-report" },
-    ],
-  },
   {
     key: "masters",
     label: "Masters",
@@ -112,6 +89,43 @@ const SECTIONS: Section[] = [
       { label: "Locations", icon: Truck, to: "/masters/location" },
       { label: "Branches", icon: Network, to: "/masters/branch" },
       { label: "Staff", icon: HardHat, to: "/masters/employee" },
+    ],
+  },
+  {
+    key: "process",
+    label: "Process",
+    icon: Factory,
+    // In the order the material actually moves: it arrives, is cut, programmed, produced,
+    // and goes out. Ordering these by workflow rather than alphabetically is the whole
+    // reason a new operator can find the next step without being told.
+    items: [
+      { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
+      { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
+      { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
+      { label: "Cutting", icon: Scissors, to: "/cutting" },
+      { label: "Program", icon: Monitor, to: "/program" },
+      { label: "Program View", icon: Monitor, to: "/production-view" },
+      { label: "Production", icon: Factory, to: "/production" },
+      { label: "Sales Challan Voucher", icon: FileText, to: "/sales-challan-voucher" },
+      { label: "Job Out", icon: ArrowUpFromLine, to: "/job-out" },
+      { label: "Job In", icon: ArrowDownFromLine, to: "/job-in" },
+      { label: "Bobbin In / Out", icon: Disc3, to: "/bobbin-tracking" },
+      { label: "Inventory", icon: Boxes, to: "/inventory" },
+      { label: "Close-out Stack", icon: Package, to: "/closeout" },
+    ],
+  },
+  {
+    key: "reports",
+    label: "Reports",
+    icon: ScrollText,
+    items: [
+      { label: "Order Report", icon: ScrollText, to: "/order-report" },
+      { label: "Inward Report", icon: ScrollText, to: "/inward-report" },
+      { label: "Sales Challan Report", icon: ScrollText, to: "/challan-report" },
+      { label: "Job Report", icon: ScrollText, to: "/job-report" },
+      { label: "Job Hisab", icon: ScrollText, to: "/job-hisab" },
+      { label: "Bobbin Report", icon: Disc3, to: "/bobbin-report" },
+      { label: "Stock Ledger", icon: ScrollText, to: "/stock-ledger" },
     ],
   },
   {

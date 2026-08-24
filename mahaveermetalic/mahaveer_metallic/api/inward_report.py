@@ -21,7 +21,8 @@ import frappe
 
 
 @frappe.whitelist()
-def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=None, limit=500):
+def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=None,
+	party=None, lot=None, order=None, job_work=None, limit=500):
 	"""Roll-wise inward rows, newest first, with the filter facets and live totals."""
 	limit = max(1, min(int(limit or 500), 5000))
 	conds, vals = [], {"limit": limit}
@@ -41,6 +42,20 @@ def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=
 	if item:
 		conds.append("it.color_name = %(item)s")
 		vals["item"] = item
+	# The party is who it came FROM; the company is which of their businesses it belongs
+	# to. A party with several companies is read both ways, so both have to be askable.
+	if party:
+		conds.append("inw.party = %(party)s")
+		vals["party"] = party
+	if lot and str(lot).strip():
+		conds.append("coalesce(nullif(it.lot_number, ''), inw.lot_number) like %(lot)s")
+		vals["lot"] = f"%{str(lot).strip()}%"
+	if order:
+		conds.append("coalesce(nullif(it.customer_order, ''), inw.sales_order) = %(order)s")
+		vals["order"] = order
+	if job_work not in (None, "", "all"):
+		conds.append("ifnull(it.job_work, 0) = %(job_work)s")
+		vals["job_work"] = 1 if frappe.utils.cint(job_work) else 0
 	where = (" and " + " and ".join(conds)) if conds else ""
 
 	rows = frappe.db.sql(

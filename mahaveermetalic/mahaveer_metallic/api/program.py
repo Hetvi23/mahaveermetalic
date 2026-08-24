@@ -12,7 +12,9 @@
                   Running → Partially Done → Completed. Recording fewer batches than
                   planned takes the program OFF the machine and hands the batches it
                   did not run back to the picker; a reverted program can never be
-                  completed again.
+                  completed again. Both of those leave material short of plan, so both
+                  demand a typed reason, filed against the LOT (see api/lot_remark) —
+                  the lot is what the operator meets again on the next screen.
   Close         → close_program locks the program (audit-tracked via track_changes).
 
 PATTI ARE COUNTED, NOT CLAIMED. A cutting is available while it has patti left —
@@ -27,6 +29,71 @@ import json
 
 import frappe
 from frappe import _
+
+from mahaveermetalic.mahaveer_metallic.api import lot_remark
+
+
+def _require_reason(reason, what="this"):
+	"""Every path that leaves a lot short of plan has to say why, in words.
+
+	The reason travels with the LOT, not the program, so the next person to meet this
+	material — on the finished-patti list, in the picker, on the next inward — reads the
+	same sentence. Three characters is the floor: "ok" is not a reason, and an operator
+	who is forced to type something will type something true more often than not.
+	"""
+	reason = (reason or "").strip()
+	if len(reason) < 3:
+		frappe.throw(
+			_("Please type why {0} — at least a few words. It is shown against this lot everywhere it appears.").format(what)
+		)
+	return reason
+
+
+def _program_lots(doc):
+	"""Every lot this program's material came off, as record() kwargs.
+
+	The program's own field is authoritative when it is set. Otherwise the answer comes
+	back through the patty it took — the only way a program planned off an uncut roll ever
+	resolves a lot — and that CAN be more than one, because a program may draw patty from
+	several cuttings of one colour. All of them are returned: a reason filed against only
+	the first would leave the second lot unexplained on the very next screen it appears on.
+	`program_lots` hands back a JOINED display id for the multi-lot case, so the ids are
+	taken from its list and never from that string.
+
+	May be empty — a program planned off an uncut roll has no lot until the roll is picked.
+	"""
+	if doc.get("lot"):
+		return [{"lot": doc.get("lot")}]
+	from mahaveermetalic.mahaveer_metallic.api.production import program_lots
+
+	found = (program_lots([doc.name]) or {}).get(doc.name) or {}
+	ids = found.get("lot_ids") or []
+	if ids:
+		return [{"lot_id": i} for i in ids]
+	return [{"lot": found.get("lot")}] if found.get("lot") else []
+
+
+def _file_reason(doc, reason, event_type):
+	"""Record the reason against the program's lot(s) AND on the program's own history.
+
+	Two places on purpose: the lot remark is what the floor sees on every later screen,
+	the comment is what an admin sees when they open this one program and ask what
+	happened to it. The program's `remark` field is the planning note and is left alone.
+	"""
+	filed = []
+	for key in _program_lots(doc):
+		name = lot_remark.record(
+			reason=reason,
+			event_type=event_type,
+			program=doc.name,
+			source_doctype="MM Program",
+			source_name=doc.name,
+			**key,
+		)
+		if name:
+			filed.append(name)
+	doc.add_comment("Comment", _("{0}: {1}").format(event_type, reason))
+	return filed
 
 
 def _party_map(orders):
@@ -285,6 +352,7 @@ def available_rolls(branch=None, location=None, finished_only=0):
 				"roll_inventory": ri.roll_inventory,
 				"date": None,
 				"customer_order": None,
+				"lot_number": ri.lot_number,
 				"roll_no": ri.roll_no or ri.lot_number,
 				"shade": ri.shade,
 				"cut": None,
@@ -295,10 +363,36 @@ def available_rolls(branch=None, location=None, finished_only=0):
 				"per_patty": 0.0,
 			})
 
+	_attach_lot_keys(rows)
 	parties = _party_map([r["customer_order"] for r in rows])
 	for r in rows:
 		r["party"] = parties.get(r["customer_order"])
 	return _merge_rows_by_lot(rows)
+
+
+def _attach_lot_keys(rows):
+	"""Give EVERY picker row both halves of its lot identity, in two queries.
+
+	The two halves of the list come from tables that each hold a different half of it: a
+	cutting is stamped with the MM Lot doc, a roll-inventory row only ever carried the
+	printed id. A row that had neither key showed no lot-remark eye at all — which is the
+	one place the operator most needs it, since an inventory row is exactly the material
+	someone handed back. So the half each row has is used to look up the other.
+	"""
+	names = {r["lot"] for r in rows if r.get("lot")}
+	ids = {r["lot_number"] for r in rows if not r.get("lot") and r.get("lot_number")}
+	by_name, by_id = {}, {}
+	if names:
+		for row in frappe.get_all("MM Lot", filters={"name": ["in", list(names)]}, fields=["name", "lot_id"]):
+			by_name[row.name] = row.lot_id
+	if ids:
+		for row in frappe.get_all("MM Lot", filters={"lot_id": ["in", list(ids)]}, fields=["name", "lot_id"]):
+			by_id[row.lot_id] = row.name
+	for r in rows:
+		lot = r.get("lot")
+		lot_id = by_name.get(lot) if lot else r.get("lot_number")
+		r["lot"] = lot or by_id.get(r.get("lot_number"))
+		r["lot_id"] = lot_id
 
 
 def _merge_rows_by_lot(rows):
@@ -427,12 +521,18 @@ def programs_on_machine(machine):
 
 
 @frappe.whitelist()
-def close_machine(machine, reverts=None):
+def close_machine(machine, reverts=None, reason=None):
 	"""Mark a machine faulty / not-working. The Close dialog asks, for each program on
 	the machine, how many batches to revert; `reverts` carries those answers as
 	[{"program": name, "batches": n}, ...]. Reverting reduces a program's completed
 	batches (they return to waiting). Programs are NOT cancelled and their status is
-	never freed. No new program can be planned here until the machine is reopened."""
+	never freed. No new program can be planned here until the machine is reopened.
+
+	Giving batches back here is the same event as a picker revert as far as the lot is
+	concerned, so it carries a reason too — one typed once for the whole machine, since a
+	machine going down is one story, and filed against each affected program's lot. A row
+	may carry its own `reason` when the dialog asked per program. Nothing is asked when
+	nothing is being reverted: closing an idle machine takes material from no one."""
 	if not frappe.db.exists("MM Machine", machine):
 		frappe.throw(_("Machine {0} not found.").format(machine))
 	reverts = json.loads(reverts) if isinstance(reverts, str) else (reverts or [])
@@ -444,6 +544,11 @@ def close_machine(machine, reverts=None):
 		row = frappe.db.get_value("MM Program", prog, ["machine_no", "completed_batches"], as_dict=True)
 		if not row or row.machine_no != machine:
 			frappe.throw(_("Program {0} is not on machine {1}.").format(prog, machine))
+		why = _require_reason(
+			r.get("reason") or reason,
+			_("{0} batch(es) are being given back from program {1}").format(int(n), prog),
+		)
+		_file_reason(frappe.get_doc("MM Program", prog), why, "Force Closed")
 		# `n` = batches to give back → new completed count = done − n. The program
 		# stays on the (closed) machine, unlike a picker revert.
 		applied.append(_save_batches(prog, max(0, int(row.completed_batches or 0) - int(n)), is_running=False))
@@ -1125,7 +1230,7 @@ def _save_batches(program, completed, is_running):
 
 
 @frappe.whitelist()
-def complete_batches(program, completed=None, count=None, partial_keeps_machine=0):
+def complete_batches(program, completed=None, count=None, partial_keeps_machine=0, reason=None):
 	"""Record how many batches are completed (via the Complete dialog).
 
 	All of them → the program frees off the machine to Production automatically, no manual
@@ -1134,12 +1239,21 @@ def complete_batches(program, completed=None, count=None, partial_keeps_machine=
 	to Revert the remainder. (`partial_keeps_machine` keeps a short program on the machine —
 	for callers that record progress as it happens rather than closing the job out.)
 
+	A SHORT CLOSE-OUT NEEDS A REASON. Six batches planned and two recorded means four
+	patti go back on offer in a state nobody can explain by looking at them, so the
+	operator says why and the sentence is filed against the lot. Recording progress that
+	keeps the machine (`partial_keeps_machine`) is not a close-out and asks for nothing.
+
+	`reason` defaults to None rather than being positional-required so an older client
+	does not 500 on the call; the enforcement is `_require_reason` on the short path.
+
 	A reverted program is off the machine — completing on it is blocked.
 	(`count` kept for backward-compat: increments by that many.)
 	"""
 	doc = frappe.db.get_value(
 		"MM Program", program, ["completed_batches", "total_batches", "reverted"], as_dict=True
 	)
+	reason = (reason or "").strip() or None
 	if not doc:
 		frappe.throw(_("Program {0} not found.").format(program))
 	if doc.reverted:
@@ -1152,12 +1266,25 @@ def complete_batches(program, completed=None, count=None, partial_keeps_machine=
 
 	if total > 0 and comp < total and not frappe.utils.cint(partial_keeps_machine):
 		# Short of plan: keep what ran, free the slot, and give the rest back.
-		res = revert_batches(program, completed=comp)
+		reason = _require_reason(reason, _("only {0} of {1} batches were completed").format(comp, total))
+		res = revert_batches(program, completed=comp, reason=reason, event_type="Partial Completion")
 		res["auto_reverted"] = True
 		res["returned_batches"] = total - comp
 		return res
 
+	# Recording progress that goes BACKWARDS — 4 done corrected to 2 — is the one case on
+	# this path worth a reason: two patty that were on Production are being taken off it,
+	# and the next shift sees a number that fell with nothing to explain it. A reason typed
+	# here used to be accepted and then dropped on the floor, because only the short
+	# close-out branch above ever read the argument.
+	banked = int(doc.completed_batches or 0)
+	if comp < banked:
+		reason = _require_reason(reason, _("the completed count is being lowered from {0} to {1}").format(banked, comp))
+
 	res = _save_batches(program, comp, is_running=True)
+	if reason:
+		prog = frappe.get_doc("MM Program", program)
+		_file_reason(prog, reason, "Partial Completion" if comp < total else "Other")
 	if total > 0 and comp >= total:
 		# All done → free off the machine to Production automatically.
 		frappe.db.set_value("MM Program", program, "released", 1, update_modified=False)
@@ -1211,7 +1338,7 @@ def _unwind_inventory_cutting(doc):
 
 
 @frappe.whitelist()
-def revert_batches(program, completed=None):
+def revert_batches(program, completed=None, reason=None, event_type=None):
 	"""Revert the UNCOMPLETED batches. By default keeps whatever is already completed on
 	record and returns the rest to the Add-Program picker; the program leaves the machine.
 	  · nothing completed yet → the program is cancelled outright, ALL its patti go back;
@@ -1221,6 +1348,17 @@ def revert_batches(program, completed=None):
 	    completes), the program leaves the machine, and only the patti of the batches it
 	    never ran go back to the picker. The ones it did run are spent.
 	(`completed` may be passed to override; when omitted the current completed count is used.)
+
+	A REASON IS REQUIRED. Reverting puts material back on offer that an operator chose not
+	to run, and the next person to pick it up has to be told why — so the sentence is filed
+	against the lot BEFORE anything is cancelled: a cancelled program is no longer a place
+	a remark can be hung off, and losing the reason would leave the picker showing patti
+	with no explanation at all. `reason` is None-defaulted on the signature only so an old
+	client fails with a readable message instead of a 500.
+
+	(`event_type` only labels the remark. A short close-out arrives here through
+	complete_batches and is a partial completion, not somebody abandoning the job — the
+	operator reading the eye icon later cares which of those it was.)
 	"""
 	doc = frappe.get_doc("MM Program", program)
 	if doc.closed:
@@ -1230,6 +1368,10 @@ def revert_batches(program, completed=None):
 		comp = max(0, min(int(doc.completed_batches or 0), total))
 	else:
 		comp = max(0, min(int(completed), total))
+
+	reason = _require_reason(reason, _("this program is being reverted"))
+	# Before the cancel below, never after it.
+	_file_reason(doc, reason, event_type or ("Cancelled" if comp == 0 else "Reverted"))
 
 	if comp == 0:
 		# Nothing produced — the program never happened. Hand every patty back and clear the
@@ -1277,11 +1419,11 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 		filters["machine_no"] = machine_no
 	if program_date:
 		filters["program_date"] = program_date
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"MM Program",
 		filters=filters,
 		fields=["name", "program_date", "customer_order", "roll_no", "shade", "machine_no", "shift", "cut",
-			"status", "is_running", "closed", "released", "reverted", "unfinished", "remark",
+			"status", "is_running", "closed", "released", "reverted", "unfinished", "remark", "lot",
 			"roll_inventory", "total_batches", "completed_batches", "patti_qty", "net_weight",
 			# What actually came off the machine, and the rate it runs at.
 			"completed_weight", "per_patty_weight"],
@@ -1290,3 +1432,19 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 		order_by="machine_no asc, shift asc, creation asc",
 		limit_page_length=500,
 	)
+	# A program planned off an uncut roll has no lot of its own — its lot is only knowable
+	# through the patty it drew. Resolving it here is what lets the board show that lot's
+	# remark; without it the tile that most needs the eye is the one that never gets one.
+	from mahaveermetalic.mahaveer_metallic.api.production import program_lots
+
+	lots = program_lots([r.name for r in rows])
+	for r in rows:
+		found = lots.get(r.name) or {}
+		r["lot"] = r.get("lot") or found.get("lot")
+		# `lot_id` off program_lots is a DISPLAY string — ", ".join(...) when a program drew
+		# patty from several cuttings. It reads correctly and looks up nothing, so the list
+		# travels beside it and every remark lookup keys off that.
+		ids = found.get("lot_ids") or ([found["lot_id"]] if found.get("lot_id") else [])
+		r["lot_ids"] = ids
+		r["lot_id"] = ids[0] if len(ids) == 1 else (found.get("lot_id") or None)
+	return rows

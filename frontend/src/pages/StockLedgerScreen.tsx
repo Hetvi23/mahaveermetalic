@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { useFrappeGetCall } from "frappe-react-sdk";
+import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
+import { Filter, ReportFilters } from "@/components/ReportFilters";
 import { useSearchParams } from "react-router-dom";
-import { ArrowDownToLine, ArrowUpFromLine, RefreshCw, ScrollText, Search, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, RefreshCw, ScrollText, X } from "lucide-react";
 import { TableSkeleton } from "@/components/Skeleton";
 import SearchSelect from "@/components/SearchSelect";
 
@@ -44,6 +45,21 @@ export default function StockLedgerScreen() {
 
   const [q, setQ] = useState("");
   const [voucher, setVoucher] = useState("");
+  // A date range and a branch. The API has always accepted both; the screen simply never
+  // asked for them, so reading "what moved on the 3rd" meant scrolling a 500-row list.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [branch, setBranch] = useState("");
+
+  const colours = useFrappeGetDocList<{ name: string }>("MM Item Master", { fields: ["name"], limit: 0 });
+  const locations = useFrappeGetDocList<{ name: string }>("MM Location Master", { fields: ["name"], limit: 0 });
+  const branches = useFrappeGetDocList<{ name: string }>("MM Branch", { fields: ["name"], limit: 0 });
+
+  const setCtx = (k: string, v: string) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set(k, v); else next.delete(k);
+    setParams(next);
+  };
 
   const args = useMemo(() => {
     const a: Record<string, string | number> = { limit: 500 };
@@ -51,15 +67,18 @@ export default function StockLedgerScreen() {
     if (lot) a.lot = lot;
     if (location) a.location = location;
     if (voucher) a.voucher_type = voucher;
+    if (branch) a.branch = branch;
+    if (from) a.from_date = from;
+    if (to) a.to_date = to;
     return a;
-  }, [color, lot, location, voucher]);
+  }, [color, lot, location, voucher, branch, from, to]);
 
   // The SWR key includes the active filters, so useFrappeGetCall refetches whenever they
   // change — no manual mutate-on-change needed (that risked a render loop).
   const { data, isLoading, mutate } = useFrappeGetCall<{ message: Entry[] }>(
     "mahaveermetalic.mahaveer_metallic.api.inventory.ledger",
     args,
-    `mm-ledger-${color}-${lot}-${location}-${voucher}`,
+    `mm-ledger-${color}-${lot}-${location}-${voucher}-${branch}-${from}-${to}`,
   );
   const rows = useMemo(() => data?.message ?? [], [data]);
 
@@ -77,6 +96,30 @@ export default function StockLedgerScreen() {
 
   const hasCtx = color || lot || location;
   const clearCtx = () => setParams({});
+  const resetAll = () => {
+    setParams({});
+    setQ(""); setVoucher(""); setFrom(""); setTo(""); setBranch("");
+  };
+
+  /** What is on screen, in the columns it is shown in. */
+  function exportCsv() {
+    const head = ["Date", "Voucher", "Ref", "Color", "Lot", "Location", "In", "Out", "Balance", "Order"];
+    const esc = (v: unknown) => {
+      const t = String(v ?? "");
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const body = shown.map((r) => [
+      r.posting_date ?? "", r.voucher_type ?? "", r.voucher_no ?? "", r.color_name ?? "",
+      r.lot_number ?? "", r.location ?? "", r.in_weight ?? "", r.out_weight ?? "",
+      r.balance_weight ?? "", r.customer_order ?? r.remarks ?? "",
+    ].map(esc).join(","));
+    const url = URL.createObjectURL(new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `stock-ledger-${from || "all"}-to-${to || "now"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="mm-screen">
@@ -100,24 +143,57 @@ export default function StockLedgerScreen() {
         </div>
       )}
 
+      <ReportFilters
+        onReset={resetAll}
+        onPrint={() => window.print()}
+        onExport={exportCsv}
+        exportDisabled={shown.length === 0}
+        note={<>Newest first, up to 500 movements. Narrow the range to see further back.</>}
+      >
+        <Filter label="From"><input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Filter>
+        <Filter label="To"><input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Filter>
+        <Filter label="Color">
+          <SearchSelect value={color} placeholder="All colors" onChange={(v) => setCtx("color", v)}
+            options={(colours.data ?? []).map((c) => ({ value: c.name, label: c.name }))} />
+        </Filter>
+        <Filter label="Lot">
+          <input className="mm-input" value={lot} placeholder="Lot id"
+            onChange={(e) => setCtx("lot", e.target.value)} />
+        </Filter>
+        <Filter label="Location">
+          <SearchSelect value={location} placeholder="All locations" onChange={(v) => setCtx("location", v)}
+            options={(locations.data ?? []).map((c) => ({ value: c.name, label: c.name }))} />
+        </Filter>
+        <Filter label="Branch">
+          <SearchSelect value={branch} placeholder="All branches" onChange={setBranch}
+            options={(branches.data ?? []).map((c) => ({ value: c.name, label: c.name }))} />
+        </Filter>
+        <Filter label="Movement">
+          <SearchSelect value={voucher} placeholder="All movements"
+            options={VOUCHERS.map((v) => ({ value: v, label: v }))} onChange={setVoucher} />
+        </Filter>
+        <Filter label="Search" wide>
+          <input className="mm-input" placeholder="Colour, lot, roll, voucher, order…"
+            value={q} onChange={(e) => setQ(e.target.value)} />
+        </Filter>
+      </ReportFilters>
+
       <section className="mm-card mm-card-pad">
         <div className="mm-inv-toolbar">
-          <div className="mm-search-box">
-            <Search size={15} />
-            <input className="mm-input" placeholder="Search colour, lot, voucher, order…" value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <SearchSelect compact value={voucher} placeholder="All movements"
-            options={VOUCHERS.map((v) => ({ value: v, label: v }))} onChange={setVoucher} />
-          <span className="mm-pill mm-pill-muted">{shown.length}</span>
+          <span className="mm-pill mm-pill-muted">{shown.length} movement{shown.length === 1 ? "" : "s"}</span>
         </div>
 
         {isLoading ? (
           <TableSkeleton rows={8} cols={10} />
         ) : shown.length === 0 ? (
-          <p className="mm-empty">No movements.</p>
+          <p className="mm-empty">
+            {q || voucher || from || to || branch || hasCtx
+              ? "No movement matches these filters."
+              : "No movements yet."}
+          </p>
         ) : (
-          <div className="mm-table-scroll">
-            <table className="mm-table mm-table-dense">
+          <div className="mm-table-scroll mm-ledger-scroll">
+            <table className="mm-table mm-table-dense mm-table-sticky">
               <thead>
                 <tr>
                   <th>Date</th>

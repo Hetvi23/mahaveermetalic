@@ -13,6 +13,7 @@ import CloseoutStackPage from "./pages/CloseoutStackPage";
 import BobbinReportPage from "./pages/BobbinReportPage";
 import JobChallanPage from "./pages/JobChallanPage";
 import JobReportPage from "./pages/JobReportPage";
+import JobHisabPage from "./pages/JobHisabPage";
 import OrderReportPage from "./pages/OrderReportPage";
 import InwardReportPage from "./pages/InwardReportPage";
 import SalesChallanVoucher from "./pages/SalesChallanVoucher";
@@ -102,6 +103,7 @@ export default function App() {
             <Route path="/job-out" element={<JobChallanPage type="Job Out" />} />
             <Route path="/job-in" element={<JobChallanPage type="Job In" />} />
             <Route path="/job-report" element={<JobReportPage />} />
+            <Route path="/job-hisab" element={<JobHisabPage />} />
             <Route path="/order-report" element={<OrderReportPage />} />
             <Route path="/inward-report" element={<InwardReportPage />} />
             <Route path="/sales-challan-voucher" element={<SalesChallanVoucher />} />

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package } from "lucide-react";
+import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download } from "lucide-react";
+import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
-import { printBoxStickers } from "@/utils/boxSticker";
+import { downloadBoxStickers, printBoxStickers } from "@/utils/boxSticker";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
 
@@ -62,6 +63,27 @@ export default function ProductionScreen() {
   const [q, setQ] = useState("");
 
   const queue = queueCall.data?.message ?? [];
+  // One request for the whole queue. A program that drew patty from several cuttings has
+  // several lots, so BOTH keys go in — `lot_id` is a joined display string in that case
+  // and would match nothing on its own.
+  const { maps } = useLotRemarks({
+    lots: queue.map((p) => p.lot),
+    lotIds: queue.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
+  });
+  /** Every reason standing against any lot this program's material came off. */
+  const remarksForProgram = (p: Program): LotRemark[] => {
+    const seen = new Set<string>();
+    const out: LotRemark[] = [];
+    for (const r of [
+      ...(p.lot ? maps.by_lot[p.lot] ?? [] : []),
+      ...(p.lot_ids?.length ? p.lot_ids : [p.lot_id]).flatMap((id) => (id ? maps.by_lot_id[id] ?? [] : [])),
+    ]) {
+      if (seen.has(r.name)) continue;
+      seen.add(r.name);
+      out.push(r);
+    }
+    return out;
+  };
   // Same fields the row prints, so what is searched is what is on screen.
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -110,6 +132,9 @@ export default function ProductionScreen() {
                     <div>
                       <strong>{p.roll_no || p.shade || "—"}</strong> · {p.cut || "—"}{p.party ? ` · ${p.party}` : ""}
                       {p.lot_id ? <span className="mm-prod-lot" title={`Lot ${p.lot_id} — from the patty this program took`}>{p.lot_id}</span> : null}
+                      {/* Why an earlier program on this lot stopped short — read before winding
+                          it, not after. The row is clickable; the badge stops its own clicks. */}
+                      <LotRemarkBadge remarks={remarksForProgram(p)} label={`Lot ${p.lot_id || ""}`} />
                     </div>
                     <div className="mm-prog-card-meta">
                       {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
@@ -187,9 +212,26 @@ type BoxRow = {
    *  whose doesn't. The header pair seeds each new row and toggles them all. */
   boxReturn: boolean; bobbinReturn: boolean;
 };
-type Calc = { net_weight: number; variance_percent: number; tolerance: number; pin_required: boolean };
+/** `tolerance_kg` is an absolute leeway UNDERNEATH the percentage: a shortfall only
+ *  needs the override once it breaks BOTH, so a kilo missing off a 20 kg program is
+ *  not a PIN prompt. `short_by` is what is still to be boxed, in the units the floor
+ *  is judged in. */
+type Calc = {
+  net_weight: number; variance_percent: number; tolerance: number;
+  tolerance_kg: number; short_by: number; pin_required: boolean;
+};
 
 function ProduceModal({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
+  // The voucher asks about ONE program, so its own small lookup is right here — this is
+  // not the queue, where a hook per row would have been dozens of requests.
+  const lotRemarks = useLotRemarks({
+    lots: [program.lot],
+    lotIds: program.lot_ids?.length ? program.lot_ids : [program.lot_id],
+  });
+  const lotNotes = (program.lot_ids?.length ? program.lot_ids : [program.lot_id])
+    .flatMap((id) => lotRemarks.forLotId(id))
+    .concat(lotRemarks.forLot(program.lot))
+    .filter((r, i, a) => a.findIndex((x) => x.name === r.name) === i);
   const inputWeight = program.input_weight ?? program.net_weight ?? 0;
 
   const employees = useFrappeGetDocList<{ name: string; employee_name?: string }>("MM Employee Master", {
@@ -231,6 +273,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // Bumped each time a box is added, so the dialog remounts blank-but-seeded for the next.
   const [boxSeq, setBoxSeq] = useState(0);
   const [pin, setPin] = useState("");
+  // Set on Submit. Half way through a six-box voucher the total is legitimately miles
+  // short of the input, and demanding an override PIN then is noise: nothing is wrong
+  // yet, the packer simply has boxes left to weigh.
+  const [attempted, setAttempted] = useState(false);
   const [calc, setCalc] = useState<Calc | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [party, setParty] = useState<string>(program.party || "");
@@ -273,6 +319,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     message: {
       name: string; colours?: string; ordered_weight?: number; inwarded_weight?: number;
       produced_weight?: number; dispatched_weight?: number; remaining_weight?: number;
+      /** The order is job work — the voucher ticks itself from this. */
+      job_work?: boolean;
     }[];
   }>(
     `${API}.orders_for_production`,
@@ -281,7 +329,25 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   );
   const openOrders = openOrdersCall.data?.message ?? [];
 
+  // Picking a JOB WORK order ticks the box by itself. Job work is a property of the order
+  // the material came in against — it is not something to remember on the voucher, and a
+  // production against a job-work order that was not ticked reads as selling the customer
+  // their own material back. The server derives it too, so an untouched tick cannot be
+  // wrong; this is so the operator SEES it before pressing Submit.
+  useEffect(() => {
+    if (!order) return;
+    const picked = openOrders.find((o) => o.name === order);
+    if (picked?.job_work && !jobWork) setJobWork(true);
+    // jobWorkTouched is not consulted: the order saying "job work" outranks a stale tick,
+    // and the server would override it regardless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order, openOrders]);
+
   const totalNet = useMemo(() => r3(boxes.reduce((s, b) => s + b.net, 0)), [boxes]);
+  // A refused submit ("still 210 kg short…") used to stay on screen while the boxes that
+  // answered it were added, contradicting a footer that had already gone neutral. The
+  // message belongs to the state that produced it, so changing that state clears it.
+  useEffect(() => { setErr(null); }, [boxes.length]);
   const totalGross = useMemo(() => r3(boxes.reduce((s, b) => s + b.gross, 0)), [boxes]);
   const availableNet = r3(inputWeight - totalNet);
 
@@ -299,6 +365,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   }, [totalNet, inputWeight, preview]);
 
   const overTol = !!calc?.pin_required && boxes.length > 0;
+  // Two different things: producing MORE than went in is a wrong voucher (that weight
+  // came from somewhere else), while being short of it is a voucher not yet finished.
+  const overProduced = inputWeight > 0 && totalNet > inputWeight;
+  const shortBy = calc ? calc.short_by : r3(inputWeight - totalNet);
 
   /** One box as a sticker. Barcodes only exist once the voucher is submitted, so before
    *  that a PREVIEW code stands in — the label is otherwise the one that gets stuck on. */
@@ -318,16 +388,25 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
   async function submit() {
     setErr(null);
+    setAttempted(true);
     if (boxes.length === 0) return setErr("Add at least one box.");
     // Producing MORE than went in is not a variance to be overridden — the weight came
     // from somewhere else. Refused here and again server-side.
-    if (inputWeight > 0 && totalNet > inputWeight) {
+    if (overProduced) {
       return setErr(
         `Total net ${totalNet.toLocaleString()} kg is more than the ${inputWeight.toLocaleString()} kg ` +
         "that went into this program. Correct the box weights.",
       );
     }
-    if (overTol && !pin.trim()) return setErr("Variance is over tolerance — an Admin Override PIN is required.");
+    // Spelled out in kilograms as well as percent: "over tolerance" alone left the
+    // operator guessing how much was missing and against what.
+    if (overTol && !pin.trim()) {
+      return setErr(
+        `Still ${shortBy.toLocaleString()} kg short of the ${inputWeight.toLocaleString()} kg that went in — ` +
+        `more than the ${calc?.tolerance ?? 0}% / ${calc?.tolerance_kg ?? 0} kg allowed. ` +
+        "Add the remaining boxes, or enter an Admin Override PIN to accept the shortfall.",
+      );
+    }
     try {
       const res = await create({
         source_program: program.name,
@@ -378,11 +457,15 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
-        {/* Two columns, not two stacked halves: the voucher details on the left and the
-            boxes on the right, so weighing a box never scrolls the header out of sight
-            and the whole voucher reads on one screen. */}
+        {/* Two ROWS, not two columns: the paperwork across the top — voucher details, and
+            the box form beside them while a box is being keyed — and the box table
+            underneath, spanning the whole sheet. The table is twelve columns wide and was
+            being cropped into a scrollbar inside half a sheet; the header fields are read
+            once and can share their row. */}
         <div className="mm-modal-body mm-pv-split">
-          <div className="mm-pv-col-details">
+          {/* Full width until the box form opens beside it. An empty right-hand track next
+              to half-width fields is exactly the scattered look this replaced. */}
+          <div className={`mm-pv-col-details${adding ? "" : " mm-pv-col-details-full"}`}>
           {/* Top: Item + Is Job Work (mirrors the legacy voucher header bar) */}
           <div className="mm-pv-top">
             <label className="mm-field" style={{ flex: 1, maxWidth: 360 }}>
@@ -457,7 +540,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 production is stamped with the same one — so it is shown rather than asked
                 for, and cannot drift from what is actually being wound. */}
             <label className="mm-field">
-              <span className="mm-field-label">Lot No</span>
+              <span className="mm-field-label">
+                Lot No
+                <LotRemarkBadge remarks={lotNotes} label={`Lot ${program.lot_id || ""}`} />
+              </span>
               <input className="mm-input" value={program.lot_id || "—"} readOnly
                 title={program.lot_ids && program.lot_ids.length > 1
                   ? `This program's patty came off ${program.lot_ids.length} lots: ${program.lot_ids.join(", ")}`
@@ -510,27 +596,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           </div>
           </div>
 
-          {/* Boxes — the main work area, its own column */}
-          <div className="mm-pv-boxes mm-pv-col-boxes">
-            <div className="mm-pv-boxhead">
-              {/* Colour above the table: every row is the same colour, so printing it in
-                  each row spent the width the weights need. */}
-              <span className="mm-pv-boxcolour">
-                <span className="mm-colour-name">{program.shade || program.roll_no || "—"}</span>
-                {size ? <span className="mm-suggest-meta">{size}</span> : null}
-              </span>
-              <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
-              {/* Hidden while the form is open — it would re-key the form and throw away
-                  whatever has already been weighed into it. */}
-              {!adding && (
-                <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Add box</button>
-              )}
-            </div>
-
-            {/* The box form sits at the TOP of this column and the boxes already weighed
-                list directly beneath it — no overlay, so the voucher header stays read-
-                able while a box is being keyed. */}
-            {adding && (
+          {/* The box form is a panel BESIDE the voucher details, not a strip above the
+              table: keying a box leaves the details it is checked against in view, and
+              costs the table below none of its height — which is what crushed it. */}
+          {adding && (
+            <div className="mm-pv-col-form">
               <BoxDialog
                 bobbinMasters={bobbinMasters.data ?? []}
                 availableNet={availableNet}
@@ -553,7 +623,25 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 }}
                 key={editing != null ? `edit-${editing}` : `add-${boxSeq}`}
               />
-            )}
+            </div>
+          )}
+
+          {/* Boxes — the main work area, its own full-width row */}
+          <div className="mm-pv-boxwrap">
+            <div className="mm-pv-boxhead">
+              {/* Colour above the table: every row is the same colour, so printing it in
+                  each row spent the width the weights need. */}
+              <span className="mm-pv-boxcolour">
+                <span className="mm-colour-name">{program.shade || program.roll_no || "—"}</span>
+                {size ? <span className="mm-suggest-meta">{size}</span> : null}
+              </span>
+              <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
+              {/* Hidden while the form is open — it would re-key the form and throw away
+                  whatever has already been weighed into it. */}
+              {!adding && (
+                <button className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}><Plus size={13} /> Add box</button>
+              )}
+            </div>
 
             {boxes.length === 0 ? (
               adding ? (
@@ -604,6 +692,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                             onClick={() => printBoxStickers([stickerFor(b, i)])}>
                             <Printer size={13} />
                           </button>
+                          <button className="mm-mini" title="Save this box's sticker as a file"
+                            aria-label={`Download sticker for box ${i + 1}`}
+                            onClick={() => downloadBoxStickers([stickerFor(b, i)], `sticker-box-${i + 1}`)}>
+                            <Download size={13} />
+                          </button>
                           <button className="mm-mini" onClick={() => { setEditing(i); setAdding(true); }} title="Edit this box" aria-label={`Edit box ${i + 1}`}><Pencil size={13} /></button>
                           <button className="mm-mini mm-mini-danger" onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={13} /></button>
                         </td>
@@ -615,7 +708,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             )}
           </div>
 
-          {overTol && (
+          {/* Gated on `attempted`: mid-entry a short voucher is work in progress, not a
+              variance anyone needs to override. */}
+          {overTol && attempted && (
             <label className="mm-field mm-pv-span">
               <span className="mm-field-label"><ShieldAlert size={13} style={{ verticalAlign: "middle" }} /> Admin Override PIN (variance over tolerance)</span>
               <input className="mm-input" type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Required to accept this variance" />
@@ -631,11 +726,30 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               Print all stickers
             </button>
           )}
+          {boxes.length > 0 && (
+            <button className="mm-btn-secondary mm-btn-compact"
+              title="Save every sticker as one file — for a machine without the label printer attached"
+              onClick={() => downloadBoxStickers(boxes.map(stickerFor), `stickers-${batchNo || program.name}`)}>
+              <Download size={13} /> Download stickers
+            </button>
+          )}
           <div className="mm-pv-totals">
             <span>Boxes <strong>{boxes.length}</strong></span>
             <span>Gross <strong>{totalGross.toLocaleString()}</strong></span>
             <span>Net <strong>{totalNet.toLocaleString()} kg</strong></span>
-            <span className={overTol ? "mm-var-over" : undefined}>Var <strong>{(calc?.variance_percent ?? 0).toFixed(2)}%</strong>{calc ? ` (±${calc.tolerance}%)` : ""}</span>
+            {/* "-83%" says nothing to a packer with one box of six on the scale; "still
+                210 kg to box" is the same fact in the units on the floor. It stays a
+                neutral progress figure until Submit turns it into a refusal. */}
+            <span className={overProduced || (attempted && overTol) ? "mm-var-over" : "mm-pv-remain"}>
+              {overProduced ? (
+                <>Over input by <strong>{r3(totalNet - inputWeight).toLocaleString()} kg</strong></>
+              ) : shortBy > 0 ? (
+                <>Still to box <strong>{shortBy.toLocaleString()} kg</strong>
+                  {calc ? <em> {calc.variance_percent.toFixed(2)}% · allowed ±{calc.tolerance}% or {calc.tolerance_kg} kg</em> : null}</>
+              ) : (
+                <>Var <strong>{(calc?.variance_percent ?? 0).toFixed(2)}%</strong>{calc ? <em> allowed ±{calc.tolerance}%</em> : null}</>
+              )}
+            </span>
           </div>
           <div className="mm-foot-actions">
             <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
@@ -711,9 +825,10 @@ function BoxDialog({
   }
 
   return (
-    /* An inline panel, not a popup: it heads its own column, so nothing it needs to be
-       read against — the voucher header on the left, the boxes already weighed below —
-       is ever covered by it. */
+    /* An inline panel, not a popup: it sits beside the voucher details and above the
+       full-width box table, so nothing it needs to be read against — the input weight
+       and available net on the left, the boxes already weighed below — is covered by
+       it, and opening it takes no width off the table. */
     <section className="mm-bx-panel" aria-label={edit ? "Edit box" : "New box"}>
       <div className="mm-bx-panel-head">
         <span className="mm-bx-panel-title"><Package size={15} /> {edit ? "Edit Box" : "Box Details"}</span>
@@ -731,11 +846,16 @@ function BoxDialog({
         </div>
         <div className="mm-bx-row mm-bx-row-wide">
           <span className="mm-bx-label">Total Weight</span>
-          <div>
+          <div className="mm-bx-gross">
             <input className="mm-input" type="number" value={gross} placeholder="0.000"
               onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
             <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
           </div>
+        </div>
+        <div className="mm-bx-row">
+          <span className="mm-bx-label">Box Weight</span>
+          <input className="mm-input" type="number" value={boxWeight}
+            onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
         </div>
         <div className="mm-bx-row">
           <span className="mm-bx-label">Bobbin</span>
@@ -762,16 +882,11 @@ function BoxDialog({
           <span className="mm-bx-label">Total Bobbin Weight</span>
           <input className="mm-input mm-bx-ro" value={totalBobbin.toLocaleString()} readOnly />
         </div>
-        <div className="mm-bx-row">
-          <span className="mm-bx-label">Box Weight</span>
-          <input className="mm-input" type="number" value={boxWeight}
-            onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
-        </div>
-        <div className="mm-bx-row">
+        <div className="mm-bx-row mm-bx-row-net">
           <span className="mm-bx-label">Net Weight</span>
           <input className={`mm-input mm-bx-ro ${net < 0 ? "mm-input-warn" : ""}`} value={net.toLocaleString()} readOnly />
         </div>
-        <div className="mm-bx-row">
+        <div className="mm-bx-row mm-bx-row-wide">
           <span className="mm-bx-label">Returns</span>
           <div className="mm-bx-returns">
             <label className="mm-field-inline">

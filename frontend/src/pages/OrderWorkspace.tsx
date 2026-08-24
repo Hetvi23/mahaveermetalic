@@ -57,7 +57,7 @@ const F: Record<string, FieldSchema> = {
 
 const SO_API_PATH = "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order";
 
-type Chip = "all" | "pending" | "completed";
+type Chip = "all" | "incomplete" | "complete";
 
 type Row = {
   name: string;
@@ -72,31 +72,52 @@ type Row = {
   completed?: number;
   completion_mode?: string;
   docstatus?: number;
-  /** Pending / Approved / Rejected / Cancelled — approval, not dispatch. */
+  /** Stored as Pending / Approved / Rejected / Cancelled — shown as the Approval Status
+   *  column, where "Approved" reads as Accepted. Approval only, never dispatch. */
   order_state?: string;
   company_name?: string;
 };
 
-/** An order is done when production hits 100% OR it was completed via inward/force. */
-const isDone = (o: Row) => Math.round(o.production_completed_percent ?? 0) >= 100 || !!o.completed;
+/* Each column answers ONE question, decided by its own rule server-side in
+   mm_sales_order.py, so this list and the order register cannot disagree:
+     Inward           — how much of the order has physically come in
+     Purchase         — has a purchase order been raised, and has its material arrived
+     Approval Status  — where the order stands with the admin */
 
-/* The old single "Status" badge is gone: it mixed approval, inward-completion and
-   production % into one word, which could not answer either question the floor asks.
-   It is replaced by two columns — Purchase (bought and received?) and Sales (gone
-   out?) — each decided by its own rule, server-side, in mm_sales_order.py. */
+/** Complete once everything ordered has GONE OUT on challans — anything still owed is
+ *  Incomplete. Server-derived (it needs the dispatched weight and the variance limit);
+ *  the fallback only trusts a completion the order already carries, because the row on
+ *  its own knows what was received, and receiving is not delivering. */
+const isComplete = (o: Row, st?: string) =>
+  st ? st === "Complete" : o.completion_mode === "Force" || o.completion_mode === "Dispatch";
 
-/** Purchase — has the material been bought and received against this order? */
-function purchaseBadge(st?: string): { label: string; cls: string } {
+/** Purchase — has the material been bought and received against this order?
+ *  An empty state means no purchase order was ever raised: the cell stays blank rather
+ *  than saying "Pending", which read as though a purchase were waiting on someone. */
+function purchaseBadge(st?: string): { label: string; cls: string } | null {
+  if (!st) return null;
   if (st === "Completed") return { label: "Completed", cls: "mm-pill-ok" };
   if (st === "Partial") return { label: "Partial", cls: "mm-pill-pending" };
   return { label: "Pending", cls: "mm-pill-warn" };
 }
 
-/** Sales — has it gone out to the customer? A challan against the order answers it. */
-function salesBadge(st?: string): { label: string; cls: string } {
-  if (st === "Completed") return { label: "Completed", cls: "mm-pill-ok" };
-  return { label: "Pending", cls: "mm-pill-muted" };
+/** Approval status — Pending until an admin rules on the order, then Accepted or
+ *  Rejected. Cancelled is carried too: an order that is over is none of the three, and
+ *  calling it one of them would state something untrue. */
+function approvalBadge(st: string): { label: string; cls: string } {
+  if (st === "Cancelled") return { label: "Cancelled", cls: "mm-pill-muted" };
+  if (st === "Rejected") return { label: "Rejected", cls: "mm-pill-low" };
+  if (st === "Accepted") return { label: "Accepted", cls: "mm-pill-ok" };
+  return { label: "Pending", cls: "mm-pill-pending" };
 }
+
+/** Approval read off the row itself, for the moment before `order_states` answers. */
+const approvalOf = (o: Row, st?: string) =>
+  st
+    || (o.order_state === "Cancelled" || Number(o.docstatus) === 2 ? "Cancelled"
+      : o.order_state === "Rejected" ? "Rejected"
+      : Number(o.docstatus) === 1 || o.order_state === "Approved" ? "Accepted"
+      : "Pending");
 
 /** "purchase / sale" on one line, the way the floor reads a rate. A blank side means
  *  that side was never entered — shown as an empty slot, not a zero, because 0 would
@@ -187,7 +208,12 @@ export default function OrderWorkspace() {
 
   // Purchase status per order. The sales side and the purchase side of the same order
   // were only visible on separate screens; this puts them on one row.
-  type OrderState = { purchase: string; sales: string; has_po: boolean };
+  type OrderState = {
+    purchase: string; sales: string; has_po: boolean; approval: string; fulfilment: string;
+    dispatched_weight: number;
+    /** Anything received against the order. Receipt, not approval, is what ends editing. */
+    has_inward: boolean;
+  };
   const { data: poStatusData, mutate: mutatePoStatus } = useFrappeGetCall<{ message: Record<string, OrderState> }>(
     `${SO_API_PATH}.order_states`,
     undefined,
@@ -231,6 +257,10 @@ export default function OrderWorkspace() {
   const { call: approveOrder, loading: approving } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.approve_order`);
   const { call: rejectOrder, loading: rejecting } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.reject_order`);
   const { call: cancelOrder, loading: cancelling } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.cancel_order`);
+  // An APPROVED order cannot be saved with a plain REST PUT: Frappe checks the *submit*
+  // permission on that path, and the two roles that key orders deliberately don't have it.
+  // This endpoint asks for write instead and applies the same rules. See save_order.
+  const { call: saveApproved, loading: savingApproved } = useFrappePostCall(`${SO_API}.save_order`);
   // One draft PO per short line, and ONLY for the lines the user ticked in the purchase
   // dialog — nothing is raised implicitly on save any more.
   const { call: syncShortagePos } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.stock.sync_shortage_pos");
@@ -289,10 +319,36 @@ export default function OrderWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, draft.color_name, draft.cut, loadAvailability]);
 
+  // Approval is no longer the end of editing — RECEIPT is. An approved order is agreed,
+  // not delivered, and the customer still moves a date or a rate on it; the old rule meant
+  // cancelling a live order and re-keying it under a new number. Once material has arrived
+  // there is stock filed under the lines and they are fixed (the server refuses it too).
+  // A CANCELLED order is closed for good. A REJECTED one is deliberately still editable —
+  // that is what makes it something the admin can fix rather than a deletion. A draft
+  // locked at 5% production stays read-only for non-admins.
+  const submitted = !!selected && Number((doc as { docstatus?: number } | undefined)?.docstatus) === 1;
+  const orderState = String((doc as { order_state?: string } | undefined)?.order_state ?? "");
+  const cancelled = !!selected && (orderState === "Cancelled" || Number((doc as { docstatus?: number } | undefined)?.docstatus) === 2);
+  const rejected = !!selected && orderState === "Rejected";
+  // From the server, so the screen and the guard agree: a goods return can net
+  // `inwarded_weight` back to zero while the inwards themselves still stand.
+  const hasInward = !!selected && !!stateByOrder[selected]?.has_inward;
+  const ro = cancelled || hasInward || (locked && !isAdmin());
+
   /**
-   * Purchase rows for the open order: one per line that already HAS a purchase order or is
-   * short on stock, so purchase details can be added or corrected without re-saving the
-   * whole order. Keyed by the line's idx — an order carries one item, so normally one row.
+   * Purchase rows for the open order — EVERY line of it while the order is still editable,
+   * not only the ones short on stock or already carrying a purchase order.
+   *
+   * It used to list only those, so an order saved with "Save sales order only" — or one
+   * whose lines were covered from stock — came back with no purchase table at all, and
+   * there was no way to enter the supplier, rate and weight afterwards short of deleting
+   * the order and re-entering it. A line with nothing typed into it raises nothing, so
+   * showing them all costs nothing and is the only way back in.
+   *
+   * A read-only order (approved, cancelled, or locked by production) still shows just the
+   * purchase orders that exist, since nothing can be added to it.
+   *
+   * Keyed by the line's idx — an order carries one item, so normally one row.
    */
   const [poEdit, setPoEdit] = useState<Record<number, { weight: number | ""; rate: number | ""; vendor: string }>>({});
   const [savingPo, setSavingPo] = useState(false);
@@ -306,8 +362,8 @@ export default function OrderWorkspace() {
     const lines = draft.color_name.trim() ? [draft, ...items] : items;
     return lines
       .map((it, i) => ({ idx: i + 1, item: it, po: poForItem(it, lines) }))
-      .filter((r) => r.po || shortageOf(r.item) > 0);
-  }, [selected, draft, items, orderPos, availByKey]); // eslint-disable-line react-hooks/exhaustive-deps
+      .filter((r) => r.po || (!ro && !!r.item.color_name));
+  }, [selected, draft, items, orderPos, ro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Seed the purchase editors from the saved purchase orders.
@@ -358,9 +414,15 @@ export default function OrderWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [purchaseLines]);
 
+  /** Is there any purchase to write — something typed in, or a purchase order to update? */
+  const hasPurchaseToSave = () =>
+    orderPos.length > 0 || purchaseLines.some((r) => (Number(poEdit[r.idx]?.weight) || 0) > 0);
+
   /** Save the purchase details typed into the order view. Weight 0 removes the PO. */
   async function savePurchase() {
     if (!selected) return;
+    // Nothing entered and nothing to update: the purchase rows are just empty invitations.
+    if (!hasPurchaseToSave()) return;
     setSavingPo(true);
     setFormError(null);
     try {
@@ -431,16 +493,6 @@ export default function OrderWorkspace() {
     setLocked(Boolean(doc.order_locked));
     setProdPct(Math.round((doc.production_completed_percent as number) ?? 0));
   }, [doc, selected]);
-
-  // A submitted order is final: read-only for everyone. A CANCELLED order is closed for good,
-  // so read-only too. A REJECTED one is deliberately still editable — that is what makes it
-  // something the admin can fix and approve rather than a deletion. A draft locked at 5%
-  // production is read-only for non-admins.
-  const submitted = !!selected && Number((doc as { docstatus?: number } | undefined)?.docstatus) === 1;
-  const orderState = String((doc as { order_state?: string } | undefined)?.order_state ?? "");
-  const cancelled = !!selected && (orderState === "Cancelled" || Number((doc as { docstatus?: number } | undefined)?.docstatus) === 2);
-  const rejected = !!selected && orderState === "Rejected";
-  const ro = submitted || cancelled || (locked && !isAdmin());
 
   function resetNew() {
     setSelected(null);
@@ -620,13 +672,25 @@ export default function OrderWorkspace() {
 
     try {
       if (selected) {
-        await updateDoc("MM Sales Order", selected, { ...headerPayload, items: effectiveItems.map((it, i) => lineFor(it, i, i + 1)) });
+        const lines = effectiveItems.map((it, i) => lineFor(it, i, i + 1));
+        if (submitted) {
+          const { doctype: _d, naming_series: _n, ...editable } = headerPayload;
+          await saveApproved({
+            sales_order: selected,
+            header: JSON.stringify(editable),
+            items: JSON.stringify(lines),
+          });
+        } else {
+          await updateDoc("MM Sales Order", selected, { ...headerPayload, items: lines });
+        }
         hydrated.current = null;
         if (withPo) {
           await raisePos(selected, effectiveItems.map((it, i) => ({ idx: i + 1, builderIndex: i, item: it })));
         }
         await refreshOrder();
-        setFlash(withPo ? "Saved — purchase order raised, pending admin approval." : "Saved — pending admin approval.");
+        setFlash(withPo
+          ? "Saved — purchase order raised, pending admin approval."
+          : "Saved — pending admin approval. Purchase details can be filled in below whenever you're ready.");
         toast(`Order ${selected} saved`);
         return;
       }
@@ -666,7 +730,10 @@ export default function OrderWorkspace() {
         return;
       }
       resetNew();
-      setFlash(`Saved ${created.length} order${created.length > 1 ? "s" : ""} (pending admin approval): ${created.join(", ")}.`);
+      setFlash(
+        `Saved ${created.length} order${created.length > 1 ? "s" : ""} (pending admin approval): ${created.join(", ")}.`
+        + (withPo ? "" : " Open an order to add its purchase details."),
+      );
       toast(`Saved ${created.length} order${created.length > 1 ? "s" : ""}: ${created.join(", ")}`);
     } catch (e) {
       const msg = extractErrorMessage(e);
@@ -683,7 +750,7 @@ export default function OrderWorkspace() {
       // Save any purchase edits FIRST. An admin who changed the supplier (or rate/weight)
       // and then hit Approve had those edits thrown away — approval submits the purchase
       // order, so it was submitted with the old supplier still on it.
-      if (purchaseLines.length > 0) await savePurchase();
+      if (hasPurchaseToSave()) await savePurchase();
       await approveOrder({ sales_order: name });
       // Revalidate the SINGLE-doc cache too, else the form keeps the pre-approval
       // docstatus and stays editable with Approve/Reject showing.
@@ -752,10 +819,11 @@ export default function OrderWorkspace() {
     }
   }
 
-  const busy = creating || updating || deleting || approving || rejecting || cancelling;
+  const busy = creating || updating || deleting || approving || rejecting || cancelling || savingApproved;
   const list = (rows ?? []).filter((o) => {
-    if (chip === "completed") return isDone(o);
-    if (chip === "pending") return !isDone(o);
+    const complete = isComplete(o, stateByOrder[o.name]?.fulfilment);
+    if (chip === "complete") return complete;
+    if (chip === "incomplete") return !complete;
     return true;
   });
   const itemsTotal = items.reduce((s, it) => s + (Number(it.qty_weight) || 0), 0);
@@ -781,7 +849,18 @@ export default function OrderWorkspace() {
             )}
           </div>
 
-          {submitted && <div className="mm-banner mm-banner-ok">Approved — this order and its purchase order are locked.</div>}
+          {submitted && !hasInward && !cancelled && (
+            <div className="mm-banner mm-banner-ok">
+              Approved — still editable until material is received against it. Its purchase
+              order is live, so that side is locked.
+            </div>
+          )}
+          {hasInward && !cancelled && (
+            <div className="mm-banner mm-banner-warn">
+              Material has been received against this order, so its lines are fixed. Raise a
+              goods return (GR) for that inward if they have to change.
+            </div>
+          )}
           {/* Say WHY it is read-only. A cancelled order isn't waiting on an admin — it is over,
               and telling someone production started when it hasn't sends them looking for a
               production run that doesn't exist. */}
@@ -801,7 +880,7 @@ export default function OrderWorkspace() {
                 : ""}
             </div>
           )}
-          {!submitted && !cancelled && ro && <div className="mm-banner mm-banner-warn">Locked (production started). Only an admin can edit.</div>}
+          {!cancelled && !hasInward && locked && !isAdmin() && <div className="mm-banner mm-banner-warn">Locked (production started). Only an admin can edit.</div>}
           {formError && <p className="mm-error">{formError}</p>}
 
           <div className="mm-form-grid">
@@ -923,7 +1002,11 @@ export default function OrderWorkspace() {
               <div className="mm-ow-po-head">
                 <span className="mm-field-label" style={{ margin: 0 }}>Purchase order</span>
                 <span className="mm-muted" style={{ fontSize: "0.78rem" }}>
-                  {ro ? "Locked." : "Edit and save; set weight to 0 to remove."}
+                  {ro
+                    ? "Locked."
+                    : orderPos.length
+                      ? "Edit and save; set weight to 0 to remove."
+                      : "None raised yet — fill a row in and save to raise one."}
                 </span>
               </div>
               <div className="mm-table-scroll">
@@ -954,10 +1037,13 @@ export default function OrderWorkspace() {
                             <span className="mm-colour-name">{r.item.color_name || "—"}</span>
                             {r.item.cut ? <span className="mm-suggest-meta">{r.item.cut}</span> : null}
                           </td>
+                          {/* Placeholder: the shortfall is the obvious weight to buy, but a
+                              line covered from stock has none — offer what the line ordered
+                              rather than an empty box. */}
                           <td className="mm-num">
                             {poRo ? Number(e.weight || 0).toLocaleString() : (
                               <input className="mm-input mm-input-compact mm-iw-num" type="number" value={e.weight}
-                                placeholder={String(shortageOf(r.item) || "")}
+                                placeholder={String(shortageOf(r.item) || Number(r.item.qty_weight) || "")}
                                 onChange={(ev) => setPo({ weight: ev.target.value === "" ? "" : Number(ev.target.value) })} />
                             )}
                           </td>
@@ -997,7 +1083,7 @@ export default function OrderWorkspace() {
                 {busy ? "Saving…" : "Save changes"}
               </button>
             )}
-            {selected && !ro && isAdmin() && (
+            {selected && !ro && !submitted && isAdmin() && (
               <>
                 {/* Icon-only, so the row fits on one line — but never unlabelled: each
                     carries the same sentence it used to spell out, as a tooltip and as
@@ -1019,13 +1105,20 @@ export default function OrderWorkspace() {
                     <X size={16} />
                   </button>
                 )}
-                <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onCancelOrder()}
-                  title="Close this order for good — permanent, and its number stays reserved">
-                  {cancelling ? "…" : "Cancel order"}
-                </button>
               </>
             )}
-            {selected && !ro && !isAdmin() && (
+            {/* Cancel survives approval: an approved order that nothing has arrived for is
+                still an order that can be called off, and refusing left no way to close one
+                but to approve, receive and return. It dies where editing dies — at receipt. */}
+            {selected && !ro && isAdmin() && (
+              <button type="button" className="mm-btn-danger" disabled={busy} onClick={() => void onCancelOrder()}
+                title={submitted
+                  ? "Call this approved order off — permanent, and its number stays reserved. Refused once anything has been received."
+                  : "Close this order for good — permanent, and its number stays reserved"}>
+                {cancelling ? "…" : "Cancel order"}
+              </button>
+            )}
+            {selected && !ro && !submitted && !isAdmin() && (
               <span className="mm-pill mm-pill-pending">
                 {rejected ? "Rejected — an admin can correct and approve it" : "Pending admin approval"}
               </span>
@@ -1037,7 +1130,7 @@ export default function OrderWorkspace() {
             )}
             {/* Deleting frees the number, which is exactly what rejection stopped doing —
                 so it stays an admin-only escape hatch and never shows for a cancelled order. */}
-            {selected && !ro && isAdmin() && (
+            {selected && !ro && !submitted && isAdmin() && (
               <button type="button" className="mm-btn-icon mm-btn-icon-danger" disabled={busy}
                 onClick={() => void onDelete()}
                 aria-label="Delete order"
@@ -1053,7 +1146,7 @@ export default function OrderWorkspace() {
         <section className="mm-card mm-ow-list">
           <div className="mm-ow-list-head">
             <div className="mm-chips">
-              {(["all", "pending", "completed"] as Chip[]).map((c) => (
+              {(["all", "incomplete", "complete"] as Chip[]).map((c) => (
                 <button key={c} type="button" className={`mm-chip ${chip === c ? "mm-chip-active" : ""}`} onClick={() => setChip(c)}>
                   {c[0].toUpperCase() + c.slice(1)}
                 </button>
@@ -1072,40 +1165,51 @@ export default function OrderWorkspace() {
                 <tr>
                   <th>Order</th>
                   <th>Date</th>
-                  <th>Party</th>
+                  {/* Party is gone: the company beside it already names the customer, and
+                      the two together spent a third of the row saying it twice. Inward
+                      takes its place, because how much has come in against the order is
+                      what decides whether the order is complete. */}
                   <th>Company</th>
                   <th>Color</th>
-                  {/* The heading was wider than any rate pair under it, and in a ten-column
-                      list that width comes straight out of the party and colour names. */}
+                  {/* The heading was wider than any rate pair under it, and in a nine-column
+                      list that width comes straight out of the company and colour names. */}
                   <th className="mm-num" title="Purchase rate / Sale rate">P/S Rate</th>
                   <th>Delivery</th>
-                  {/* Inwards vs required was a progress bar plus two figures — the widest
-                      cell in the row, saying what the Purchase status beside it already
-                      says. It reads as a status here; the figures are on its tooltip. */}
+                  <th className="mm-num" title="Received against ordered weight (Kg)">Inward</th>
                   <th>Purchase</th>
-                  <th>Sales</th>
+                  <th>Approval Status</th>
                 </tr>
               </thead>
               <tbody>
                 {list.map((o) => {
+                  const stt = stateByOrder[o.name];
                   const ordered = o.ordered_weight ?? 0;
                   const inw = o.inwarded_weight ?? 0;
                   const req = o.required_weight ?? 0;
-                  const done = isDone(o);
+                  const done = isComplete(o, stt?.fulfilment);
                   const overdue = !!o.delivery_date && !done && o.delivery_date < today();
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
                       <td className="mm-ow-cell-order">{o.name}</td>
                       <td className="mm-ow-cell-date">{o.transaction_date || "—"}</td>
-                      <td title={o.party || ""}>{o.party || "—"}</td>
-                      <td title={o.company_name || ""}>{o.company_name || "—"}</td>
+                      <td title={o.company_name || (o.party ?? "")}>{o.company_name || o.party || "—"}</td>
                       <td title={linesByOrder[o.name]?.colours.join(", ") || ""}>{linesByOrder[o.name]?.colours.join(", ") || "—"}</td>
                       <td className="mm-num mm-ow-rates">{ratePair(linesByOrder[o.name])}</td>
                       <td className={overdue ? "mm-open-overdue" : undefined}>{o.delivery_date || "—"}{overdue ? " · overdue" : ""}</td>
+                      {/* Received against ordered — the figures the Complete / Incomplete
+                          status is read off, so the status is never a claim you have to
+                          take on trust. */}
+                      <td className="mm-num mm-ow-rates"
+                        title={`${inw.toLocaleString()} of ${ordered.toLocaleString()} kg received · ${req > 0 ? `${req.toLocaleString()} kg still required` : "nothing outstanding"}\n${(stt?.dispatched_weight ?? 0).toLocaleString()} kg dispatched — which is what decides Complete / Incomplete`}>
+                        <span>{inw.toLocaleString()}</span>
+                        <span className="mm-ow-rate-sep"> / </span>
+                        <span className="mm-muted">{ordered.toLocaleString()}</span>
+                      </td>
                       <td>
                         {(() => {
-                          const stt = stateByOrder[o.name];
                           const pb = purchaseBadge(stt?.purchase);
+                          // Nothing bought and nothing in: no purchase to have a state yet.
+                          if (!pb) return <span className="mm-muted" title="No purchase order raised">—</span>;
                           return (
                             <span className={`mm-pill ${pb.cls}`}
                               title={`${inw.toLocaleString()} of ${ordered.toLocaleString()} kg received · ${req.toLocaleString()} kg required${stt?.has_po ? "" : " · no purchase order raised"}`}>
@@ -1116,14 +1220,9 @@ export default function OrderWorkspace() {
                       </td>
                       <td>
                         {(() => {
-                          // Approval outranks dispatch: an order nobody has approved has not
-                          // failed to go out, it has not started.
-                          const st = o.order_state;
-                          const b = st === "Cancelled" || Number(o.docstatus) === 2
-                            ? { label: "Cancelled", cls: "mm-pill-muted" }
-                            : st === "Rejected" ? { label: "Rejected", cls: "mm-pill-low" }
-                            : Number(o.docstatus) === 0 ? { label: "Pending Approval", cls: "mm-pill-pending" }
-                            : salesBadge(stateByOrder[o.name]?.sales);
+                          // Approval only — whether the goods have gone out is a different
+                          // question, and blending the two left neither answerable.
+                          const b = approvalBadge(approvalOf(o, stt?.approval));
                           return <span className={`mm-pill ${b.cls}`}>{b.label}</span>;
                         })()}
                       </td>
@@ -1131,7 +1230,7 @@ export default function OrderWorkspace() {
                   );
                 })}
                 {!isLoading && list.length === 0 && (
-                  <tr><td colSpan={10} className="mm-empty">No orders.</td></tr>
+                  <tr><td colSpan={9} className="mm-empty">No orders.</td></tr>
                 )}
               </tbody>
             </table>

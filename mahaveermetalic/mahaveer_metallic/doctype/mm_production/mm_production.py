@@ -6,7 +6,11 @@ import frappe.model.naming
 from frappe import _
 from frappe.model.document import Document
 
-from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import get_tolerance_percent
+from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+	get_production_tolerance_kg,
+	get_tolerance_percent,
+	variance_needs_override,
+)
 
 
 class MMProduction(Document):
@@ -69,17 +73,27 @@ class MMProduction(Document):
 		self.variance_percent = round((self.net_weight - base) / base * 100, 2) if base else 0.0
 
 	def _enforce_tolerance(self):
-		"""Beyond ±tolerance (default 4%), the production cannot be saved/submitted unless
-		an Admin PIN was verified (sets pin_override via the API)."""
+		"""Beyond tolerance, the production cannot be saved/submitted unless an Admin PIN
+		was verified (which sets pin_override via the API).
+
+		The gate is `variance_needs_override` — the SAME rule the API applies — so the two
+		can never disagree. They did: the percentage on its own refused a 1 kg shortfall on
+		any program under ~25 kg, which is a scale rounding, not an anomaly. It now takes
+		both the percentage AND the absolute kg leeway to require an override.
+		"""
 		if not self.input_weight:
 			return
-		tol = get_tolerance_percent()
-		if abs(self.variance_percent) > tol and not self.pin_override:
+		if variance_needs_override(self.input_weight, self.net_weight) and not self.pin_override:
 			frappe.throw(
 				_(
-					"Production variance is {0}% (tolerance ±{1}%). An Admin Override PIN is "
-					"required to accept this."
-				).format(self.variance_percent, tol)
+					"Production variance is {0}% ({1} kg) — beyond both the ±{2}% tolerance and "
+					"the ±{3} kg leeway. An Admin Override PIN is required to accept this."
+				).format(
+					self.variance_percent,
+					round(float(self.net_weight or 0) - float(self.input_weight or 0), 3),
+					get_tolerance_percent(),
+					get_production_tolerance_kg(),
+				)
 			)
 
 	def on_submit(self):
@@ -168,6 +182,11 @@ class MMProduction(Document):
 		"""Production is where boxes/bobbins are entered — the dispatch challan is raised
 		from it. With a Sales Order the challan is raised and submitted; without one the boxes simply stay in hand for a later challan."""
 		if not self.customer_order:
+			return
+		# A JOB IN production is material coming BACK from a worker, not going out to the
+		# customer. It carries the order so the receipt is attributed correctly, but raising
+		# a dispatch challan off it would have the goods leaving the moment they arrived.
+		if self.flags.get("skip_dispatch_challan"):
 			return
 		from mahaveermetalic.mahaveer_metallic.api.challan import create_challan_from_production
 

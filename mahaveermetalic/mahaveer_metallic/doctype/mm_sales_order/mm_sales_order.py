@@ -9,6 +9,11 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 from frappe.utils import getdate
 
+from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+	get_inward_match_tolerance,
+)
+
+
 def is_mm_admin() -> bool:
 	roles = frappe.get_roles()
 	return "MM Admin" in roles or "Administrator" in roles
@@ -48,6 +53,83 @@ class MMSalesOrder(Document):
 		if prev and prev.order_state and self.order_state != prev.order_state:
 			# The state moves through approve / reject / cancel, never by editing the field.
 			self.order_state = prev.order_state
+
+	def before_update_after_submit(self):
+		"""Approval is no longer the end of editing — receipt is.
+
+		Frappe runs NONE of `validate` on an update-after-submit: only this hook fires
+		(document.py, run_before_save_methods). So every line rule and the weight totals
+		have to be re-run here by hand, or an approved order could be edited into a state
+		a draft would have been refused for, and `ordered_weight` would silently go stale
+		while `required_weight` kept being measured against it.
+		"""
+		self._guard_post_approval_edit()
+		self._guard_purchased_lines_kept()
+		self._validate_lines()
+		self._require_weight_or_box()
+		self._compute_ordered_weight()
+
+	def _guard_purchased_lines_kept(self):
+		"""A line with a live purchase order behind it cannot be deleted.
+
+		MM Purchase Order.so_item is a Data field, not a Link, so Frappe's link-integrity
+		check does not see it — removing the line would leave a submitted purchase order
+		pointing at a row that no longer exists. Nothing would raise; the PO would simply
+		drop out of the order's purchase table, still committed to a supplier, with nobody
+		told. Cancel the purchase order first, deliberately.
+		"""
+		prev = self.get_doc_before_save()
+		if not prev:
+			return
+		kept = {row.name for row in self.items if row.name}
+		gone = [row for row in prev.items if row.name and row.name not in kept]
+		if not gone:
+			return
+		for row in gone:
+			po = frappe.get_all(
+				"MM Purchase Order",
+				filters={"sales_order": self.name, "so_item": row.name, "docstatus": ["<", 2]},
+				fields=["name", "docstatus"],
+				limit=1,
+			)
+			if po:
+				frappe.throw(
+					_("Row {0} ({1}) has purchase order {2} against it, so it can't be removed. "
+					  "Cancel that purchase order first.").format(row.idx, row.color_name or "—", po[0].name)
+				)
+
+	def _guard_post_approval_edit(self):
+		"""What may still be changed once an order is approved.
+
+		Approval used to be a point of no return. It is not: the customer moves a delivery
+		date or a rate while the order is still only paperwork, and the alternative was
+		cancelling a live order and re-keying it under a new number. RECEIPT is the real
+		point of no return — once material has arrived against the order, its lines have
+		stock filed under them and changing them would leave the two disagreeing.
+
+		Cancelled stays closed for good, and the approval state itself is never editable:
+		it moves through approve / reject / cancel, never by writing the field.
+		"""
+		if self.order_state == "Cancelled" or self.docstatus == 2:
+			frappe.throw(_("Order {0} is cancelled and can no longer be edited.").format(self.name))
+		if order_has_inward(self.name):
+			frappe.throw(
+				_("Order {0} already has inward received against it, so it can't be changed. "
+				  "Raise a goods return (GR) for that inward first.").format(self.name)
+			)
+		prev = self.get_doc_before_save()
+		if prev and prev.order_state and self.order_state != prev.order_state:
+			self.order_state = prev.order_state
+
+	def on_update_after_submit(self):
+		"""Submit any purchase order raised AFTER the sales order was approved.
+
+		`on_submit` runs once and never again, so a PO added during a post-approval edit
+		would have sat as a draft forever — invisible to receiving, and quietly dropped by
+		the order's own cancel path, which only reverses SUBMITTED purchase orders.
+		"""
+		for po in self._linked_pos(docstatus=0):
+			frappe.get_doc("MM Purchase Order", po).submit()
 
 	def on_submit(self):
 		# Approving the order (submit) locks it AND submits its shortage purchase order(s).
@@ -195,75 +277,64 @@ def recalculate_order_fulfilment(order: str):
 		},
 		update_modified=False,
 	)
-	_apply_inward_completion(order, float(inwarded), float(ordered))
+	_clear_legacy_inward_completion(order)
 
 
-def _apply_inward_completion(order, inwarded, ordered):
-	"""Auto-complete an order once its inwarded weight reaches within the configured
-	tolerance of the ordered weight. Never touches an order completed by Force (that
-	stays closed); an auto (Inward) completion is released if a cancelled inward drops
-	the weight back below the threshold."""
-	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
-		get_inward_match_tolerance,
+def _clear_legacy_inward_completion(order):
+	"""Receiving material no longer closes an order. This unpicks the old stamp.
+
+	Inward used to set completed=1 / completion_mode="Inward" the moment the received
+	weight matched the order, and FOUR pickers key off `completed`: stock commitment,
+	Add Program, further inward, and the production order list. So the order the floor
+	had just taken delivery of promptly vanished from every screen that could turn it
+	into goods — received, and unworkable.
+
+	`completed` now means one thing only: the order is FULFILLED. Which is Dispatch (the
+	challans cover it) or Force (an admin said so). Material arriving is not either, so
+	an order still carrying the old Inward stamp is released here as its inwards move.
+	A patch clears the ones that will never be touched again.
+	"""
+	if frappe.db.get_value("MM Sales Order", order, "completion_mode") != "Inward":
+		return
+	frappe.db.set_value(
+		"MM Sales Order", order,
+		{"completed": 0, "completion_mode": "", "completed_on": None},
+		update_modified=False,
 	)
 
-	mode = frappe.db.get_value("MM Sales Order", order, "completion_mode")
-	if mode in ("Force", "Dispatch"):
-		return  # closed by hand, or the goods have physically gone — both stick
 
-	tol = get_inward_match_tolerance()
-	# "Matched" = received has reached within tol% below the ordered weight (or more).
-	matched = ordered > 0 and inwarded >= ordered * (1 - tol / 100.0)
-	if matched:
+def mark_dispatched(order):
+	"""Re-decide an order's completion from the challans standing against it.
+
+	A submitted challan used to close the order outright, whatever it carried — so a
+	200 kg part-delivery marked a 1,200 kg order done. The order is closed only once the
+	dispatched weight REACHES the ordered weight (within the variance limit), and a
+	cancelled challan reopens it, because the same recount runs both ways.
+
+	Force stays: an admin closing an order by hand outranks the arithmetic.
+	"""
+	if not order:
+		return
+	row = frappe.db.get_value(
+		"MM Sales Order", order, ["ordered_weight", "completion_mode"], as_dict=True
+	)
+	if not row or row.completion_mode == "Force":
+		return
+	dispatched = order_dispatched_weight(order)
+	state = fulfilment_state(row.ordered_weight, dispatched, tol=get_inward_match_tolerance())
+	if state == "Complete":
 		frappe.db.set_value(
 			"MM Sales Order", order,
-			{"completed": 1, "completion_mode": "Inward", "completed_on": frappe.utils.now()},
+			{"completed": 1, "completion_mode": "Dispatch", "completed_on": frappe.utils.now()},
 			update_modified=False,
 		)
-	elif mode == "Inward":
-		# Was auto-completed, but a cancelled/amended inward pulled it back below tolerance.
-		# If the goods have already gone out on a challan the order is done regardless of
-		# what the inward paperwork now says — reopening it there put a dispatched order
-		# back to Pending. Promote it to Dispatch instead, which sticks.
-		if _has_dispatch(order):
-			frappe.db.set_value(
-				"MM Sales Order", order, {"completed": 1, "completion_mode": "Dispatch"},
-				update_modified=False,
-			)
-			return
+	elif row.completion_mode == "Dispatch":
+		# It was closed by dispatch and no longer is — a challan was cancelled or amended.
 		frappe.db.set_value(
 			"MM Sales Order", order,
 			{"completed": 0, "completion_mode": "", "completed_on": None},
 			update_modified=False,
 		)
-
-
-def _has_dispatch(order) -> bool:
-	"""True once anything has physically left against this order on a submitted challan."""
-	return bool(
-		frappe.db.sql(
-			"""
-			select 1 from `tabMM Sales Challan` c
-			left join `tabMM Sales Challan Item` ci on ci.parent = c.name
-			where c.docstatus = 1
-				and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
-				and (c.sales_order = %(o)s or ci.sales_order = %(o)s)
-			limit 1
-			""",
-			{"o": order},
-		)
-	)
-
-
-def mark_dispatched(order):
-	"""A submitted sales challan closes its order, and that closure sticks."""
-	if not order:
-		return
-	frappe.db.set_value(
-		"MM Sales Order", order,
-		{"completed": 1, "completion_mode": "Dispatch", "completed_on": frappe.utils.now()},
-		update_modified=False,
-	)
 
 
 @frappe.whitelist()
@@ -401,19 +472,20 @@ def cancel_order(sales_order, reason=None):
 
 
 def assert_order_editable(order):
-	"""An order may be changed while it is still a draft and nothing has arrived for it.
+	"""An order may be changed until material arrives against it.
 
-	Approval and receipt are both points of no return: an approved order is already being
-	worked, and an order with inward against it has stock filed under its lines. A CANCELLED
-	order is closed for good — rejected is the state that comes back.
+	Approval is NOT the cut-off any more. An approved order is agreed, not delivered, and
+	the customer still moves a date or a rate on it; refusing meant cancelling a live order
+	and re-keying it under a new number. RECEIPT is the cut-off: once an inward stands
+	against the order there is stock filed under its lines, and editing them would leave
+	the two disagreeing. A CANCELLED order is closed for good — rejected is the state that
+	comes back.
 	"""
 	if not order or not frappe.db.exists("MM Sales Order", order):
 		return
 	row = frappe.db.get_value("MM Sales Order", order, ["docstatus", "order_state"], as_dict=True)
 	if row.order_state == "Cancelled" or row.docstatus == 2:
 		frappe.throw(_("Order {0} is cancelled and can no longer be edited.").format(order))
-	if row.docstatus == 1:
-		frappe.throw(_("Order {0} is approved. It can't be edited any more.").format(order))
 	if order_has_inward(order):
 		frappe.throw(
 			_("Order {0} already has inward received against it, so its lines can't be "
@@ -597,14 +669,15 @@ def purchase_status_by_order(orders=None):
 	return out
 
 
-# ── The two states an order is read by ────────────────────────────────────────────
+# ── The states an order is read by ──────────────────────────────────
 # They answer different questions and are deliberately kept apart:
-#   Purchase — has the material been bought and received against this order?
-#   Sales    — has it gone out to the customer?
-# Both are derived here so the order list and the order register cannot disagree.
+#   Approval   — has an admin accepted this order? (Pending / Accepted / Rejected)
+#   Fulfilment — has all of it gone out? (Complete / Incomplete) — the order status
+#   Purchase   — has a purchase order been raised, and has its material arrived?
+# All are derived here so the order list and the order register cannot disagree.
 
 
-def purchase_state(ordered, inwarded, has_po=False):
+def purchase_state(ordered, inwarded, has_po=False, tol=None):
 	"""Completed / Partial / Pending, from what the order needs against what came in.
 
 	Judged on the ORDER's requirement rather than the purchase order's own weight: a PO
@@ -612,21 +685,100 @@ def purchase_state(ordered, inwarded, has_po=False):
 	the floor is asking about. The same tolerance the inward auto-complete uses decides
 	"met", so a receipt that closes an order cannot simultaneously read as Partial here.
 	"""
-	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
-		get_inward_match_tolerance,
-	)
-
 	ordered = float(ordered or 0)
 	inwarded = float(inwarded or 0)
 	if inwarded <= 0:
-		return "Pending"
+		# Nothing bought and nothing arrived: there is no purchase to have a state. "Pending"
+		# read as "a purchase order is waiting on someone" on an order where none was ever
+		# raised — an empty state is the honest answer, and the list shows it as a blank cell.
+		return "Pending" if has_po else ""
 	if ordered <= 0:
 		# Nothing to measure against (a box-only order), but material did arrive.
 		return "Completed"
-	tol = get_inward_match_tolerance()
+	if tol is None:
+		tol = get_inward_match_tolerance()
 	if inwarded >= ordered * (1 - tol / 100.0):
 		return "Completed"
 	return "Partial"
+
+
+def fulfilment_state(ordered, dispatched, completion_mode=None, tol=None):
+	"""Complete / Incomplete — THE order status, and the only two values it has.
+
+	Measured on what has GONE OUT, not what came in: an order is finished when challans
+	covering it have been raised off production (or as a straight sales challan) for the
+	whole ordered weight, within the variance limit. 800 kg dispatched against a 1,200 kg
+	order is Incomplete — receiving the material is not delivering it.
+
+	`completion_mode` is the only thing that can override the arithmetic:
+	  · Force    — an admin closed the order by hand, and that sticks;
+	  · Dispatch — `mark_dispatched` already found the challans cover it.
+	Inward-mode completion is deliberately NOT honoured here: material arriving says
+	nothing about whether the customer has had it.
+
+	`tol` lets a caller looping over a whole register read the tolerance once instead of
+	once per row — it is a raw settings query, and a 600-order report would make 600.
+	"""
+	if completion_mode in ("Force", "Dispatch"):
+		return "Complete"
+	ordered = float(ordered or 0)
+	dispatched = float(dispatched or 0)
+	if ordered <= 0:
+		# A box-only order has no weight to measure against; anything sent out closes it.
+		return "Complete" if dispatched > 0 else "Incomplete"
+	if tol is None:
+		tol = get_inward_match_tolerance()
+	return "Complete" if dispatched >= ordered * (1 - tol / 100.0) else "Incomplete"
+
+
+def approval_state(docstatus, order_state=None):
+	"""Pending / Accepted / Rejected / Cancelled — where the order stands with the admin.
+
+	This is the ONLY thing the order list's status column answers, so it never blends in
+	whether the goods have been received or gone out; those are separate columns with
+	separate rules. Cancelled is carried even though it is not one of the three the floor
+	asks for, because folding it into any of them would state something untrue about an
+	order that is over.
+	"""
+	docstatus = int(docstatus or 0)
+	if order_state == "Cancelled" or docstatus == 2:
+		return "Cancelled"
+	if order_state == "Rejected":
+		return "Rejected"
+	# The field stores "Approved" (submitting the order is what sets it); the floor reads
+	# it as "Accepted", so the wording is translated here rather than migrating the data.
+	return "Accepted" if docstatus == 1 or order_state == "Approved" else "Pending"
+
+
+def dispatched_weight_by_order(orders):
+	"""How many kg have gone out on submitted challans, per order.
+
+	The order status is decided on this figure, so it is summed the same way the dispatch
+	CHECK below decides membership: job challans send material to a worker and fulfil
+	nothing, and a challan line naming its own order wins over the header's.
+	"""
+	if not orders:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		select coalesce(nullif(ci.sales_order, ''), c.sales_order) as so,
+			coalesce(sum(ci.weight), 0) as wt
+		from `tabMM Sales Challan` c
+		join `tabMM Sales Challan Item` ci on ci.parent = c.name
+		where c.docstatus = 1
+			and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+			and coalesce(nullif(ci.sales_order, ''), c.sales_order) in %(o)s
+		group by so
+		""",
+		{"o": tuple(orders)},
+		as_dict=True,
+	)
+	return {r.so: round(float(r.wt or 0), 3) for r in rows if r.so}
+
+
+def order_dispatched_weight(order) -> float:
+	"""The same figure for one order."""
+	return dispatched_weight_by_order([order]).get(order, 0.0) if order else 0.0
 
 
 def orders_with_dispatch(orders):
@@ -649,19 +801,22 @@ def orders_with_dispatch(orders):
 
 @frappe.whitelist()
 def order_states(orders=None):
-	"""Purchase and Sales state per order, for the list's two status columns."""
+	"""Approval, fulfilment, purchase and sales state per order, for the order list."""
 	import json as _json
 
 	if isinstance(orders, str):
 		orders = _json.loads(orders or "[]")
 
-	filters = {"docstatus": ["<", 2]}
-	if orders:
-		filters["name"] = ["in", orders]
+	# No docstatus filter: a cancelled order is still on the list, and leaving it out of
+	# this map left its row falling back to whatever the default badge happened to be.
+	filters = {"name": ["in", orders]} if orders else {}
 	rows = frappe.get_all(
 		"MM Sales Order",
 		filters=filters,
-		fields=["name", "ordered_weight", "inwarded_weight", "docstatus"],
+		fields=[
+			"name", "ordered_weight", "inwarded_weight", "docstatus", "order_state",
+			"completed", "completion_mode",
+		],
 		limit_page_length=0,
 	)
 	names = [r.name for r in rows]
@@ -676,13 +831,109 @@ def order_states(orders=None):
 		if p.sales_order
 	}
 	dispatched = orders_with_dispatch(names)
+	out_kg = dispatched_weight_by_order(names)
+	# Whether anything has been RECEIVED against the order — one grouped query for the whole
+	# list, because it is now what decides editability and the screen has to agree with the
+	# server about it rather than guessing from a netted weight (a goods return can take
+	# `inwarded_weight` back to zero while the inwards themselves still stand).
+	with_inward = set()
+	if names:
+		with_inward = {
+			r[0]
+			for r in frappe.db.sql(
+				"""
+				select distinct ii.customer_order
+				from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+				where i.docstatus = 1 and ii.customer_order in %(o)s
+				""",
+				{"o": tuple(names)},
+			)
+			if r[0]
+		}
+	tol = get_inward_match_tolerance()
 
 	out = {}
 	for r in rows:
 		out[r.name] = {
-			"purchase": purchase_state(r.ordered_weight, r.inwarded_weight, r.name in with_po),
+			"purchase": purchase_state(r.ordered_weight, r.inwarded_weight, r.name in with_po, tol),
 			"has_po": r.name in with_po,
+			# Where the order stands with the admin — the list's status column.
+			"approval": approval_state(r.docstatus, r.order_state),
+			# The order status proper: has all of it gone out to the customer?
+			"fulfilment": fulfilment_state(r.ordered_weight, out_kg.get(r.name, 0), r.completion_mode, tol),
+			"dispatched_weight": out_kg.get(r.name, 0),
+			# Receipt, not approval, is what closes an order to editing now.
+			"has_inward": r.name in with_inward,
 			# A challan against the order is the whole test: the goods have gone out.
 			"sales": "Completed" if r.name in dispatched else "Pending",
 		}
 	return out
+
+
+@frappe.whitelist()
+def save_order(sales_order, header=None, items=None):
+	"""Save an order that is already APPROVED, from the Orders screen.
+
+	A plain REST PUT cannot do this job. Frappe routes any save of a submitted document
+	through `update_after_submit`, and that path does two things that make it the wrong
+	door here:
+
+	  · it calls `check_permission("submit")` — and MM Sales Team and MM Operations, the
+	    two roles that actually key orders, have write but deliberately NOT submit. They
+	    would get a bare PermissionError on an order they are entitled to edit, while the
+	    fix — granting them submit — would hand them the power to approve orders, which is
+	    the one thing approval exists to keep to an admin.
+
+	  · it refuses any field without `allow_on_submit`, which would mean flagging the whole
+	    document and its child table. That flag is global: it would also let the desk edit
+	    an approved order with no rules at all, since `validate` does not run on that path.
+
+	So the edit comes through here instead, where the authorisation asked for is WRITE, the
+	editability rule is checked explicitly, and `before_update_after_submit` on the
+	controller still applies every line rule and recomputes the weights. Draft orders are
+	untouched by this — they save the ordinary way.
+	"""
+	import json as _json
+
+	if isinstance(header, str):
+		header = _json.loads(header or "{}")
+	if isinstance(items, str):
+		items = _json.loads(items or "[]")
+
+	doc = frappe.get_doc("MM Sales Order", sales_order)
+	# Write is the right permission to demand: this is an edit, not an approval.
+	doc.check_permission("write")
+	if doc.docstatus != 1:
+		frappe.throw(
+			_("Order {0} is not approved — save it the ordinary way.").format(doc.name)
+		)
+	assert_order_editable(doc.name)
+
+	# Only the fields the Orders screen owns. Everything else on the document — the state,
+	# the counters, the completion — is derived, and a client must not be able to post over it.
+	for field in ("transaction_date", "delivery_date", "party", "company_name"):
+		if header and field in header:
+			doc.set(field, header.get(field))
+
+	if items is not None:
+		allowed = (
+			"name", "idx", "color_name", "cut", "delivery_date", "qty_weight", "qty_box",
+			"sale_rate", "purchase_party", "purchase_rate",
+		)
+		doc.set("items", [{k: row.get(k) for k in allowed if k in row} for row in items])
+
+	# The two flags are what let a submitted document be saved at all. They are safe ONLY
+	# because everything they switch off has been done above by hand: permission was
+	# checked as write, and the field whitelist plus `before_update_after_submit` do the
+	# work `allow_on_submit` and `validate` would have done.
+	doc.flags.ignore_permissions = True
+	doc.flags.ignore_validate_update_after_submit = True
+	doc.save()
+	doc.reload()
+	return {
+		"order": doc.name,
+		"docstatus": doc.docstatus,
+		"order_state": doc.order_state,
+		"ordered_weight": doc.ordered_weight,
+		"required_weight": doc.required_weight,
+	}

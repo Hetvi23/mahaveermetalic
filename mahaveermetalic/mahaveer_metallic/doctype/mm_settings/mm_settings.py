@@ -27,6 +27,46 @@ def get_tolerance_percent() -> float:
 	return _mm_setting_float("production_tolerance_percent", 4.0)
 
 
+def get_production_tolerance_kg() -> float:
+	"""Absolute kg of shortfall a production voucher may run without an override.
+
+	The percentage on its own is unusable on small programs: at the default 4%, a 20 kg
+	program is over tolerance the moment it comes up 1 kg short, and the floor was being
+	asked for an admin PIN to accept a rounding. This is the floor UNDER the percentage —
+	an override is required only when the shortfall breaks BOTH. Defaults to 2 kg.
+
+	Deliberately one-sided. It softens producing LESS than went in, which is ordinary
+	(waste, a short run, scale rounding). Producing MORE is never a tolerance question and
+	is refused outright wherever it is checked.
+	"""
+	return _mm_setting_float("production_tolerance_kg", 2.0)
+
+
+def variance_needs_override(input_weight, net, tol=None, floor_kg=None) -> bool:
+	"""Does this production shortfall need the Admin Override PIN?
+
+	Only when it breaks BOTH the percentage tolerance AND the absolute kg floor. Either
+	one alone is the wrong test: the percentage refuses a 1 kg rounding on a 20 kg
+	program, and the kg floor alone would wave through 40 kg missing off a 1,000 kg one.
+
+	Lives here, not in api/production, because the MM Production controller enforces the
+	same gate on save. Two copies of this rule is two rules, and they drift.
+
+	Producing MORE than went in never reaches here — both callers refuse it outright,
+	because that weight came from somewhere else and the voucher is simply wrong.
+	"""
+	base = float(input_weight or 0)
+	if not base:
+		return False
+	if tol is None:
+		tol = get_tolerance_percent()
+	if floor_kg is None:
+		floor_kg = get_production_tolerance_kg()
+	off_pct = abs(round((float(net) - base) / base * 100, 2))
+	off_kg = abs(round(float(net) - base, 3))
+	return off_pct > tol and off_kg > floor_kg
+
+
 def get_leftover_tolerance() -> float:
 	"""Leftover weight (Kg) at or below which a cutting/production counts as spent and
 	can auto-close. Defaults to 1 kg when unset."""

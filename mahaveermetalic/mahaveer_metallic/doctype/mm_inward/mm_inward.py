@@ -5,6 +5,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Absolute kg of slack under the percentage over-tolerance, for scale rounding — the same
+# floor the challan-level over-receipt check uses.
+_ORDER_RECEIPT_TOLERANCE = 0.5
+
 
 class MMInward(Document):
 	def validate(self):
@@ -37,6 +41,69 @@ class MMInward(Document):
 		elif not self.receipt_status:
 			self.receipt_status = "Complete"
 		self._guard_challan_not_closed()
+		self._guard_order_over_receipt()
+
+	def _guard_order_over_receipt(self):
+		"""An order cannot receive more than it ordered.
+
+		1,200 kg ordered and 1,801.5 kg received left Required (Kg) at −601.5 — a negative
+		requirement, which is not a thing: the extra 600 kg belongs to some other order, or
+		the weight was keyed wrong. Either way it must be caught at the door, because once
+		it is in, every figure downstream is measured against a quantity that was never
+		ordered.
+
+		Cumulative across every inward on the order, not just this one, so the limit cannot
+		be walked past in small steps. The same over-tolerance the challan check uses
+		applies (goods rarely weigh to the gram), with an absolute floor underneath it so a
+		scale rounding on a tiny order isn't refused.
+
+		A GOODS RETURN is exempt — it only ever gives weight back.
+		"""
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+			get_inward_over_tolerance,
+		)
+
+		if self.is_gr:
+			return
+		mine = {}
+		for row in self.items:
+			order = row.customer_order or self.sales_order
+			if order:
+				mine[order] = round(mine.get(order, 0.0) + float(row.weight or 0), 3)
+		over_pct = get_inward_over_tolerance() / 100.0
+		for order in sorted(mine):
+			this_w = mine[order]
+			if this_w <= 0:
+				continue
+			ordered = float(frappe.db.get_value("MM Sales Order", order, "ordered_weight") or 0)
+			if ordered <= 0:
+				# A box-only order carries no weight target — nothing to measure against.
+				continue
+			# Everything already received on the order, this document excluded so an amend
+			# is not counted twice. Goods returns are in the sum with their negative weight,
+			# which is what makes returned material receivable again.
+			prior = float(
+				frappe.db.sql(
+					"""
+					select coalesce(sum(ii.weight), 0)
+					from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+					where ii.customer_order = %(o)s and i.docstatus = 1 and i.name != %(me)s
+					""",
+					{"o": order, "me": self.name or ""},
+				)[0][0]
+				or 0
+			)
+			cum = round(prior + this_w, 3)
+			allowed = round(ordered + max(_ORDER_RECEIPT_TOLERANCE, ordered * over_pct), 3)
+			if cum > allowed:
+				frappe.throw(
+					_(
+						"Over-receipt blocked: order {0} is for {1} kg and {2} kg has already been "
+						"received against it. This inward adds {3} kg, taking it to {4} kg — more "
+						"than the {5} kg limit. Check the weights, or receive the extra against the "
+						"order it belongs to."
+					).format(order, ordered, round(prior, 3), this_w, cum, allowed)
+				)
 
 	def _guard_challan_not_closed(self):
 		"""One inward per challan — unless the earlier one was Partial. A challan is

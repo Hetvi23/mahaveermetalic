@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { Download, Printer, ScrollText } from "lucide-react";
+import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
+import { ScrollText } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import { Filter, ReportFilters } from "@/components/ReportFilters";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -65,7 +66,16 @@ export default function InwardReportPage() {
   const [company, setCompany] = useState("");
   const [item, setItem] = useState("");
   const [limit, setLimit] = useState(500);
-  const [applied, setApplied] = useState({ challan: "", from: "", to: "", company: "", item: "" });
+  const [party, setParty] = useState("");
+  const [lot, setLot] = useState("");
+  const [jobWork, setJobWork] = useState("");
+  const [applied, setApplied] = useState({
+    challan: "", from: "", to: "", company: "", item: "", party: "", lot: "", jobWork: "",
+  });
+  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
+    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
+  });
+  const apply = () => setApplied({ challan, from, to, company, item, party, lot, jobWork });
 
   const { data, isLoading, mutate } = useFrappeGetCall<{ message: Report }>(
     `${API}.rolls_report`,
@@ -75,9 +85,12 @@ export default function InwardReportPage() {
       to_date: applied.to || undefined,
       company: applied.company || undefined,
       item: applied.item || undefined,
+      party: applied.party || undefined,
+      lot: applied.lot.trim() || undefined,
+      job_work: applied.jobWork || undefined,
       limit,
     },
-    `inward-report-${applied.challan}-${applied.from}-${applied.to}-${applied.company}-${applied.item}-${limit}`,
+    `inward-report-${applied.challan}-${applied.from}-${applied.to}-${applied.company}-${applied.item}-${applied.party}-${applied.lot}-${applied.jobWork}-${limit}`,
   );
   const rows = useMemo(() => data?.message?.rows ?? [], [data]);
   const totals = data?.message?.totals;
@@ -169,38 +182,49 @@ export default function InwardReportPage() {
         </div>
       </header>
 
-      <section className="mm-card mm-card-pad mm-no-print" style={{ marginBottom: "1rem" }}>
-        <div className="mm-brp-filters">
-          <label className="mm-field">
-            <span className="mm-field-label">Chalan No</span>
-            <input className="mm-input" value={challan} placeholder="Ch.No" onChange={(e) => setChallan(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") setApplied({ challan, from, to, company, item }); }} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">From</span>
-            <input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">To</span>
-            <input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">Company</span>
-            <SearchSelect value={company} placeholder="All companies"
-              options={companyOptions.map((c) => ({ value: c, label: c }))} onChange={setCompany} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">Item</span>
-            <SearchSelect value={item} placeholder="All items"
-              options={itemOptions.map((c) => ({ value: c, label: c }))} onChange={setItem} />
-          </label>
-          <button className="mm-btn-primary" onClick={() => setApplied({ challan, from, to, company, item })}>Filter</button>
-          <button className="mm-btn-secondary" onClick={() => window.print()}><Printer size={15} /> Print</button>
-          <button className="mm-btn-secondary" disabled={rows.length === 0} onClick={exportCsv}>
-            <Download size={15} /> CSV
-          </button>
-        </div>
-      </section>
+      <ReportFilters
+        onApply={apply}
+        onReset={() => {
+          setChallan(""); setFrom(""); setTo(""); setCompany(""); setItem("");
+          setParty(""); setLot(""); setJobWork("");
+          setApplied({ challan: "", from: "", to: "", company: "", item: "", party: "", lot: "", jobWork: "" });
+        }}
+        onPrint={() => window.print()}
+        onExport={exportCsv}
+        exportDisabled={rows.length === 0}
+        note={<>One row per roll received, newest entered first.</>}
+      >
+        <Filter label="From"><input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Filter>
+        <Filter label="To"><input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Filter>
+        <Filter label="Party">
+          <SearchSelect value={party} placeholder="All parties"
+            options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))}
+            onChange={setParty} />
+        </Filter>
+        <Filter label="Company">
+          <SearchSelect value={company} placeholder="All companies"
+            options={companyOptions.map((c) => ({ value: c, label: c }))} onChange={setCompany} />
+        </Filter>
+        <Filter label="Item">
+          <SearchSelect value={item} placeholder="All items"
+            options={itemOptions.map((c) => ({ value: c, label: c }))} onChange={setItem} />
+        </Filter>
+        <Filter label="Chalan No">
+          <input className="mm-input" value={challan} placeholder="Ch.No"
+            onChange={(e) => setChallan(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") apply(); }} />
+        </Filter>
+        <Filter label="Lot">
+          <input className="mm-input" value={lot} placeholder="Lot id"
+            onChange={(e) => setLot(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") apply(); }} />
+        </Filter>
+        <Filter label="Job work">
+          <SearchSelect value={jobWork} placeholder="All receipts"
+            options={[{ value: "1", label: "Job work only" }, { value: "0", label: "Own material only" }]}
+            onChange={setJobWork} />
+        </Filter>
+      </ReportFilters>
 
       <section className="mm-card mm-card-pad">
         <div className="mm-orep-head">

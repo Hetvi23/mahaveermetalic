@@ -13,6 +13,7 @@
   "delivery_date",
   "party",
   "company_name",
+  "job_work_flag",
   "section_items",
   "items",
   "section_status",
@@ -67,6 +68,13 @@
    "in_list_view": 1,
    "label": "Company",
    "description": "One of the selected party's companies."
+  },
+  {
+   "fieldname": "job_work_flag",
+   "fieldtype": "Check",
+   "label": "Is Job Work",
+   "default": "0",
+   "description": "Raised for job work \u2014 the material was received on a job-work inward and is being processed for the party, not sold to them. Every stage downstream (program, production, challan) inherits it. The sale rate is added later."
   },
   {
    "fieldname": "branch",

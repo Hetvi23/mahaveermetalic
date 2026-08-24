@@ -18,8 +18,10 @@ import frappe
 from frappe import _
 
 from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+	get_production_tolerance_kg,
 	get_tolerance_percent,
 	require_admin_pin,
+	variance_needs_override,
 	verify_admin_pin,
 )
 
@@ -262,6 +264,11 @@ def production_view(date=None, branch=None):
 	if branch:
 		prog_filters["branch"] = branch
 	shifts = {"Day": {}, "Night": {}}
+	# One batched lookup for the whole board, so resolving a program's lot through its patty
+	# costs one query rather than one per program.
+	prog_lots = program_lots(
+		frappe.get_all("MM Program", filters=prog_filters, pluck="name", limit_page_length=500)
+	)
 	for p in frappe.get_all(
 		"MM Program",
 		filters=prog_filters,
@@ -289,7 +296,15 @@ def production_view(date=None, branch=None):
 				"program": p.name,
 				"color": p.shade or p.roll_no or "—",
 				"cut": p.cut,
-				"lot_id": lot_id(p.lot),
+				# Resolved through the patty when the program has no lot of its own, which is
+				# every program planned off an uncut roll. `lot_ids` is the LIST — `lot_id`
+				# is a joined display string once a program drew from several cuttings, and
+				# looking a remark up by "LT1/26-27, LT2/26-27" matches nothing.
+				"lot": p.lot or (prog_lots.get(p.name) or {}).get("lot"),
+				"lot_id": lot_id(p.lot) or (prog_lots.get(p.name) or {}).get("lot_id"),
+				"lot_ids": (prog_lots.get(p.name) or {}).get("lot_ids") or (
+					[lot_id(p.lot)] if p.lot and lot_id(p.lot) else []
+				),
 				"total_batches": total,
 				"completed_batches": done,
 				# What actually came off the machine, at the per-patty rate.
@@ -411,7 +426,7 @@ def orders_for_production(party=None, color=None):
 	rows = frappe.db.sql(
 		f"""
 		select distinct so.name, so.transaction_date, so.delivery_date,
-			so.ordered_weight, so.inwarded_weight,
+			so.ordered_weight, so.inwarded_weight, so.job_work_flag,
 			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
 				from `tabMM Sales Order Item` x where x.parent = so.name) as colours
 		from `tabMM Sales Order` so
@@ -434,11 +449,17 @@ def orders_for_production(party=None, color=None):
 		)
 		# Already dispatched = weight that physically left on submitted Sales Challans for
 		# this order (the line's own order wins, else the challan header's).
+		# Job Out / Job In / Job Challan send material to a WORKER, not to the customer, so
+		# they fulfil nothing — the same exclusion every other dispatch sum in the app applies.
+		# Without it a job challan read as a delivery and the order looked further along
+		# than it is.
 		dispatched = float(
 			frappe.db.sql(
 				"""select coalesce(sum(ci.weight), 0)
 				from `tabMM Sales Challan Item` ci join `tabMM Sales Challan` c on c.name = ci.parent
-				where c.docstatus = 1 and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %s""",
+				where c.docstatus = 1
+					and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+					and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %s""",
 				(r.name,),
 			)[0][0]
 			or 0
@@ -452,6 +473,7 @@ def orders_for_production(party=None, color=None):
 			{
 				"name": r.name,
 				"colours": r.colours,
+				"job_work": bool(r.get("job_work_flag")),
 				"transaction_date": str(r.transaction_date) if r.transaction_date else None,
 				"delivery_date": str(r.delivery_date) if r.delivery_date else None,
 				"ordered_weight": round(ordered, 3),
@@ -495,6 +517,16 @@ def open_orders_for_item(color=None, party=None):
 	)
 
 
+def _order_is_job_work(order) -> bool:
+	"""Is this order job work? Guarded on the column existing so an un-migrated site
+	answers "no" rather than throwing on every production."""
+	if not order:
+		return False
+	if not frappe.db.has_column("MM Sales Order", "job_work_flag"):
+		return False
+	return bool(frappe.db.get_value("MM Sales Order", order, "job_work_flag"))
+
+
 def _coerce_bobbins(bobbins):
 	if isinstance(bobbins, str):
 		bobbins = json.loads(bobbins or "[]")
@@ -522,7 +554,17 @@ def preview_variance(input_weight, gross_weight, bobbin_weight=0, box_weight=0):
 	net = round(float(gross_weight or 0) - float(bobbin_weight or 0) - float(box_weight or 0), 3)
 	variance = round((net - base) / base * 100, 2) if base else 0.0
 	tol = get_tolerance_percent()
-	return {"net_weight": net, "variance_percent": variance, "tolerance": tol, "pin_required": abs(variance) > tol}
+	floor_kg = get_production_tolerance_kg()
+	return {
+		"net_weight": net,
+		"variance_percent": variance,
+		"tolerance": tol,
+		# The absolute leeway, so the modal can say "1 kg short of 20 kg is fine" in the
+		# same terms the server will judge it by rather than mirroring a constant.
+		"tolerance_kg": floor_kg,
+		"short_by": round(base - net, 3),
+		"pin_required": variance_needs_override(base, net, tol, floor_kg),
+	}
 
 
 @frappe.whitelist()
@@ -610,14 +652,15 @@ def create_production(
 	variance = round((net - input_weight) / input_weight * 100, 2) if input_weight else 0.0
 	tol = get_tolerance_percent()
 	pin_override = 0
-	if input_weight and abs(variance) > tol:
+	if variance_needs_override(input_weight, net, tol):
 		# Say which of the two it is. One message covered both "you typed nothing" and
 		# "you typed the wrong PIN", so entering a wrong PIN reported that a PIN was
 		# required — leaving no way to tell a typo from a missing entry.
 		if not str(pin or "").strip():
 			frappe.throw(
-				_("Variance {0}% exceeds tolerance ±{1}%. Enter the Admin Override PIN to accept it.").format(
-					variance, tol
+				_("Variance {0}% ({1} kg) exceeds tolerance ±{2}% and the ±{3} kg leeway. "
+				  "Enter the Admin Override PIN to accept it.").format(
+					variance, round(net - input_weight, 3), tol, get_production_tolerance_kg()
 				)
 			)
 		require_admin_pin(pin)
@@ -645,7 +688,15 @@ def create_production(
 			"box_return": 1 if frappe.utils.cint(box_return) else 0,
 			"bobbin_return": 1 if frappe.utils.cint(bobbin_return) else 0,
 			"status": "Completed",
-			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
+			# Auto-ticked off the ORDER. Job work is a property of the order the material
+			# came in against, not a checkbox somebody remembers on the voucher — and a
+			# production against a job-work order that was not marked as job work read as
+			# a sale of the customer's own material.
+			"job_work_flag": 1 if (
+				frappe.utils.cint(job_work)
+				or frappe.utils.cint(prog.get("job_work_flag"))
+				or _order_is_job_work(customer_order or prog.customer_order)
+			) else 0,
 			"branch": prog.branch,
 			"location": prog.location,
 			"input_weight": input_weight,

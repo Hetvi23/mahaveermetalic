@@ -210,6 +210,10 @@ def sync_shortage_pos(sales_order, lines=None, clamp_to_shortage=1):
 
 	Unlike `create_po_for_order` this never *implicitly* raises anything: the caller passes
 	exactly the lines the user chose in the purchase dialog, and nothing else is created.
+
+	A line whose purchase order is already SUBMITTED is left alone and reported back in
+	`locked`: it is a live commitment to a supplier, not a draft to be rewritten, and
+	silently raising a second one for the same line is the one outcome nobody wants.
 	"""
 	import json as _json
 
@@ -236,15 +240,33 @@ def sync_shortage_pos(sales_order, lines=None, clamp_to_shortage=1):
 				continue
 		wanted[it.name] = {"item": it, "qty": qty, "rate": float(ln.get("rate") or 0), "supplier": ln.get("supplier") or None}
 
-	created, removed = [], []
+	created, removed, locked = [], [], []
 	existing = frappe.get_all(
 		"MM Purchase Order", filters={"sales_order": so.name, "docstatus": 0}, fields=["name", "so_item"]
 	)
 	by_item = {e.so_item: e.name for e in existing}
+	# Approving an order submits its purchase orders, and a submitted one is not a draft to
+	# be rewritten. Now that an approved order stays editable, this function can be reached
+	# with the line's PO already submitted — and looking only at drafts, it would have
+	# raised a SECOND purchase order for the same line and left the order carrying two.
+	submitted = {
+		e.so_item: e.name
+		for e in frappe.get_all(
+			"MM Purchase Order",
+			filters={"sales_order": so.name, "docstatus": 1},
+			fields=["name", "so_item"],
+		)
+		if e.so_item
+	}
+	for so_item in list(wanted):
+		if so_item in submitted:
+			locked.append(submitted[so_item])
+			wanted.pop(so_item)
 
-	# Drop drafts for lines the user no longer wants a PO on.
+	# Drop drafts for lines the user no longer wants a PO on. A line whose PO is already
+	# submitted was removed from `wanted` above, so its draft — if any — is untouched here.
 	for e in existing:
-		if e.so_item not in wanted:
+		if e.so_item not in wanted and e.so_item not in submitted:
 			frappe.delete_doc("MM Purchase Order", e.name, ignore_permissions=True)
 			removed.append(e.name)
 
@@ -275,7 +297,7 @@ def sync_shortage_pos(sales_order, lines=None, clamp_to_shortage=1):
 			po.insert(ignore_permissions=True)
 		created.append(po.name)
 
-	return {"created": created, "removed": removed}
+	return {"created": created, "removed": removed, "locked": locked}
 
 
 @frappe.whitelist()

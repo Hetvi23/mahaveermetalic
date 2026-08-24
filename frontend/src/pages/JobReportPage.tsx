@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
-import { ArrowDownFromLine, ArrowUpFromLine, Printer } from "lucide-react";
+import { ArrowDownFromLine, ArrowUpFromLine } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import { Filter, ReportFilters } from "@/components/ReportFilters";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -28,18 +29,29 @@ export default function JobReportPage() {
   const [party, setParty] = useState("");
   const [from, setFrom] = useState(monthAgo());
   const [to, setTo] = useState(today());
-  const [applied, setApplied] = useState({ party: "", from: monthAgo(), to: today() });
+  const [company, setCompany] = useState("");
+  const [type, setType] = useState("");
+  const [applied, setApplied] = useState({ party: "", from: monthAgo(), to: today(), company: "" });
 
   const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
     fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
   });
+  const companies = useFrappeGetCall<{ message: { company_name: string }[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.all_companies", undefined, "mm-all-companies",
+  );
 
   const { data, isLoading } = useFrappeGetCall<{ message: Report }>(
     `${API}.job_report`,
-    { party: applied.party || undefined, from_date: applied.from, to_date: applied.to },
-    `job-report-${applied.party}-${applied.from}-${applied.to}`,
+    {
+      party: applied.party || undefined, from_date: applied.from, to_date: applied.to,
+      company: applied.company || undefined,
+    },
+    `job-report-${applied.party}-${applied.from}-${applied.to}-${applied.company}`,
   );
   const r = data?.message;
+  // Out and In are the two halves of the same ledger, so narrowing to one is a reading of
+  // it rather than a different query — filtered here instead of another round trip.
+  const rows = (r?.rows ?? []).filter((x) => !type || x.type === type);
 
   return (
     <div className="mm-screen mm-page-enter">
@@ -50,26 +62,33 @@ export default function JobReportPage() {
         </div>
       </header>
 
-      <section className="mm-card mm-card-pad mm-no-print" style={{ marginBottom: "1rem" }}>
-        <div className="mm-brp-filters">
-          <label className="mm-field">
-            <span className="mm-field-label">Party</span>
-            <SearchSelect value={party} placeholder="All parties"
-              options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))}
-              onChange={setParty} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">From</span>
-            <input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">To</span>
-            <input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
-          <button className="mm-btn-primary" onClick={() => setApplied({ party, from, to })}>Filter</button>
-          <button className="mm-btn-secondary" onClick={() => window.print()}><Printer size={15} /> Print</button>
-        </div>
-      </section>
+      <ReportFilters
+        onApply={() => setApplied({ party, from, to, company })}
+        onReset={() => {
+          setParty(""); setCompany(""); setType(""); setFrom(monthAgo()); setTo(today());
+          setApplied({ party: "", from: monthAgo(), to: today(), company: "" });
+        }}
+        onPrint={() => window.print()}
+        note={<>The closing balance is material still with the job worker. Bobbins are carried beside it.</>}
+      >
+        <Filter label="From"><input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Filter>
+        <Filter label="To"><input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Filter>
+        <Filter label="Party">
+          <SearchSelect value={party} placeholder="All parties"
+            options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))}
+            onChange={setParty} />
+        </Filter>
+        <Filter label="Company">
+          <SearchSelect value={company} placeholder="All companies"
+            options={(companies.data?.message ?? []).map((c) => ({ value: c.company_name, label: c.company_name }))}
+            onChange={setCompany} />
+        </Filter>
+        <Filter label="Direction">
+          <SearchSelect value={type} placeholder="Out and In"
+            options={[{ value: "Job Out", label: "Job Out only" }, { value: "Job In", label: "Job In only" }]}
+            onChange={setType} />
+        </Filter>
+      </ReportFilters>
 
       <section className="mm-card mm-card-pad">
         <div className="mm-job-summary mm-no-print">
@@ -81,7 +100,7 @@ export default function JobReportPage() {
         </div>
 
         <div className="mm-table-scroll">
-          <table className="mm-table mm-table-dense">
+          <table className="mm-table mm-table-dense mm-table-sticky">
             <thead>
               <tr>
                 <th>Date</th><th>Type</th><th>Challan</th><th>Party</th>
@@ -91,10 +110,10 @@ export default function JobReportPage() {
             </thead>
             <tbody>
               {isLoading && <tr><td colSpan={8} className="mm-muted">Loading…</td></tr>}
-              {!isLoading && (r?.rows.length ?? 0) === 0 && (
+              {!isLoading && rows.length === 0 && (
                 <tr><td colSpan={8} className="mm-muted">No job work in this period.</td></tr>
               )}
-              {r?.rows.map((x) => (
+              {rows.map((x) => (
                 <tr key={x.challan}>
                   <td>{x.date || "—"}</td>
                   <td><span className={`mm-state ${x.type === "Job Out" ? "mm-state-unfinished" : "mm-state-incutting"}`}>{x.type}</span></td>

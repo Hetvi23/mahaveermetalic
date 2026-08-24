@@ -7,6 +7,7 @@ import LinkField from "@/components/LinkField";
 import SearchSelect from "@/components/SearchSelect";
 import type { SOOption } from "@/components/SalesOrderPicker";
 import { toast } from "@/components/Toaster";
+import { LotRemarkBadge, useLotRemarks } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -262,6 +263,10 @@ export default function InwardWorkspace() {
     "mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot.preview_lots",
   );
   const [lots, setLots] = useState<(string | null)[]>([]);
+  // A lot this grid is about to add material to may already carry a reason from the floor —
+  // an earlier program on it was reverted, or a run stopped short. That is exactly the
+  // moment somebody should see it, before more of the same lot goes into stock.
+  const { forLotId: lotNote } = useLotRemarks({ lotIds: lots });
   // Keyed on colour + challan alone, so weighing rolls doesn't re-ask for the lots.
   const lotKey = useMemo(() => JSON.stringify(rows.map((r) => [r.color, r.challan_no.trim()])), [rows]);
   useEffect(() => {
@@ -836,6 +841,7 @@ export default function InwardWorkspace() {
                       >
                         {lots[i] || (r.color ? "…" : "Auto")}
                       </span>
+                      <LotRemarkBadge remarks={lotNote(lots[i])} label={`Lot ${lots[i] || ""}`} />
                     </td>
                     <td className="mm-iw-c-roll" data-label="Roll">
                       {single ? (
@@ -943,6 +949,7 @@ export default function InwardWorkspace() {
               <span className="mm-modal-title">
                 Rolls — row {cartRow + 1}
                 {lots[cartRow] ? <span className="mm-iw-lot mm-iw-lot-head">{lots[cartRow]}</span> : null}
+                <LotRemarkBadge remarks={lotNote(lots[cartRow])} label={`Lot ${lots[cartRow] || ""}`} />
               </span>
               <button className="mm-icon-btn" onClick={() => setCartRow(null)} aria-label="Close"><X size={16} /></button>
             </div>

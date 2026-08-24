@@ -116,6 +116,64 @@ def _release_challan_lock(challan_no: str):
 		pass
 
 
+def _ensure_job_work_order(data, items):
+	"""Raise the Sales Order behind a job-work inward, and point its rows at it.
+
+	A job-work receipt is the party's OWN material coming in to be worked on. There is no
+	order behind it — nobody sold anything — yet every stage downstream is keyed to one:
+	a program needs an order, production is measured against one, and the challan back
+	references it. Without this the operator had to remember to key an order by hand
+	first, and a job-work inward keyed without one simply could not be programmed.
+
+	One order per inward, carrying a line per colour/cut received. It is submitted on the
+	spot: the material is physically here, so there is nothing for an admin to approve, and
+	the inward about to be posted is refused against a draft order.
+
+	The sale rate is left at zero deliberately — job work is priced later, and inventing a
+	rate now would put a number nobody agreed into the books. `job_work_flag` is what tells
+	every screen downstream what this is.
+	"""
+	job_rows = [i for i in items if frappe.utils.cint(i.get("job_work")) and not i.get("customer_order")]
+	if not job_rows:
+		return
+	if not data.get("party"):
+		frappe.throw(_("Job work is received against a party — choose one."))
+	if not data.get("company_name"):
+		frappe.throw(
+			_("Job work is received company-wise. Choose the company this material belongs to "
+			  "before posting it.")
+		)
+
+	# One line per colour + cut, so a lot split over several rolls is one order line.
+	lines = {}
+	for i in job_rows:
+		key = (i.get("color_name") or "", (i.get("cut") or "").strip())
+		e = lines.setdefault(key, {"color_name": key[0], "cut": key[1] or None,
+			"qty_weight": 0.0, "qty_box": 0.0, "sale_rate": 0})
+		e["qty_weight"] += frappe.utils.flt(i.get("weight") or 0)
+		e["qty_box"] += frappe.utils.flt(i.get("qty_box") or 0)
+	for e in lines.values():
+		e["qty_weight"] = round(e["qty_weight"], 3)
+		e["qty_box"] = round(e["qty_box"], 3)
+
+	so = frappe.get_doc({
+		"doctype": "MM Sales Order",
+		"transaction_date": data.get("posting_date") or frappe.utils.today(),
+		"party": data.get("party"),
+		"company_name": data.get("company_name"),
+		"branch": data.get("branch"),
+		"location": data.get("location"),
+		"job_work_flag": 1,
+		"items": list(lines.values()),
+	})
+	so.insert(ignore_permissions=True)
+	so.submit()
+
+	for i in job_rows:
+		i["customer_order"] = so.name
+	return so.name
+
+
 def _assign_lots(data):
 	"""Resolve (and stamp) a lot PER ENTRY ROW.
 
@@ -379,6 +437,11 @@ def post_inward(payload):
 
 	# Downstream gating: an inward may only be posted against a SUBMITTED order.
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import assert_order_submitted
+
+	# Job work arrives as an inward and there is no order behind it yet — the party's own
+	# material has come in to be processed. One is raised here so everything downstream
+	# (programs, production, the challan back) hangs off an order like any other work.
+	_ensure_job_work_order(data, items)
 
 	orders_ref = {data.get("sales_order")} | {i.get("customer_order") for i in items}
 	for o in filter(None, orders_ref):

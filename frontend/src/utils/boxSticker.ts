@@ -39,18 +39,11 @@ function stickerHtml(b: StickerBox): string {
   </div>`;
 }
 
-/**
- * Open the print dialog with one label per box, sized 100×75mm (the label stock).
- * Browser print keeps this dependency-free — pick the TSC printer in the dialog.
- */
-export function printBoxStickers(boxes: StickerBox[]) {
-  if (!boxes.length) return;
-  const w = window.open("", "_blank", "width=760,height=620");
-  if (!w) {
-    alert("Allow pop-ups for this site to print stickers.");
-    return;
-  }
-  w.document.write(`<!doctype html><html><head><title>Box stickers</title><style>
+/** The whole label document — one source, so the printed sticker and the downloaded
+ *  one can never drift apart. The barcode is inline SVG and the CSS is embedded, so the
+ *  saved file opens and prints correctly on a machine that has never seen this app. */
+function stickerDocument(boxes: StickerBox[]): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Box stickers</title><style>
     @page { size: 100mm 75mm; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #000; }
@@ -69,9 +62,47 @@ export function printBoxStickers(boxes: StickerBox[]) {
     .foot { width: 100%; border-collapse: collapse; font-size: 8pt; margin-top: 0.5mm; }
     .foot .rt { text-align: right; white-space: nowrap; }
     @media print { .sticker:last-child { page-break-after: auto; } }
-  </style></head><body>${boxes.map(stickerHtml).join("")}</body></html>`);
+  </style></head><body>${boxes.map(stickerHtml).join("")}</body></html>`;
+}
+
+/**
+ * Open the print dialog with one label per box, sized 100×75mm (the label stock).
+ * Browser print keeps this dependency-free — pick the TSC printer in the dialog.
+ */
+export function printBoxStickers(boxes: StickerBox[]) {
+  if (!boxes.length) return;
+  const w = window.open("", "_blank", "width=760,height=620");
+  if (!w) {
+    alert("Allow pop-ups for this site to print stickers.");
+    return;
+  }
+  w.document.write(stickerDocument(boxes));
   w.document.close();
   w.focus();
   // Give the SVG a tick to lay out before the dialog opens.
   setTimeout(() => { w.print(); }, 250);
+}
+
+/**
+ * Save the stickers as a file instead of printing them.
+ *
+ * Printing needs the label printer attached to the machine the operator happens to be
+ * sitting at. A file does not: it can be sent to whoever has the printer, kept with the
+ * despatch paperwork, or re-printed tomorrow without re-opening the voucher. Same
+ * document either way, page-sized to the 100×75mm stock, so opening it and pressing
+ * print gives exactly what the Print button would have.
+ */
+export function downloadBoxStickers(boxes: StickerBox[], filename?: string) {
+  if (!boxes.length) return;
+  const name = (filename || `stickers-${boxes[0]?.barcode || "box"}`).replace(/[^\w.-]+/g, "-");
+  const blob = new Blob([stickerDocument(boxes)], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked on the next tick: revoking synchronously can beat the download starting.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

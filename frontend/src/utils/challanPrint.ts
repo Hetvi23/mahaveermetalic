@@ -104,6 +104,23 @@ function copy(d: ChallanPrintData, label: string): string {
   const totalNet = items.reduce((s, i) => s + Number(i.net_weight ?? i.weight ?? 0), 0);
   const totalBob = d.total_bobbin ?? items.reduce((s, i) => s + Number(i.bobbin_pcs || 0), 0);
 
+  /* Which bobbins went, and how many of each.
+     The grid's Bobbins column counts pieces per BOX — it cannot say WHICH bobbin, and the
+     terms below make the customer liable for a missing one. Naming them is the whole point
+     of that liability, so the challan lists them when there are any and stays silent when
+     there are none rather than printing an empty heading. */
+  const bobbinRows = (d.bobbins || []).filter((b) => b.bobbin && Number(b.qty || 0) > 0);
+  const bobbinBlock = bobbinRows.length
+    ? `<table class="bob">
+        <thead><tr><th>Bobbin</th><th>Quality</th><th class="rt">Qty</th><th class="rt">Weight</th></tr></thead>
+        <tbody>${bobbinRows
+          .map((b) => `<tr><td>${esc(b.bobbin || "")}</td><td>${esc(b.quality || "")}</td>` +
+                      `<td class="rt">${int(b.qty)}</td>` +
+                      `<td class="rt">${Number(b.weight || 0) ? num(b.weight) : ""}</td></tr>`)
+          .join("")}</tbody>
+      </table>`
+    : "";
+
   const terms = (d.challan_terms || "").trim()
     ? (d.challan_terms as string).split(/\r?\n/).map((t) => t.trim()).filter(Boolean)
     : DEFAULT_TERMS;
@@ -144,6 +161,7 @@ function copy(d: ChallanPrintData, label: string): string {
         <td class="b"><b>${int(totalBob)}</b></td>
       </tr></tfoot>
     </table>
+    ${bobbinBlock}
     <div class="ret">Return No. of Box: <b>${int(d.return_box)}</b> &nbsp; No. of Bobbin: <b>${int(d.return_bobbin)}</b></div>
     <ul class="terms">${terms.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
     <table class="sign"><tr><td>Receiver's Sign</td><td class="rt">Authorised Signature</td></tr></table>
@@ -186,6 +204,13 @@ export function printChallan(d: ChallanPrintData) {
     .grid .w, .grid .b { text-align: right; font-variant-numeric: tabular-nums; }
     .grid .w { width: 15%; } .grid .b { width: 11.8%; }
     .grid tfoot .tot { text-align: right; font-weight: 700; border: 0; }
+    /* Bobbins, when the challan carries any. Sized to the terms beneath it rather than
+       the weight grid above — it is a short reference list, not a second table of record,
+       and two copies still have to fit one A4 sheet. */
+    .bob { width: 100%; border-collapse: collapse; margin-top: 1.2mm; font-size: 7pt; }
+    .bob th, .bob td { border: 0.2mm solid #000; padding: 0.5mm 1mm; }
+    .bob th { background: #eee; font-weight: 700; text-align: left; }
+    .bob .rt { text-align: right; }
     .ret { margin-top: 1.2mm; font-size: 7.5pt; }
     .terms { margin: 1mm 0 0; padding-left: 4mm; font-size: 6.5pt; line-height: 1.35; }
     .sign { margin-top: auto; font-size: 7.5pt; padding-top: 4mm; }

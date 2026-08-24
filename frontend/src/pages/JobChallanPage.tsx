@@ -13,14 +13,23 @@ const today = () => new Date().toISOString().slice(0, 10);
 const kg = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type StockRoll = {
+  /** The INVENTORY row this roll belongs to — what the challan actually deducts from.
+   *  Several rolls of one lot share it, so it is NOT the row's identity. */
   name: string;
+  /** The roll itself (an MM Inward Item row) — the identity, and what the floor sees. */
+  inward_item?: string;
   roll_no?: string;
   color_name?: string;
   lot_number?: string;
+  cut?: string;
   location?: string;
   branch?: string;
+  customer_order?: string;
   stock_weight?: number;
   stock_box?: number;
+  /** What the whole lot still holds, so picking can't send more than exists. */
+  lot_stock_weight?: number;
+  challan_number?: string;
   challan_date?: string;
 };
 type PickedRoll = StockRoll & { cut: string; weight: number };
@@ -61,6 +70,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   // Job In picks a Job Out to answer, and records which one — see againstJobOut below.
   const [fCompany, setFCompany] = useState("");
   const [againstJobOut, setAgainstJobOut] = useState<string | null>(null);
+  /** The Job Out being received, for the production voucher's header. */
+  const [jobOutMeta, setJobOutMeta] = useState<JobOutRow | null>(null);
 
   // Job selection is company-first, and the company is findable by its own name OR by the
   // party it sits under — picking one fills in the party it belongs to.
@@ -122,7 +133,21 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
     bobbins: bobbins.reduce((s, b) => s + Number(b.qty || 0), 0),
   }), [picked, bobbins]);
 
-  const isPicked = (name: string) => picked.some((p) => p.name === name);
+  const rollKey = (r: { inward_item?: string; name: string }) => r.inward_item || r.name;
+  const isPicked = (key: string) => picked.some((p) => rollKey(p) === key);
+
+  /**
+   * A Job Out carries ONE colour.
+   *
+   * The worker is sent one shade and sends it back as one shade; two on a single challan
+   * cannot be told apart coming in, because a Job In reconciles against the Job Out's
+   * total weight and nothing on it records which part was which. So the first roll picked
+   * fixes the challan's colour and the rest of the list stops being selectable — refused
+   * here and again server-side.
+   */
+  const lockedColour = outward ? (picked.find((p) => p.color_name)?.color_name ?? "") : "";
+  const blockedByColour = (r: StockRoll) =>
+    outward && !!lockedColour && !isPicked(rollKey(r)) && (r.color_name || "") !== lockedColour;
 
   const { call: fetchJobOut } = useFrappePostCall<{
     message: { challan: string; party: string; rows: { roll_inventory: string; color_name?: string; cut?: string; qty_box?: number; weight?: number }[] };
@@ -152,6 +177,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
         weight: Number(x.weight || 0),
       } as PickedRoll)));
       setAgainstJobOut(m.challan);
+      setJobOutMeta(r);
       if (m.party) setParty(m.party);
     } catch (e) {
       setError(extractErrorMessage(e));
@@ -160,11 +186,33 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
 
   /** The row button toggles, so a roll added by mistake comes straight back off. */
   function toggleRoll(r: StockRoll) {
-    setPicked((prev) =>
-      prev.some((p) => p.name === r.name)
-        ? prev.filter((p) => p.name !== r.name)
-        : [...prev, { ...r, cut: "", weight: Number(r.stock_weight || 0) }],
-    );
+    if (blockedByColour(r)) {
+      setError(
+        `This challan is for ${lockedColour}. ${r.color_name || "That roll"} needs its own Job Out — ` +
+        "one colour per challan, or a Job In can't be reconciled against it.",
+      );
+      return;
+    }
+    setError(null);
+    setPicked((prev) => {
+      const key = rollKey(r);
+      if (prev.some((p) => rollKey(p) === key)) return prev.filter((p) => rollKey(p) !== key);
+      // A lot cannot send out more than it holds: several rolls share one inventory row,
+      // and the challan deducts from that row, so the picks are checked against it together.
+      const already = prev
+        .filter((p) => p.name === r.name)
+        .reduce((sum, p) => sum + Number(p.weight || 0), 0);
+      const lot = Number(r.lot_stock_weight ?? r.stock_weight ?? 0);
+      const want = Number(r.stock_weight || 0);
+      if (lot > 0 && already + want > lot + 0.001) {
+        setError(
+          `Lot ${r.lot_number || ""} holds ${kg(lot)} kg and ${kg(already)} kg of it is already on this challan — ` +
+          `${r.roll_no || "this roll"} would take it past that.`,
+        );
+        return prev;
+      }
+      return [...prev, { ...r, cut: r.cut || "", weight: want }];
+    });
   }
   function addBobbin() {
     const n = Number(bobbinQty) || 0;
@@ -182,6 +230,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   }
   function clearChallan() {
     setAgainstJobOut(null);
+    setJobOutMeta(null);
     setPicked([]);
     setBobbins([]);
     setError(null);
@@ -198,7 +247,10 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
         party,
         challan_date: challanDate,
         challan_no: challanNo || undefined,
-        rolls: JSON.stringify(picked.map((r) => ({ roll_inventory: r.name, weight: r.weight, cut: r.cut }))),
+        rolls: JSON.stringify(picked.map((r) => ({
+          roll_inventory: r.name, weight: r.weight, cut: r.cut,
+          sales_order: r.customer_order || undefined,
+        }))),
         bobbins: JSON.stringify(bobbins),
         // Which Job Out this receipt answers — the server ignores it on a Job Out.
         against_job_out: againstJobOut || undefined,
@@ -282,6 +334,12 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
             <div className="mm-iw-sec-head">
               <h2 className="mm-panel-title">
                 <Package size={15} /> {outward ? "In stock roll" : "In progress job outs"}
+                {lockedColour && (
+                  <span className="mm-pill mm-pill-pending mm-job-lock"
+                    title="A Job Out carries one colour — clear the challan to start another">
+                    {lockedColour} only
+                  </span>
+                )}
               </h2>
               <span className="mm-pill mm-pill-muted">{total}</span>
             </div>
@@ -373,29 +431,40 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
               <table className="mm-table mm-table-dense mm-table-hover">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Roll</th><th className="mm-num">Weight (Kg)</th><th />
+                    {/* Order can be filled now the list is roll-wise: a roll knows the
+                        order it came in against; an inventory row never did. */}
+                    <th>Date</th><th>Order</th><th>Roll</th><th className="mm-num">Weight (Kg)</th><th />
                   </tr>
                 </thead>
                 <tbody>
-                  {stockCall.isLoading && <tr><td colSpan={4} className="mm-muted">Loading…</td></tr>}
+                  {stockCall.isLoading && <tr><td colSpan={5} className="mm-muted">Loading…</td></tr>}
                   {!stockCall.isLoading && stockRows.length === 0 && (
-                    <tr><td colSpan={4} className="mm-empty">
+                    <tr><td colSpan={5} className="mm-empty">
                       {filtered ? "No roll matches these filters." : "No rolls in stock."}
                     </td></tr>
                   )}
                   {stockRows.map((r) => {
-                    const on = isPicked(r.name);
+                    const on = isPicked(rollKey(r));
+                    // Another colour, once this challan has one: shown but not selectable,
+                    // so the rule is visible rather than a refusal after the click.
+                    const off = blockedByColour(r);
                     return (
-                      <tr key={r.name} className={on ? "mm-job-row-picked" : ""}>
+                      <tr key={rollKey(r)} className={`${on ? "mm-job-row-picked" : ""} ${off ? "mm-job-row-offcolour" : ""}`}>
                         <td className="mm-job-date">{r.challan_date || "—"}</td>
-                        <td>
-                          <span className="mm-colour-name">{r.color_name || r.roll_no || "—"}</span>
+                        <td className="mm-job-order">{r.customer_order || "—"}</td>
+                        <td title={`${r.roll_no || ""}${r.lot_number ? ` · lot ${r.lot_number}` : ""}${r.challan_number ? ` · challan ${r.challan_number}` : ""}`}>
+                          <span className="mm-colour-name">{r.color_name || "—"}</span>
+                          {r.roll_no && <span className="mm-suggest-meta"> {r.roll_no}</span>}
                           {r.lot_number && <span className="mm-suggest-meta"> {r.lot_number}</span>}
                         </td>
                         <td className="mm-num">{kg(Number(r.stock_weight || 0))}</td>
                         <td className="mm-num">
-                          <button type="button" className={`mm-mini ${on ? "" : "mm-mini-ok"}`}
-                            onClick={() => toggleRoll(r)} title={on ? "Remove from challan" : "Add to challan"}>
+                          <button type="button" className={`mm-mini ${on ? "" : off ? "" : "mm-mini-ok"}`}
+                            disabled={off}
+                            onClick={() => toggleRoll(r)}
+                            title={off
+                              ? `This challan is for ${lockedColour} — ${r.color_name || "this roll"} needs its own Job Out`
+                              : on ? "Remove from challan" : "Add to challan"}>
                             {on ? <><Check size={13} /> Added</> : <>Add</>}
                           </button>
                         </td>
@@ -426,8 +495,23 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
           </section>
         </div>
 
-        {/* ── RIGHT: the challan being built (stays in view while the list scrolls) ── */}
+        {/* ── RIGHT: what is being built.
+             Job Out builds a CHALLAN of rolls. Job In builds a PRODUCTION VOUCHER: material
+             sent to a worker does not come back as rolls, it comes back wound into boxes
+             with barcodes and bobbins, exactly like something made in-house. ── */}
         <div className="mm-job-col mm-job-col-sticky">
+          {!outward ? (
+            <JobInVoucher
+              jobOut={againstJobOut}
+              meta={jobOutMeta}
+              party={party}
+              onDone={() => {
+                clearChallan();
+                void jobOutsCall.mutate();
+                void nextNo.mutate();
+              }}
+            />
+          ) : (<>
           <section className="mm-card mm-card-pad">
             <div className="mm-iw-sec-head">
               <h2 className="mm-panel-title">Job work challan</h2>
@@ -528,19 +612,331 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
               </div>
             )}
           </section>
+          </>)}
         </div>
       </div>
 
-      <div className="mm-job-foot">
-        <div className="mm-job-foot-nums">
-          <span className="mm-job-stat"><b>{totals.qty}</b> qty</span>
-          <span className="mm-job-stat mm-job-stat-hero"><b>{kg(totals.weight)}</b> kg</span>
-          <span className="mm-job-stat"><b>{totals.bobbins}</b> bobbins</span>
+      {/* Job In carries its own totals and Submit inside the voucher — the rolls that
+          would have footed this bar are not what it is recording. */}
+      {outward && (
+        <div className="mm-job-foot">
+          <div className="mm-job-foot-nums">
+            <span className="mm-job-stat"><b>{totals.qty}</b> qty</span>
+            <span className="mm-job-stat mm-job-stat-hero"><b>{kg(totals.weight)}</b> kg</span>
+            <span className="mm-job-stat"><b>{totals.bobbins}</b> bobbins</span>
+          </div>
+          <button type="button" className="mm-btn-primary mm-job-submit" disabled={submitting} onClick={() => void onSubmit()}>
+            {submitting ? "Submitting…" : `Submit ${type}`}
+            <ArrowUpFromLine size={16} />
+          </button>
         </div>
-        <button type="button" className="mm-btn-primary mm-job-submit" disabled={submitting} onClick={() => void onSubmit()}>
-          {submitting ? "Submitting…" : `Submit ${type}`}
-          {outward ? <ArrowUpFromLine size={16} /> : <ArrowDownFromLine size={16} />}
+      )}
+    </div>
+  );
+}
+
+/* ── Job In voucher (production) ───────────────────────────────────────────────────
+   Material sent to a worker comes back WOUND — boxes, barcodes, bobbins — so receiving
+   it is a production voucher, not a list of rolls.
+
+   One thing is inverted, and it is the whole reason this is its own screen. In-house the
+   box is weighed on the way out and the net is what survives the deductions:
+       Net = Gross − Bobbin − Box
+   Coming back from a worker the NET is the figure that is measured and matters, and the
+   box tare is what falls out of it:
+       Box = Gross − Bobbin − Net
+   Same four numbers, solved for the other unknown. The server solves it again on submit,
+   so what is stored can never be whatever this screen happened to compute. */
+type JobInBox = {
+  gross: number; qty: number; bobbin: string; bobbinPcs: number; perPcsWeight: number;
+  totalBobbin: number; net: number; boxWeight: number;
+  boxReturn: boolean; bobbinReturn: boolean;
+};
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+function JobInVoucher({ jobOut, meta, party, onDone }: {
+  jobOut: string | null;
+  meta: JobOutRow | null;
+  party: string;
+  onDone: () => void;
+}) {
+  const [vDate, setVDate] = useState(today());
+  const [cNo, setCNo] = useState("");
+  const [batchNo, setBatchNo] = useState("");
+  const [size, setSize] = useState("");
+  const [order, setOrder] = useState("");
+  const [boxReturn, setBoxReturn] = useState(false);
+  const [bobbinReturn, setBobbinReturn] = useState(false);
+  const [boxes, setBoxes] = useState<JobInBox[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const { call: create, loading } = useFrappePostCall<{ message: { production: string; job_in: string; net_weight: number; variance_percent: number } }>(
+    `${API}.create_job_in_production`,
+  );
+  const bobbinMasters = useFrappeGetDocList<{ name: string }>("MM Bobbin Master", { fields: ["name"], limit: 0 });
+
+  const totals = useMemo(() => ({
+    boxes: boxes.length,
+    net: r3(boxes.reduce((s, b) => s + b.net, 0)),
+    gross: r3(boxes.reduce((s, b) => s + b.gross, 0)),
+  }), [boxes]);
+  const sent = Number(meta?.total_weight || 0);
+
+  useEffect(() => { setBoxes([]); setErr(null); setAdding(false); }, [jobOut]);
+
+  async function submit() {
+    setErr(null);
+    if (!jobOut) return setErr("Pick the Job Out this receipt answers, on the left.");
+    if (boxes.length === 0) return setErr("Add at least one box.");
+    try {
+      const res = await create({
+        against_job_out: jobOut,
+        customer_order: order || undefined,
+        party: party || undefined,
+        posting_date: vDate,
+        batch_no: batchNo || undefined,
+        cut: size || undefined,
+        challan_no: cNo || undefined,
+        box_return: boxReturn ? 1 : 0,
+        bobbin_return: bobbinReturn ? 1 : 0,
+        boxes: JSON.stringify(boxes.map((b) => ({
+          gross_weight: b.gross, net_weight: b.net, qty: b.qty,
+          bobbin: b.bobbin || undefined, bobbin_pcs: b.bobbinPcs, bobbin_pcs_weight: b.perPcsWeight,
+          total_bobbin_weight: b.totalBobbin,
+          box_return: b.boxReturn ? 1 : 0, bobbin_return: b.bobbinReturn ? 1 : 0,
+        }))),
+      });
+      const m = res?.message;
+      toast(`Received — production ${m?.production}, Job In ${m?.job_in}`);
+      setBoxes([]); setCNo(""); setBatchNo("");
+      onDone();
+    } catch (e) {
+      const msg = extractErrorMessage(e);
+      setErr(msg);
+      toast(msg, "error");
+    }
+  }
+
+  if (!jobOut) {
+    return (
+      <section className="mm-card mm-card-pad">
+        <h2 className="mm-panel-title">Job in voucher (production)</h2>
+        <p className="mm-empty" style={{ marginTop: "0.8rem" }}>
+          Pick a Job Out on the left. What comes back is entered as boxes — the same voucher
+          production uses, with the box weight worked out from the net instead of the other
+          way round.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mm-card mm-card-pad">
+      <div className="mm-iw-sec-head">
+        <h2 className="mm-panel-title">Job in voucher (production)</h2>
+        <span className="mm-pill mm-pill-muted" title={`Job Out ${jobOut}`}>
+          {meta?.challan_no || jobOut} · sent {kg(sent)} kg
+        </span>
+      </div>
+
+      <div className="mm-job-head-grid">
+        <label className="mm-field">
+          <span className="mm-field-label">V.Date *</span>
+          <input className="mm-input" type="date" value={vDate} onChange={(e) => setVDate(e.target.value)} />
+        </label>
+        <label className="mm-field">
+          <span className="mm-field-label">C.No *</span>
+          <input className="mm-input" value={cNo} onChange={(e) => setCNo(e.target.value)} placeholder="Challan no" />
+        </label>
+        <label className="mm-field">
+          <span className="mm-field-label">B.No</span>
+          <input className="mm-input" value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="Batch no" />
+        </label>
+        <label className="mm-field">
+          <span className="mm-field-label">Size</span>
+          <input className="mm-input" value={size} onChange={(e) => setSize(e.target.value)} placeholder="50/85" />
+        </label>
+        <label className="mm-field">
+          <span className="mm-field-label">Order</span>
+          <input className="mm-input" value={order} onChange={(e) => setOrder(e.target.value)}
+            placeholder="Optional — taken from the Job Out when blank" />
+        </label>
+        <div className="mm-bx-returns" style={{ alignSelf: "end" }}>
+          <label className="mm-field-inline">
+            <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} />
+            <span className="mm-field-label">Box Return</span>
+          </label>
+          <label className="mm-field-inline">
+            <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} />
+            <span className="mm-field-label">Bobbin Return</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="mm-pv-boxhead" style={{ marginTop: "0.8rem" }}>
+        <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
+        {!adding && (
+          <button type="button" className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}>
+            <Plus size={13} /> Box
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <JobInBoxForm
+          bobbins={(bobbinMasters.data ?? []).map((b) => b.name)}
+          defaults={{ box: boxReturn, bobbin: bobbinReturn }}
+          prev={boxes[boxes.length - 1]}
+          onCancel={() => setAdding(false)}
+          onAdd={(b) => setBoxes((p) => [...p, b])}
+        />
+      )}
+
+      {boxes.length > 0 && (
+        <div className="mm-table-scroll" style={{ marginTop: "0.6rem" }}>
+          <table className="mm-table mm-table-dense">
+            <thead>
+              <tr>
+                <th>#</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
+                <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">B/Pcs</th>
+                <th className="mm-num">Bobbin Wt</th>
+                {/* Derived, not typed — the reason this voucher exists. */}
+                <th className="mm-num" title="Worked out: Gross − Bobbin − Net">Box Wt</th>
+                <th className="mm-num">Net Wt</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {boxes.map((b, i) => (
+                <tr key={i}>
+                  <td>{i + 1}</td>
+                  <td className="mm-num">{kg(b.gross)}</td>
+                  <td className="mm-num">{b.qty || "—"}</td>
+                  <td>{b.bobbin || "—"}</td>
+                  <td className="mm-num">{b.bobbinPcs || "—"}</td>
+                  <td className="mm-num">{b.perPcsWeight || "—"}</td>
+                  <td className="mm-num">{kg(b.totalBobbin)}</td>
+                  <td className="mm-num"><strong>{kg(b.boxWeight)}</strong></td>
+                  <td className="mm-num">{kg(b.net)}</td>
+                  <td className="mm-num">
+                    <button type="button" className="mm-mini mm-mini-danger" aria-label={`Remove box ${i + 1}`}
+                      onClick={() => setBoxes((p) => p.filter((_, j) => j !== i))}><Trash2 size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+
+      <div className="mm-job-foot" style={{ marginTop: "0.8rem" }}>
+        <div className="mm-job-foot-nums">
+          <span className="mm-job-stat"><b>{totals.boxes}</b> box</span>
+          <span className="mm-job-stat mm-job-stat-hero"><b>{kg(totals.net)}</b> kg net</span>
+          <span className="mm-job-stat"><b>{kg(totals.gross)}</b> kg gross</span>
+          {/* What came back against what went out — the question a job receipt asks. */}
+          {sent > 0 && (
+            <span className={`mm-job-stat ${totals.net > sent ? "mm-var-over" : ""}`}>
+              of <b>{kg(sent)}</b> kg sent
+            </span>
+          )}
+        </div>
+        <button type="button" className="mm-btn-primary mm-job-submit" disabled={loading} onClick={() => void submit()}>
+          {loading ? "Receiving…" : "Submit Job In"}
+          <ArrowDownFromLine size={16} />
         </button>
+      </div>
+    </section>
+  );
+}
+
+/** One box, keyed the way it comes back: gross and net measured, tare derived. */
+function JobInBoxForm({ bobbins, defaults, prev, onCancel, onAdd }: {
+  bobbins: string[];
+  defaults: { box: boolean; bobbin: boolean };
+  prev?: JobInBox;
+  onCancel: () => void;
+  onAdd: (b: JobInBox) => void;
+}) {
+  // Packing repeats box after box, so the bobbin and its per-piece weight carry over from
+  // the last one keyed. Only the weights are asked for again — they are what really change.
+  const [gross, setGross] = useState<number | "">("");
+  const [net, setNet] = useState<number | "">("");
+  const [qty, setQty] = useState<number | "">(prev?.qty ?? "");
+  const [bobbin, setBobbin] = useState(prev?.bobbin ?? "");
+  const [pcs, setPcs] = useState<number | "">(prev?.bobbinPcs ?? "");
+  const [perPcs, setPerPcs] = useState<number | "">(prev?.perPcsWeight ?? "");
+  const [err, setErr] = useState<string | null>(null);
+
+  const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
+  const boxWeight = r3((Number(gross) || 0) - totalBobbin - (Number(net) || 0));
+  const impossible = (Number(gross) || 0) > 0 && boxWeight < 0;
+
+  function add() {
+    if (!(Number(gross) > 0)) return setErr("Enter the gross weight.");
+    if (!(Number(net) > 0)) return setErr("Enter the net weight — it is what came back.");
+    if (impossible) {
+      return setErr("Net plus bobbins is more than gross — one of the three is keyed wrong.");
+    }
+    setErr(null);
+    onAdd({
+      gross: Number(gross), qty: Number(qty) || 0, bobbin, bobbinPcs: Number(pcs) || 0,
+      perPcsWeight: Number(perPcs) || 0, totalBobbin, net: Number(net), boxWeight,
+      boxReturn: defaults.box, bobbinReturn: defaults.bobbin,
+    });
+    setGross(""); setNet("");
+  }
+
+  return (
+    <div className="mm-bx-panel" style={{ marginTop: "0.6rem" }}>
+      <div className="mm-bx">
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Total (gross) weight</span>
+          <input className="mm-input mm-bx-hi" type="number" value={gross} autoFocus
+            onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
+        </label>
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Net weight</span>
+          <input className="mm-input mm-bx-hi" type="number" value={net}
+            onChange={(e) => setNet(e.target.value === "" ? "" : Number(e.target.value))} />
+        </label>
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Qty</span>
+          <input className="mm-input" type="number" value={qty}
+            onChange={(e) => setQty(e.target.value === "" ? "" : Number(e.target.value))} />
+        </label>
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Bobbin</span>
+          <SearchSelect compact value={bobbin} onChange={setBobbin} placeholder="— bobbin —"
+            options={bobbins.map((b) => ({ value: b, label: b }))} />
+        </label>
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Pcs</span>
+          <input className="mm-input" type="number" value={pcs}
+            onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+        </label>
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Wt / pc</span>
+          <input className="mm-input" type="number" value={perPcs}
+            onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+        </label>
+        <label className="mm-bx-row">
+          <span className="mm-bx-label">Total bobbin wt</span>
+          <input className="mm-input" value={kg(totalBobbin)} readOnly />
+        </label>
+        {/* The answer, not a field: this is what the voucher is for. */}
+        <label className="mm-bx-row mm-bx-row-net">
+          <span className="mm-bx-label">Box weight (worked out)</span>
+          <input className={`mm-input ${impossible ? "mm-input-warn" : ""}`} value={kg(boxWeight)} readOnly />
+        </label>
+      </div>
+      {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
+      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
+        <button type="button" className="mm-btn-primary mm-btn-compact" onClick={add}>Add box</button>
+        <button type="button" className="mm-btn-ghost mm-btn-compact" onClick={onCancel}>Done</button>
       </div>
     </div>
   );

@@ -58,13 +58,18 @@ class MMSalesChallan(Document):
 	def on_cancel(self):
 		self._move_stock(reverse=True)
 		self._clear_bobbins()
+		# Cancelling a challan takes weight back OFF the order, which can reopen it. The
+		# recount is the same one submit runs, so completion never drifts from the challans.
+		self._mark_orders_dispatched()
 
 	def _mark_orders_dispatched(self):
-		"""Goods gone out close their order, and that closure sticks.
+		"""Recount what has gone out against every order this challan touches.
 
-		A job challan does not: it sends material to a worker, which does not fulfil the
-		customer's order. Every other type does — a Delivery Challan against an order is
-		as much a dispatch as a Sales challan.
+		A job challan is skipped: it sends material to a worker, which does not fulfil the
+		customer's order. Every other type counts — a Delivery Challan against an order is
+		as much a dispatch as a Sales challan. `mark_dispatched` closes an order only once
+		the challans COVER it, so a part-delivery no longer closes one and cancelling a
+		challan can open one back up.
 		"""
 		if not is_dispatch(self.challan_type):
 			return
@@ -72,10 +77,16 @@ class MMSalesChallan(Document):
 
 		orders = {self.sales_order} | {it.sales_order for it in self.items if it.sales_order}
 		for order in filter(None, orders):
+			if self.docstatus == 2:
+				# On CANCEL the recount is the correction, not a nicety: swallowing it here
+				# leaves a cancelled challan's order still reading Complete on a register the
+				# customer is billed from. Let it raise and take the cancel down with it.
+				mark_dispatched(order)
+				continue
 			try:
 				mark_dispatched(order)
 			except Exception:
-				frappe.log_error(title=f"could not close order {order} from challan {self.name}")
+				frappe.log_error(title=f"could not recount order {order} from challan {self.name}")
 
 	def _post_bobbins(self):
 		"""Bobbins carried on a job challan hit the bobbin ledger too."""

@@ -84,7 +84,22 @@ def force_close(doctype, name, reason=None):
 		frappe.throw(_("{0} is already closed.").format(name))
 	_set_closed(doctype, name, "Force")
 	if reason:
-		frappe.get_doc(doctype, name).add_comment("Comment", _("Force closed: {0}").format(reason))
+		doc = frappe.get_doc(doctype, name)
+		doc.add_comment("Comment", _("Force closed: {0}").format(reason))
+		# Force-closing a cutting or production is another way material stops short, so the
+		# reason belongs on the lot alongside the ones a reverted program leaves — otherwise
+		# the next person to meet this lot sees an explanation for one kind of shortfall and
+		# silence for the other.
+		from mahaveermetalic.mahaveer_metallic.api import lot_remark
+
+		lot_remark.record(
+			lot=doc.get("lot"),
+			color=doc.get("shade"),
+			reason=reason,
+			event_type="Force Closed",
+			source_doctype=doctype,
+			source_name=name,
+		)
 	return {"doctype": doctype, "name": name, "closed": True, "mode": "Force"}
 
 

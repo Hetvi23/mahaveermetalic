@@ -4,6 +4,7 @@ import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe
 import {
   Plus, X, Power, RotateCcw, Check, Undo2, Monitor, LayoutGrid, List, Search, Trash2, Scissors,
 } from "lucide-react";
+import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
 import SearchSelect from "@/components/SearchSelect";
@@ -24,6 +25,7 @@ type Program = {
   /** Per-patty rate, and what actually came off the machine (rate x completed batches). */
   completed_weight?: number; per_patty_weight?: number;
   unfinished?: number; remark?: string; roll_inventory?: string;
+  lot?: string | null; lot_id?: string | null; lot_ids?: string[];
 };
 type Roll = {
   state: string; source_type: string; cutting?: string; inward_item?: string; date?: string;
@@ -34,6 +36,7 @@ type Roll = {
   total_patti?: number; consumed_patti?: number;
   /** Every cutting behind a lot-merged card — a program can draw across them. */
   merged_from?: string[]; merged_count?: number;
+  lot?: string | null; lot_id?: string | null;
 };
 /**
  * One selectable thing to program: a colour in ONE of its forms.
@@ -126,6 +129,30 @@ export default function ProgramScreen() {
   const machines = machinesCall.data?.message ?? [];
   const programs = useMemo(() => progCall.data?.message ?? [], [progCall.data]);
   const patties = pattyCall.data?.message ?? [];
+  // Every lot on this board in ONE request — the shelf, the machine cards and the picker
+  // all draw on the same lots, and the board already polls every twenty seconds.
+  const { maps } = useLotRemarks({
+    lots: [...patties.map((p) => p.lot), ...programs.map((p) => p.lot)],
+    lotIds: [
+      ...patties.map((p) => p.lot_id),
+      ...programs.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
+    ],
+  });
+  /** Every unresolved reason across a set of lots, deduplicated — a shelf tile is a
+   *  COLOUR and a colour can be several lots, so the tile speaks for all of them. */
+  const remarksFor = (lots: (string | null | undefined)[], lotIds: (string | null | undefined)[]): LotRemark[] => {
+    const seen = new Set<string>();
+    const out: LotRemark[] = [];
+    for (const r of [
+      ...lots.flatMap((l) => (l ? maps.by_lot[l] ?? [] : [])),
+      ...lotIds.flatMap((l) => (l ? maps.by_lot_id[l] ?? [] : [])),
+    ]) {
+      if (seen.has(r.name)) continue;
+      seen.add(r.name);
+      out.push(r);
+    }
+    return out;
+  };
 
   const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void pattyCall.mutate(); };
   const openAdd = (preset: { machine?: string; shift?: string; colour?: string }) => setAdding(preset);
@@ -137,6 +164,15 @@ export default function ProgramScreen() {
     void pattyCall.mutate();
   };
   const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { const m = extractErrorMessage(e); toast(m, "error"); } };
+  /** Reverting hands patty back and can cancel the program outright, so it asks why first.
+   *  Cancelling the prompt cancels the revert — an empty reason is not an answer. */
+  const revertWithReason = (program: string, what: string) => async () => {
+    const r = window.prompt(`${what}\n\nWhy? This stays on the lot, so whoever picks it up next can see it.`, "");
+    if (r === null) return;
+    if (r.trim().length < 3) { toast("A reason is needed — nothing was reverted.", "error"); return; }
+    try { await revert({ program, reason: r.trim() }); refresh(); }
+    catch (e) { toast(extractErrorMessage(e), "error"); }
+  };
 
   // programs[machine][shift]
   // Group by machine + shift, but ONLY for the date each shift column is showing —
@@ -159,13 +195,15 @@ export default function ProgramScreen() {
   // machine, and a spent one cannot.
   const pattyColours = useMemo(() => {
     const scopeCut = (pattyScope?.cut || "").trim();
-    const g: Record<string, { colour: string; count: number; total: number }> = {};
+    const g: Record<string, { colour: string; count: number; total: number; lots: string[]; lotIds: string[] }> = {};
     for (const p of patties) {
       // Scoped to a machine: only patty cut the way that machine runs. A machine with no cut
       // recorded filters nothing — it can take anything.
       if (scopeCut && (p.cut || "").trim() !== scopeCut) continue;
       const colour = p.shade || p.roll_no || "—";
-      const e = (g[colour] ||= { colour, count: 0, total: 0 });
+      const e = (g[colour] ||= { colour, count: 0, total: 0, lots: [], lotIds: [] });
+      if (p.lot && !e.lots.includes(p.lot)) e.lots.push(p.lot);
+      if (p.lot_id && !e.lotIds.includes(p.lot_id)) e.lotIds.push(p.lot_id);
       // "No of patty" = the patti still available to program on this colour.
       e.count += Number(p.batches || 0);
       e.total += Number(p.total_patti ?? p.batches ?? 0);
@@ -190,7 +228,14 @@ export default function ProgramScreen() {
     return (
       <div className={`mm-prog-card ${p.unfinished ? "mm-prog-card-unfinished" : ""}`}>
         <div className="mm-prog-card-top">
-          <span className="mm-prog-card-name">{p.shade || p.roll_no || "—"}</span>
+          <span className="mm-prog-card-name">
+            {p.shade || p.roll_no || "—"}
+            {/* The reason an earlier run on this lot stopped — distinct from the card's own
+                remark below, which is this program's planning note. */}
+            <LotRemarkBadge
+              remarks={remarksFor([p.lot], p.lot_ids?.length ? p.lot_ids : [p.lot_id])}
+              label={p.shade || p.roll_no || "Lot"} />
+          </span>
           {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : <span className={stateClass(p.status)}>{p.status}</span>}
         </div>
         <div className="mm-prog-card-meta">
@@ -212,12 +257,12 @@ export default function ProgramScreen() {
           {p.unfinished ? (
             <>
               <button className="mm-mini mm-mini-ok" title="Cut this on the Cutting screen (pick the roll there)" onClick={() => nav("/cutting")}><Scissors size={13} /> Finish in Cutting</button>
-              <button className="mm-mini mm-mini-warn" onClick={guard(() => revert({ program: p.name }))}><Undo2 size={13} /> Cancel plan</button>
+              <button className="mm-mini mm-mini-warn" onClick={revertWithReason(p.name, `Cancel the plan for ${p.shade || p.roll_no || p.name}?`)}><Undo2 size={13} /> Cancel plan</button>
             </>
           ) : (
             <>
               <button className="mm-mini" disabled={!!p.reverted} onClick={() => setCompleting(p)}><Check size={13} /> Complete</button>
-              <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={guard(() => revert({ program: p.name }))}><Undo2 size={13} /> Revert</button>
+              <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={revertWithReason(p.name, `Revert ${p.shade || p.roll_no || p.name}?`)}><Undo2 size={13} /> Revert</button>
             </>
           )}
         </div>
@@ -295,7 +340,12 @@ export default function ProgramScreen() {
                     <button key={c.colour} type="button" className="mm-patty-tile"
                       title={`${c.count} of ${c.total} patti still available — program this patty`}
                       onClick={() => openAdd({ colour: c.colour })}>
-                      <span className="mm-patty-tile-name">{c.colour}</span>
+                      <span className="mm-patty-tile-name">
+                        {c.colour}
+                        {/* The tile is a button that programs this patty — read why the last
+                            run on it stopped before committing the next one. */}
+                        <LotRemarkBadge remarks={remarksFor(c.lots, c.lotIds)} label={c.colour} />
+                      </span>
                       <span className="mm-patty-tile-count">{c.count}</span>
                       <span className="mm-patty-tile-go" aria-hidden>→</span>
                     </button>
@@ -398,13 +448,21 @@ function CompleteDialog({ program, onClose, onDone }: { program: Program; onClos
   const [completed, setCompleted] = useState<number | "">(total);
   const { call, loading } = useFrappePostCall(`${API}.complete_batches`);
   const [err, setErr] = useState<string | null>(null);
+  // Why a job stopped short is the one thing the paperwork could never say afterwards, and
+  // the next person to touch this lot is the one who needs it. Required here, and carried
+  // onto the lot so it surfaces wherever that lot turns up again.
+  const [reason, setReason] = useState("");
   const comp = completed === "" ? null : completed;
+  const short = comp !== null && comp < total;
 
   async function submit() {
     if (comp === null) return setErr("Enter how many batches are completed.");
+    if (short && reason.trim().length < 3) {
+      return setErr("Say why this job is stopping short — it stays with the lot.");
+    }
     setErr(null);
     try {
-      const res = await call({ program: program.name, completed: comp });
+      const res = await call({ program: program.name, completed: comp, reason: reason.trim() || undefined });
       const back = Number((res as { message?: { returned_batches?: number } })?.message?.returned_batches || 0);
       toast(
         comp >= total
@@ -439,6 +497,17 @@ function CompleteDialog({ program, onClose, onDone }: { program: Program; onClos
                 </>
               )}
             </p>
+          )}
+          {short && (
+            <label className="mm-field" style={{ marginTop: "0.6rem" }}>
+              <span className="mm-field-label">Why is it stopping short? (required)</span>
+              <textarea className="mm-input" rows={2} value={reason} autoFocus
+                placeholder="Thread broke, shade off, machine trouble…"
+                onChange={(e) => setReason(e.target.value)} />
+              <span className="mm-muted" style={{ fontSize: "0.76rem" }}>
+                Stays on this lot — anyone programming, cutting or receiving it later will see it.
+              </span>
+            </label>
           )}
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
         </div>
@@ -556,6 +625,29 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
   // Nothing about the filtering changes — searching still runs through the same machine-cut
   // rule, so what a search returns is exactly what the list would have shown.
   const browsing = q !== "";
+
+  // The picker's own lookup, scoped to the sources it is offering. A Source is one colour
+  // in one form and can span several cuttings — hence several lots — so every lot behind
+  // it speaks, and the eye on a row means "something about this material needs reading".
+  const { maps: pickMaps } = useLotRemarks({
+    lots: sources.flatMap((s) => s.rows.map((r) => r.lot)),
+    lotIds: sources.flatMap((s) => s.rows.map((r) => r.lot_id)),
+  });
+  const pickRemarks = (src: Source): LotRemark[] => {
+    const seen = new Set<string>();
+    const out: LotRemark[] = [];
+    for (const r of src.rows) {
+      for (const rem of [
+        ...(r.lot ? pickMaps.by_lot[r.lot] ?? [] : []),
+        ...(r.lot_id ? pickMaps.by_lot_id[r.lot_id] ?? [] : []),
+      ]) {
+        if (seen.has(rem.name)) continue;
+        seen.add(rem.name);
+        out.push(rem);
+      }
+    }
+    return out;
+  };
   const available = sources.filter(fitsMachine).length;
 
   /**
@@ -746,7 +838,10 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
             <div className="mm-prog-pickidle">
               {sel ? (
                 <div className="mm-pick-row mm-pick-row-active" onClick={() => setSearch(sel.colour)}>
-                  <span className="mm-colour-name">{sel.colour}</span>
+                  <span className="mm-colour-name">
+                    {sel.colour}
+                    <LotRemarkBadge remarks={pickRemarks(sel)} label={sel.colour} />
+                  </span>
                   <span className="mm-prog-card-meta">{formLabel(sel)}</span>
                 </div>
               ) : null}
@@ -775,7 +870,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
                       blanked on the rows beneath — which reads fine from the top, and not
                       at all once the list is scrolled, searched or you land mid-group:
                       "patty · cut 50/120 · 50 kg/patty × 1" of WHAT. */}
-                  <span className="mm-colour-name">{s.colour}</span>
+                  <span className="mm-colour-name">
+                    {s.colour}
+                    {/* Picking this is the decision the reason exists to inform, so it is
+                        shown at the moment of choosing rather than after. */}
+                    <LotRemarkBadge remarks={pickRemarks(s)} label={s.colour} />
+                  </span>
                   <span className="mm-prog-card-meta">{formLabel(s)}</span>
                 </div>
               ))}
@@ -885,13 +985,19 @@ function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onC
   const { call: close, loading } = useFrappePostCall(`${API}.close_machine`);
   const rows = onMach.data?.message ?? [];
   const [reverts, setReverts] = useState<Record<string, number>>({});
+  const [reason, setReason] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const reverting = rows.some((r) => (reverts[r.name] || 0) > 0);
 
   async function submit() {
     setErr(null);
+    if (reverting && reason.trim().length < 3) {
+      return setErr("Say why these batches are being reverted — it stays with their lots.");
+    }
     try {
       await close({
         machine: machine.name,
+        reason: reason.trim() || undefined,
         reverts: rows.filter((r) => (reverts[r.name] || 0) > 0).map((r) => ({ program: r.name, batches: reverts[r.name] })),
       });
       onDone();
@@ -939,6 +1045,17 @@ function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onC
                 </table>
               </div>
             </>
+          )}
+          {reverting && (
+            <label className="mm-field" style={{ marginTop: "0.6rem" }}>
+              <span className="mm-field-label">Why are these being reverted? (required)</span>
+              <textarea className="mm-input" rows={2} value={reason}
+                placeholder="Machine down, shade rejected, shift cut short…"
+                onChange={(e) => setReason(e.target.value)} />
+              <span className="mm-muted" style={{ fontSize: "0.76rem" }}>
+                Recorded against each affected lot, so it follows the patty back to the shelf.
+              </span>
+            </label>
           )}
           {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
         </div>

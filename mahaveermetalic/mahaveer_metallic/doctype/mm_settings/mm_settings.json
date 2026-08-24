@@ -7,6 +7,7 @@
   "section_overrides",
   "admin_override_pin",
   "production_tolerance_percent",
+  "production_tolerance_kg",
   "inward_match_tolerance_percent",
   "inward_over_tolerance_percent",
   "auto_close_leftover",
@@ -36,6 +37,14 @@
    "precision": 2,
    "default": "4",
    "description": "Production net weight may differ from the input thread weight by up to this %. Beyond it, the Admin Override PIN is required."
+  },
+  {
+   "fieldname": "production_tolerance_kg",
+   "fieldtype": "Float",
+   "label": "Production Tolerance (Kg)",
+   "precision": 3,
+   "default": "2",
+   "description": "Absolute leeway UNDER the percentage above. An Admin Override PIN is required only when the shortfall breaks BOTH \u2014 so a 1 kg rounding on a 20 kg program is accepted, while 40 kg missing off a 1,000 kg one is not."
   },
   {
    "fieldname": "inward_match_tolerance_percent",
