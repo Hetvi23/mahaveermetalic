@@ -498,17 +498,25 @@ function CompleteDialog({ program, onClose, onDone }: { program: Program; onClos
               )}
             </p>
           )}
-          {short && (
-            <label className="mm-field" style={{ marginTop: "0.6rem" }}>
-              <span className="mm-field-label">Why is it stopping short? (required)</span>
-              <textarea className="mm-input" rows={2} value={reason} autoFocus
-                placeholder="Thread broke, shade off, machine trouble…"
-                onChange={(e) => setReason(e.target.value)} />
-              <span className="mm-muted" style={{ fontSize: "0.76rem" }}>
-                Stays on this lot — anyone programming, cutting or receiving it later will see it.
-              </span>
-            </label>
-          )}
+          {/* Always on screen, never conditional. It appeared only once the count was
+              short, which made a field nobody could find until they had already changed
+              something — and a full run is still worth a note ("re-dyed", "ran slow").
+              Required only when the job is stopping short; optional otherwise. */}
+          <label className="mm-field" style={{ marginTop: "0.6rem" }}>
+            <span className="mm-field-label">
+              Remark {short
+                ? <span className="mm-pvw-need">(required — it is stopping short)</span>
+                : <span className="mm-muted">(optional)</span>}
+            </span>
+            <textarea className="mm-input" rows={2} value={reason}
+              placeholder={short
+                ? "Thread broke, shade off, machine trouble…"
+                : "Anything worth knowing about this run"}
+              onChange={(e) => setReason(e.target.value)} />
+            <span className="mm-muted" style={{ fontSize: "0.76rem" }}>
+              Stays on this lot — anyone programming, cutting or receiving it later will see it.
+            </span>
+          </label>
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
         </div>
         <div className="mm-modal-foot">
