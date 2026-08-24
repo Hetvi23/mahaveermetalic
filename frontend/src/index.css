@@ -1966,9 +1966,9 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
      which is the cropping this replaced. Row 2 keeps a floor so the PIN and error rows
      underneath can never squeeze the table away entirely. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
-  grid-template-rows: auto minmax(180px, 1fr);
+  grid-template-rows: auto minmax(min-content, 1fr);
   grid-auto-rows: auto;
-  gap: 0.7rem 1.4rem; align-items: stretch; min-height: 0; overflow: auto;
+  gap: 0.7rem 1.4rem; align-items: start; min-height: 0; overflow: auto;
 }
 /* Each column scrolls on its own, so a long box list never pushes the header fields off
    the top and the voucher never reads as one tall page. */
@@ -1987,7 +1987,7 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
    track — half-width fields next to a blank half is the scattered look, not a layout. */
 .mm-pv-col-details-full { grid-column: 1 / -1; padding-right: 0; }
 /* The box table gets its own row, left edge to right edge of the sheet. */
-.mm-pv-boxwrap { grid-column: 1 / -1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mm-pv-boxwrap { grid-column: 1 / -1; min-width: 0; min-height: 0; align-self: stretch; display: flex; flex-direction: column; }
 /* Full-width rows beneath both columns — the PIN and the error belong to the voucher,
    not to either side of it. */
 .mm-pv-span { grid-column: 1 / -1; }
@@ -2021,7 +2021,11 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 /* Production voucher: box list header and the table beneath it */
 .mm-pv-boxhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
 .mm-pv-boxtable { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); }
-.mm-box-zone { flex: 1; min-height: 150px; width: 100%; border: 1.5px dashed var(--mm-border); border-radius: var(--mm-radius); background: var(--mm-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem; color: var(--mm-text-sec); cursor: pointer; font-size: 0.9rem; }
+/* The empty state must not eat the sheet. `flex: 1` inside the boxes column made this
+   dashed placeholder grow to every remaining pixel — an invitation to add a box rendered
+   at 600px tall, with the totals and Submit pushed off the bottom. It asks for the room a
+   prompt needs and no more. */
+.mm-box-zone { flex: 0 1 auto; min-height: 130px; max-height: 220px; width: 100%; border: 1.5px dashed var(--mm-border); border-radius: var(--mm-radius); background: var(--mm-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem; color: var(--mm-text-sec); cursor: pointer; font-size: 0.9rem; }
 .mm-box-zone:hover { border-color: var(--mm-accent); color: var(--mm-text); }
 .mm-box-zone-cta { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--mm-accent-fg); }
 .mm-modal-foot.mm-foot-split { justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
