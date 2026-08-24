@@ -12,6 +12,10 @@ export type SOOption = {
   company_name?: string;
   ordered_weight?: number;
   required_weight?: number;
+  /** Boxes ordered, and how many of them are still to arrive — what an inward is about
+   *  to cover, so picking an order can fill the roll line instead of being re-read. */
+  ordered_box?: number;
+  required_box?: number;
   colours?: string[];
   cuts?: string[];
 };

@@ -544,7 +544,7 @@ def sales_order_options(search=None, limit=200):
 		select so.name as sales_order, so.party, pm.party_name, so.company_name,
 			so.delivery_date, so.transaction_date,
 			so.ordered_weight, so.required_weight,
-			soi.color_name, soi.cut
+			soi.color_name, soi.cut, soi.qty_box
 		from `tabMM Sales Order` so
 		left join `tabMM Party Master` pm on pm.name = so.party
 		left join `tabMM Sales Order Item` soi on soi.parent = so.name
@@ -572,6 +572,9 @@ def sales_order_options(search=None, limit=200):
 				"transaction_date": str(r.transaction_date) if r.transaction_date else None,
 				"ordered_weight": r.ordered_weight,
 				"required_weight": r.required_weight,
+				# Box count and outstanding weight, so picking an order can fill the roll
+				# line's Qty and Weight instead of the operator re-reading the order.
+				"ordered_box": 0.0,
 				"colours": [],
 				"cuts": [],
 			}
@@ -581,6 +584,16 @@ def sales_order_options(search=None, limit=200):
 			o["colours"].append(r.color_name)
 		if r.cut and r.cut not in o["cuts"]:
 			o["cuts"].append(r.cut)
+		o["ordered_box"] = round(o["ordered_box"] + frappe.utils.flt(r.qty_box), 3)
+	# What is still outstanding on the order, which is what an inward is about to cover.
+	for o in by_so.values():
+		received_box = frappe.db.sql(
+			"""select coalesce(sum(ii.qty_box), 0)
+			from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+			where ii.customer_order = %s and i.docstatus = 1""",
+			(o["sales_order"],),
+		)[0][0] or 0
+		o["required_box"] = round(max(0.0, o["ordered_box"] - frappe.utils.flt(received_box)), 3)
 	out = [by_so[k] for k in order]
 	if search:
 		s = search.strip().lower()

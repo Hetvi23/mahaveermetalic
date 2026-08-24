@@ -319,10 +319,24 @@ export default function InwardWorkspace() {
     const fromMatch = orders.find((o) => o.sales_order === sales_order);
     const colour = opt?.colours?.[0] || fromMatch?.color_name || "";
     const cut = opt?.cuts?.[0] || fromMatch?.cut || "";
+    // …and what the order is still waiting for. The operator was reading the order to find
+    // out and typing it back in; the order already knows. Only an UNTOUCHED first line is
+    // filled — anything already weighed is what actually arrived and outranks the plan.
+    const qty = Number(opt?.required_box ?? 0) || "";
+    const weight = Number(opt?.required_weight ?? fromMatch?.required_weight ?? 0) || "";
     setRows((prev) =>
-      prev.map((r, j) =>
-        j === i ? { ...r, customer_order: sales_order, color: r.color || colour, cut: r.cut || cut } : r,
-      ),
+      prev.map((r, j) => {
+        if (j !== i) return r;
+        const first = r.lines[0];
+        const untouched = r.lines.length === 1 && !first.roll.trim() && first.qty === "" && first.weight === "";
+        return {
+          ...r,
+          customer_order: sales_order,
+          color: r.color || colour,
+          cut: r.cut || cut,
+          lines: untouched ? [{ ...first, qty, weight }] : r.lines,
+        };
+      }),
     );
   }
 
