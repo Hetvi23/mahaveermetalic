@@ -2849,21 +2849,21 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-pvw-machine { margin-bottom: 0.75rem; }
 
 .mm-pvw-box {
-  display: flex; align-items: stretch; gap: 0.6rem;
+  display: flex; align-items: center; gap: 0.45rem;
   border: 1px solid var(--mm-border-dark); border-radius: var(--mm-radius-sm);
-  background: var(--mm-card); padding: 0.5rem 0.6rem;
+  background: var(--mm-card); padding: 0.25rem 0.45rem;
 }
 /* Boxes of the SAME machine sit tight; the space before the next machine is the
    .mm-pvw-machine margin, so the grouping still reads without a heading over it. */
-.mm-pvw-box + .mm-pvw-box { margin-top: 0.3rem; }
+.mm-pvw-box + .mm-pvw-box { margin-top: 0.2rem; }
 
 /* Column 1 — the machine number, big enough to find from a few steps back. */
 .mm-pvw-box-machine {
-  flex: none; display: flex; align-items: center; justify-content: center; gap: 0.3rem;
-  min-width: 3.4rem; padding: 0.35rem 0.5rem;
+  flex: none; display: flex; align-items: center; justify-content: center; gap: 0.25rem;
+  min-width: 2.5rem; padding: 0.15rem 0.35rem;
   border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius-sm);
   background: var(--mm-accent-bg); color: var(--mm-accent-fg);
-  font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums;
+  font-weight: 800; font-size: 0.9rem; font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 /* Second and later boxes on one machine repeat the number quietly — it is the same
@@ -2876,24 +2876,26 @@ h1, h2, h3 { letter-spacing: -0.015em; }
    the tick stays on that line whether or not a note is printed under it. */
 .mm-pvw-box-body {
   flex: 1 1 auto; min-width: 0;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 0.5rem; row-gap: 0.1rem; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 0.5rem; row-gap: 0; align-items: center;
 }
 .mm-pvw-box-colour {
   grid-column: 1; grid-row: 1; min-width: 0;
-  display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
-  /* A shade name can be long and there is nowhere else for it to go but another line. */
-  overflow-wrap: anywhere;
+  display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap;
+  /* Truncate rather than wrap: a long shade wrapping to a second line puts back exactly
+     the height this box was halved to save, and the full name is on the row's title. */
+  overflow: hidden;
 }
-.mm-pvw-box-lot { font-size: 0.72rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; }
+.mm-pvw-box-colour > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-pvw-box-lot { font-size: 0.68rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mm-pvw-box-patti {
-  grid-column: 1; grid-row: 2; min-width: 0;
-  font-size: 0.8rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
+  grid-column: 2; grid-row: 1; min-width: 0; white-space: nowrap;
+  font-size: 0.76rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
 }
-.mm-pvw-box-patti strong { font-size: 1rem; color: var(--mm-text); }
+.mm-pvw-box-patti strong { font-size: 0.88rem; color: var(--mm-text); }
 .mm-pvw-box-done { color: var(--mm-green-fg); font-weight: 700; }
 .mm-pvw-box-note {
-  grid-column: 1; grid-row: 3; min-width: 0;
+  grid-column: 1 / -1; grid-row: 2; min-width: 0;
   font-size: 0.74rem; line-height: 1.35; color: var(--mm-text-sec);
   /* Planning notes get typed with line breaks in them — keep those, wrap the long lines. */
   white-space: pre-line; overflow-wrap: anywhere;
@@ -2906,8 +2908,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 }
 /* The tick answers "how many are done", so it rides the patty line, not the colour. */
 .mm-pvw-box-tick {
-  grid-column: 2; grid-row: 2; justify-self: end; align-self: center;
-  flex: none; width: 34px; height: 34px; padding: 0; justify-content: center;
+  grid-column: 3; grid-row: 1; justify-self: end; align-self: center;
+  flex: none; width: 24px; height: 24px; padding: 0; justify-content: center;
 }
 .mm-pvw-box-tick:disabled { opacity: 0.45; cursor: not-allowed; }
 /* A disabled control that still lights up on hover looks like it is about to work. */
@@ -2917,12 +2919,12 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 
 /* Idle: the machine is still listed, so it still gets a box — an empty slot drawn as one
    rather than a machine missing from the sheet. */
-.mm-pvw-box-idle { border-style: dashed; background: transparent; }
+.mm-pvw-box-idle { border-style: dashed; background: transparent; padding: 0.2rem 0.45rem; }
 .mm-pvw-box-idle .mm-pvw-box-machine {
   background: transparent; color: var(--mm-text-sec);
   border-color: var(--mm-border-dark); font-weight: 700;
 }
-.mm-pvw-box-free { color: var(--mm-text-sec); font-size: 0.8rem; font-style: italic; }
+.mm-pvw-box-free { color: var(--mm-text-sec); font-size: 0.76rem; font-style: italic; }
 
 /* Complete dialog: the reason is only insisted on when the count comes DOWN. */
 .mm-pvw-need { color: var(--mm-danger-fg); font-weight: 700; }
