@@ -943,10 +943,10 @@ function BoxDialog({
 }
 
 /* ── Weighing-scale capture (Web Serial) for the gross weight ── */
-const BAUDS = [9600, 2400, 4800, 19200, 38400];
+const BAUDS = [9600, 2400, 4800, 19200, 38400, 1200];
 
 function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
-  const { supported, connected, connecting, error, reading, connect, disconnect } = useSerialScale();
+  const { supported, connected, connecting, error, note, portLabel, reading, connect, disconnect } = useSerialScale();
   const [baud, setBaud] = useState<number>(() => {
     const saved = typeof window !== "undefined" ? Number(window.localStorage.getItem("mm-scale-baud")) : 0;
     return BAUDS.includes(saved) ? saved : 9600;
@@ -978,10 +978,15 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
           <button type="button" className="mm-mini" disabled={connecting} onClick={() => void connect(baud)}>
             <Scale size={13} /> {connecting ? "Connecting…" : "Connect scale"}
           </button>
+          {/* The remembered port is the wrong one on any PC where the TSC printer also
+              shows up as a COM port, so keep a way back to the picker. */}
+          <button type="button" className="mm-mini" disabled={connecting} title="Pick the COM port again" onClick={() => void connect(baud, { pick: true })}>
+            Choose port
+          </button>
         </div>
       ) : (
         <div className="mm-scale-row">
-          <span className={`mm-scale-reading ${stable ? "is-stable" : "is-moving"}`}>
+          <span className={`mm-scale-reading ${stable ? "is-stable" : "is-moving"}`} title={portLabel ?? undefined}>
             {w != null ? `${w.toLocaleString()} kg` : "—"} <em>{reading ? (stable ? "stable" : "moving") : ""}</em>
           </span>
           <button type="button" className="mm-mini mm-mini-ok" disabled={w == null || !stable} onClick={() => w != null && onCapture(w)}>
@@ -991,6 +996,7 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
         </div>
       )}
       {connected && reading && <div className="mm-scale-raw" title="Raw frame from the scale — share this to lock the parser">{reading.raw}</div>}
+      {note && <p className="mm-muted mm-scale-hint">{note}</p>}
       {error && <p className="mm-error mm-scale-hint">{error}</p>}
     </div>
   );
