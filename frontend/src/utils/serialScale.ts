@@ -48,13 +48,41 @@ export function parseScaleFrame(line: string): ScaleReading {
   if (/(^|[^A-Z])US([^A-Z]|$)|MOTION|UNSTABLE/.test(upper)) stable = false;
   else if (/(^|[^A-Z])ST([^A-Z]|$)|STABLE/.test(upper)) stable = true;
 
+  // Digit-grouping commas are removed BEFORE any number is matched. Left in, the number
+  // regex stops at the comma and "12,345.60 kg" reads as 345.6 — twelve tonnes silently
+  // gone. Only a comma sitting between digits with a group of three behind it is a
+  // separator; the commas these frames use between FIELDS ("ST,GS,+ 012.34") never are.
+  const scan = raw.replace(/(\d),(?=\d{3}(\D|$))/g, "$1");
+
   // Overload with no digits → no usable weight.
-  const nums = raw.match(/[-+]?\d+(?:\.\d+)?/g);
+  const nums = scan.match(/[-+]?\d+(?:\.\d+)?/g);
   if (!nums || nums.length === 0) return { weight: null, stable, raw };
 
-  // Prefer a decimal value (the weight); fall back to the last number on the line.
-  const pick = nums.find((n) => n.includes(".")) ?? nums[nums.length - 1];
-  const weight = parseFloat(pick);
+  // Which number on the line IS the weight.
+  //
+  // "the first one with a decimal point" is right for a plain frame and wrong for one that
+  // prints a tare first: "ST,TR, 1.50, GS, 012.34 kg" gave the 1.50. So a number tagged as
+  // GROSS wins outright — that is the figure this field wants — then net, then the old
+  // rule as the fallback for frames that tag nothing.
+  const tagged = (tag: RegExp) => {
+    const m = scan.toUpperCase().match(tag);
+    return m && m[1] != null ? m[1] : null;
+  };
+  const pick =
+    tagged(/\bG(?:S|ROSS)?\b[^0-9+-]*([-+]?\d+(?:\.\d+)?)/) ??
+    tagged(/\b(?:NT|NET)\b[^0-9+-]*([-+]?\d+(?:\.\d+)?)/) ??
+    nums.find((n) => n.includes(".")) ??
+    nums[nums.length - 1];
+  let weight = parseFloat(pick);
+
+  // Unit. An indicator streaming GRAMS was being written into a kg field as-is, so 1234 g
+  // was stored as 1,234 kg. "kg" is checked first because every "kg" frame also contains a
+  // g; a lone g/gm token means grams, and no unit at all means kg (the shop's own unit).
+  if (!Number.isNaN(weight)) {
+    const hasKg = /\bK\s*G\b|KGS?\b/.test(upper);
+    const hasG = /\b(?:G|GM|GMS|GRAMS?)\b/.test(upper.replace(/\bGS\b|\bGROSS\b/g, ""));
+    if (!hasKg && hasG) weight = weight / 1000;
+  }
   return { weight: Number.isNaN(weight) ? null : weight, stable, raw };
 }
 

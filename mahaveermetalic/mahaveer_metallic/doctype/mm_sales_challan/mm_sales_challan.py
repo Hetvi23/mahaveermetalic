@@ -27,6 +27,12 @@ _VOUCHER_TYPE = {"Sales": "Dispatch", "Job Out": "Job Out", "Job In": "Job In"}
 NON_DISPATCH_TYPES = ("Job Out", "Job In", "Job Challan")
 
 
+def _key(colour):
+	"""Colours are matched the way the rest of the app matches them — case and spacing on
+	a hand-typed shade are not a difference in material."""
+	return "".join((colour or "").lower().split())
+
+
 def is_dispatch(challan_type) -> bool:
 	"""True when this challan type sends goods to the customer against their order."""
 	return (challan_type or "Sales") not in NON_DISPATCH_TYPES
@@ -43,6 +49,50 @@ class MMSalesChallan(Document):
 				frappe.throw(_("Row #{0}: box and weight cannot be negative.").format(it.idx))
 		self.total_box = round(sum(float(i.qty_box or 0) for i in self.items), 3)
 		self.total_weight = round(sum(float(i.weight or 0) for i in self.items), 3)
+		self._apply_rates()
+
+	def _apply_rates(self):
+		"""Carry the agreed rate onto the challan, and foot it.
+
+		The rate lives on the sales order and the challan never carried it, so the paper
+		that goes out with the goods showed weights and no money — the customer had to be
+		told the price separately and the office had to re-look it up to bill.
+
+		Done on the document, not in the four different places a challan gets built
+		(production, job work, hand-picked boxes, hand-picked rolls), so every path gets it
+		and none of them can drift.
+
+		Only a BLANK rate is filled: a rate typed on the line is a deliberate decision to
+		bill this dispatch differently, and the order must not overwrite it. A challan with
+		no order behind it simply has no rate to find, which is not an error — it foots at
+		zero and the line can still be priced by hand.
+		"""
+		rates = {}
+		orders = {(it.sales_order or self.sales_order) for it in self.items}
+		for order in filter(None, orders):
+			for r in frappe.get_all(
+				"MM Sales Order Item",
+				filters={"parent": order, "parenttype": "MM Sales Order"},
+				fields=["color_name", "cut", "sale_rate"],
+			):
+				if float(r.sale_rate or 0) <= 0:
+					continue
+				# Keyed by colour AND cut, plus a colour-only fallback: the challan does not
+				# always record a cut, and an order that prices one colour at one rate should
+				# still price it then.
+				rates.setdefault((order, _key(r.color_name), (r.cut or "").strip()), float(r.sale_rate))
+				rates.setdefault((order, _key(r.color_name), None), float(r.sale_rate))
+		total = 0.0
+		for it in self.items:
+			order = it.sales_order or self.sales_order
+			if not float(it.rate or 0) and order:
+				ckey, cut = _key(it.color_name), (it.cut or "").strip()
+				it.rate = rates.get((order, ckey, cut)) or rates.get((order, ckey, None)) or 0
+			# Per KG — weight is the quantity this trade prices on, and it is the figure
+			# the line already carries as its own total.
+			it.amount = round(float(it.rate or 0) * float(it.weight or 0), 2)
+			total += float(it.amount or 0)
+		self.total_amount = round(total, 2)
 
 	def on_submit(self):
 		"""Dispatching finally moves stock.

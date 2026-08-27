@@ -48,8 +48,21 @@ def _challan_expected_from_vm(challan_no: str) -> dict:
 # the challan moved onto the row looks like, so both read the same way here.
 _CHALLAN_OF_ITEM = "coalesce(nullif(ii.challan_number, ''), i.challan_number)"
 
+# A challan number is the SUPPLIER'S OWN serial, not ours — every supplier numbers from 1,
+# so "123" from NKL Metlon and "123" from Veermetlon are two different documents. Matching
+# on the number alone made one supplier's challan close another's, and the second delivery
+# was refused as "already fully received".
+#
+# The pair (supplier, number) is the identity. A row with NO supplier on file cannot be
+# told apart from anything, so it still matches on the number alone — that keeps the guard
+# exactly as strong as it was on every inward posted before Supplier was filled in, and
+# only relaxes it where we positively know the two challans came from different suppliers.
+_SAME_SUPPLIER = (
+	"(ifnull(ii.supplier, '') = '' or %(sup)s = '' or ii.supplier = %(sup)s)"
+)
 
-def _prior_receipt(challan_no: str, exclude: str = None):
+
+def _prior_receipt(challan_no: str, exclude: str = None, supplier: str = None):
 	"""What is already received on this challan, and whether it is closed.
 
 	Tracks both weight and box received, so box-only challans (no weight target) can
@@ -61,9 +74,10 @@ def _prior_receipt(challan_no: str, exclude: str = None):
 		from `tabMM Inward` i
 		join `tabMM Inward Item` ii on ii.parent = i.name
 		where i.docstatus = 1 and i.name != %(me)s and {_CHALLAN_OF_ITEM} = %(ch)s
+			and {_SAME_SUPPLIER}
 		group by i.name, i.receipt_status, i.is_gr
 		""",
-		{"ch": challan_no, "me": exclude or ""},
+		{"ch": challan_no, "me": exclude or "", "sup": (supplier or "").strip()},
 		as_dict=True,
 	)
 	return {
@@ -77,12 +91,15 @@ def _prior_receipt(challan_no: str, exclude: str = None):
 	}
 
 
-def challan_closed_by(challan_no: str, exclude: str = None):
+def challan_closed_by(challan_no: str, exclude: str = None, supplier: str = None):
 	"""The submitted inward that closed this challan, if one did.
 
 	A challan is closed once an inward that received it was posted Complete; a Partial one
 	leaves it open for the rest. Shared with MM Inward.validate so the screen's check and
 	the document's guard cannot disagree about what "closed" means.
+
+	Scoped to the supplier — see _SAME_SUPPLIER. Two suppliers may both send a challan 123
+	and neither closes the other.
 	"""
 	hit = frappe.db.sql(
 		f"""
@@ -92,26 +109,33 @@ def challan_closed_by(challan_no: str, exclude: str = None):
 		where i.docstatus = 1 and ifnull(i.receipt_status, 'Complete') = 'Complete'
 			and ifnull(i.is_gr, 0) = 0
 			and i.name != %(me)s and {_CHALLAN_OF_ITEM} = %(ch)s
+			and {_SAME_SUPPLIER}
 		limit 1
 		""",
-		{"ch": challan_no, "me": exclude or ""},
+		{"ch": challan_no, "me": exclude or "", "sup": (supplier or "").strip()},
 	)
 	return hit[0][0] if hit else None
 
 
-def _acquire_challan_lock(challan_no: str):
+def _challan_lock_key(challan_no: str, supplier: str = None):
+	"""The lock names the same thing the guards do — one supplier's challan. Keyed on the
+	number alone it serialized two unrelated suppliers against each other."""
+	return f"mm_inward_challan_{(supplier or '').strip()}_{challan_no}"
+
+
+def _acquire_challan_lock(challan_no: str, supplier: str = None):
 	"""Serialize concurrent post_inward calls for the same challan with a MariaDB
 	advisory lock, so two operators posting the same challan at once can't both pass the
 	closed / over-receipt checks and double-post. Best-effort: reduces the TOCTOU window
 	to the commit boundary."""
-	got = frappe.db.sql("select get_lock(%s, 10)", (f"mm_inward_challan_{challan_no}",))
+	got = frappe.db.sql("select get_lock(%s, 10)", (_challan_lock_key(challan_no, supplier),))
 	if not (got and got[0][0]):
 		frappe.throw(_("Another inward for challan {0} is being posted — please retry.").format(challan_no))
 
 
-def _release_challan_lock(challan_no: str):
+def _release_challan_lock(challan_no: str, supplier: str = None):
 	try:
-		frappe.db.sql("select release_lock(%s)", (f"mm_inward_challan_{challan_no}",))
+		frappe.db.sql("select release_lock(%s)", (_challan_lock_key(challan_no, supplier),))
 	except Exception:
 		pass
 
@@ -351,7 +375,11 @@ def verify_challan(challan_no):
 	if not challan_no:
 		frappe.throw(_("Enter a challan number."))
 	exp = _challan_expected_from_vm(challan_no)
-	prior = _prior_receipt(challan_no)
+	# Fetching means fetching from Veermetlon, so the prior receipts that count against
+	# this challan are Veermetlon's own — another supplier's challan of the same number is
+	# a different document and must not show up as "already received".
+	vm_supplier = _veermetlon_supplier()
+	prior = _prior_receipt(challan_no, supplier=vm_supplier)
 	remaining = round(exp["expected_weight"] - prior["received_weight"], 3)
 	return {
 		"challan_no": challan_no,
@@ -366,13 +394,27 @@ def verify_challan(challan_no):
 		"coating": exp["coating"],
 		"sales_order": exp["sales_order"],
 		# Fetched from VM means supplied by VM — the row's Supplier fills itself in.
-		"supplier": _veermetlon_supplier(),
+		"supplier": vm_supplier,
 	}
 
 
 def _row_challans(items, header_challan: str):
 	"""Every distinct challan on the document, in a stable order."""
 	return sorted({(i.get("challan_number") or "").strip() or header_challan for i in items} - {""})
+
+
+def _supplier_on_challan(items, challan: str, header_challan: str):
+	"""The supplier this inward's rows put against ONE challan.
+
+	A challan number only identifies a document together with who issued it, so every
+	check on a challan is scoped by this. Blank when the rows do not say — which falls
+	back to matching on the number alone, the way it always worked."""
+	for i in items:
+		if ((i.get("challan_number") or "").strip() or header_challan) == challan:
+			sup = (i.get("supplier") or "").strip()
+			if sup:
+				return sup
+	return ""
 
 
 def _weight_on_challan(items, challan: str, header_challan: str):
@@ -462,8 +504,9 @@ def post_inward(payload):
 	# Veermetlon-verified path — serialize per challan so check+insert is atomic. Locks are
 	# taken in a fixed (sorted) order so two operators posting the same pair of challans
 	# can't deadlock on each other.
+	challan_supplier = {c: _supplier_on_challan(items, c, header_challan) for c in verified}
 	for challan in verified:
-		_acquire_challan_lock(challan)
+		_acquire_challan_lock(challan, challan_supplier[challan])
 	try:
 		over_pct = get_inward_over_tolerance() / 100.0
 		expected_w = expected_b = 0.0
@@ -471,7 +514,7 @@ def post_inward(payload):
 		reaches_all = True
 		for challan in verified:
 			exp = _challan_expected_from_vm(challan)
-			prior = _prior_receipt(challan)
+			prior = _prior_receipt(challan, supplier=challan_supplier[challan])
 			if prior["closed"]:
 				frappe.throw(
 					_("Challan {0} is already fully received. No further inward is allowed.").format(challan)
@@ -525,7 +568,76 @@ def post_inward(payload):
 		return {"name": doc.name, "receipt_status": doc.receipt_status}
 	finally:
 		for challan in verified:
-			_release_challan_lock(challan)
+			_release_challan_lock(challan, challan_supplier[challan])
+
+
+def _attach_purchase(by_so):
+	"""Hang each order's purchase orders on it — supplier, colour, what was bought and
+	what has arrived against it.
+
+	One query for every order in the picker rather than one per order: the picker loads on
+	every visit to the Inward screen and a per-order round trip made it the slowest thing
+	on the page.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_purchase_order.mm_purchase_order import _norm
+
+	if not by_so:
+		return
+	names = list(by_so)
+	pos = frappe.get_all(
+		"MM Purchase Order",
+		filters={"sales_order": ["in", names], "docstatus": ["<", 2]},
+		fields=["name", "sales_order", "supplier", "color", "cut", "qty_kg", "qty_box"],
+		limit_page_length=0,
+	)
+	if not pos:
+		return
+	vendor_names = {
+		v.name: (v.vendor_name or v.name)
+		for v in frappe.get_all(
+			"MM Vendor Master",
+			filters={"name": ["in", list({p.supplier for p in pos if p.supplier})]} if any(p.supplier for p in pos) else {"name": ["in", [""]]},
+			fields=["name", "vendor_name"],
+		)
+	}
+	# Everything received against these orders, so each PO line can report its own balance.
+	received = frappe.db.sql(
+		"""
+		select ii.customer_order as so, ii.color_name, ii.cut, coalesce(sum(ii.weight), 0) as weight
+		from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+		where i.docstatus = 1 and ii.customer_order in %(names)s
+		group by ii.customer_order, ii.color_name, ii.cut
+		""",
+		{"names": names},
+		as_dict=True,
+	)
+	for p in pos:
+		o = by_so.get(p.sales_order)
+		if not o:
+			continue
+		want_c, want_cut = _norm(p.color), (p.cut or "").strip()
+		got = 0.0
+		for r in received:
+			if r.so != p.sales_order or _norm(r.color_name) != want_c:
+				continue
+			# Only enforce cut when BOTH sides carry one — inward may not capture size.
+			if want_cut and (r.cut or "").strip() and (r.cut or "").strip() != want_cut:
+				continue
+			got += float(r.weight or 0)
+		bought = round(float(p.qty_kg or 0), 3)
+		o["purchase"].append(
+			{
+				"purchase_order": p.name,
+				"supplier": p.supplier,
+				"supplier_name": vendor_names.get(p.supplier) or p.supplier,
+				"color": p.color,
+				"cut": p.cut,
+				"qty_kg": bought,
+				"qty_box": round(float(p.qty_box or 0), 3),
+				"received_kg": round(got, 3),
+				"remaining_kg": round(max(0.0, bought - got), 3),
+			}
+		)
 
 
 @frappe.whitelist()
@@ -537,6 +649,11 @@ def sales_order_options(search=None, limit=200):
 	Only APPROVED orders still open for inward are offered — docstatus = 1 (admin-approved),
 	production < 100%, and NOT fully inwarded. An order is fully inwarded once its required
 	weight drops to ≤ 0; box-only orders (no weight target, ordered_weight = 0) are kept.
+
+	Each order also carries its purchase orders, so picking an order on the Inward grid can
+	fill in the Supplier it was bought from and show what the PURCHASE (not the sale) still
+	has outstanding — 900 sold against 1,200 bought means 300 kg arrives that no sales
+	order is waiting for.
 	"""
 	limit = int(limit or 200)
 	rows = frappe.db.sql(
@@ -551,10 +668,31 @@ def sales_order_options(search=None, limit=200):
 		where so.docstatus = 1
 			-- A completed order is not open for inward, however it was completed. Without
 			-- this it kept appearing in the picker as though it were still open.
-			and ifnull(so.completed, 0) = 0
-			and ifnull(so.production_completed_percent, 0) < 100
-			and not (ifnull(so.ordered_weight, 0) > 0 and ifnull(so.required_weight, 0) <= 0)
-		order by so.transaction_date desc, so.modified desc
+			--
+			-- …UNLESS its PURCHASE order still has material to come. 900 kg sold against
+			-- 1,200 kg bought closes the sale at 910 and still leaves 290 kg on the road:
+			-- that surplus arrives against this order and has nowhere else to be received,
+			-- so the order has to stay pickable until the PO is met. Those rows are keyed
+			-- Stock Only and fulfil nothing — see MM Inward Item.to_inventory.
+			and (
+				(
+					ifnull(so.completed, 0) = 0
+					and ifnull(so.production_completed_percent, 0) < 100
+					and not (ifnull(so.ordered_weight, 0) > 0 and ifnull(so.required_weight, 0) <= 0)
+				)
+				or exists (
+					select 1 from `tabMM Purchase Order` po
+					where po.sales_order = so.name and po.docstatus < 2
+						and ifnull(po.status, 'Pending') != 'Received'
+				)
+			)
+		-- FIFO: the order that came in first is filled first. This listed the NEWEST
+		-- order at the top, so the newest was the one picked by default and the oldest
+		-- sank down the list as more arrived — the queue ran backwards.
+		--
+		-- Tie-broken on `creation`, not `modified`: editing an old order must not shuffle
+		-- it to a different place in the queue.
+		order by so.transaction_date asc, so.creation asc
 		""",
 		as_dict=True,
 	)
@@ -577,6 +715,8 @@ def sales_order_options(search=None, limit=200):
 				"ordered_box": 0.0,
 				"colours": [],
 				"cuts": [],
+				# Filled below: [{supplier, color, cut, qty_kg, received_kg}] per PO line.
+				"purchase": [],
 			}
 			by_so[r.sales_order] = o
 			order.append(r.sales_order)
@@ -587,13 +727,23 @@ def sales_order_options(search=None, limit=200):
 		o["ordered_box"] = round(o["ordered_box"] + frappe.utils.flt(r.qty_box), 3)
 	# What is still outstanding on the order, which is what an inward is about to cover.
 	for o in by_so.values():
+		# Stock-only rows are surplus, not fulfilment — the same exclusion the weight
+		# figures use, so Qty and Weight prefill from the same idea of "still outstanding".
 		received_box = frappe.db.sql(
 			"""select coalesce(sum(ii.qty_box), 0)
 			from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
-			where ii.customer_order = %s and i.docstatus = 1""",
+			where ii.customer_order = %s and i.docstatus = 1
+				and ifnull(ii.to_inventory, 0) = 0""",
 			(o["sales_order"],),
 		)[0][0] or 0
 		o["required_box"] = round(max(0.0, o["ordered_box"] - frappe.utils.flt(received_box)), 3)
+	_attach_purchase(by_so)
+	# An order kept alive only by its purchase order is a different thing to pick, and the
+	# picker says so: it takes Stock Only rows, not fulfilment.
+	for o in by_so.values():
+		outstanding = round(sum(p["remaining_kg"] for p in o["purchase"]), 3)
+		o["purchase_remaining"] = outstanding
+		o["stock_only"] = 1 if (float(o["required_weight"] or 0) <= 0 and outstanding > 0) else 0
 	out = [by_so[k] for k in order]
 	if search:
 		s = search.strip().lower()

@@ -1887,7 +1887,10 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-state-partiallydone { background: var(--mm-accent-bg); color: var(--mm-accent-fg); }
 
 /* Centered modal */
-.mm-modal-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: grid; place-items: center; z-index: 60; padding: 1rem; }
+/* Above the fixed rail (200) and the mobile tabbar (200) — a modal that leaves the whole
+   navigation lit and clickable behind it does not read as modal. Still below the
+   SearchSelect portal (300) and the toaster (1200), both of which open FROM inside it. */
+.mm-modal-scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: grid; place-items: center; z-index: 250; padding: 1rem; }
 .mm-modal { background: var(--mm-card); border-radius: var(--mm-radius-lg); box-shadow: var(--mm-shadow-lg); width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
 .mm-modal-wide { width: min(960px, 100%); }
 
@@ -2327,22 +2330,37 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
   gap: 0.45rem; align-content: start;
 }
 /* The tile IS the action — the old third column spent a quarter of the width saying so. */
+/* Two rows now, not one: the shelf is SOURCE-WISE, so a tile is a colour in ONE LOT and
+   the lot has to be on the tile. Named areas rather than flex — the count and the arrow
+   stay pinned beside the colour while the lot runs the full width underneath, whatever
+   order the markup happens to be in. */
 .mm-patty-tile {
-  display: flex; align-items: center; gap: 0.5rem; width: 100%; min-width: 0;
+  display: grid; width: 100%; min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "name count go" "src src src";
+  align-items: center; column-gap: 0.5rem; row-gap: 0.1rem;
   padding: 0.45rem 0.55rem 0.45rem 0.7rem; border: 1px solid var(--mm-border);
   border-radius: var(--mm-radius-sm); background: var(--mm-card);
   font-family: inherit; text-align: left; cursor: pointer;
 }
 .mm-patty-tile-name {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 0.85rem; font-weight: 700; color: var(--mm-text);
 }
+/* Which material this is. Quiet enough that the colour still leads and the count still
+   reads at a glance — it answers "which of the two?", it is not the headline. */
+.mm-patty-tile-src {
+  grid-area: src; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.68rem; font-weight: 650; letter-spacing: 0.02em;
+  color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
+}
 .mm-patty-tile-count {
-  flex: none; font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  grid-area: count; font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums;
   color: var(--mm-accent-fg); background: var(--mm-accent-bg);
   border: 1px solid var(--mm-accent-soft); border-radius: 99px; padding: 0.05rem 0.5rem;
 }
-.mm-patty-tile-go { flex: none; font-size: 0.8rem; font-weight: 800; color: var(--mm-blue); opacity: 0.35; }
+.mm-patty-tile-go { grid-area: go; font-size: 0.8rem; font-weight: 800; color: var(--mm-blue); opacity: 0.35; }
+.mm-patty-tile:hover .mm-patty-tile-src { color: var(--mm-hover-fg); }
 .mm-patty-tile:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent); }
 .mm-patty-tile:hover .mm-patty-tile-name { color: var(--mm-hover-fg); }
 .mm-patty-tile:hover .mm-patty-tile-go { opacity: 1; }
@@ -2762,6 +2780,20 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-osum-ref { color: var(--mm-text-sec); }
 .mm-osum-what { color: var(--mm-text-sec); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mm-osum-kg { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A dispatch line carries one more figure than a receipt does — challan no, party, boxes,
+   kg — so the sales log takes a fourth track. The party is the elastic one: challan
+   numbers and both figures are short and fixed, a company name is not. */
+.mm-osum-row-sale {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto) minmax(0, auto);
+}
+.mm-osum-chno {
+  white-space: nowrap; font-weight: 700; color: var(--mm-text);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.mm-osum-box {
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+  color: var(--mm-text-sec);
+}
 .mm-osum-none { margin: 0; padding: 0.7rem; color: var(--mm-text-sec); font-size: 0.84rem; }
 .mm-osum-foot {
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
@@ -2987,7 +3019,7 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 
 /* Portalled to <body>, so it escapes the `overflow-x: auto` on the tables and the
    modals these rows sit in — an in-flow panel was simply clipped away. Above the
-   modal scrim (60) and the portalled field menus (300); below the toaster (1200). */
+   modal scrim (250) and the portalled field menus (300); below the toaster (1200). */
 .mm-lotrem-pop {
   position: fixed; z-index: 500;
   width: 260px; max-height: 320px; overflow-y: auto;
@@ -3099,3 +3131,208 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 /* The ledger is the one screen people scroll for minutes — give it a tall viewport of
    its own so the sticky heading has something to stick to. */
 .mm-ledger-scroll { max-height: calc(100vh - 340px); overflow: auto; }
+
+/* ── Job In voucher sheet ──────────────────────────────────────────────────────────
+   Its own namespace rather than more overrides on `.mm-pv-*`, which the Production
+   voucher shares — the two vouchers ask different questions of the same four numbers
+   and the receiving one needs a reconciliation across its top that Production does not.
+   Everything here reads design tokens, so dark mode follows without a second block. */
+.mm-modal.mm-sheet.mm-ji { width: min(1180px, 100vw); }
+
+/* Header: the challan being answered, its party and its colour, said once. */
+.mm-ji-head { gap: 0.8rem; align-items: center; padding: 0.85rem 1.15rem; }
+.mm-ji-mark {
+  flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--mm-accent-bg); color: var(--mm-accent-fg); border: 1px solid var(--mm-accent-soft);
+}
+.mm-ji-headtext { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; flex: 1; }
+.mm-ji-head .mm-modal-title { font-size: 1rem; line-height: 1.25; }
+.mm-ji-sub {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;
+  font-size: 0.78rem; color: var(--mm-text-sec); min-width: 0;
+}
+.mm-ji-sub strong { color: var(--mm-text); font-weight: 700; }
+.mm-ji-sub .mm-colour-name { font-size: 0.78rem; color: var(--mm-text); }
+/* Hairline dots between the header facts — cheaper to read than more punctuation. */
+.mm-ji-sub i { width: 3px; height: 3px; border-radius: 99px; background: var(--mm-border-dark); flex: none; }
+
+/* Body: paperwork row (details, and the box form beside it while one is keyed), then the
+   box table spanning both tracks. The meter and any error span too. */
+.mm-sheet .mm-ji-body {
+  flex: 1; min-height: 0; overflow: auto; padding: 0.9rem 1.15rem 1rem;
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto;
+  grid-template-rows: auto auto minmax(200px, 1fr); gap: 0.85rem;
+}
+.mm-sheet .mm-ji-body-split { grid-template-columns: minmax(0, 1fr) minmax(0, 340px); }
+.mm-ji-body > .mm-ji-meter, .mm-ji-body > .mm-ji-work, .mm-ji-span { grid-column: 1 / -1; }
+.mm-ji-body-split > .mm-ji-details { grid-column: 1; }
+.mm-ji-body-split > .mm-ji-formcol { grid-column: 2; }
+/* Capped so the box table below always keeps its own half of the sheet. */
+.mm-ji-details, .mm-ji-formcol { min-width: 0; max-height: min(46vh, 430px); overflow-y: auto; }
+
+/* The reconciliation — what went out, what has come back, what is still owed. */
+.mm-ji-meter {
+  border: 1px solid var(--mm-border); border-radius: var(--mm-radius);
+  background: var(--mm-bg); padding: 0.75rem 0.95rem 0.7rem;
+}
+.mm-ji-meter-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem 1.2rem; }
+.mm-ji-stat { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.mm-ji-stat-lab {
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--mm-text-sec);
+}
+.mm-ji-stat-val {
+  font-size: 1.2rem; font-weight: 800; line-height: 1.15; color: var(--mm-text);
+  font-variant-numeric: tabular-nums;
+}
+.mm-ji-stat-val em { font-style: normal; font-size: 0.74rem; font-weight: 650; color: var(--mm-text-sec); }
+.mm-ji-stat-live .mm-ji-stat-val { color: var(--mm-accent-fg); }
+.mm-ji-stat-ok .mm-ji-stat-val { color: var(--mm-green-fg); }
+.mm-ji-stat-over .mm-ji-stat-lab, .mm-ji-stat-over .mm-ji-stat-val { color: var(--mm-danger-fg); }
+/* One bar for the same fact the tiles state — it is what makes "nearly all back" legible
+   at a glance, which four numbers never are. */
+.mm-ji-bar {
+  margin-top: 0.65rem; height: 5px; border-radius: 99px; background: var(--mm-border);
+  overflow: hidden;
+}
+.mm-ji-bar > span {
+  display: block; height: 100%; border-radius: 99px; background: var(--mm-accent);
+  transition: width var(--mm-dur) var(--mm-ease);
+}
+.mm-ji-bar-ok > span { background: var(--mm-green); }
+.mm-ji-bar-over { background: var(--mm-danger-border); }
+.mm-ji-bar-over > span { background: var(--mm-danger); }
+@media (prefers-reduced-motion: reduce) { .mm-ji-bar > span { transition: none; } }
+
+/* Panels — paperwork, the box form, the box table. */
+.mm-ji-panel {
+  border: 1px solid var(--mm-border); border-radius: var(--mm-radius);
+  background: var(--mm-card); padding: 0.8rem 0.95rem 0.9rem; min-width: 0;
+}
+.mm-ji-panel-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.7rem; }
+.mm-ji-panel-title {
+  margin: 0; font-size: 0.82rem; font-weight: 750; letter-spacing: 0.01em;
+  display: inline-flex; align-items: center; gap: 0.35rem; color: var(--mm-text);
+}
+.mm-ji-panel-head .mm-pill { margin-left: 0; }
+.mm-ji-spacer { flex: 1; }
+.mm-ji-tag { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.mm-ji-boxsum { font-size: 0.78rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; }
+.mm-ji-boxsum strong { color: var(--mm-text); }
+
+/* Five fields that flow to fill the row — a fixed four-up left "Order" orphaned beside
+   three empty cells, which is the scattered look, not a layout. */
+.mm-ji-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 0.6rem 0.8rem; }
+.mm-ji-fields .mm-input[readonly] { background: var(--mm-bg); color: var(--mm-text-sec); cursor: default; }
+.mm-req { color: var(--mm-danger); font-weight: 700; }
+
+/* The two switches every box inherits — chips, so their state carries across the sheet. */
+.mm-ji-returns {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  margin-top: 0.8rem; padding-top: 0.7rem; border-top: 1px solid var(--mm-border);
+}
+.mm-ji-returns-lab {
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--mm-text-sec); margin-right: 0.15rem;
+}
+.mm-ji-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none;
+  padding: 0.3rem 0.65rem; border-radius: 99px; font-size: 0.78rem; font-weight: 650;
+  border: 1px solid var(--mm-border); background: var(--mm-card); color: var(--mm-text-sec);
+  transition: background var(--mm-dur-fast), border-color var(--mm-dur-fast), color var(--mm-dur-fast);
+}
+.mm-ji-chip:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
+.mm-ji-chip input { accent-color: var(--mm-accent); margin: 0; }
+.mm-ji-chip-on { background: var(--mm-accent-bg); border-color: var(--mm-accent-soft); color: var(--mm-accent-fg); }
+.mm-ji-chip:focus-within { outline: none; box-shadow: 0 0 0 3.5px var(--mm-focus); }
+@media (prefers-reduced-motion: reduce) { .mm-ji-chip { transition: none; } }
+
+/* The work area fills what the paperwork leaves, so the empty state sits in a defined
+   panel rather than floating in the middle of a blank sheet. */
+.mm-ji-work { display: flex; flex-direction: column; min-height: 0; padding-bottom: 0.8rem; }
+.mm-ji-work .mm-pv-boxtable { flex: 1; min-height: 0; }
+/* The invitation is centred in the work panel and allowed a little more of it than the
+   Production one: here the panel is framed, so the dashed zone is filling a defined area
+   rather than floating in the middle of a blank sheet. */
+.mm-ji-work .mm-box-zone { background: var(--mm-bg); flex: 1 1 auto; min-height: 170px; max-height: 300px; }
+/* The box form already sits inside a panel with its own frame, head and padding — the
+   inner card would be a second border around the same thing. Two field tracks, not the
+   three the full-width Production panel uses: three inside a 340px column is a label per
+   line and a scrollbar. */
+.mm-ji-formcol .mm-bx-panel { border: 0; background: transparent; box-shadow: none; padding: 0; margin: 0; }
+.mm-ji-formcol .mm-bx-panel .mm-bx { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.mm-ji-formcol .mm-bx-panel .mm-bx-row-wide { grid-column: span 2; }
+/* "calc" says the figure is derived, in the space a parenthetical would have wrapped in. */
+.mm-bx-calc {
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.05rem 0.3rem;
+  border-radius: 99px; background: var(--mm-surface2); color: var(--mm-text-sec);
+}
+/* Details stop at their own height — stretching them to match a tall box form only pads
+   the panel with the emptiness this layout is meant to remove. */
+.mm-ji-body-split > .mm-ji-details { align-self: start; }
+
+@media (max-width: 1100px) {
+  .mm-sheet .mm-ji-body, .mm-sheet .mm-ji-body-split {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: none;
+  }
+  .mm-ji-body-split > .mm-ji-details, .mm-ji-body-split > .mm-ji-formcol { grid-column: 1; }
+  .mm-ji-details, .mm-ji-formcol { max-height: none; overflow: visible; }
+  .mm-ji-work .mm-pv-boxtable { max-height: 55vh; }
+}
+@media (max-width: 720px) {
+  .mm-ji-meter-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mm-ji-head { padding: 0.75rem 0.9rem; }
+  .mm-sheet .mm-ji-body { padding: 0.75rem 0.9rem 0.9rem; }
+}
+
+/* ── Inward: the two ceilings a receipt sits between ───────────────────────────────
+   A sale and its purchase are different numbers — 900 kg sold against 1,200 kg bought —
+   and the gap is real material that has to come in. The cart says what each is still
+   waiting for, so ticking Stock is an informed act rather than a guess. */
+.mm-iw-bal {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 1.1rem;
+  margin: 0 0 0.75rem; padding: 0.55rem 0.75rem;
+  border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); background: var(--mm-bg);
+  font-size: 0.78rem; color: var(--mm-text-sec);
+}
+.mm-iw-bal > span { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.mm-iw-bal strong { color: var(--mm-text); font-variant-numeric: tabular-nums; font-weight: 750; }
+.mm-iw-bal-po strong { color: var(--mm-accent-fg); }
+.mm-iw-bal-done strong { color: var(--mm-green-fg); }
+/* A sentence, not a row of chips. The child selector is deliberate: `.mm-iw-bal > span`
+   above out-ranks a lone `.mm-iw-bal-note`, so the note stayed an inline-flex box and its
+   text nodes broke into separate flex items — the line split mid-phrase. */
+.mm-iw-bal > .mm-iw-bal-note { flex: 0 0 100%; display: block; gap: 0; color: var(--mm-text-sec); }
+.mm-iw-bal-note strong { color: var(--mm-accent-fg); }
+
+/* Stock tick, per roll. Off it is quiet; on it is unmistakable, because a roll ticked by
+   accident is weight that silently stops counting towards the order. */
+.mm-iw-cart-stock {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;
+  user-select: none; padding: 0.28rem 0.5rem; border-radius: 99px;
+  border: 1px solid var(--mm-border); background: var(--mm-card);
+  font-size: 0.72rem; font-weight: 700; color: var(--mm-text-sec);
+  transition: background var(--mm-dur-fast), border-color var(--mm-dur-fast), color var(--mm-dur-fast);
+}
+.mm-iw-cart-stock:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); color: var(--mm-hover-fg); }
+.mm-iw-cart-stock input { accent-color: var(--mm-accent); margin: 0; }
+.mm-iw-cart-stock.is-on { background: var(--mm-accent-bg); border-color: var(--mm-accent-soft); color: var(--mm-accent-fg); }
+.mm-iw-cart-stock:focus-within { outline: none; box-shadow: 0 0 0 3.5px var(--mm-focus); }
+@media (prefers-reduced-motion: reduce) { .mm-iw-cart-stock { transition: none; } }
+
+/* On the grid row: the lot carries surplus, visible without opening the cart. */
+.mm-iw-stockdot {
+  display: inline-flex; align-items: center; margin-left: 0.3rem; padding: 0.05rem 0.35rem;
+  border-radius: 99px; background: var(--mm-accent-bg); color: var(--mm-accent-fg);
+  border: 1px solid var(--mm-accent-soft); font-size: 0.6rem; font-weight: 800;
+  letter-spacing: 0.03em; white-space: nowrap;
+}
+
+/* Roll and lot filters on the Job Out stock list — narrow, because a roll number and a
+   lot id are both short, and the catch-all search box beside them should keep the width. */
+.mm-job-rollfilter, .mm-job-lotfilter { flex: 0 0 8rem; min-width: 0; }
+@media (max-width: 700px) { .mm-job-rollfilter, .mm-job-lotfilter { flex: 1 1 6rem; } }
+
+/* Rate comes off the sales order, so it reads as a stated figure rather than an input. */
+.mm-scv-rate { color: var(--mm-text-sec); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mm-scv-amount strong { color: var(--mm-accent-fg); }

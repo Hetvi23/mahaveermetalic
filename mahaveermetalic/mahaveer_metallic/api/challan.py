@@ -314,7 +314,7 @@ _JOB_SERIES = SERIES  # kept for the job screens, which only ever index Job Out 
 
 
 @frappe.whitelist()
-def in_stock_rolls(item=None, challan_date=None, search=None, start=0, page_length=10):
+def in_stock_rolls(item=None, challan_date=None, search=None, roll=None, lot=None, start=0, page_length=10):
 	"""Rolls on hand, ROLL BY ROLL, for the left "IN STOCK ROLL" list of the job screen.
 
 	This used to read MM Roll Inventory, which is keyed by (branch, location, lot, colour)
@@ -355,6 +355,16 @@ def in_stock_rolls(item=None, challan_date=None, search=None, start=0, page_leng
 			" or ii.lot_number like %(q)s or ii.challan_number like %(q)s)"
 		)
 		vals["q"] = f"%{search.strip()}%"
+	# Roll and lot as filters of their OWN, on top of the catch-all box. A roll number and
+	# a lot id are the two things the floor reads off the material in front of them, and
+	# the shared box could not answer "roll 3 of lot 25" — it matched either term against
+	# every column and returned both rolls of lot 25 and every roll numbered 3.
+	if roll and str(roll).strip():
+		conds.append("ii.roll_name like %(roll)s")
+		vals["roll"] = f"%{str(roll).strip()}%"
+	if lot and str(lot).strip():
+		conds.append("ii.lot_number like %(lot)s")
+		vals["lot"] = f"%{str(lot).strip()}%"
 	where = " and ".join(conds)
 
 	# The join that gives each roll its inventory row is the same key MM Inward uses to
@@ -581,6 +591,10 @@ def challan_for_print(challan):
 		"remarks": doc.remarks,
 		"total_box": doc.total_box,
 		"total_weight": doc.total_weight,
+		# Money on the paper that goes out with the goods — nil when nothing is priced,
+		# which the print uses to leave the rate columns off entirely rather than ruling
+		# two empty ones down a delivery challan.
+		"total_amount": doc.get("total_amount") or 0,
 		"docstatus": doc.docstatus,
 		"items": [
 			{
@@ -596,6 +610,8 @@ def challan_for_print(challan):
 				"box_weight": it.box_weight,
 				"net_weight": it.net_weight,
 				"weight": it.weight,
+				"rate": it.get("rate") or 0,
+				"amount": it.get("amount") or 0,
 				"r_box": it.r_box,
 				"r_bobbin": it.r_bobbin,
 			}
@@ -706,6 +722,32 @@ def order_colour_names(sales_order=None):
 
 
 @frappe.whitelist()
+def order_rates(sales_order=None):
+	"""What the order prices each colour at, per kg.
+
+	The challan takes its rate from here on save (MMSalesChallan._apply_rates); this is the
+	same figure read ahead of time so the picking screen can foot what is being dispatched
+	before it is submitted, rather than the operator sending goods and finding out the
+	value afterwards.
+	"""
+	if not sales_order:
+		return []
+	return [
+		{
+			"color_name": r.color_name,
+			"cut": r.cut,
+			"rate": float(r.sale_rate or 0),
+		}
+		for r in frappe.get_all(
+			"MM Sales Order Item",
+			filters={"parent": sales_order, "parenttype": "MM Sales Order"},
+			fields=["color_name", "cut", "sale_rate"],
+		)
+		if float(r.sale_rate or 0) > 0
+	]
+
+
+@frappe.whitelist()
 def orders_for_challan(party=None):
 	"""Orders still available to dispatch against, for the challan's order picker.
 
@@ -726,7 +768,13 @@ def orders_for_challan(party=None):
 		where so.party = %(party)s
 			and so.docstatus = 1
 			and ifnull(so.order_state, '') != 'Cancelled'
-		order by so.transaction_date desc, so.modified desc
+		-- FIFO: the order that came in first is filled first. This listed the NEWEST
+		-- order at the top, so the newest was the one picked by default and the oldest
+		-- sank down the list as more arrived — the queue ran backwards.
+		--
+		-- Tie-broken on `creation`, not `modified`: editing an old order must not shuffle
+		-- it to a different place in the queue.
+		order by so.transaction_date asc, so.creation asc
 		limit 200
 		""",
 		{"party": party},
@@ -1003,6 +1051,65 @@ def update_challan_weights(challan, lines):
 
 
 # ── Job In: what is still out with a worker ───────────────────────────────────────
+
+
+@frappe.whitelist()
+def job_out_options(party=None, search=None, limit=50):
+	"""Job Outs for the "Against Job Out" picker on Bobbin / Box tracking.
+
+	A plain Link on MM Sales Challan was wrong twice over. It offered EVERY sales challan —
+	the field is named Against Job Out and the list was full of MM-SC-… dispatch challans
+	that a bobbin movement can never be booked against — and it showed nothing but the
+	document id, so choosing between six of them meant opening each one.
+
+	One row per Job Out, carrying what the floor identifies a challan by: its challan
+	number, the party, and the colours and cuts on it. Colour and cut live on the child
+	table, which is why this cannot be a get_list and has to be its own endpoint.
+	"""
+	conds = ["c.docstatus = 1", "c.challan_type = 'Job Out'"]
+	vals = {}
+	if party:
+		conds.append("c.party = %(party)s")
+		vals["party"] = party
+	if search and str(search).strip():
+		# Searchable by every column shown, so what is read off the row can be typed back.
+		conds.append(
+			"(c.challan_no like %(q)s or c.name like %(q)s or pm.party_name like %(q)s"
+			" or exists (select 1 from `tabMM Sales Challan Item` ci"
+			"   where ci.parent = c.name and (ci.color_name like %(q)s or ci.cut like %(q)s)))"
+		)
+		vals["q"] = f"%{str(search).strip()}%"
+	vals["limit"] = frappe.utils.cint(limit) or 50
+	rows = frappe.db.sql(
+		f"""
+		select c.name, c.challan_no, c.transaction_date, c.party, c.total_weight,
+			pm.party_name,
+			(select group_concat(distinct ci.color_name order by ci.color_name separator ', ')
+				from `tabMM Sales Challan Item` ci where ci.parent = c.name) as colours,
+			(select group_concat(distinct ci.cut order by ci.cut separator ', ')
+				from `tabMM Sales Challan Item` ci where ci.parent = c.name and ifnull(ci.cut, '') != '') as cuts
+		from `tabMM Sales Challan` c
+		left join `tabMM Party Master` pm on pm.name = c.party
+		where {" and ".join(conds)}
+		order by c.transaction_date desc, c.modified desc
+		limit %(limit)s
+		""",
+		vals,
+		as_dict=True,
+	)
+	return [
+		{
+			"name": r.name,
+			"challan_no": r.challan_no or r.name,
+			"date": str(r.transaction_date) if r.transaction_date else None,
+			"party": r.party,
+			"party_name": r.party_name or r.party,
+			"colours": r.colours or "",
+			"cuts": r.cuts or "",
+			"total_weight": round(float(r.total_weight or 0), 3),
+		}
+		for r in rows
+	]
 
 
 @frappe.whitelist()

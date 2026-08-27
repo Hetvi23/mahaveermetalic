@@ -258,12 +258,16 @@ def recalculate_order_fulfilment(order: str):
 	the SO's own lock/validate rules are not re-triggered."""
 	if not order:
 		return
+	# Stock-only rows are surplus bought over and above what was sold: they come into
+	# stock and count against the PURCHASE order, but they never fulfil the sales order,
+	# so Inwards (Kg) / Required (Kg) must not see them.
 	inwarded = frappe.db.sql(
 		"""
 		select coalesce(sum(ii.weight), 0)
 		from `tabMM Inward Item` ii
 		join `tabMM Inward` i on i.name = ii.parent
 		where ii.customer_order = %s and i.docstatus = 1
+			and ifnull(ii.to_inventory, 0) = 0
 		""",
 		(order,),
 	)[0][0] or 0

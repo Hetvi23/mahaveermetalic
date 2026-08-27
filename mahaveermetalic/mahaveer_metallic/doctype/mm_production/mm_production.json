@@ -108,9 +108,9 @@
   },
   {
    "fieldname": "operator",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Operator",
-   "options": "MM Employee Master"
+   "description": "Whoever ran the machine, typed as it is said on the floor. Free text on purpose: the night shift is run by people who are not on the employee master, and a receipt that cannot name them names nobody."
   },
   {
    "fieldname": "shift",
@@ -291,7 +291,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-02 15:00:00.000000",
+ "modified": "2026-08-25 12:30:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Production",

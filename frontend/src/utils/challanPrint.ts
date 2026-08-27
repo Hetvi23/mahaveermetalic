@@ -24,6 +24,9 @@ export type ChallanItem = {
   weight?: number;
   r_box?: number;
   r_bobbin?: number;
+  /** Per kg, carried from the sales order line. Zero on an unpriced challan. */
+  rate?: number;
+  amount?: number;
 };
 
 export type ChallanBobbin = { bobbin?: string; qty?: number; quality?: string; weight?: number };
@@ -43,6 +46,8 @@ export type ChallanPrintData = {
   remarks?: string;
   total_box?: number;
   total_weight?: number;
+  /** Nil on an unpriced challan, which is what hides the value line entirely. */
+  total_amount?: number;
   /** Configured in MM Settings — omitted entirely when not set. */
   company_address?: string | null;
   challan_terms?: string | null;
@@ -58,6 +63,9 @@ const esc = (v: unknown) =>
 const num = (v: unknown, d = 3) =>
   Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
 const int = (v: unknown) => String(Math.round(Number(v || 0)));
+/** Rupees, two places — the challan is Indian paper and the rate is a price, not a weight. */
+const money = (v: unknown) =>
+  `\u20B9${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** The book's terms, used when MM Settings names none. Both languages, as printed. */
 const DEFAULT_TERMS = [
@@ -121,6 +129,19 @@ function copy(d: ChallanPrintData, label: string): string {
       </table>`
     : "";
 
+  // Money on the paper that leaves with the goods. Only when something is actually
+  // priced — an unpriced delivery challan must not gain a row of zeroes, and job
+  // challans carry no rate at all. One rate across every priced line is printed as that
+  // rate; a challan mixing rates just foots, because a single "rate" would be a lie.
+  const priced = (d.items ?? []).filter((it) => Number(it.rate || 0) > 0);
+  const rates = [...new Set(priced.map((it) => Number(it.rate || 0)))];
+  const amount = Number(d.total_amount || 0);
+  const valueLine = amount > 0
+    ? `<div class="val">${
+        rates.length === 1 ? `Rate: <b>${money(rates[0])}</b> / kg &nbsp;&nbsp; ` : ""
+      }Amount: <b>${money(amount)}</b></div>`
+    : "";
+
   const terms = (d.challan_terms || "").trim()
     ? (d.challan_terms as string).split(/\r?\n/).map((t) => t.trim()).filter(Boolean)
     : DEFAULT_TERMS;
@@ -163,6 +184,7 @@ function copy(d: ChallanPrintData, label: string): string {
     </table>
     ${bobbinBlock}
     <div class="ret">Return No. of Box: <b>${int(d.return_box)}</b> &nbsp; No. of Bobbin: <b>${int(d.return_bobbin)}</b></div>
+    ${valueLine}
     <ul class="terms">${terms.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
     <table class="sign"><tr><td>Receiver's Sign</td><td class="rt">Authorised Signature</td></tr></table>
   </section>`;
@@ -212,6 +234,9 @@ export function printChallan(d: ChallanPrintData) {
     .bob th { background: #eee; font-weight: 700; text-align: left; }
     .bob .rt { text-align: right; }
     .ret { margin-top: 1.2mm; font-size: 7.5pt; }
+    /* The value sits under the returns line, on its own, so it reads as the total of the
+       paper rather than another column of the packing grid. */
+    .val { margin-top: 0.6mm; font-size: 8pt; text-align: right; }
     .terms { margin: 1mm 0 0; padding-left: 4mm; font-size: 6.5pt; line-height: 1.35; }
     .sign { margin-top: auto; font-size: 7.5pt; padding-top: 4mm; }
     .sign .rt { text-align: right; }

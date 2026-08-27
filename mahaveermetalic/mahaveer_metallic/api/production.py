@@ -366,13 +366,17 @@ def companies_for_item(color=None, show_all=0, pin=None):
 
 	By default only parties that have actually ORDERED this colour are offered (one row
 	per company under each party — searchable by party, selectable by company). `show_all`
-	lists every party/company even without an order, and is gated by the Admin Override
-	PIN (a direct voucher with no order behind it)."""
+	lists every party/company even without an order — a direct voucher with no order
+	behind it.
+
+	`show_all` is NOT gated any more. It asked for the Admin Override PIN, which put a
+	prompt in front of the floor several times a shift to reveal a list of company names —
+	not a privileged thing to read. What is posted AGAINST a company is still guarded
+	where it belongs, on the voucher. `pin` is kept in the signature so an older cached
+	client that still sends one is answered rather than erroring on an unexpected kwarg.
+	"""
 	show_all = frappe.utils.cint(show_all)
 	if show_all:
-		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import require_admin_pin
-
-		require_admin_pin(pin, action=_("show parties without an order"))
 		rows = frappe.db.sql(
 			"""
 			select p.name as party, p.party_name, c.company_name
@@ -432,7 +436,13 @@ def orders_for_production(party=None, color=None):
 		from `tabMM Sales Order` so
 		join `tabMM Sales Order Item` soi on soi.parent = so.name
 		where {" and ".join(conds)}
-		order by so.transaction_date desc, so.modified desc
+		-- FIFO: the order that came in first is filled first. This listed the NEWEST
+		-- order at the top, so the newest was the one picked by default and the oldest
+		-- sank down the list as more arrived — the queue ran backwards.
+		--
+		-- Tie-broken on `creation`, not `modified`: editing an old order must not shuffle
+		-- it to a different place in the queue.
+		order by so.transaction_date asc, so.creation asc
 		limit 200
 		""",
 		vals,

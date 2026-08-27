@@ -9,6 +9,7 @@
     "challan_number",
     "supplier",
     "customer_order",
+    "to_inventory",
     "lot",
     "lot_number",
     "item_type",
@@ -47,6 +48,14 @@
       "in_list_view": 1,
       "label": "Customer Order",
       "options": "MM Sales Order"
+    },
+    {
+      "fieldname": "to_inventory",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Stock Only",
+      "default": "0",
+      "description": "This roll comes into stock but does NOT count towards the customer order's fulfilment — surplus bought over and above what was sold. It still counts against the purchase order."
     },
     {
       "fieldname": "lot",
@@ -131,7 +140,7 @@
   "index_web_pages_for_search": 0,
   "istable": 1,
   "links": [],
-  "modified": "2026-08-17 10:00:00.000000",
+  "modified": "2026-08-25 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Inward Item",

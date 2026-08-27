@@ -18,6 +18,28 @@ export type SOOption = {
   required_box?: number;
   colours?: string[];
   cuts?: string[];
+  /** The purchase orders raised for this sale — what was bought, from whom, and how much
+   *  of it has arrived. 900 kg sold against 1,200 kg bought means 300 kg comes in that no
+   *  sales order is waiting for, so the Inward grid reads the supplier and the outstanding
+   *  purchase off here. */
+  purchase?: POLine[];
+  purchase_remaining?: number;
+  /** 1 when the sale itself is settled and only the purchase surplus is still to come —
+   *  the order is pickable, but everything received on it is Stock Only. */
+  stock_only?: number;
+};
+
+/** One MM Purchase Order line behind a sales order. */
+export type POLine = {
+  purchase_order: string;
+  supplier?: string;
+  supplier_name?: string;
+  color?: string;
+  cut?: string;
+  qty_kg?: number;
+  qty_box?: number;
+  received_kg?: number;
+  remaining_kg?: number;
 };
 
 type Props = {

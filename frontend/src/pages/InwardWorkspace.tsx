@@ -46,8 +46,13 @@ type ChallanVerify = {
 };
 
 /** One weighed roll sitting behind an entry row. Roll numbers may repeat — the floor's
- *  own numbering is not unique, and two rolls can legitimately carry the same one. */
-type RollLine = { roll: string; qty: number | ""; weight: number | "" };
+ *  own numbering is not unique, and two rolls can legitimately carry the same one.
+ *
+ *  `stock` marks a roll as SURPLUS: it comes into stock and counts against the purchase
+ *  order, but it does not fulfil the sales order. 900 kg sold against 1,200 kg bought
+ *  settles the sale at 910 and still leaves 290 kg to arrive — that 290 is ticked Stock
+ *  and would otherwise be refused as an over-receipt on a 900 kg order. */
+type RollLine = { roll: string; qty: number | ""; weight: number | ""; stock?: boolean };
 
 /**
  * One line of the entry grid = one LOT.
@@ -67,7 +72,7 @@ type Row = {
   lines: RollLine[];
 };
 
-const blankLine = (): RollLine => ({ roll: "", qty: "", weight: "" });
+const blankLine = (): RollLine => ({ roll: "", qty: "", weight: "", stock: false });
 
 const blankRow = (): Row => ({
   job_work: false,
@@ -314,11 +319,28 @@ export default function InwardWorkspace() {
   /** Order → colour. The order knows its colours, so picking one fills the row instead of
    *  making the operator re-pick what the order already says. An existing colour wins —
    *  a colour read off a challan is what actually arrived. */
+  /** The purchase order behind a sale, for a colour when one is known.
+   *  With a single PO the colour does not have to match — one purchase, one answer. */
+  function poFor(opt: SOOption | undefined, colour: string) {
+    const pos = opt?.purchase ?? [];
+    if (pos.length === 0) return undefined;
+    const c = colour.trim().toLowerCase();
+    if (c) {
+      const hit = pos.find((p) => (p.color || "").trim().toLowerCase() === c);
+      if (hit) return hit;
+    }
+    return pos.length === 1 ? pos[0] : undefined;
+  }
+
   function pickOrder(i: number, sales_order: string) {
     const opt = soByName.get(sales_order);
     const fromMatch = orders.find((o) => o.sales_order === sales_order);
     const colour = opt?.colours?.[0] || fromMatch?.color_name || "";
     const cut = opt?.cuts?.[0] || fromMatch?.cut || "";
+    // The order knows who it was bought from — the operator was reading the PO to find
+    // out and typing the name back in. Only fills a BLANK supplier: a name already on the
+    // row is what actually delivered, and outranks the plan.
+    const po = poFor(opt, colour);
     // …and what the order is still waiting for. The operator was reading the order to find
     // out and typing it back in; the order already knows. Only an UNTOUCHED first line is
     // filled — anything already weighed is what actually arrived and outranks the plan.
@@ -334,6 +356,7 @@ export default function InwardWorkspace() {
           customer_order: sales_order,
           color: r.color || colour,
           cut: r.cut || cut,
+          supplier: r.supplier || po?.supplier || "",
           lines: untouched ? [{ ...first, qty, weight }] : r.lines,
         };
       }),
@@ -411,7 +434,7 @@ export default function InwardWorkspace() {
     setCartLines(
       existing.length
         ? existing.map((l) => ({ ...l, qty: l.qty === "" ? 1 : l.qty }))
-        : [{ roll: "", qty: 1, weight: "" }],
+        : [{ roll: "", qty: 1, weight: "", stock: false }],
     );
     setCartRow(i);
     setCartFocus((n) => n + 1);
@@ -425,7 +448,10 @@ export default function InwardWorkspace() {
   }, [cartFocus, cartRow]);
 
   function addCartLine() {
-    setCartLines((p) => [...p, { roll: "", qty: 1, weight: "" }]);
+    // The new roll inherits the last one's Stock tick: a surplus delivery is surplus for
+    // all of it, and re-ticking every line of a twenty-roll lot is the sort of thing that
+    // gets half-done.
+    setCartLines((p) => [...p, { roll: "", qty: 1, weight: "", stock: p[p.length - 1]?.stock ?? false }]);
     setCartFocus((n) => n + 1);
   }
 
@@ -433,9 +459,29 @@ export default function InwardWorkspace() {
     () => ({
       qty: cartLines.reduce((s, l) => s + (Number(l.qty) || 0), 0),
       weight: cartLines.reduce((s, l) => s + (Number(l.weight) || 0), 0),
+      // Split the same way the server splits it: what fulfils the order, and what is
+      // surplus bought against the purchase order.
+      order: cartLines.reduce((s, l) => s + (l.stock ? 0 : Number(l.weight) || 0), 0),
+      stock: cartLines.reduce((s, l) => s + (l.stock ? Number(l.weight) || 0 : 0), 0),
     }),
     [cartLines],
   );
+
+  /** What the row's order and its purchase order are still waiting for, so the operator
+   *  ticking Stock can see WHY — the sale is settled, the purchase is not. */
+  const cartBalance = useMemo(() => {
+    if (cartRow === null) return null;
+    const r = rows[cartRow];
+    const opt = soByName.get(r.customer_order);
+    if (!opt) return null;
+    const po = poFor(opt, r.color);
+    return {
+      order: Number(opt.required_weight ?? 0),
+      purchase: po ? Number(po.remaining_kg ?? 0) : Number(opt.purchase_remaining ?? 0),
+      hasPO: !!po || (opt.purchase?.length ?? 0) > 0,
+      settled: !!opt.stock_only,
+    };
+  }, [cartRow, rows, soByName]);
 
   /** The cart IS the row's roll list — saving replaces it, so reopening shows what is
    *  there and corrections are made in place rather than by adding duplicates. */
@@ -446,6 +492,7 @@ export default function InwardWorkspace() {
       // A weighed roll with no count typed is one roll — that is what a roll is.
       qty: l.qty === "" ? (Number(l.weight) > 0 ? 1 : "") : l.qty,
       weight: l.weight,
+      stock: !!l.stock,
     }));
     setRow(cartRow, { lines: kept.length ? kept : [blankLine()] });
     setCartRow(null);
@@ -544,6 +591,10 @@ export default function InwardWorkspace() {
     if (!location.trim()) return setError("Choose a location (roll stock is tracked per location).");
     if (closedChallan) return setError(`Challan ${closedChallan} is already fully received — no further inward allowed.`);
     for (const { r, no } of filled) {
+      // The challan is what a delivery is identified by afterwards — what the supplier is
+      // paid against and what the closed / over-receipt checks key on. Refused here as
+      // well as server-side so it is caught before the round trip.
+      if (!r.challan_no.trim()) return setError(`Row ${no} needs a challan number.`);
       if (!r.color.trim()) return setError(`Row ${no} needs a colour.`);
       const lines = rollsOf(r);
       if (lines.length === 0) return setError(`Row ${no} needs a roll — enter a weight or qty.`);
@@ -559,6 +610,8 @@ export default function InwardWorkspace() {
         rollsOf(r).map((l) => ({
           lot_group: no,
           job_work: r.job_work ? 1 : 0,
+          // Surplus: into stock, counted against the purchase order, fulfilling nothing.
+          to_inventory: l.stock ? 1 : 0,
           supplier: r.supplier || null,
           roll_name: l.roll,
           color_name: r.color,
@@ -776,6 +829,40 @@ export default function InwardWorkspace() {
                         )}
                       </div>
                     </td>
+                    <td className="mm-iw-c-order" data-label="Customer Order">
+                      {/* Every open order, because the order is now keyed BEFORE the colour
+                          and there is nothing to narrow by yet. Picking one fills the
+                          colour and the supplier it was bought from. Once a colour is on
+                          the row the "Orders: row colour" toggle narrows to it. */}
+                      <SearchSelect
+                        compact
+                        value={r.customer_order}
+                        placeholder="Select Order"
+                        emptyText="No open orders"
+                        options={colourOnly(
+                          soOptions,
+                          r.color,
+                          (o, c) => (o.colours || []).some((x) => x.toLowerCase() === c),
+                          (o, group) => ({
+                            value: o.sales_order,
+                            label: o.sales_order,
+                            meta: [
+                              o.party_name || o.party,
+                              (o.colours || []).join(", "),
+                              // The purchase, when it is the reason this order is still
+                              // listed — 900 sold, 1,200 bought, 290 kg still on the road.
+                              o.stock_only
+                                ? `stock only · ${(o.purchase_remaining || 0).toLocaleString()} kg on PO`
+                                : null,
+                            ].filter(Boolean).join(" · "),
+                            group,
+                          }),
+                          { hit: `Ordering ${r.color}`, rest: "Other open orders" },
+                          seeAllOrders,
+                        )}
+                        onChange={(v) => pickOrder(i, v)}
+                      />
+                    </td>
                     <td className="mm-iw-c-color" data-label="Color">
                       {/* Always editable. Picking an order still FILLS the colour in, but
                           it no longer owns it: what arrived is what arrived, and a colour
@@ -818,28 +905,6 @@ export default function InwardWorkspace() {
                         onChange={(v) => setRow(i, { supplier: v })}
                       />
                     </td>
-                    <td className="mm-iw-c-order" data-label="Customer Order">
-                      <SearchSelect
-                        compact
-                        value={r.customer_order}
-                        placeholder="Select Order"
-                        emptyText="No open orders"
-                        options={colourOnly(
-                          soOptions,
-                          r.color,
-                          (o, c) => (o.colours || []).some((x) => x.toLowerCase() === c),
-                          (o, group) => ({
-                            value: o.sales_order,
-                            label: o.sales_order,
-                            meta: [o.party_name || o.party, (o.colours || []).join(", ")].filter(Boolean).join(" · "),
-                            group,
-                          }),
-                          { hit: `Ordering ${r.color}`, rest: "Other open orders" },
-                          seeAllOrders,
-                        )}
-                        onChange={(v) => pickOrder(i, v)}
-                      />
-                    </td>
                     <td className="mm-iw-c-lot" data-label="Lot No">
                       {/* Assigned per row on post (reused when a challan is entered again) —
                           shown so the operator can see which lot this line becomes. The
@@ -871,6 +936,15 @@ export default function InwardWorkspace() {
                     </td>
                     <td className="mm-iw-c-qty" data-label="Qty | Weight (Kg)">
                       <div className="mm-iw-qtypair">
+                        {/* Surplus on this lot, said on the row: a Stock tick lives in the
+                            cart and would otherwise be invisible from the grid, while it
+                            changes what the weight counts towards. */}
+                        {r.lines.some((l) => l.stock && lineFilled(l)) && (
+                          <span className="mm-iw-stockdot"
+                            title={`${r.lines.filter((l) => l.stock && lineFilled(l)).reduce((n, l) => n + (Number(l.weight) || 0), 0).toFixed(2)} kg on this lot is stock only — against the purchase order, not the customer order`}>
+                            STOCK
+                          </span>
+                        )}
                         {single ? (
                           <>
                             <input className="mm-input mm-input-compact" type="number" value={r.lines[0].qty} placeholder="Qty"
@@ -975,6 +1049,33 @@ export default function InwardWorkspace() {
                 Enter adds the next roll · {rows[cartRow].color || "no colour picked yet"}
                 {rows[cartRow].challan_no.trim() ? ` · challan ${rows[cartRow].challan_no.trim()}` : ""}
               </p>
+
+              {/* What each ceiling is still waiting for. The sale and the purchase are two
+                  different numbers — 900 sold against 1,200 bought settles the sale early
+                  and still leaves material on the road — and Stock is how the rest gets in
+                  without being refused as an over-receipt on the order. */}
+              {cartBalance?.hasPO && (
+                <div className="mm-iw-bal">
+                  <span className={cartBalance.order > 0 ? "" : "mm-iw-bal-done"}>
+                    Order needs
+                    <strong>
+                      {cartBalance.order > 0 ? `${cartBalance.order.toLocaleString()} kg` : "nothing — settled"}
+                    </strong>
+                  </span>
+                  <span className={cartBalance.purchase > 0 ? "mm-iw-bal-po" : "mm-iw-bal-done"}>
+                    Purchase still due
+                    <strong>
+                      {cartBalance.purchase > 0 ? `${cartBalance.purchase.toLocaleString()} kg` : "nothing"}
+                    </strong>
+                  </span>
+                  {cartBalance.settled && cartBalance.purchase > 0 && (
+                    <span className="mm-iw-bal-note">
+                      The sale is covered — tick <strong>Stock</strong> on what is left so it comes
+                      into inventory instead of over-receiving the order.
+                    </span>
+                  )}
+                </div>
+              )}
               {cartLines.map((l, i) => (
                 <div className="mm-iw-cart-line" key={i}>
                   <span className="mm-iw-cart-no">{i + 1}</span>
@@ -993,6 +1094,17 @@ export default function InwardWorkspace() {
                       if (e.metaKey || e.ctrlKey) applyCart();
                       else addCartLine();
                     }} />
+                  {/* Ticked, this roll comes into stock and counts against the PURCHASE
+                      order — it fulfils nothing on the sales order and is not measured
+                      against it. Manual: nothing is pre-ticked, because only the person
+                      unloading knows which rolls are the surplus. */}
+                  <label className={`mm-iw-cart-stock${l.stock ? " is-on" : ""}`}
+                    title="Stock only — into inventory against the purchase order, not against the customer order">
+                    <input type="checkbox" checked={!!l.stock}
+                      aria-label={`Stock only, line ${i + 1}`}
+                      onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, stock: e.target.checked } : x)))} />
+                    Stock
+                  </label>
                   {cartLines.length > 1 ? (
                     <button type="button" className="mm-icon-btn" title="Remove roll" aria-label={`Remove roll line ${i + 1}`}
                       onClick={() => setCartLines((p) => p.filter((_, j) => j !== i))}>
@@ -1011,6 +1123,13 @@ export default function InwardWorkspace() {
                 <strong>{cartLines.filter(lineFilled).length}</strong> roll(s) ·
                 qty <strong>{cartTotals.qty.toLocaleString()}</strong> ·
                 <strong> {cartTotals.weight.toFixed(2)}</strong> kg on this lot
+                {cartTotals.stock > 0 && (
+                  <>
+                    {" — "}
+                    <strong>{cartTotals.order.toFixed(2)}</strong> kg to the order ·
+                    <strong> {cartTotals.stock.toFixed(2)}</strong> kg stock only
+                  </>
+                )}
               </p>
               <div className="mm-ow-po-actions">
                 <button type="button" className="mm-btn-primary" onClick={applyCart}>Save rolls</button>

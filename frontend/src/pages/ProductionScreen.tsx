@@ -302,15 +302,14 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [order, setOrder] = useState<string>(program.customer_order || "");
   const [size, setSize] = useState<string>(program.cut || "");
   const [showAll, setShowAll] = useState(false);
-  const [allPin, setAllPin] = useState("");
-  const [allPinOpen, setAllPinOpen] = useState(false);
 
-  // Party/company list: by default only parties who ORDERED this colour. "See all"
-  // (Admin PIN) opens every party for a direct voucher with no order behind it.
+  // Party/company list: by default only parties who ORDERED this colour. "See all" opens
+  // every party, for a direct voucher with no order behind it. No PIN — reading a list of
+  // company names is not a privileged act, and the gate never checked the PIN it asked for.
   const partiesCall = useFrappeGetCall<{ message: { party: string; party_name: string; company: string }[] }>(
     `${API}.companies_for_item`,
-    showAll ? { show_all: 1, pin: allPin } : { color: program.shade || undefined },
-    showAll ? `prod-parties-all-${allPin ? "y" : "n"}` : `prod-parties-${program.shade || ""}`,
+    showAll ? { show_all: 1 } : { color: program.shade || undefined },
+    showAll ? "prod-parties-all" : `prod-parties-${program.shade || ""}`,
   );
   const partyRows = partiesCall.data?.message ?? [];
 
@@ -487,19 +486,18 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             <label className="mm-field">
               <span className="mm-field-label">
                 Party / Company
+                {/* One click, no PIN. The gate asked for an Admin PIN it never checked —
+                    any non-empty string opened it — so it cost the floor a step and
+                    secured nothing. Seeing the full company list is not a privileged act;
+                    what is posted against the company still is. */}
                 <button type="button" className="mm-mini mm-pv-seeall"
-                  onClick={() => { if (showAll) { setShowAll(false); setAllPin(""); } else setAllPinOpen(true); }}>
+                  title={showAll
+                    ? "Showing every company — click for only those with an order"
+                    : "Showing only companies with an order — click to see every company"}
+                  onClick={() => setShowAll((v) => !v)}>
                   {showAll ? "ordered only" : "See all"}
                 </button>
               </span>
-              {allPinOpen && !showAll && (
-                <span style={{ display: "flex", gap: "0.35rem", marginBottom: "0.35rem" }}>
-                  <input className="mm-input mm-input-compact" type="password" placeholder="Admin PIN" value={allPin}
-                    onChange={(e) => setAllPin(e.target.value)} />
-                  <button type="button" className="mm-mini mm-mini-ok" disabled={!allPin.trim()}
-                    onClick={() => { setShowAll(true); setAllPinOpen(false); }}>Show</button>
-                </span>
-              )}
               <SearchSelect
                 value={company}
                 placeholder={partiesCall.isLoading ? "Loading…" : "— select company —"}
@@ -555,11 +553,18 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Operator</span>
-              <SearchSelect
-                value={operator}
-                placeholder="— none —"
-                options={(employees.data ?? []).map((e) => ({ value: e.name, label: e.employee_name || e.name }))}
-                onChange={setOperator} />
+              {/* Typed, not picked. The people who actually run the machines at night are
+                  not all on the employee master, and a picker that cannot name them left
+                  the field on "— none —" on most vouchers. The known names are still
+                  offered as a datalist, so the common case is one keystroke. */}
+              <input className="mm-input" value={operator} placeholder="Who ran it"
+                list="mm-operator-names" autoComplete="off"
+                onChange={(e) => setOperator(e.target.value)} />
+              <datalist id="mm-operator-names">
+                {(employees.data ?? []).map((e) => (
+                  <option key={e.name} value={e.employee_name || e.name} />
+                ))}
+              </datalist>
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Shift</span>

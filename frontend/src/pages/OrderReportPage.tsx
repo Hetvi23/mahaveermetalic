@@ -33,7 +33,12 @@ type Report = {
 type LogLine = { date?: string | null; weight?: number; qty_box?: number };
 type InwardLine = LogLine & { doc: string; challan_number?: string; lot_number?: string; color_name?: string; is_gr?: boolean };
 type ProdLine = { name: string; date?: string | null; machine_no?: string; batch_no?: string; shade?: string; cut?: string; box_qty?: number; net_weight?: number };
-type SaleLine = LogLine & { doc: string; challan_no?: string; color_name?: string; cut?: string };
+type SaleLine = LogLine & {
+  doc: string; challan_no?: string; color_name?: string; cut?: string;
+  /** Who it went to. A dispatch challan can be raised to a party other than the one that
+   *  placed the order (a site, a sister company), so the log has to name it. */
+  party?: string; party_name?: string;
+};
 type Summary = {
   order: string; date?: string | null; delivery_date?: string | null;
   party_name?: string; company?: string; approval: string; status: string; completion_mode?: string | null;
@@ -365,14 +370,24 @@ function OrderSummaryModal({ order, onClose }: { order: string; onClose: () => v
                 <Log title="SALES" count={d.sales.length}
                   foot={<>
                     <span>TOTAL{d.productions.length > 0 ? ` · from ${d.productions.length} production${d.productions.length === 1 ? "" : "s"}` : ""}</span>
-                    <span><strong>{kg(t.dispatched)}</strong> kg</span>
+                    <span>
+                      {/* Boxes as well as kg, so the column totals what its rows show. */}
+                      <strong>{d.sales.reduce((n, r) => n + Number(r.qty_box || 0), 0).toLocaleString()}</strong> box
+                      {" · "}<strong>{kg(t.dispatched)}</strong> kg
+                    </span>
                   </>}>
+                  {/* Challan no, who it went to, boxes and kg — what a dispatch line is
+                      asked about. It used to lead with the date and name the colour, which
+                      the order already states at the top, while the challan number the
+                      customer quotes was a grey aside and the box count was missing
+                      entirely. The date and colour move to the row's tooltip. */}
                   {d.sales.map((r, i) => (
-                    <div className="mm-osum-row" key={`${r.doc}-${i}`} title={r.doc}>
-                      <span className="mm-osum-when">
-                        {r.challan_no ? <span className="mm-osum-ref">({r.challan_no})</span> : null} {r.date || "—"}
-                      </span>
-                      <span className="mm-osum-what">{r.color_name || ""}</span>
+                    <div className="mm-osum-row mm-osum-row-sale" key={`${r.doc}-${i}`}
+                      title={[r.doc, r.date || null, r.color_name || null, r.cut ? `cut ${r.cut}` : null]
+                        .filter(Boolean).join(" · ")}>
+                      <span className="mm-osum-chno">{r.challan_no || r.doc}</span>
+                      <span className="mm-osum-what">{r.party_name || r.party || "—"}</span>
+                      <span className="mm-osum-box">{Number(r.qty_box || 0).toLocaleString()} box</span>
                       <span className="mm-osum-kg">{kg(r.weight)}kg</span>
                     </div>
                   ))}

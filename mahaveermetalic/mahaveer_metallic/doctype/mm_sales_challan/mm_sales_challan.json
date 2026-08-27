@@ -25,6 +25,7 @@
   "section_totals",
   "total_box",
   "total_weight",
+  "total_amount",
   "remarks",
   "job_work_flag",
   "source_production",
@@ -142,6 +143,14 @@
    "read_only": 1
   },
   {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount",
+   "precision": "2",
+   "read_only": 1,
+   "description": "Sum of the lines' rate x weight. Zero when no line carries a rate."
+  },
+  {
    "fieldname": "remarks",
    "fieldtype": "Small Text",
    "label": "Remarks"
@@ -181,7 +190,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-20 00:00:00.000000",
+ "modified": "2026-08-26 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Challan",

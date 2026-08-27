@@ -9,6 +9,8 @@
   "cut",
   "qty_box",
   "weight",
+  "rate",
+  "amount",
   "sales_order",
   "barcode",
   "gross_weight",
@@ -53,6 +55,23 @@
    "label": "Weight (Kg)",
    "precision": 3,
    "default": "0"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Rate",
+   "precision": "2",
+   "in_list_view": 1,
+   "description": "Per kg. Taken from the sales order line for this colour and cut when left blank; type over it to bill this dispatch differently."
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "precision": "2",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Rate x weight (kg). Worked out on save."
   },
   {
    "fieldname": "sales_order",
@@ -142,7 +161,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-08-02 17:00:00.000000",
+ "modified": "2026-08-26 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Challan Item",

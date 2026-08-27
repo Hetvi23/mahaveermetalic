@@ -276,6 +276,11 @@ def available_rolls(branch=None, location=None, finished_only=0):
 
 	# --- Cut: finished cuttings (patties), with however many patti they have left ---
 	cut_filters = {"docstatus": 1, "status": "Completed", "closed": 0}
+	# The LOT is a patty's source — the material batch it was cut from, and what traces it
+	# back to the challan it arrived on. Carried on every row so the shelf can show patty
+	# source-wise instead of merging every lot of a colour into one number. Resolved in one
+	# query rather than per cutting: this runs on a twenty-second poll.
+	lot_meta = {}
 	if branch:
 		cut_filters["branch"] = branch
 	if location:
@@ -318,6 +323,21 @@ def available_rolls(branch=None, location=None, finished_only=0):
 			"per_patty": per_patty,
 			"lot": c.lot,
 		})
+		if c.lot:
+			lot_meta[c.lot] = None
+	if lot_meta:
+		for lt in frappe.get_all(
+			"MM Lot",
+			filters={"name": ["in", list(lot_meta)]},
+			fields=["name", "lot_id", "challan_number"],
+			limit_page_length=0,
+		):
+			lot_meta[lt.name] = lt
+		for r in rows:
+			lt = lot_meta.get(r.get("lot"))
+			if lt:
+				r["lot_id"] = lt.lot_id
+				r["lot_challan"] = lt.challan_number
 
 	# --- In Inventory: rolls physically in stock (MM Roll Inventory) — the same balances the
 	# Inventory screen shows, allocated to an order or not. Skipped for finished_only (that's the
@@ -640,7 +660,11 @@ def order_options(party=None, customer_order=None, cut=None, color=None):
 			and ifnull(so.completed, 0) = 0
 		order by color_cut_match desc, color_match desc,
 			case when so.party = %(party)s then 0 else 1 end,
-			so.delivery_date asc, so.modified desc
+			-- Relevance first (an order wanting this colour at this cut is the answer),
+			-- then due date, then FIFO. The last tiebreak was `modified desc`, which put
+			-- whichever order someone last touched at the top of an otherwise equal set —
+			-- editing an order jumped its queue position for no reason.
+			so.delivery_date asc, so.transaction_date asc, so.creation asc
 		limit 200
 		""",
 		vals,

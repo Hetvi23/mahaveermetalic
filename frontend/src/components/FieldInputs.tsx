@@ -1,7 +1,60 @@
 import type { FieldSchema } from "@/config/registry";
 import type { ReactNode } from "react";
+import { useFrappeGetCall } from "frappe-react-sdk";
 import LinkField from "./LinkField";
 import SearchSelect from "./SearchSelect";
+
+type JobOutOption = {
+	name: string; challan_no: string; date?: string | null;
+	party?: string; party_name?: string; colours?: string; cuts?: string; total_weight?: number;
+};
+
+/**
+ * "Against Job Out" — a Job Out is chosen by its challan number, the party it went to and
+ * what is on it, not by its document id.
+ *
+ * Its own widget rather than the generic Link because a plain get_list on MM Sales Challan
+ * cannot answer either half of the problem: it offers every dispatch challan (the field
+ * only ever means a Job Out), and colour and cut live on the challan's CHILD table, so
+ * they are not fetchable as columns of the parent.
+ */
+function JobOutField({ field, value, onChange, disabled, compact, party }: {
+	field: FieldSchema; value: string; onChange: (v: string) => void;
+	disabled?: boolean; compact?: boolean; party?: string;
+}) {
+	const { data } = useFrappeGetCall<{ message: JobOutOption[] }>(
+		"mahaveermetalic.mahaveer_metallic.api.challan.job_out_options",
+		{ party: party || undefined },
+		`job-out-opts-${party || "all"}`,
+	);
+	const rows = data?.message ?? [];
+	const control = (
+		<SearchSelect
+			compact={compact}
+			value={value}
+			disabled={disabled}
+			placeholder="Select job out…"
+			emptyText={party ? "No job out for this party" : "No job out challans"}
+			options={rows.map((r) => ({
+				value: r.name,
+				// The challan number leads — that is the number written on the paper.
+				label: r.challan_no,
+				meta: [r.party_name, r.colours, r.cuts ? `cut ${r.cuts}` : null, r.date]
+					.filter(Boolean)
+					.join(" · "),
+			}))}
+			onChange={onChange}
+		/>
+	);
+	return compact ? (
+		<div className="mm-field-compact">{control}</div>
+	) : (
+		<label className="mm-field">
+			<span className="mm-field-label">{field.label}{field.reqd ? " *" : ""}</span>
+			{control}
+		</label>
+	);
+}
 
 type Props = {
 	field: FieldSchema;
@@ -94,6 +147,19 @@ export function FieldInput({ field, value, onChange, disabled, compact, record }
 				noClear={field.reqd}
 				placeholder="—"
 			/>,
+		);
+	}
+
+	if (field.fieldname === "against_job_out") {
+		return (
+			<JobOutField
+				field={field}
+				value={value == null ? "" : String(value)}
+				onChange={(v) => onChange(v)}
+				disabled={ro}
+				compact={compact}
+				party={record?.party == null ? undefined : String(record.party)}
+			/>
 		);
 	}
 

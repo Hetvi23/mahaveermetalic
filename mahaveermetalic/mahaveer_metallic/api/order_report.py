@@ -240,6 +240,7 @@ def order_summary(order):
 		"""
 		select i.name as doc, i.posting_date as date, i.challan_number, i.is_gr,
 			ii.lot_number, ii.color_name, ii.roll_name,
+			ifnull(ii.to_inventory, 0) as to_inventory,
 			coalesce(ii.weight, 0) as weight, coalesce(ii.qty_box, 0) as qty_box
 		from `tabMM Inward Item` ii
 		join `tabMM Inward` i on i.name = ii.parent
@@ -263,14 +264,17 @@ def order_summary(order):
 	sales = frappe.db.sql(
 		"""
 		select c.name as doc, c.challan_no, c.transaction_date as date, c.challan_type,
+			c.party, pm.party_name,
 			ci.color_name, ci.cut,
 			coalesce(sum(ci.weight), 0) as weight, coalesce(sum(ci.qty_box), 0) as qty_box
 		from `tabMM Sales Challan Item` ci
 		join `tabMM Sales Challan` c on c.name = ci.parent
+		left join `tabMM Party Master` pm on pm.name = c.party
 		where c.docstatus = 1
 			and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
 			and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %(o)s
-		group by c.name, c.challan_no, c.transaction_date, c.challan_type, ci.color_name, ci.cut
+		group by c.name, c.challan_no, c.transaction_date, c.challan_type, c.party, pm.party_name,
+			ci.color_name, ci.cut
 		order by c.transaction_date asc, c.creation asc
 		""",
 		{"o": order},
@@ -278,7 +282,12 @@ def order_summary(order):
 	)
 
 	ordered = float(so.ordered_weight or 0)
-	in_total = round(sum(float(r.weight or 0) for r in inwards), 3)
+	# Stock-only rows arrived under this order's PURCHASE order but fulfil nothing on the
+	# sales order, so the receipt total here means the same thing the order's own Inwards
+	# (Kg) does. They are still listed, and totalled separately, so the surplus is visible
+	# rather than missing.
+	in_total = round(sum(float(r.weight or 0) for r in inwards if not r.to_inventory), 3)
+	stock_only_total = round(sum(float(r.weight or 0) for r in inwards if r.to_inventory), 3)
 	prod_total = round(sum(float(r.net_weight or 0) for r in productions), 3)
 	out_total = order_dispatched_weight(order)
 	tol = get_inward_match_tolerance()
@@ -298,7 +307,13 @@ def order_summary(order):
 			for it in items
 		],
 		"inwards": [
-			{**r, "date": str(r.date) if r.date else None, "is_gr": bool(r.is_gr)} for r in inwards
+			{
+				**r,
+				"date": str(r.date) if r.date else None,
+				"is_gr": bool(r.is_gr),
+				"to_inventory": bool(r.to_inventory),
+			}
+			for r in inwards
 		],
 		"productions": [
 			{**r, "date": str(r.date) if r.date else None} for r in productions
@@ -307,13 +322,17 @@ def order_summary(order):
 		"totals": {
 			"ordered": round(ordered, 3),
 			"inwarded": in_total,
+			# Surplus received against the purchase order, over and above what was sold.
+			"stock_only": stock_only_total,
 			"produced": prod_total,
 			"dispatched": out_total,
 			# What the customer is still owed — the figure the status is decided on.
 			"remaining": round(max(0.0, ordered - out_total), 3),
 			# What has arrived but not yet left. Different question, and the one the floor
 			# asks when deciding whether it can raise another challan today.
-			"in_hand": round(in_total - out_total, 3),
+			# Physically here and not yet gone — surplus included, because it is in hand
+			# whether or not it belongs to the order's fulfilment.
+			"in_hand": round(in_total + stock_only_total - out_total, 3),
 			"tolerance_percent": tol,
 			# Below this, the order counts as delivered in full.
 			"complete_at": round(ordered * (1 - tol / 100.0), 3),

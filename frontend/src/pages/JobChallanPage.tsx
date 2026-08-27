@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
   ArrowDownFromLine, ArrowRight, ArrowUpFromLine, Check, Disc3, Package, Plus, Search, Trash2, X,
@@ -70,6 +71,10 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   const [fDate, setFDate] = useState("");
   const [fItem, setFItem] = useState("");
   const [q, setQ] = useState("");
+  // Roll and lot get their own boxes on Job Out. The catch-all search matches a term
+  // against every column, so it can find "roll 3" or "lot 25" but never both at once.
+  const [fRoll, setFRoll] = useState("");
+  const [fLot, setFLot] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   // Job In picks a Job Out to answer, and records which one — see againstJobOut below.
@@ -93,9 +98,12 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
     `${API}.in_stock_rolls`,
     {
       item: fItem || undefined, challan_date: fDate || undefined, search: q.trim() || undefined,
+      roll: fRoll.trim() || undefined, lot: fLot.trim() || undefined,
       start: (page - 1) * pageSize, page_length: pageSize,
     },
-    outward ? `job-stock-${fItem}-${fDate}-${q.trim()}-${page}-${pageSize}` : null,
+    outward
+      ? `job-stock-${fItem}-${fDate}-${q.trim()}-${fRoll.trim()}-${fLot.trim()}-${page}-${pageSize}`
+      : null,
   );
   const stockRows = stockCall.data?.message?.rows ?? [];
 
@@ -282,7 +290,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
     }
   }
 
-  const filtered = !!(q.trim() || fItem || fDate);
+  const filtered = !!(q.trim() || fItem || fDate || fRoll.trim() || fLot.trim());
 
   return (
     <div className="mm-screen mm-page-enter">
@@ -430,11 +438,17 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
               <SearchSelect compact value={fItem} placeholder="All items"
                 options={(items.data ?? []).map((i) => ({ value: i.name, label: i.name }))}
                 onChange={(v) => { setFItem(v); setPage(1); }} />
+              <input className="mm-input mm-input-compact mm-job-rollfilter" placeholder="Roll no"
+                aria-label="Filter by roll number" value={fRoll}
+                onChange={(e) => { setFRoll(e.target.value); setPage(1); }} />
+              <input className="mm-input mm-input-compact mm-job-lotfilter" placeholder="Lot no"
+                aria-label="Filter by lot number" value={fLot}
+                onChange={(e) => { setFLot(e.target.value); setPage(1); }} />
               <input className="mm-input mm-input-compact mm-job-datefilter" type="date" value={fDate}
                 onChange={(e) => { setFDate(e.target.value); setPage(1); }} />
               {filtered && (
                 <button type="button" className="mm-mini"
-                  onClick={() => { setQ(""); setFItem(""); setFDate(""); setPage(1); }}>Clear</button>
+                  onClick={() => { setQ(""); setFItem(""); setFDate(""); setFRoll(""); setFLot(""); setPage(1); }}>Clear</button>
               )}
             </div>
 
@@ -748,39 +762,78 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   // No Job Out picked yet: the sheet is not open, the page shows the picker alone.
   if (!jobOut) return null;
 
-  return (
-    /* The same shell the Production voucher uses, because it is the same job: paperwork
-       across the top, the box form beside it while one is being keyed, and the box table
-       spanning the full sheet underneath. It was a half-width side panel, which is where
-       twelve fields and a twelve-column table were being asked to live. */
+  // What came back against what went out — the one question a job receipt asks, so it
+  // is answered at the top of the sheet rather than in a grey pill in the corner.
+  const balance = r3(sent - totals.net);
+  const pct = sent > 0 ? Math.min(100, (totals.net / sent) * 100) : 0;
+  const over = balance < -0.0005;
+  const settled = !over && Math.abs(balance) <= 0.0005 && totals.net > 0;
+
+  return createPortal(
+    /* The sheet is portalled to <body> on purpose. Rendered in place it lives inside the
+       page's sticky right column, and `position: sticky` opens a stacking context — which
+       put the picker's sticky table head (z-index 2, in the grid's context) ON TOP of the
+       whole overlay. At <body> the scrim's z-index is the only thing that decides. */
     <div className="mm-modal-scrim mm-scrim-right" onClick={() => { if (!adding) onClose(); }}>
-      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog"
+      <div className="mm-modal mm-sheet mm-ji" onClick={(e) => e.stopPropagation()} role="dialog"
         aria-label="Job In voucher">
-        <div className="mm-modal-head">
-          <span className="mm-modal-title">
-            Job In Voucher (Production) — {meta?.challan_no || jobOut}
+        <div className="mm-modal-head mm-ji-head">
+          <span className="mm-ji-mark" aria-hidden="true"><ArrowDownFromLine size={17} /></span>
+          <span className="mm-ji-headtext">
+            <span className="mm-modal-title">Job In Voucher</span>
+            {/* The challan this answers, its party and its colour — the three things the
+                floor identifies a receipt by, said once, up here, instead of scattered. */}
+            <span className="mm-ji-sub">
+              <span>against <strong>{meta?.challan_no || jobOut}</strong></span>
+              {(meta?.party_label || party) && <><i /><span>{meta?.party_label || party}</span></>}
+              {meta?.color_name && <><i /><span className="mm-colour-name">{meta.color_name}</span></>}
+              {meta?.transaction_date && <><i /><span>{meta.transaction_date}</span></>}
+            </span>
           </span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
 
-        <div className="mm-modal-body mm-pv-split">
-          <div className={`mm-pv-col-details${adding ? "" : " mm-pv-col-details-full"}`}>
-            <div className="mm-pv-top">
-              <label className="mm-field" style={{ flex: 1, maxWidth: 360 }}>
-                <span className="mm-field-label">Received against</span>
-                <input className="mm-input" readOnly
-                  value={`${meta?.challan_no || jobOut} · ${meta?.party_label || party || ""}`} />
-              </label>
-              <span className="mm-pill mm-pill-muted">sent {kg(sent)} kg</span>
+        <div className={`mm-ji-body${adding ? " mm-ji-body-split" : ""}`}>
+          {/* ── The reconciliation, at the top where it is read from ── */}
+          <div className="mm-ji-meter">
+            <div className="mm-ji-meter-stats">
+              <span className="mm-ji-stat">
+                <span className="mm-ji-stat-lab">Sent out</span>
+                <span className="mm-ji-stat-val">{kg(sent)} <em>kg</em></span>
+              </span>
+              <span className={`mm-ji-stat${totals.net > 0 ? " mm-ji-stat-live" : ""}`}>
+                <span className="mm-ji-stat-lab">Received here</span>
+                <span className="mm-ji-stat-val">{kg(totals.net)} <em>kg</em></span>
+              </span>
+              <span className={`mm-ji-stat${over ? " mm-ji-stat-over" : settled ? " mm-ji-stat-ok" : ""}`}>
+                <span className="mm-ji-stat-lab">{over ? "Over by" : "Still due"}</span>
+                <span className="mm-ji-stat-val">{kg(Math.abs(balance))} <em>kg</em></span>
+              </span>
+              <span className="mm-ji-stat">
+                <span className="mm-ji-stat-lab">Boxes</span>
+                <span className="mm-ji-stat-val">{totals.boxes}</span>
+              </span>
             </div>
+            <div className={`mm-ji-bar${over ? " mm-ji-bar-over" : settled ? " mm-ji-bar-ok" : ""}`}
+              role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}
+              aria-label="Received against sent">
+              <span style={{ width: `${pct}%` }} />
+            </div>
+          </div>
 
-            <div className="mm-pv-grid">
+          {/* ── Paperwork ── */}
+          <section className="mm-ji-panel mm-ji-details">
+            <div className="mm-ji-panel-head">
+              <h3 className="mm-ji-panel-title">Voucher details</h3>
+              <span className="mm-pill mm-pill-muted">Production</span>
+            </div>
+            <div className="mm-ji-fields">
               <label className="mm-field">
-                <span className="mm-field-label">V.Date *</span>
+                <span className="mm-field-label">V.Date <b className="mm-req">*</b></span>
                 <input className="mm-input" type="date" value={vDate} onChange={(e) => setVDate(e.target.value)} />
               </label>
               <label className="mm-field">
-                <span className="mm-field-label">C.No *</span>
+                <span className="mm-field-label">C.No <b className="mm-req">*</b></span>
                 <input className="mm-input" value={cNo} placeholder="Challan no"
                   onChange={(e) => setCNo(e.target.value)} />
               </label>
@@ -797,27 +850,34 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               <label className="mm-field">
                 <span className="mm-field-label">Order</span>
                 <input className="mm-input" value={order}
-                  placeholder="Taken from the Job Out when blank"
+                  placeholder="From the Job Out"
                   onChange={(e) => setOrder(e.target.value)} />
               </label>
             </div>
 
-            <div className="mm-bx-returns" style={{ marginTop: "0.7rem" }}>
-              <label className="mm-field-inline">
+            {/* Two switches that apply to every box keyed after them — chips, not bare
+                checkboxes, because their state is worth seeing from across the sheet. */}
+            <div className="mm-ji-returns">
+              <span className="mm-ji-returns-lab">Applies to every box</span>
+              <label className={`mm-ji-chip${boxReturn ? " mm-ji-chip-on" : ""}`}>
                 <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} />
-                <span className="mm-field-label">Box Return (all)</span>
+                <Package size={13} /> Box return
               </label>
-              <label className="mm-field-inline">
+              <label className={`mm-ji-chip${bobbinReturn ? " mm-ji-chip-on" : ""}`}>
                 <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} />
-                <span className="mm-field-label">Bobbin Return (all)</span>
+                <Disc3 size={13} /> Bobbin return
               </label>
             </div>
-          </div>
+          </section>
 
           {/* Beside the details, never over them: keying a box leaves the paperwork it is
               checked against in view, and costs the table below none of its height. */}
           {adding && (
-            <div className="mm-pv-col-form">
+            <section className="mm-ji-panel mm-ji-formcol">
+              <div className="mm-ji-panel-head">
+                <h3 className="mm-ji-panel-title"><Plus size={14} /> New box</h3>
+                <span className="mm-pill mm-pill-muted">#{boxes.length + 1}</span>
+              </div>
               <JobInBoxForm
                 bobbins={(bobbinMasters.data ?? []).map((b) => b.name)}
                 defaults={{ box: boxReturn, bobbin: bobbinReturn }}
@@ -825,20 +885,27 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 onCancel={() => setAdding(false)}
                 onAdd={(b) => setBoxes((p) => [...p, b])}
               />
-            </div>
+            </section>
           )}
 
-          {/* The boxes — the main work area, its own full-width row. */}
-          <div className="mm-pv-boxwrap">
-            <div className="mm-pv-boxhead">
-              <span className="mm-pv-boxcolour">
-                <span className="mm-colour-name">{meta?.color_name || "—"}</span>
-                {size ? <span className="mm-suggest-meta">{size}</span> : null}
-              </span>
-              <span className="mm-field-label" style={{ margin: 0 }}>Boxes ({boxes.length})</span>
+          {/* ── The boxes — the work area, its own full-width row ── */}
+          <section className="mm-ji-panel mm-ji-work">
+            <div className="mm-ji-panel-head mm-ji-boxhead">
+              <h3 className="mm-ji-panel-title"><Package size={14} /> Boxes</h3>
+              <span className="mm-pill mm-pill-muted">{boxes.length}</span>
+              {meta?.color_name && (
+                <span className="mm-ji-tag">
+                  <span className="mm-colour-name">{meta.color_name}</span>
+                  {size ? <span className="mm-suggest-meta">{size}</span> : null}
+                </span>
+              )}
+              <span className="mm-ji-spacer" />
+              {boxes.length > 0 && (
+                <span className="mm-ji-boxsum">net <strong>{kg(totals.net)}</strong> kg</span>
+              )}
               {!adding && (
-                <button type="button" className="mm-mini mm-mini-ok" onClick={() => setAdding(true)}>
-                  <Plus size={13} /> Add box
+                <button type="button" className="mm-btn-secondary mm-btn-compact" onClick={() => setAdding(true)}>
+                  <Plus size={14} /> Add box
                 </button>
               )}
             </div>
@@ -893,9 +960,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 </table>
               </div>
             )}
-          </div>
+          </section>
 
-          {err && <p className="mm-error mm-pv-span">{err}</p>}
+          {err && <p className="mm-error mm-ji-span">{err}</p>}
         </div>
 
         <div className="mm-modal-foot mm-foot-split">
@@ -903,8 +970,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
             <span>Boxes <strong>{totals.boxes}</strong></span>
             <span>Gross <strong>{kg(totals.gross)}</strong></span>
             <span>Net <strong>{kg(totals.net)} kg</strong></span>
-            {/* What came back against what went out — the question a job receipt asks. */}
-            <span className={totals.net > sent ? "mm-var-over" : "mm-pv-remain"}>
+            <span className={over ? "mm-var-over" : "mm-pv-remain"}>
               of <strong>{kg(sent)} kg</strong> sent
             </span>
           </div>
@@ -916,7 +982,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -958,15 +1025,15 @@ function JobInBoxForm({ bobbins, defaults, prev, onCancel, onAdd }: {
   }
 
   return (
-    <div className="mm-bx-panel" style={{ marginTop: "0.6rem" }}>
+    <div className="mm-bx-panel">
       <div className="mm-bx">
         <label className="mm-bx-row">
-          <span className="mm-bx-label">Total (gross) weight</span>
+          <span className="mm-bx-label" title="Total (gross) weight">Gross wt</span>
           <input className="mm-input mm-bx-hi" type="number" value={gross} autoFocus
             onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
         </label>
         <label className="mm-bx-row">
-          <span className="mm-bx-label">Net weight</span>
+          <span className="mm-bx-label" title="Net weight — what actually came back">Net wt</span>
           <input className="mm-input mm-bx-hi" type="number" value={net}
             onChange={(e) => setNet(e.target.value === "" ? "" : Number(e.target.value))} />
         </label>
@@ -991,19 +1058,21 @@ function JobInBoxForm({ bobbins, defaults, prev, onCancel, onAdd }: {
             onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
         </label>
         <label className="mm-bx-row">
-          <span className="mm-bx-label">Total bobbin wt</span>
+          <span className="mm-bx-label" title="Pcs × weight per piece">Bobbin wt</span>
           <input className="mm-input" value={kg(totalBobbin)} readOnly />
         </label>
         {/* The answer, not a field: this is what the voucher is for. */}
         <label className="mm-bx-row mm-bx-row-net">
-          <span className="mm-bx-label">Box weight (worked out)</span>
+          <span className="mm-bx-label" title="Worked out: Gross − Bobbin − Net">Box wt <b className="mm-bx-calc">calc</b></span>
           <input className={`mm-input ${impossible ? "mm-input-warn" : ""}`} value={kg(boxWeight)} readOnly />
         </label>
       </div>
-      {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
-      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
-        <button type="button" className="mm-btn-primary mm-btn-compact" onClick={add}>Add box</button>
+      {err && <p className="mm-error mm-bx-panel-err">{err}</p>}
+      <div className="mm-bx-panel-foot">
         <button type="button" className="mm-btn-ghost mm-btn-compact" onClick={onCancel}>Done</button>
+        <button type="button" className="mm-btn-primary mm-btn-compact" onClick={add}>
+          <Plus size={14} /> Add box
+        </button>
       </div>
     </div>
   );

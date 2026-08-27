@@ -40,8 +40,10 @@ class MMInward(Document):
 			self.receipt_status = "Partial"
 		elif not self.receipt_status:
 			self.receipt_status = "Complete"
+		self._require_challan()
 		self._guard_challan_not_closed()
 		self._guard_order_over_receipt()
+		self._guard_purchase_over_receipt()
 
 	def _guard_order_over_receipt(self):
 		"""An order cannot receive more than it ordered.
@@ -67,6 +69,11 @@ class MMInward(Document):
 			return
 		mine = {}
 		for row in self.items:
+			# Surplus bought over and above what was sold. It is stock, not fulfilment, so
+			# it is measured against the PURCHASE order (see _guard_purchase_over_receipt)
+			# and never against the sales order's own weight.
+			if row.to_inventory:
+				continue
 			order = row.customer_order or self.sales_order
 			if order:
 				mine[order] = round(mine.get(order, 0.0) + float(row.weight or 0), 3)
@@ -88,6 +95,7 @@ class MMInward(Document):
 					select coalesce(sum(ii.weight), 0)
 					from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
 					where ii.customer_order = %(o)s and i.docstatus = 1 and i.name != %(me)s
+						and ifnull(ii.to_inventory, 0) = 0
 					""",
 					{"o": order, "me": self.name or ""},
 				)[0][0]
@@ -105,6 +113,108 @@ class MMInward(Document):
 					).format(order, ordered, round(prior, 3), this_w, cum, allowed)
 				)
 
+	def _require_challan(self):
+		"""Every receipt names the challan it came in on.
+
+		The challan is how a delivery is identified afterwards — it is what the supplier is
+		paid against, what the over-receipt and closed checks key on, and the only thing
+		tying a lot back to the paperwork it arrived with. A row without one cannot be
+		reconciled with anything later, so it is refused at the door.
+
+		A GOODS RETURN is exempt: it references the inward it returns, not a challan.
+		"""
+		if self.is_gr:
+			return
+		header = (self.challan_number or "").strip()
+		for row in self.items:
+			if not ((row.challan_number or "").strip() or header):
+				frappe.throw(_("Row #{0}: enter the challan number this material came in on.").format(row.idx))
+
+	def _guard_purchase_over_receipt(self):
+		"""A purchase order cannot receive more than it bought.
+
+		The sales order and the purchase order are two different ceilings and the shop
+		works between them: 900 kg is sold, 1,200 kg is bought, and the 300 kg surplus is
+		real material that has to come in. The sales-order guard above measures fulfilment
+		and would refuse it at 1,080; this one measures the PURCHASE and lets the whole
+		1,200 through, surplus included, while still catching a keyed 12,000.
+
+		Every row counts here — stock-only rows especially, since the purchase is exactly
+		what they were bought against. Matched to the PO the way MM Purchase Order matches
+		its own status: same sales order, same colour, and the cut only when both sides
+		carry one.
+
+		A row with no purchase order behind it is not measured — nothing was bought, so
+		there is nothing to exceed, and the sales-order guard is the only ceiling.
+
+		A GOODS RETURN is exempt — it only ever gives weight back.
+		"""
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_purchase_order.mm_purchase_order import _norm
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+			get_inward_over_tolerance,
+		)
+
+		if self.is_gr:
+			return
+		# (order, normalised colour) -> weight this document puts on it.
+		mine = {}
+		for row in self.items:
+			order = row.customer_order or self.sales_order
+			if not order or float(row.weight or 0) <= 0:
+				continue
+			key = (order, _norm(row.color_name), (row.cut or "").strip())
+			mine[key] = round(mine.get(key, 0.0) + float(row.weight or 0), 3)
+		if not mine:
+			return
+		over_pct = get_inward_over_tolerance() / 100.0
+		for (order, colour, cut) in sorted(mine):
+			pos = frappe.get_all(
+				"MM Purchase Order",
+				filters={"sales_order": order, "docstatus": ["<", 2]},
+				fields=["name", "color", "cut", "qty_kg"],
+			)
+			po = next(
+				(
+					p
+					for p in pos
+					if _norm(p.color) == colour
+					and not (cut and (p.cut or "").strip() and (p.cut or "").strip() != cut)
+				),
+				None,
+			)
+			bought = float(po.qty_kg or 0) if po else 0.0
+			if not po or bought <= 0:
+				continue
+			# Everything already received on this PO line, this document excluded so an
+			# amend is not counted twice. Goods returns net themselves off.
+			prior = 0.0
+			for r in frappe.db.sql(
+				"""
+				select ii.color_name, ii.cut, ii.weight
+				from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+				where ii.customer_order = %(o)s and i.docstatus = 1 and i.name != %(me)s
+				""",
+				{"o": order, "me": self.name or ""},
+				as_dict=True,
+			):
+				if _norm(r.color_name) != colour:
+					continue
+				po_cut = (po.cut or "").strip()
+				if po_cut and (r.cut or "").strip() and (r.cut or "").strip() != po_cut:
+					continue
+				prior += float(r.weight or 0)
+			this_w = mine[(order, colour, cut)]
+			cum = round(prior + this_w, 3)
+			allowed = round(bought + max(_ORDER_RECEIPT_TOLERANCE, bought * over_pct), 3)
+			if cum > allowed:
+				frappe.throw(
+					_(
+						"Over-receipt blocked: purchase order {0} bought {1} kg of {2} and {3} kg "
+						"has already been received against it. This inward adds {4} kg, taking it "
+						"to {5} kg — more than the {6} kg limit."
+					).format(po.name, bought, po.color or colour, round(prior, 3), this_w, cum, allowed)
+				)
+
 	def _guard_challan_not_closed(self):
 		"""One inward per challan — unless the earlier one was Partial. A challan is
 		closed once any submitted inward for it is marked Complete; block any further
@@ -113,22 +223,36 @@ class MMInward(Document):
 		EVERY challan on the document is checked, not just the header's: a challan belongs
 		to the row it was entered on, so one inward can receive several of them and the
 		header names one only when the whole inward shares it.
+
+		Scoped by SUPPLIER. A challan number is the supplier's own serial — they all number
+		from 1 — so two suppliers may each send a challan 123 and neither closes the other.
+		A row with no supplier on file still matches on the number alone.
 		"""
 		from mahaveermetalic.mahaveer_metallic.api.inward import challan_closed_by
 
 		# A return doesn't receive anything, so a closed challan is no reason to refuse it.
 		if self.is_gr:
 			return
-		challans = {(self.challan_number or "").strip()} | {
-			(row.challan_number or "").strip() for row in self.items
-		}
-		for challan in sorted(c for c in challans if c):
-			closed = challan_closed_by(challan, exclude=self.name or "")
+		header = (self.challan_number or "").strip()
+		# challan -> the supplier the rows put against it (first one that names any).
+		pairs = {}
+		for row in self.items:
+			challan = (row.challan_number or "").strip() or header
+			if not challan:
+				continue
+			pairs.setdefault(challan, "")
+			if not pairs[challan]:
+				pairs[challan] = (row.supplier or "").strip()
+		if header:
+			pairs.setdefault(header, "")
+		for challan in sorted(pairs):
+			closed = challan_closed_by(challan, exclude=self.name or "", supplier=pairs[challan])
 			if closed:
 				frappe.throw(
-					_("Challan {0} is already fully received (inward {1}). No further inward is allowed.").format(
-						challan, closed
-					)
+					_(
+						"Challan {0} from this supplier is already fully received (inward {1}). "
+						"No further inward is allowed."
+					).format(challan, closed)
 				)
 
 	def _set_company(self):

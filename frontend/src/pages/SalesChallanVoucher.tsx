@@ -4,6 +4,10 @@ import { X, Search, PackageSearch, Boxes, Printer } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+
+/** Rupees, two places — the rate is a price, not a weight. */
+const money = (v: number) =>
+  `\u20B9${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
 
@@ -67,6 +71,27 @@ export default function SalesChallanVoucher() {
     `${API}.order_colour_names`, { sales_order: order || undefined }, order ? `chal-oc-${order}` : null,
   );
   const orderColours = orderColoursCall.data?.message ?? [];
+  // What the order prices each colour at. The challan takes its rate from the same place
+  // on save; this is read ahead so the screen can foot the dispatch before it is
+  // submitted, instead of the value only appearing on the printed paper afterwards.
+  const orderRatesCall = useFrappeGetCall<{ message: { color_name?: string; cut?: string; rate?: number }[] }>(
+    `${API}.order_rates`, { sales_order: order || undefined }, order ? `chal-rate-${order}` : null,
+  );
+  const orderRates = useMemo(() => orderRatesCall.data?.message ?? [], [orderRatesCall.data]);
+  /** The rate for a line: its colour AND cut when the order prices that pair, else the
+   *  colour on its own — the challan does not always record a cut. Mirrors the server. */
+  const rateFor = useMemo(() => {
+    const key = (c?: string) => (c || "").toLowerCase().split(/\s+/).join("");
+    const exact = new Map<string, number>();
+    const byColour = new Map<string, number>();
+    for (const r of orderRates) {
+      const k = key(r.color_name);
+      exact.set(`${k}|${(r.cut || "").trim()}`, Number(r.rate || 0));
+      if (!byColour.has(k)) byColour.set(k, Number(r.rate || 0));
+    }
+    return (colour?: string, cut?: string) =>
+      exact.get(`${key(colour)}|${(cut || "").trim()}`) ?? byColour.get(key(colour)) ?? 0;
+  }, [orderRates]);
   // Last challan made here, so it can be reprinted without leaving the screen.
   const [lastChallan, setLastChallan] = useState<string>("");
   const [scan, setScan] = useState("");
@@ -99,8 +124,15 @@ export default function SalesChallanVoucher() {
     const rolls = lines.filter((l) => l.kind === "roll").length;
     const net = lines.reduce((s, l) => s + l.net, 0);
     const gross = lines.reduce((s, l) => s + l.gross, 0);
-    return { boxes, rolls, net: Math.round(net * 1000) / 1000, gross: Math.round(gross * 1000) / 1000 };
-  }, [lines]);
+    // Rate is per KG and the line's own weight is its net, so that is what it multiplies.
+    const amount = lines.reduce((s, l) => s + rateFor(l.item, l.size) * l.net, 0);
+    return {
+      boxes, rolls,
+      net: Math.round(net * 1000) / 1000,
+      gross: Math.round(gross * 1000) / 1000,
+      amount: Math.round(amount * 100) / 100,
+    };
+  }, [lines, rateFor]);
 
   function addBoxes(rows: BoxRow[]) {
     setLines((p) => [
@@ -242,12 +274,13 @@ export default function SalesChallanVoucher() {
                 <th>Barcode</th><th>Item</th><th>Size</th><th className="mm-num">Gr.Wt | Qty</th>
                 <th className="mm-num">Bobbin | Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
                 <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th>
-                <th className="mm-num">Net Wt</th><th className="mm-num">R.Box</th><th className="mm-num">R.Bobbin</th><th />
+                <th className="mm-num">Net Wt</th><th className="mm-num">Rate</th>
+                <th className="mm-num">R.Box</th><th className="mm-num">R.Bobbin</th><th />
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
-                <tr><td colSpan={12} className="mm-empty">No boxes or rolls added yet.</td></tr>
+                <tr><td colSpan={13} className="mm-empty">No boxes or rolls added yet.</td></tr>
               ) : (
                 lines.map((l, i) => (
                   <tr key={l.key}>
@@ -260,6 +293,11 @@ export default function SalesChallanVoucher() {
                     <td className="mm-num">{l.totalBobbin.toLocaleString()}</td>
                     <td className="mm-num">{l.boxWeight.toLocaleString()}</td>
                     <td className="mm-num"><strong>{l.net.toLocaleString()}</strong></td>
+                    {/* From the order, read-only: the rate is what was agreed when the
+                        order was taken, not something re-decided at the loading bay. */}
+                    <td className="mm-num mm-scv-rate" title={order ? "From the sales order" : "Pick an order to price this"}>
+                      {rateFor(l.item, l.size) > 0 ? money(rateFor(l.item, l.size)) : "—"}
+                    </td>
                     <td className="mm-num"><input type="checkbox" checked={l.rBox} onChange={(e) => setLines((p) => p.map((x, j) => j === i ? { ...x, rBox: e.target.checked } : x))} /></td>
                     <td className="mm-num"><input type="checkbox" checked={l.rBobbin} onChange={(e) => setLines((p) => p.map((x, j) => j === i ? { ...x, rBobbin: e.target.checked } : x))} /></td>
                     <td className="mm-num"><button className="mm-icon-btn" onClick={() => setLines((p) => p.filter((_, j) => j !== i))}><X size={14} /></button></td>
@@ -277,6 +315,9 @@ export default function SalesChallanVoucher() {
           <span>Total Roll: <strong>{totals.rolls}</strong></span>
           <span>Total Net Weight: <strong>{totals.net.toLocaleString()}</strong></span>
           <span>Total Weight: <strong>{totals.gross.toLocaleString()}</strong></span>
+          {totals.amount > 0 && (
+            <span className="mm-scv-amount">Total Amount: <strong>{money(totals.amount)}</strong></span>
+          )}
           <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>
             {loading ? "Saving…" : "Submit"}
           </button>

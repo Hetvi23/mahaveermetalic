@@ -36,7 +36,8 @@ type Roll = {
   total_patti?: number; consumed_patti?: number;
   /** Every cutting behind a lot-merged card — a program can draw across them. */
   merged_from?: string[]; merged_count?: number;
-  lot?: string | null; lot_id?: string | null;
+  /** The lot this patty was cut from — its SOURCE — and the challan that lot arrived on. */
+  lot?: string | null; lot_id?: string | null; lot_challan?: string | null;
 };
 /**
  * One selectable thing to program: a colour in ONE of its forms.
@@ -49,6 +50,9 @@ type Roll = {
  */
 type Source = {
   key: string; colour: string; kind: "cutting" | "inventory"; cut: string; state: string;
+  /** Patty is split by LOT as well as cut — two lots of a colour are two materials, and
+   *  the shelf now offers them separately, so the picker has to be able to honour that. */
+  lotId: string; challan: string;
   rows: Roll[]; weight: number; perPatty: number; batches: number;
 };
 type Colour = {
@@ -94,7 +98,7 @@ export default function ProgramScreen() {
   const [shiftView, setShiftView] = useState<ShiftView>("Combined");
   const [dayDate, setDayDate] = useState(tomorrow());
   const [nightDate, setNightDate] = useState(today());
-  const [adding, setAdding] = useState<{ machine?: string; shift?: string; colour?: string } | null>(null);
+  const [adding, setAdding] = useState<{ machine?: string; shift?: string; colour?: string; lotId?: string } | null>(null);
   const [pattyColourFilter, setPattyColourFilter] = useState("");
   /** The machine the shelf is answering for. A patty count summed over every cut answers
    *  nobody's question — 9 patty of a colour is 6 this machine can run and 3 it cannot — so
@@ -155,7 +159,7 @@ export default function ProgramScreen() {
   };
 
   const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void pattyCall.mutate(); };
-  const openAdd = (preset: { machine?: string; shift?: string; colour?: string }) => setAdding(preset);
+  const openAdd = (preset: { machine?: string; shift?: string; colour?: string; lotId?: string }) => setAdding(preset);
   /** "What can THIS machine run, right now." Scopes the shelf to the machine's cut and
    *  re-pulls — the patty count moves as programs take patti. */
   const refreshPattyFor = (m: Machine) => {
@@ -195,29 +199,46 @@ export default function ProgramScreen() {
   // machine, and a spent one cannot.
   const pattyColours = useMemo(() => {
     const scopeCut = (pattyScope?.cut || "").trim();
-    const g: Record<string, { colour: string; count: number; total: number; lots: string[]; lotIds: string[] }> = {};
+    const g: Record<string, {
+      key: string; colour: string; lotId: string; lot: string; challan: string;
+      count: number; total: number; lots: string[]; lotIds: string[];
+    }> = {};
     for (const p of patties) {
       // Scoped to a machine: only patty cut the way that machine runs. A machine with no cut
       // recorded filters nothing — it can take anything.
       if (scopeCut && (p.cut || "").trim() !== scopeCut) continue;
       const colour = p.shade || p.roll_no || "—";
-      const e = (g[colour] ||= { colour, count: 0, total: 0, lots: [], lotIds: [] });
+      // SOURCE-WISE: a tile is a colour IN ONE LOT, not a colour. Eight patti of TEST
+      // SILVER off two lots are two different materials that happen to share a name —
+      // merged into one tile the shelf said "8" and the operator could not tell which
+      // lot a program would draw from, nor read a lot's remark against the right patti.
+      const lotId = p.lot_id || "";
+      const key = `${colour}|${lotId || p.lot || "—"}`;
+      const e = (g[key] ||= {
+        key, colour, lotId, lot: p.lot || "", challan: p.lot_challan || "",
+        count: 0, total: 0, lots: [], lotIds: [],
+      });
       if (p.lot && !e.lots.includes(p.lot)) e.lots.push(p.lot);
       if (p.lot_id && !e.lotIds.includes(p.lot_id)) e.lotIds.push(p.lot_id);
-      // "No of patty" = the patti still available to program on this colour.
+      // "No of patty" = the patti still available to program on this colour and lot.
       e.count += Number(p.batches || 0);
       e.total += Number(p.total_patti ?? p.batches ?? 0);
     }
-    return Object.values(g).sort((a, b) => a.colour.localeCompare(b.colour));
+    // Colour first, then lot, so the same colour's lots sit side by side.
+    return Object.values(g).sort(
+      (a, b) => a.colour.localeCompare(b.colour) || a.lotId.localeCompare(b.lotId),
+    );
   }, [patties, pattyScope]);
 
-  const shownPatties = useMemo(
-    () =>
-      pattyColours.filter(
-        (p) => !pattyColourFilter || p.colour.toLowerCase().includes(pattyColourFilter.trim().toLowerCase()),
-      ),
-    [pattyColours, pattyColourFilter],
-  );
+  // The filter reads the lot and the challan too — with the shelf split source-wise, "the
+  // LT13 patty" is as natural a thing to look for as a colour.
+  const shownPatties = useMemo(() => {
+    const q = pattyColourFilter.trim().toLowerCase();
+    if (!q) return pattyColours;
+    return pattyColours.filter((p) =>
+      [p.colour, p.lotId, p.challan].some((v) => (v || "").toLowerCase().includes(q)),
+    );
+  }, [pattyColours, pattyColourFilter]);
 
   // Night first: the working day starts with the night shift and runs into the NEXT
   // calendar day's day shift, so reading the board left to right is reading it in order.
@@ -317,7 +338,7 @@ export default function ProgramScreen() {
                   </button>
                 </span>
               )}
-              <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour…"
+              <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour or lot…"
                 value={pattyColourFilter} onChange={(e) => setPattyColourFilter(e.target.value)} />
             </div>
             {pattyCall.isLoading && shownPatties.length === 0 ? (
@@ -337,15 +358,19 @@ export default function ProgramScreen() {
               <div className="mm-patty-scroll">
                 <div className="mm-patty-grid">
                   {shownPatties.map((c) => (
-                    <button key={c.colour} type="button" className="mm-patty-tile"
-                      title={`${c.count} of ${c.total} patti still available — program this patty`}
-                      onClick={() => openAdd({ colour: c.colour })}>
+                    <button key={c.key} type="button" className="mm-patty-tile"
+                      title={`${c.count} of ${c.total} patti still available${c.lotId ? ` on lot ${c.lotId}` : ""}${c.challan ? ` (challan ${c.challan})` : ""} — program this patty`}
+                      onClick={() => openAdd({ colour: c.colour, lotId: c.lotId || undefined })}>
                       <span className="mm-patty-tile-name">
                         {c.colour}
                         {/* The tile is a button that programs this patty — read why the last
-                            run on it stopped before committing the next one. */}
+                            run on it stopped before committing the next one. The remark is
+                            now this LOT's, not every lot of the colour's. */}
                         <LotRemarkBadge remarks={remarksFor(c.lots, c.lotIds)} label={c.colour} />
                       </span>
+                      {/* Which material this is. Without it the shelf named a colour and
+                          the operator could not tell two lots of it apart. */}
+                      <span className="mm-patty-tile-src">{c.lotId || "no lot"}</span>
                       <span className="mm-patty-tile-count">{c.count}</span>
                       <span className="mm-patty-tile-go" aria-hidden>→</span>
                     </button>
@@ -428,6 +453,7 @@ export default function ProgramScreen() {
           presetMachine={adding.machine}
           presetShift={adding.shift}
           presetColour={adding.colour}
+          presetLotId={adding.lotId}
           dayDate={dayDate}
           nightDate={nightDate}
           onClose={() => { setAdding(null); refresh(); }}
@@ -546,8 +572,9 @@ function MachineCutInput({ machine, value, onSaved }: { machine: string; value?:
 }
 
 /* ── Add program — colour-first picker ──────────────────────────── */
-function AddProgramModal({ machines, presetMachine, presetShift, presetColour, dayDate, nightDate, onClose, onAdded }: {
+function AddProgramModal({ machines, presetMachine, presetShift, presetColour, presetLotId, dayDate, nightDate, onClose, onAdded }: {
   machines: Machine[]; presetMachine?: string; presetShift?: string; presetColour?: string;
+  presetLotId?: string;
   dayDate: string; nightDate: string; onClose: () => void; onAdded: () => void;
 }) {
   const coloursCall = useFrappeGetCall<{ message: Colour[] }>(`${API}.available_colours`, undefined, "pg-colours");
@@ -582,10 +609,18 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
       for (const r of c.rows) {
         const kind = r.source_type === "cutting" ? "cutting" : "inventory";
         const cut = kind === "cutting" ? (r.cut || "").trim() : "";
-        const key = `${c.colour}|${r.state}|${cut}`;
+        // Patty splits by LOT as well: the shelf offers one tile per colour per lot, and a
+        // pick that quietly drew from a different lot of the same colour would make that
+        // offer a lie. Inventory rolls are not split — they are not cut yet.
+        const lotId = kind === "cutting" ? (r.lot_id || "").trim() : "";
+        const key = `${c.colour}|${r.state}|${cut}|${lotId}`;
         let s = forms.get(key);
         if (!s) {
-          s = { key, colour: c.colour, kind, cut, state: r.state, rows: [], weight: 0, perPatty: 0, batches: 0 };
+          s = {
+            key, colour: c.colour, kind, cut, state: r.state, lotId,
+            challan: (r.lot_challan || "").trim(),
+            rows: [], weight: 0, perPatty: 0, batches: 0,
+          };
           forms.set(key, s);
         }
         s.rows.push(r);
@@ -599,16 +634,23 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     return out;
   }, [colours]);
 
-  // pre-select a colour passed in from a feeder card — its readiest form
+  // Pre-select what the shelf tile named — its colour AND its lot, so clicking "TEST
+  // SILVER · LT13/26-27" lands on that lot and not on whichever form of the colour
+  // happened to rank first. Falls back to the readiest form when no lot was passed.
   useEffect(() => {
     if (presetColour && !sel) {
-      const s = sources.find((x) => x.colour === presetColour);
+      const s =
+        (presetLotId && sources.find((x) => x.colour === presetColour && x.lotId === presetLotId)) ||
+        sources.find((x) => x.colour === presetColour);
       if (s) setSel(s);
     }
-  }, [presetColour, sources, sel]);
+  }, [presetColour, presetLotId, sources, sel]);
 
   const q = search.trim().toLowerCase();
-  const searched = q ? sources.filter((s) => s.colour.toLowerCase().includes(q)) : sources;
+  // Searchable by lot and challan too, matching the shelf's own filter.
+  const searched = q
+    ? sources.filter((s) => [s.colour, s.lotId, s.challan].some((v) => (v || "").toLowerCase().includes(q)))
+    : sources;
 
   // A machine runs one cut. Offering it a patty cut to something else is offering a job it
   // cannot physically run, so the list narrows to what this machine can take:
@@ -802,6 +844,10 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, d
     (s.kind === "inventory"
       ? ["roll · any cut", `${kg(s.weight)} kg`]
       : [`${stateWord(s.state)} · ${s.cut ? `cut ${s.cut}` : "no cut recorded"}`,
+         // The lot, because the rows are split by it: two otherwise identical lines of the
+         // same colour and cut differ only in the material they draw from, and picking
+         // blind between them is picking blind between two lots.
+         s.lotId || "no lot",
          s.perPatty > 0
            ? `${s.batches} patty free · ${kg(s.perPatty)} kg each`
            : `${s.batches} patty free · ${kg(s.weight)} kg`]
