@@ -142,22 +142,46 @@ export default function InwardWorkspace() {
     "mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order.force_complete_order",
   );
 
-  // Open orders for the per-row Customer Order picker. The option carries the order's
-  // colours, which is what lets picking an order fill the row's colour with no extra
-  // round trip.
+  // The picker offers open orders only. This lifts that to every approved order, closed
+  // ones included, for the case one was completed a shade early and the material for it
+  // is standing at the gate. One switch for the grid, not one per row — it answers "the
+  // picker is hiding my order", which is about the grid, not about a line.
+  const [seeAllOrders, setSeeAllOrders] = useState(false);
+  // Same escape hatch for suppliers, which are scoped by open PO and the row's colour.
+  const [seeAllSuppliers, setSeeAllSuppliers] = useState(false);
+  // Orders for the per-row Customer Order picker. The option carries the order's colours,
+  // which is what lets picking an order fill the row's colour with no extra round trip.
+  // The closed ones are a separate fetch, and a separate cache key, so the default list
+  // stays the cheap one.
   const { data: soData } = useFrappeGetCall<{ message: SOOption[] }>(
     "mahaveermetalic.mahaveer_metallic.api.inward.sales_order_options",
-    undefined,
-    "mm-inward-so-options",
+    { include_closed: seeAllOrders ? 1 : 0 },
+    `mm-inward-so-options-${seeAllOrders ? "all" : "open"}`,
   );
   const soOptions = useMemo(() => soData?.message ?? [], [soData]);
-  // Orders are scoped to the row's colour; this lifts that scope when the data disagrees
-  // with reality. One switch for the grid, not one per row — it answers "the picker is
-  // hiding my order", which is about the grid, not about a line.
-  const [seeAllOrders, setSeeAllOrders] = useState(false);
-  // Same escape hatch for suppliers, scoped by open purchase orders rather than colour.
-  const [seeAllSuppliers, setSeeAllSuppliers] = useState(false);
   const soByName = useMemo(() => new Map(soOptions.map((o) => [o.sales_order, o])), [soOptions]);
+
+  /** One option list for every row: nothing about a row narrows it any more. */
+  const orderOptions = useMemo(
+    () =>
+      soOptions.map((o) => ({
+        value: o.sales_order,
+        label: o.sales_order,
+        meta: [
+          o.party_name || o.party,
+          (o.colours || []).join(", "),
+          // The purchase, when it is the reason this order is still listed — 900 sold,
+          // 1,200 bought, 290 kg still on the road.
+          o.stock_only
+            ? `stock only · ${(o.purchase_remaining || 0).toLocaleString()} kg on PO`
+            : null,
+        ].filter(Boolean).join(" · "),
+        // Only meaningful with the switch on, and then it keeps the closed ones out of
+        // the queue rather than mixed into it.
+        group: seeAllOrders ? (o.open === 0 ? "Closed orders" : "Open orders") : undefined,
+      })),
+    [soOptions, seeAllOrders],
+  );
 
   // Suppliers, each carrying the colours it has supplied before, so the row's colour can
   // order the picker without ever removing an option from it.
@@ -223,24 +247,6 @@ export default function InwardWorkspace() {
     return [
       ...hit.map((o) => toOption(o, labels.hit)),
       ...all.filter((o) => !matches(o, c)).map((o) => toOption(o, labels.rest)),
-    ];
-  }
-
-  function colourFirst<T>(
-    all: T[],
-    colour: string,
-    matches: (o: T, colour: string) => boolean,
-    toOption: (o: T, group?: string) => { value: string; label: string; meta?: string; group?: string },
-    labels: { hit: string; rest: string },
-  ) {
-    const c = colour.trim().toLowerCase();
-    if (!c) return all.map((o) => toOption(o));
-    const hit = all.filter((o) => matches(o, c));
-    const rest = all.filter((o) => !matches(o, c));
-    if (hit.length === 0) return all.map((o) => toOption(o));
-    return [
-      ...hit.map((o) => toOption(o, labels.hit)),
-      ...rest.map((o) => toOption(o, labels.rest)),
     ];
   }
 
@@ -755,15 +761,15 @@ export default function InwardWorkspace() {
           <span className="mm-iw-scopes">
             <button type="button" className={`mm-iw-scope${seeAllSuppliers ? "" : " is-on"}`}
               aria-pressed={!seeAllSuppliers}
-              title={`Supplier picker: ${seeAllSuppliers ? "every supplier" : `only the ${openSupplierCount} with an open purchase order`}. Click to switch.`}
+              title={`Supplier picker: ${seeAllSuppliers ? "every supplier" : `only the ${openSupplierCount} with an open purchase order, narrowed to the row's colour`}. Click to switch.`}
               onClick={() => setSeeAllSuppliers((v) => !v)}>
-              Suppliers: {seeAllSuppliers ? "all" : `open PO (${openSupplierCount})`}
+              Suppliers: {seeAllSuppliers ? "all" : `open PO (${openSupplierCount}) · row colour`}
             </button>
             <button type="button" className={`mm-iw-scope${seeAllOrders ? "" : " is-on"}`}
               aria-pressed={!seeAllOrders}
-              title={`Order picker: ${seeAllOrders ? "every open order" : "only orders for the row's colour"}. Click to switch.`}
+              title={`Order picker: ${seeAllOrders ? "every approved order, closed ones included" : "only orders still open for inward"}. Click to switch.`}
               onClick={() => setSeeAllOrders((v) => !v)}>
-              Orders: {seeAllOrders ? "all" : "row colour"}
+              Orders: {seeAllOrders ? "all" : `open (${soOptions.length})`}
             </button>
           </span>
         </div>
@@ -773,12 +779,16 @@ export default function InwardWorkspace() {
               <tr>
                 <th className="mm-iw-c-no">No</th>
                 <th className="mm-iw-c-jw">JobWork</th>
-                <th className="mm-iw-c-chalan">Chalan No</th>
-                {/* Colour is keyed before supplier and order because it is what narrows
-                    both of them — the two pickers to its right lead with what matches it. */}
+                {/* These four are in keying order, and the header row has to STAY in the
+                    body's order: the cells were resequenced to challan → order → colour →
+                    supplier and this row was not, so every heading sat one column off and
+                    "Color *" stood over the order picker. */}
+                <th className="mm-iw-c-chalan">Chalan No *</th>
+                <th className="mm-iw-c-order">Customer Order</th>
+                {/* Colour is keyed after the order, which fills it in, and before the
+                    supplier, which it narrows. */}
                 <th className="mm-iw-c-color">Color *</th>
                 <th className="mm-iw-c-supplier">Supplier</th>
-                <th className="mm-iw-c-order">Customer Order</th>
                 <th className="mm-iw-c-lot">Lot No</th>
                 <th className="mm-iw-c-roll">Roll</th>
                 <th className="mm-iw-c-qty">Qty | Weight (Kg) *</th>
@@ -830,36 +840,18 @@ export default function InwardWorkspace() {
                       </div>
                     </td>
                     <td className="mm-iw-c-order" data-label="Customer Order">
-                      {/* Every open order, because the order is now keyed BEFORE the colour
-                          and there is nothing to narrow by yet. Picking one fills the
-                          colour and the supplier it was bought from. Once a colour is on
-                          the row the "Orders: row colour" toggle narrows to it. */}
+                      {/* Open orders, in FIFO order, and nothing narrows them: the order is
+                          keyed straight after the challan, so the row's colour does not
+                          exist yet to narrow BY — it is the order that fills the colour in,
+                          along with the supplier it was bought from. Scoping this by colour
+                          only ever bit on a re-keyed row, where it hid orders for no reason
+                          the operator could see. "Orders: all" adds the closed ones. */}
                       <SearchSelect
                         compact
                         value={r.customer_order}
                         placeholder="Select Order"
                         emptyText="No open orders"
-                        options={colourOnly(
-                          soOptions,
-                          r.color,
-                          (o, c) => (o.colours || []).some((x) => x.toLowerCase() === c),
-                          (o, group) => ({
-                            value: o.sales_order,
-                            label: o.sales_order,
-                            meta: [
-                              o.party_name || o.party,
-                              (o.colours || []).join(", "),
-                              // The purchase, when it is the reason this order is still
-                              // listed — 900 sold, 1,200 bought, 290 kg still on the road.
-                              o.stock_only
-                                ? `stock only · ${(o.purchase_remaining || 0).toLocaleString()} kg on PO`
-                                : null,
-                            ].filter(Boolean).join(" · "),
-                            group,
-                          }),
-                          { hit: `Ordering ${r.color}`, rest: "Other open orders" },
-                          seeAllOrders,
-                        )}
+                        options={orderOptions}
                         onChange={(v) => pickOrder(i, v)}
                       />
                     </td>
@@ -879,15 +871,18 @@ export default function InwardWorkspace() {
                       />
                     </td>
                     <td className="mm-iw-c-supplier" data-label="Supplier">
-                      {/* Suppliers that have sent this colour before come first, the rest
-                          stay under their own heading — narrowed, never hidden. */}
+                      {/* Scoped to the row's colour, not merely sorted by it: the colour is
+                          keyed first and a supplier that has never sent it is not a
+                          candidate. "Suppliers: all" lifts the scope, and a colour nobody
+                          has supplied falls back to the whole list rather than an empty
+                          picker, so a new colour is never a dead end. */}
                       <SearchSelect
                         compact
                         value={r.supplier}
                         placeholder="Supplier"
                         createDoctype="MM Vendor Master"
                         emptyText="No vendors yet"
-                        options={colourFirst(
+                        options={colourOnly(
                           suppliersInScope,
                           r.color,
                           (v, c) => (v.colours || []).some((x) => x.toLowerCase() === c),
@@ -901,6 +896,7 @@ export default function InwardWorkspace() {
                             group,
                           }),
                           { hit: `Supplied ${r.color}`, rest: "Other suppliers" },
+                          seeAllSuppliers,
                         )}
                         onChange={(v) => setRow(i, { supplier: v })}
                       />

@@ -640,9 +640,29 @@ def _attach_purchase(by_so):
 		)
 
 
+_SO_OPEN_FOR_INWARD = """
+	(
+		ifnull(so.completed, 0) = 0
+		and ifnull(so.production_completed_percent, 0) < 100
+		and not (ifnull(so.ordered_weight, 0) > 0 and ifnull(so.required_weight, 0) <= 0)
+	)
+	or exists (
+		select 1 from `tabMM Purchase Order` po
+		where po.sales_order = so.name and po.docstatus < 2
+			and ifnull(po.status, 'Pending') != 'Received'
+	)
+"""
+
+
 @frappe.whitelist()
-def sales_order_options(search=None, limit=200):
+def sales_order_options(search=None, limit=200, include_closed=0):
 	"""Open Sales Orders for the Inward SO picker.
+
+	`include_closed` backs the grid's "Orders: all" switch. The picker offers only open
+	orders, which is right until the one being received against was closed a shade early —
+	then the operator needs it in the list rather than a dead end. Closed orders come back
+	flagged `open = 0` so the picker can group them apart, and posting against one is still
+	the server's decision to refuse: this widens what can be SEEN, not what can be received.
 
 	Returns one row per order enriched with customer name, colours, cuts and dates so
 	the dropdown can be searched by any of them (order no / customer / colour / date).
@@ -656,6 +676,7 @@ def sales_order_options(search=None, limit=200):
 	order is waiting for.
 	"""
 	limit = int(limit or 200)
+	include_closed = frappe.utils.cint(include_closed)
 	rows = frappe.db.sql(
 		"""
 		select so.name as sales_order, so.party, pm.party_name, so.company_name,
@@ -674,18 +695,7 @@ def sales_order_options(search=None, limit=200):
 			-- that surplus arrives against this order and has nowhere else to be received,
 			-- so the order has to stay pickable until the PO is met. Those rows are keyed
 			-- Stock Only and fulfil nothing — see MM Inward Item.to_inventory.
-			and (
-				(
-					ifnull(so.completed, 0) = 0
-					and ifnull(so.production_completed_percent, 0) < 100
-					and not (ifnull(so.ordered_weight, 0) > 0 and ifnull(so.required_weight, 0) <= 0)
-				)
-				or exists (
-					select 1 from `tabMM Purchase Order` po
-					where po.sales_order = so.name and po.docstatus < 2
-						and ifnull(po.status, 'Pending') != 'Received'
-				)
-			)
+			and ({open_only})
 		-- FIFO: the order that came in first is filled first. This listed the NEWEST
 		-- order at the top, so the newest was the one picked by default and the oldest
 		-- sank down the list as more arrived — the queue ran backwards.
@@ -693,7 +703,7 @@ def sales_order_options(search=None, limit=200):
 		-- Tie-broken on `creation`, not `modified`: editing an old order must not shuffle
 		-- it to a different place in the queue.
 		order by so.transaction_date asc, so.creation asc
-		""",
+		""".format(open_only="1=1" if include_closed else _SO_OPEN_FOR_INWARD),
 		as_dict=True,
 	)
 	by_so, order = {}, []
@@ -744,6 +754,22 @@ def sales_order_options(search=None, limit=200):
 		outstanding = round(sum(p["remaining_kg"] for p in o["purchase"]), 3)
 		o["purchase_remaining"] = outstanding
 		o["stock_only"] = 1 if (float(o["required_weight"] or 0) <= 0 and outstanding > 0) else 0
+	if include_closed:
+		# Which of these would have been offered anyway, so "all" can show the closed ones
+		# under their own heading instead of mixing them into the queue.
+		still_open = {
+			r[0]
+			for r in frappe.db.sql(
+				"select so.name from `tabMM Sales Order` so where so.docstatus = 1 and ({0})".format(
+					_SO_OPEN_FOR_INWARD
+				)
+			)
+		}
+		for o in by_so.values():
+			o["open"] = 1 if o["sales_order"] in still_open else 0
+	else:
+		for o in by_so.values():
+			o["open"] = 1
 	out = [by_so[k] for k in order]
 	if search:
 		s = search.strip().lower()

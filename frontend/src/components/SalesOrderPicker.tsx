@@ -27,6 +27,10 @@ export type SOOption = {
   /** 1 when the sale itself is settled and only the purchase surplus is still to come —
    *  the order is pickable, but everything received on it is Stock Only. */
   stock_only?: number;
+  /** 1 when the order is still open for inward. Always 1 in the default list, which only
+   *  carries open orders; 0 appears once Inward's "Orders: all" asks for the closed ones
+   *  too, so they can be grouped apart rather than mixed into the queue. */
+  open?: number;
 };
 
 /** One MM Purchase Order line behind a sales order. */
