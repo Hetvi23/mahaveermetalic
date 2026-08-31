@@ -8,9 +8,10 @@ import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
+import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 const kg = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type StockRoll = {

@@ -3,6 +3,7 @@ import { useFrappeGetDocList } from "frappe-react-sdk";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import { useMenuKeys } from "@/utils/menuKeys";
 import QuickCreateMaster from "./QuickCreateMaster";
 
 type Props = {
@@ -71,6 +72,11 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 	);
 
 	const suggestions = data ?? [];
+	const keys = useMenuKeys({
+		open, setOpen, items: suggestions,
+		onPick: (s) => pick(s.name),
+		getValue: (s) => s.name,
+	});
 
 	function pick(v: string) {
 		setText(v);
@@ -110,9 +116,7 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 				// second click on an already-focused field re-opens the list.
 				onFocus={() => { setDirty(false); setOpen(true); }}
 				onClick={() => setOpen(true)}
-				onKeyDown={(e) => {
-					if (e.key === "Escape") setOpen(false);
-				}}
+				onKeyDown={keys.onKeyDown}
 				autoComplete="off"
 			/>
 			{text && !disabled && (
@@ -136,10 +140,11 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 			<AnchoredMenu anchor={wrap} open={open}>
 				{isLoading && <li className="mm-suggest-muted">Loading…</li>}
 				{!isLoading &&
-					suggestions.map((s) => (
+					suggestions.map((s, i) => (
 						<li
 							key={s.name}
-							className="mm-suggest-item"
+							{...keys.rowProps(i)}
+							className={`mm-suggest-item${keys.active === i ? " is-active" : ""}`}
 							onMouseDown={(e) => {
 								e.preventDefault();
 								pick(s.name);

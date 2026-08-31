@@ -3,10 +3,11 @@ import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { Eye, ScrollText, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
+import { monthsAgoISO, todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.order_report";
-const today = () => new Date().toISOString().slice(0, 10);
-const monthAgo = () => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+const today = todayISO;
+const monthAgo = () => monthsAgoISO(1);
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 type Rate = { lo: number; hi: number; same: boolean } | null;

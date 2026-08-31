@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { ChevronDown, X } from "lucide-react";
 import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import { useMenuKeys } from "@/utils/menuKeys";
 
 export type SOOption = {
   sales_order: string;
@@ -110,6 +111,12 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
   }
 
   const q = text.trim().toLowerCase();
+  function pickOrder(o: SOOption) {
+    onChange(o.sales_order, o);
+    setText("");
+    setOpen(false);
+  }
+
   const filtered = useMemo(() => {
     return options.filter((o) => {
       if (partyFilter && (o.party_name || o.party) !== partyFilter) return false;
@@ -119,6 +126,11 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
         .some((s) => String(s).toLowerCase().includes(q));
     });
   }, [options, q, partyFilter]);
+  const keys = useMenuKeys({
+    open, setOpen, items: filtered,
+    onPick: pickOrder,
+    getValue: (o) => o.sales_order,
+  });
 
   return (
     <label className={`mm-field${wide ? " mm-so-field-wide" : ""}`}>
@@ -145,9 +157,9 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
           }}
           onClick={() => setOpen(true)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setOpen(false);
             // Backspacing an already-empty search box clears the picked order.
-            if ((e.key === "Backspace" || e.key === "Delete") && !text && value) clear();
+            if ((e.key === "Backspace" || e.key === "Delete") && !text && value) { clear(); return; }
+            keys.onKeyDown(e);
           }}
           autoComplete="off"
         />
@@ -178,19 +190,18 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
             {isLoading && <li className="mm-suggest-muted">Loading…</li>}
             {!isLoading && filtered.length === 0 && <li className="mm-suggest-muted">No matching orders</li>}
             {!isLoading &&
-              filtered.map((o) => {
+              filtered.map((o, i) => {
                 const total = Number(o.ordered_weight || 0);
                 const remaining = Number(o.required_weight || 0);
                 const received = Math.round((total - remaining) * 1000) / 1000;
                 return (
                   <li
                     key={o.sales_order}
-                    className="mm-suggest-item mm-so-opt"
+                    {...keys.rowProps(i)}
+                    className={`mm-suggest-item mm-so-opt${keys.active === i ? " is-active" : ""}`}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      onChange(o.sales_order, o);
-                      setText("");
-                      setOpen(false);
+                      pickOrder(o);
                     }}
                   >
                     <span className="mm-so-opt-top">

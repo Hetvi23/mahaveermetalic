@@ -12,6 +12,7 @@ import {
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { todayISO } from "@/utils/localDate";
 
 function isMmAdmin(): boolean {
 	const boot = (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot;
@@ -49,19 +50,19 @@ function DocFormNew({ meta }: { meta: DocRegistryEntry }) {
 		}
 		if (meta.doctype === "MM Sales Order") {
 			init.naming_series = "MM-SO-.YYYY.-";
-			init.transaction_date = new Date().toISOString().slice(0, 10);
+			init.transaction_date = todayISO();
 		}
 		if (meta.doctype === "MM Purchase Order") {
-			init.transaction_date = new Date().toISOString().slice(0, 10);
+			init.transaction_date = todayISO();
 		}
 		if (meta.doctype === "MM Inward") {
-			init.posting_date = new Date().toISOString().slice(0, 10);
+			init.posting_date = todayISO();
 		}
 		if (meta.doctype === "MM Cutting") {
-			init.posting_date = new Date().toISOString().slice(0, 10);
+			init.posting_date = todayISO();
 		}
 		if (meta.doctype === "MM Bobbin Box Tracking") {
-			init.chalan_date = new Date().toISOString().slice(0, 10);
+			init.chalan_date = todayISO();
 		}
 		// Seed any header field passed via query string (e.g. cutting worklist → form).
 		for (const f of meta.fields) {

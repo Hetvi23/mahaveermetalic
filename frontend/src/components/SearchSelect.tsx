@@ -61,6 +61,11 @@ export default function SearchSelect({
 	const [text, setText] = useState("");
 	const [dirty, setDirty] = useState(false);
 	const [quickCreate, setQuickCreate] = useState(false);
+	// Which option the keyboard is on. The menu had no arrow keys at all — it opened with
+	// nothing highlighted and Down did nothing, so the list could only be used with the
+	// mouse. Starting at 0 means the first press of Enter picks the top option, which is
+	// what Enter already did.
+	const [active, setActive] = useState(0);
 	const wrap = useRef<HTMLDivElement>(null);
 	const master = createDoctype ? getMasterByDoctype(createDoctype) : undefined;
 
@@ -87,6 +92,9 @@ export default function SearchSelect({
 		() => (q ? options.filter((o) => `${o.label} ${o.meta ?? ""}`.toLowerCase().includes(q)) : options),
 		[options, q],
 	);
+	// Typing re-filters, so the highlight has to come back to the top or it points at
+	// whatever now happens to sit at that index.
+	useEffect(() => { setActive(0); }, [q, open]);
 
 	function pick(v: string) {
 		onChange(v);
@@ -116,8 +124,25 @@ export default function SearchSelect({
 				onFocus={() => { setDirty(false); setOpen(true); }}
 				onClick={() => setOpen(true)}
 				onKeyDown={(e) => {
-					if (e.key === "Escape") { setOpen(false); setDirty(false); }
-					if (e.key === "Enter" && open && shown.length > 0) { e.preventDefault(); pick(shown[0].value); }
+					if (e.key === "Escape") { setOpen(false); setDirty(false); return; }
+					if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+						e.preventDefault();
+						// Down on a closed field opens it rather than doing nothing — that is
+						// what every other combo box on the machine does.
+						if (!open) { setOpen(true); return; }
+						if (!shown.length) return;
+						const step = e.key === "ArrowDown" ? 1 : -1;
+						// Clamped, not wrapped: running off the end of a long vendor list and
+						// landing back at the top reads as the list having jumped.
+						setActive((i) => Math.min(shown.length - 1, Math.max(0, i + step)));
+						return;
+					}
+					if (e.key === "Home" && open) { e.preventDefault(); setActive(0); return; }
+					if (e.key === "End" && open) { e.preventDefault(); setActive(shown.length - 1); return; }
+					if (e.key === "Enter" && open && shown.length > 0) {
+						e.preventDefault();
+						pick((shown[active] ?? shown[0]).value);
+					}
 				}}
 				autoComplete="off"
 			/>
@@ -152,7 +177,11 @@ export default function SearchSelect({
 							{o.group && o.group !== shown[i - 1]?.group && (
 								<li className="mm-suggest-group" onMouseDown={(e) => e.preventDefault()}>{o.group}</li>
 							)}
-							<li className="mm-suggest-item"
+							<li className={`mm-suggest-item${i === active ? " is-active" : ""}`}
+								ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+								// The mouse moving over an option takes the highlight with it, so
+								// the two never disagree about what Enter would pick.
+								onMouseEnter={() => setActive(i)}
 								onMouseDown={(e) => { e.preventDefault(); pick(o.value); }}>
 								<strong>{o.label}</strong>
 								{o.meta && <span className="mm-suggest-meta">{o.meta}</span>}

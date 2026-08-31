@@ -2,13 +2,16 @@ import { useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { Printer, Disc3 } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.bobbin";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 const monthAgo = () => {
+  // Calendar month back, read off the LOCAL date — toISOString would push it to UTC and
+  // hand back the previous day for the first five and a half hours of every one.
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
-  return d.toISOString().slice(0, 10);
+  return todayISO(d);
 };
 
 type Row = {

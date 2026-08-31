@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { useState } from "react";
+import { todayISO } from "@/utils/localDate";
 import {
   ShoppingCart,
   ScrollText,
@@ -61,7 +62,7 @@ type Kpi = {
   tone: "accent" | "amber" | "blue" | "green" | "slate" | "danger";
 };
 
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
+const TODAY_ISO = todayISO();
 
 function HomeView() {
   const navigate = useNavigate();

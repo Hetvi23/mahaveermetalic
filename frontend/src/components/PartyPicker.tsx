@@ -3,6 +3,7 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { ChevronDown, Plus, UserPlus, X } from "lucide-react";
 import { getMasterByDoctype } from "@/config/registry";
 import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import { useMenuKeys } from "@/utils/menuKeys";
 import QuickCreateMaster from "./QuickCreateMaster";
 
 type Row = { party: string; party_name?: string; company_name?: string };
@@ -56,6 +57,12 @@ export default function PartyPicker({
     return () => document.removeEventListener("click", onDoc);
   }, []);
 
+  const keys = useMenuKeys({
+    open, setOpen, items: rows,
+    onPick: (r) => pick(r.party),
+    getValue: (r) => r.party,
+  });
+
   function pick(v: string) {
     onChange(v);
     setText("");
@@ -85,7 +92,7 @@ export default function PartyPicker({
             // search text on open; onClick as well as onFocus so a second click re-opens.
             onFocus={() => { setText(""); setOpen(true); }}
             onClick={() => { setOpen(true); }}
-            onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+            onKeyDown={keys.onKeyDown}
             autoComplete="off"
           />
           {value && !disabled && (
@@ -104,8 +111,10 @@ export default function PartyPicker({
             <>
               {isLoading && <li className="mm-suggest-muted">Searching…</li>}
               {!isLoading && rows.length === 0 && <li className="mm-suggest-muted">No customers match</li>}
-              {!isLoading && rows.map((r) => (
-                <li key={r.party} className="mm-suggest-item" onMouseDown={(e) => { e.preventDefault(); pick(r.party); }}>
+              {!isLoading && rows.map((r, i) => (
+                <li key={r.party} {...keys.rowProps(i)}
+                  className={`mm-suggest-item${keys.active === i ? " is-active" : ""}`}
+                  onMouseDown={(e) => { e.preventDefault(); pick(r.party); }}>
                   <strong>{r.party_name || r.party}</strong>
                   {r.company_name && r.company_name !== (r.party_name || r.party) && (
                     <span className="mm-suggest-meta">{r.company_name}</span>
