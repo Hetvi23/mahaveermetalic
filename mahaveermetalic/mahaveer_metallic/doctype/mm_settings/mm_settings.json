@@ -16,7 +16,10 @@
   "program_view_notes",
   "section_print",
   "company_address",
-  "challan_terms"
+  "challan_terms",
+  "section_job_work",
+  "job_markup_percent",
+  "job_wastage_limit_percent"
  ],
  "fields": [
   {
@@ -104,12 +107,33 @@
    "fieldtype": "Small Text",
    "label": "Challan Terms",
    "description": "One line per term, printed at the foot of every challan. Blank falls back to the standard Jari/bobbin terms in English and Gujarati."
+  },
+  {
+   "fieldname": "section_job_work",
+   "fieldtype": "Section Break",
+   "label": "Job Work"
+  },
+  {
+   "fieldname": "job_markup_percent",
+   "fieldtype": "Float",
+   "label": "Job Hisab Markup %",
+   "default": "5",
+   "precision": "2",
+   "description": "Added on top of (Out Amount - In Amount) to reach the hisab total."
+  },
+  {
+   "fieldname": "job_wastage_limit_percent",
+   "fieldtype": "Float",
+   "label": "Job Wastage Limit %",
+   "default": "5",
+   "precision": "2",
+   "description": "A hisab wasting more than this is flagged for the admin to look at twice."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-19 00:00:00.000000",
+ "modified": "2026-08-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Settings",

@@ -1,0 +1,334 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-29 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "job_out",
+  "party",
+  "col_break_1",
+  "posting_date",
+  "status",
+  "section_weights",
+  "out_weight",
+  "in_weight",
+  "col_break_2",
+  "wastage_weight",
+  "wastage_percent",
+  "wastage_over_limit",
+  "section_rates",
+  "rate_out",
+  "rate_in",
+  "col_break_3",
+  "out_amount",
+  "in_amount",
+  "section_total",
+  "markup_percent",
+  "col_break_4",
+  "total_amount",
+  "section_approval",
+  "accountant_approved_by",
+  "accountant_approved_on",
+  "admin_approved_by",
+  "admin_approved_on",
+  "col_break_5",
+  "bill_no",
+  "bill_entered_by",
+  "cheque",
+  "final_approved_by",
+  "final_approved_on",
+  "section_remarks",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "job_out",
+   "fieldtype": "Link",
+   "options": "MM Sales Challan",
+   "label": "Job Out",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The Job Out challan this hisab settles. One hisab per Job Out."
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Link",
+   "options": "MM Party Master",
+   "label": "Job Worker",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1,
+   "default": "Today"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "read_only": 1,
+   "in_list_view": 1,
+   "options": "Draft\nAccountant Approved\nAdmin Approved\nBilled\nCompleted",
+   "default": "Draft",
+   "description": "Draft -> Accountant Approved -> Admin Approved -> Billed -> Completed."
+  },
+  {
+   "fieldname": "section_weights",
+   "fieldtype": "Section Break",
+   "label": "Weights and Wastage"
+  },
+  {
+   "fieldname": "out_weight",
+   "fieldtype": "Float",
+   "label": "Job Out Weight (Kg)",
+   "read_only": 1,
+   "precision": "3",
+   "description": "A - what went out on the Job Out challan."
+  },
+  {
+   "fieldname": "in_weight",
+   "fieldtype": "Float",
+   "label": "Job In Weight (Kg)",
+   "read_only": 1,
+   "precision": "3",
+   "description": "B - the total of every Job In raised against it."
+  },
+  {
+   "fieldname": "col_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "wastage_weight",
+   "fieldtype": "Float",
+   "label": "Wastage (Kg)",
+   "read_only": 1,
+   "precision": "3",
+   "description": "C = A - B. What did not come back."
+  },
+  {
+   "fieldname": "wastage_percent",
+   "fieldtype": "Float",
+   "label": "Wastage %",
+   "read_only": 1,
+   "precision": "2",
+   "in_list_view": 1,
+   "description": "100 x C / A."
+  },
+  {
+   "fieldname": "wastage_over_limit",
+   "fieldtype": "Check",
+   "label": "Over Wastage Limit",
+   "read_only": 1,
+   "description": "Set when Wastage % exceeds the limit in MM Settings. A flag for the admin, not a block."
+  },
+  {
+   "fieldname": "section_rates",
+   "fieldtype": "Section Break",
+   "label": "Rates"
+  },
+  {
+   "fieldname": "rate_out",
+   "fieldtype": "Currency",
+   "label": "Rate Out",
+   "reqd": 1,
+   "description": "Per kg, applied to the Job Out weight."
+  },
+  {
+   "fieldname": "rate_in",
+   "fieldtype": "Currency",
+   "label": "Rate In",
+   "reqd": 1,
+   "description": "Per kg, applied to the Job In weight."
+  },
+  {
+   "fieldname": "col_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "out_amount",
+   "fieldtype": "Currency",
+   "label": "Out Amount (A)",
+   "read_only": 1,
+   "description": "Job Out weight x Rate Out."
+  },
+  {
+   "fieldname": "in_amount",
+   "fieldtype": "Currency",
+   "label": "In Amount (B)",
+   "read_only": 1,
+   "description": "Job In weight x Rate In."
+  },
+  {
+   "fieldname": "section_total",
+   "fieldtype": "Section Break",
+   "label": "Total"
+  },
+  {
+   "fieldname": "markup_percent",
+   "fieldtype": "Float",
+   "label": "Markup %",
+   "read_only": 1,
+   "precision": "2",
+   "description": "Added on top of A - B. Configured in MM Settings."
+  },
+  {
+   "fieldname": "col_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Total",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "(A - B) plus the markup."
+  },
+  {
+   "fieldname": "section_approval",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "fieldname": "accountant_approved_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Accountant Approved By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accountant_approved_on",
+   "fieldtype": "Datetime",
+   "label": "Accountant Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "admin_approved_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Admin Approved By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "admin_approved_on",
+   "fieldtype": "Datetime",
+   "label": "Admin Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bill_no",
+   "fieldtype": "Data",
+   "label": "Bill No",
+   "read_only": 1,
+   "description": "Entered by the accountant after the admin has approved."
+  },
+  {
+   "fieldname": "bill_entered_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Bill Entered By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cheque",
+   "fieldtype": "Check",
+   "label": "Cheque Given",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_approved_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Final Approved By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_approved_on",
+   "fieldtype": "Datetime",
+   "label": "Final Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_remarks",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Job Hisab",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Accounts",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "job_out"
+}

@@ -991,7 +991,13 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-iw-sec-head .mm-panel-title { display: flex; align-items: center; gap: 0.35rem; margin: 0; }
 .mm-iw-recent { margin-top: 1rem; }
 .mm-iw-recent-head-actions { display: flex; align-items: center; gap: 0.5rem; }
-.mm-iw-num { width: 80px; text-align: right; }
+.mm-iw-num { width: 88px; text-align: right; }
+/* Chrome paints a spinner inside a number input and it sits ON the value in a field this
+   narrow — the rate read as an icon rather than a number. Nobody nudges a rate a rupee at
+   a time with a mouse, so the spinner is worth none of the width it takes. */
+.mm-iw-num::-webkit-outer-spin-button,
+.mm-iw-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.mm-iw-num[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 
 /* ── Inward entry grid ─────────────────────────────────────
    Modelled on the inward screen the floor already knows: header fields on top, then one
@@ -1523,6 +1529,9 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-suggest { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 0.2rem 0; background: var(--mm-card); border: 1.5px solid var(--mm-border); border-radius: var(--mm-radius-sm); box-shadow: var(--mm-shadow-lg); max-height: 200px; overflow-y: auto; list-style: none; }
 .mm-suggest-item { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.8rem; }
 .mm-suggest-item:hover { background: var(--mm-hover-bg); }
+/* The keyboard's highlight. Same paint as hover on purpose — one list, one idea of "the
+   option Enter would take", whether the hand is on the mouse or the arrow keys. */
+.mm-suggest-item.is-active { background: var(--mm-hover-bg); }
 .mm-suggest-muted { padding: 0.4rem 0.7rem; color: var(--mm-text-sec); font-size: 0.8rem; }
 /* Group heading inside a menu — e.g. the orders that want the colour being programmed,
    above the ones that don't. Sticky so the operator can still tell which half of a long
@@ -1916,23 +1925,23 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-bx-panel-title { font-weight: 800; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem; }
 .mm-bx-panel-foot { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
 .mm-bx-panel-err { margin-top: 0.6rem; }
-/* Fields go label-over-input across three fixed tracks. Fixed, not auto-fit: the row a
-   field lands on is what groups it, and the source order plus the 2-cell spans below
-   place each group on a line of its own —
+/* ONE COLUMN, top to bottom. This was three fixed tracks, to keep the panel short and the
+   box table on screen — but three tracks are only short if they FIT, and on the shop
+   floor's screens they did not: the right-hand track fell outside the panel and half the
+   fields could not be seen at all. A field you cannot see is worse than a panel you have
+   to scroll.
 
-     printer (2)      · available net      settings, read once
-     total weight (2) · box weight         the two weights taken off this box
-     bobbin · pcs × each · total bobbin    the whole bobbin deduction, left to right
-     net weight       · returns (2)        the result, and how the packaging comes back
-
-   Nine stacked label-beside-input rows, as this was, would fill the panel top to bottom
-   and push the box table off screen — which is the thing this layout exists to prevent. */
+   It costs less height than it looks like it should, because the operator only fills three
+   of these in — total weight, box weight and the bobbin count. Everything else is either
+   read once (the printer) or worked out from those three (available net, total bobbin,
+   net weight), so the column reads as three inputs with their arithmetic underneath. */
 .mm-bx-panel .mm-bx {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 0.55rem 0.9rem; align-items: start;
+  display: grid; grid-template-columns: 1fr;
+  gap: 0.55rem; align-items: start;
 }
 .mm-bx-panel .mm-bx-row { grid-template-columns: 1fr; gap: 0.22rem; align-content: start; }
-.mm-bx-panel .mm-bx-row-wide { grid-column: span 2; }
+/* Nothing spans in a single column — kept so the class stays harmless where it is used. */
+.mm-bx-panel .mm-bx-row-wide { grid-column: auto; }
 .mm-bx-panel .mm-bx-label { font-size: 0.72rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.03em; }
 /* Scale controls sit BESIDE the gross weight, not under it: stacked they made the first
    row twice the height of the rest for a control touched once a shift. */
@@ -2318,17 +2327,27 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
    filtered to nothing. It used to size to its rows, so every finished cutting shoved the
    machine board down the page and the whole screen moved under the operator's cursor.
    Colours flow into MORE COLUMNS as they arrive and the shelf scrolls inside itself. */
-.mm-patty-shelf { display: flex; flex-direction: column; height: 160px; margin-bottom: 1.4rem; }
-.mm-patty-shelf > .mm-flow-shelf-head { flex: none; }
-.mm-patty-shelf > .mm-patty-scroll,
-.mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-/* Always reserve the scrollbar gutter: otherwise the tiles re-flow by a scrollbar's width
-   the moment the list crosses two rows. */
-.mm-patty-scroll { scrollbar-gutter: stable; }
-.mm-patty-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
-  gap: 0.45rem; align-content: start;
+/* Height is what the row needs, not a fixed 160px. The card used to be a window onto a
+   wrapping grid, and the last row was sliced through the middle — a tile that is half a
+   tile reads as a rendering fault, and the count it exists to show was the part cut off. */
+.mm-patty-shelf { display: flex; flex-direction: column; margin-bottom: 1.4rem; }
+/* The head carries more than it used to — title, count, an optional machine scope pill, the
+   filter and View all. Wrapped only HERE: .mm-flow-shelf-head is shared with other screens
+   whose heads still fit on one line, and they should keep doing so. */
+.mm-patty-shelf > .mm-flow-shelf-head { flex: none; flex-wrap: wrap; row-gap: 0.4rem; }
+.mm-patty-shelf > .mm-flow-empty-state { flex: 1 1 auto; min-height: 0; }
+
+/* ONE ROW that scrolls sideways. A row cannot be clipped vertically, so no tile is ever
+   drawn as a fragment; what does not fit across is on the Finished Patty page, one click
+   away, where there is room to show all of it at once. */
+.mm-patty-rail {
+  display: flex; gap: 0.45rem; overflow-x: auto; overflow-y: hidden;
+  padding-bottom: 0.4rem; scrollbar-gutter: stable;
 }
+/* Tiles keep their width instead of squeezing: a rail of narrowing tiles hides the lot id
+   first, which is the half that says WHICH material this is. */
+.mm-patty-rail > .mm-patty-tile { flex: 0 0 13rem; }
+.mm-patty-viewall { margin-left: 0.4rem; white-space: nowrap; }
 /* The tile IS the action — the old third column spent a quarter of the width saying so. */
 /* Two rows now, not one: the shelf is SOURCE-WISE, so a tile is a colour in ONE LOT and
    the lot has to be on the tile. Named areas rather than flex — the count and the arrow
@@ -2890,7 +2909,7 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem 0.6rem; align-items: start;
 }
-.mm-pvw-machine { margin-bottom: 0; min-width: 0; }
+.mm-pvw-machine { margin-bottom: 0.6rem; min-width: 0; }
 
 .mm-pvw-box {
   display: flex; align-items: stretch; gap: 0.5rem; min-width: 0;
@@ -2901,20 +2920,30 @@ h1, h2, h3 { letter-spacing: -0.015em; }
    .mm-pvw-machine margin, so the grouping still reads without a heading over it. */
 .mm-pvw-box + .mm-pvw-box { margin-top: 0.3rem; }
 
-/* Column 1 — the machine number, big enough to find from a few steps back. */
-.mm-pvw-box-machine {
-  flex: none; display: flex; align-items: center; justify-content: center; gap: 0.3rem;
-  min-width: 3.4rem; padding: 0.35rem 0.5rem;
+/* The machine's own row. The number used to be a cell repeated inside every box, so a
+   machine running three jobs read as three machines and there was no line for the eye to
+   run down when it wanted "what is Machine 4 doing". Stated once, at the top, with only
+   that machine's work under it. */
+.mm-pvw-machine-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.3rem 0.55rem; margin-bottom: 0.32rem;
   border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius-sm);
-  background: var(--mm-accent-bg); color: var(--mm-accent-fg);
-  font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums;
+  background: var(--mm-accent-bg);
+}
+.mm-pvw-machine-no {
+  display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0;
+  font-weight: 800; font-size: 0.98rem; color: var(--mm-accent-fg);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.mm-pvw-machine-tally {
+  font-size: 0.72rem; font-weight: 700; color: var(--mm-accent-fg);
   white-space: nowrap;
 }
-/* Second and later boxes on one machine repeat the number quietly — it is the same
-   machine, and a second loud badge reads as a second machine. */
-.mm-pvw-box-more .mm-pvw-box-machine {
-  background: transparent; color: var(--mm-text-sec); border-color: var(--mm-border);
-}
+/* An idle machine is the one row with no boxes under it, so its head carries the whole
+   reading on its own. "Quiet" is carried by italic and size ALONE: fading it was worth
+   2.41:1 against the head's own background in light mode, on the single word that says a
+   machine is available, on screens read across a lit shop floor. */
+.mm-pvw-machine-free { font-style: italic; font-weight: 650; }
 
 /* Columns 2 and 3 — the three lines, and the tick parked on the patty line. One grid so
    the tick stays on that line whether or not a note is printed under it. */
@@ -2966,14 +2995,6 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   background: var(--mm-card); border-color: var(--mm-green-bg); color: var(--mm-green);
 }
 
-/* Idle: the machine is still listed, so it still gets a box — an empty slot drawn as one
-   rather than a machine missing from the sheet. */
-.mm-pvw-box-idle { border-style: dashed; background: transparent; }
-.mm-pvw-box-idle .mm-pvw-box-machine {
-  background: transparent; color: var(--mm-text-sec);
-  border-color: var(--mm-border-dark); font-weight: 700;
-}
-.mm-pvw-box-free { color: var(--mm-text-sec); font-size: 0.8rem; font-style: italic; }
 
 /* Complete dialog: the reason is only insisted on when the count comes DOWN. */
 .mm-pvw-need { color: var(--mm-danger-fg); font-weight: 700; }
@@ -2983,7 +3004,6 @@ h1, h2, h3 { letter-spacing: -0.015em; }
    two shift columns split the window between them. */
 @container mm-pvw-shift (max-width: 360px) {
   .mm-pvw-box { flex-direction: column; align-items: stretch; gap: 0.35rem; }
-  .mm-pvw-box-machine { justify-content: flex-start; padding: 0.2rem 0.45rem; font-size: 0.95rem; }
 }
 @supports not (container-type: inline-size) {
   /* The same restack for browsers without container queries. It is keyed to a phone-width
@@ -2993,7 +3013,6 @@ h1, h2, h3 { letter-spacing: -0.015em; }
      and the colour line wraps). */
   @media (max-width: 424px) {
     .mm-pvw-box { flex-direction: column; align-items: stretch; gap: 0.35rem; }
-    .mm-pvw-box-machine { justify-content: flex-start; padding: 0.2rem 0.45rem; font-size: 0.95rem; }
   }
 }
 
@@ -3336,3 +3355,84 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 /* Rate comes off the sales order, so it reads as a stated figure rather than an input. */
 .mm-scv-rate { color: var(--mm-text-sec); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mm-scv-amount strong { color: var(--mm-accent-fg); }
+
+/* ── Finished Patty page ──────────────────────────────────────────────────────────────
+   The Program shelf with the whole floor's material on it. Read DOWN the columns: that is
+   how the patty are counted off in the shop, and the eye runs down a column of fifteen far
+   faster than it scans a wrapped grid for the one colour it wants. */
+.mm-fp-crumb { margin-bottom: 0.35rem; }
+.mm-fp-bar {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+.mm-fp-tally { font-size: 0.85rem; color: var(--mm-text-sec); font-weight: 650; }
+.mm-fp-tally strong { font-size: 1.05rem; color: var(--mm-text); font-variant-numeric: tabular-nums; }
+.mm-fp-tally-sub { font-variant-numeric: tabular-nums; }
+.mm-fp-filter { margin-left: auto; max-width: 240px; }
+
+/* Columns are laid out by the page, not by CSS `columns`: a tile must never be broken
+   across a column boundary, and the last column has to be allowed to be short. */
+.mm-fp-columns {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  overflow-x: auto; padding-bottom: 0.6rem;
+}
+.mm-fp-column {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  flex: 1 0 13rem; min-width: 12rem; max-width: 20rem;
+}
+.mm-fp-column > .mm-patty-tile { width: 100%; }
+@media (max-width: 640px) {
+  /* One column at a time on a phone; the fifteen-per-column rhythm is a desk-and-floor
+     reading, and on a narrow screen it just becomes sideways scrolling for its own sake. */
+  .mm-fp-columns { flex-direction: column; overflow-x: visible; align-items: stretch; }
+  .mm-fp-column { max-width: none; flex: none; }
+  .mm-fp-filter { margin-left: 0; max-width: none; }
+}
+
+/* ── Job hisab: the settlement under each Job Out ─────────────────────────────────────
+   The register above says what moved; this says what it is worth and who has signed. */
+.mm-jh-hisab {
+  margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px dashed var(--mm-border-dark);
+  display: flex; flex-direction: column; gap: 0.45rem;
+}
+.mm-jh-hisab-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.mm-jh-hisab-title { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.02em; color: var(--mm-text); }
+/* Where it has got to, and who has to act next — a status word alone made people ask that
+   on every row. Done steps recede, the current one is the only one carrying the accent. */
+.mm-jh-steps { display: inline-flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+.mm-jh-step {
+  font-size: 0.66rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 99px;
+  border: 1px solid var(--mm-border); color: var(--mm-text-sec); white-space: nowrap;
+}
+.mm-jh-step.is-done { color: var(--mm-green-fg); border-color: var(--mm-green-border); }
+.mm-jh-step.is-now {
+  color: var(--mm-accent-fg); background: var(--mm-accent-bg); border-color: var(--mm-accent-soft);
+}
+.mm-jh-billno { font-size: 0.74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mm-jh-hisab-body { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+.mm-jh-rates { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.78rem; }
+.mm-jh-rates label { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--mm-text-sec); }
+.mm-jh-rates input { width: 6rem; }
+.mm-jh-money {
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  font-size: 0.78rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
+}
+.mm-jh-money b { color: var(--mm-text); }
+.mm-jh-total { font-size: 0.86rem; }
+.mm-jh-total b { font-size: 0.95rem; }
+.mm-jh-hisab-acts { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+/* Keyboard hints — the shortcuts, said out loud where the work happens. The grids have
+   taken Enter since they were written and never told anybody, so every row was added with
+   the mouse. Quiet enough to ignore once learnt, present enough to be learnt at all. */
+.mm-keys {
+  display: inline-flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;
+  margin-right: auto; font-size: 0.7rem; color: var(--mm-text-sec); white-space: nowrap;
+}
+.mm-keys kbd {
+  font-family: inherit; font-size: 0.66rem; font-weight: 700; line-height: 1;
+  padding: 0.15rem 0.32rem; border-radius: 4px;
+  border: 1px solid var(--mm-border-dark); background: var(--mm-surface2);
+  color: var(--mm-text);
+}
+@media (max-width: 640px) { .mm-keys { display: none; } }

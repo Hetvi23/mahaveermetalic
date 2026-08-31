@@ -5,28 +5,41 @@ import SearchSelect from "@/components/SearchSelect";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { monthsAgoISO, todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
-const today = () => new Date().toISOString().slice(0, 10);
-const monthsAgo = (n: number) => new Date(Date.now() - n * 30 * 86400000).toISOString().slice(0, 10);
+const today = todayISO;
+const monthsAgo = monthsAgoISO;
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 const qty = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 type Roll = { color_name?: string; cut?: string; weight?: number; roll_no?: string | null };
 type JobIn = { challan: string; challan_no: string; date?: string | null; weight: number; bobbin: number };
 type Bob = { bobbin: string; qty: number; weight: number };
+export type HisabStatus = "Draft" | "Accountant Approved" | "Admin Approved" | "Billed" | "Completed";
+export type Hisab = {
+  name: string; job_out: string; status: HisabStatus;
+  rate_out?: number; rate_in?: number;
+  out_amount?: number; in_amount?: number; markup_percent?: number; total_amount?: number;
+  wastage_weight?: number; wastage_percent?: number; wastage_over_limit?: number;
+  bill_no?: string | null; cheque?: number;
+};
 type Row = {
   job_out: string; bill_no: string; date?: string | null; party?: string; party_name?: string;
   rolls: Roll[]; bobbins_out: Bob[]; job_ins: JobIn[];
   out_weight: number; in_weight: number; balance_weight: number;
   bobbin_out: number; bobbin_in: number; bobbin_difference: number;
   settled: boolean;
+  /** C = out - in, and 100 x C / out. The material question, answerable before any rate. */
+  wastage_weight: number; wastage_percent: number;
+  hisab?: Hisab | null;
 };
-type Hisab = {
+type HisabReport = {
   rows: Row[];
   totals: {
     out_weight: number; in_weight: number; balance_weight: number;
     bobbin_out: number; bobbin_in: number; bobbin_difference: number;
+    wastage_weight: number; wastage_percent: number;
   };
 };
 
@@ -58,7 +71,7 @@ export default function JobHisabPage() {
     "mahaveermetalic.mahaveer_metallic.api.party.all_companies", undefined, "mm-all-companies",
   );
 
-  const { data, isLoading, mutate } = useFrappeGetCall<{ message: Hisab }>(
+  const { data, isLoading, mutate } = useFrappeGetCall<{ message: HisabReport }>(
     `${API}.job_work_hisab`,
     {
       party: applied.party || undefined,
@@ -153,6 +166,7 @@ export default function JobHisabPage() {
           <span className={totals.balance_weight > 0 ? "mm-var-over" : undefined}>
             <b>{kg(totals.balance_weight)}</b> kg with the worker
           </span>
+          <span><b>{(totals.wastage_percent ?? 0).toFixed(2)}%</b> wastage</span>
           <span className={totals.bobbin_difference > 0 ? "mm-var-over" : undefined}>
             <b>{qty(totals.bobbin_difference)}</b> bobbins owed
           </span>
@@ -238,6 +252,13 @@ export default function JobHisabPage() {
               <span className={r.balance_weight > 0 ? "mm-var-over" : undefined}>
                 Still with the worker <b>{kg(r.balance_weight)}</b> kg
               </span>
+              {/* Wastage: what did not come back, as a share of what went. Over the limit
+                  it is called out here as well as on the hisab — this is the line the
+                  shop argues about, and it should not need a panel opened to be read. */}
+              <span className={r.hisab?.wastage_over_limit ? "mm-var-over" : undefined}
+                title="Job out weight minus job in weight, as a percentage of what went out">
+                Wastage <b>{kg(r.wastage_weight)}</b> kg · <b>{(r.wastage_percent ?? 0).toFixed(2)}%</b>
+              </span>
               <span title={r.bobbins_out.map((b) => `${b.bobbin} × ${qty(b.qty)}`).join(", ") || "none sent"}>
                 Bobbins <b>{qty(r.bobbin_out)}</b> sent · <b>{qty(r.bobbin_in)}</b> back ·{" "}
                 <b className={r.bobbin_difference > 0 ? "mm-var-over" : undefined}>
@@ -246,6 +267,8 @@ export default function JobHisabPage() {
                 {r.bobbin_difference < 0 ? "extra returned" : "owed"}
               </span>
             </div>
+
+            <HisabPanel row={r} onChanged={() => void mutate()} />
           </section>
         );
       })}
@@ -307,6 +330,166 @@ function AddBobbinModal({ row, onClose, onDone }: { row: Row; onClose: () => voi
             {loading ? "Adding…" : "Add bobbin"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── The settlement, under each Job Out ──────────────────────────────────────────────
+ * The register above says what moved. This is what it is worth and who has signed for it:
+ *
+ *     A = job out weight x rate out
+ *     B = job in weight  x rate in
+ *     Total = (A - B) + markup%
+ *
+ * Four steps, two people alternating — the accountant proposes the money and later records
+ * the bill; the admin agrees the money and later releases the cheque. The buttons a user
+ * cannot press are hidden, but every step is enforced on the server: hiding a button is a
+ * courtesy, not a permission.
+ */
+const HISAB_API = "mahaveermetalic.mahaveer_metallic.api.job_hisab";
+const money = (v?: number) =>
+  `₹${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const STEPS: { status: HisabStatus; label: string }[] = [
+  { status: "Draft", label: "Rates" },
+  { status: "Accountant Approved", label: "Accountant" },
+  { status: "Admin Approved", label: "Admin" },
+  { status: "Billed", label: "Bill no" },
+  { status: "Completed", label: "Cheque" },
+];
+
+function HisabPanel({ row, onChanged }: { row: Row; onChanged: () => void }) {
+  const h = row.hisab || null;
+  const [open, setOpen] = useState(false);
+  const [rateOut, setRateOut] = useState<string>(h?.rate_out ? String(h.rate_out) : "");
+  const [rateIn, setRateIn] = useState<string>(h?.rate_in ? String(h.rate_in) : "");
+  const [billNo, setBillNo] = useState<string>(h?.bill_no || "");
+  const [busy, setBusy] = useState(false);
+
+  const { call: save } = useFrappePostCall(`${HISAB_API}.save_hisab`);
+  const { call: acc } = useFrappePostCall(`${HISAB_API}.accountant_approve`);
+  const { call: adm } = useFrappePostCall(`${HISAB_API}.admin_approve`);
+  const { call: bill } = useFrappePostCall(`${HISAB_API}.enter_bill`);
+  const { call: fin } = useFrappePostCall(`${HISAB_API}.final_approve`);
+  const { call: reopen } = useFrappePostCall(`${HISAB_API}.reopen`);
+
+  // What the total WOULD be, before anything is saved — so the rate can be judged against
+  // the number it produces rather than typed blind and read back after a round trip.
+  const preview = useMemo(() => {
+    const a = row.out_weight * Number(rateOut || 0);
+    const b = row.in_weight * Number(rateIn || 0);
+    const markup = Number(h?.markup_percent ?? 5);
+    return { a, b, markup, total: (a - b) * (1 + markup / 100) };
+  }, [row.out_weight, row.in_weight, rateOut, rateIn, h]);
+
+  async function run(fn: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    try { await fn(); toast(done); onChanged(); }
+    catch (e) { toast(extractErrorMessage(e), "error"); }
+    finally { setBusy(false); }
+  }
+
+  const status = h?.status || "Draft";
+  const stepIdx = STEPS.findIndex((s) => s.status === status);
+  const over = !!h?.wastage_over_limit;
+
+  if (!open && !h) {
+    return (
+      <div className="mm-jh-hisab mm-no-print">
+        <button type="button" className="mm-mini" onClick={() => setOpen(true)}>
+          <ScrollText size={13} /> Form hisab
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mm-jh-hisab">
+      <div className="mm-jh-hisab-head">
+        <span className="mm-jh-hisab-title">Hisab</span>
+        {/* Where it has got to, and what is left. A status word alone made people ask
+            "so who has to do something now" on every single row. */}
+        <span className="mm-jh-steps">
+          {STEPS.map((s, i) => (
+            <span key={s.status}
+              className={`mm-jh-step${i < stepIdx ? " is-done" : ""}${i === stepIdx ? " is-now" : ""}`}>
+              {s.label}
+            </span>
+          ))}
+        </span>
+        {over && (
+          <span className="mm-pill mm-pill-warn" title="Over the wastage limit in MM Settings — worth a second look before approving">
+            Wastage {(h?.wastage_percent ?? row.wastage_percent).toFixed(2)}%
+          </span>
+        )}
+        {h?.bill_no && <span className="mm-jh-billno">Bill {h.bill_no}</span>}
+        {!!h?.cheque && <span className="mm-pill mm-pill-ok">Cheque</span>}
+      </div>
+
+      <div className="mm-jh-hisab-body">
+        {status === "Draft" ? (
+          <div className="mm-jh-rates mm-no-print">
+            <label>Rate out<input className="mm-input mm-input-compact" type="number" step="0.01"
+              value={rateOut} onChange={(e) => setRateOut(e.target.value)} /></label>
+            <label>Rate in<input className="mm-input mm-input-compact" type="number" step="0.01"
+              value={rateIn} onChange={(e) => setRateIn(e.target.value)} /></label>
+            <button type="button" className="mm-mini" disabled={busy}
+              onClick={() => void run(() => save({
+                job_out: row.job_out, rate_out: Number(rateOut || 0), rate_in: Number(rateIn || 0),
+              }), "Hisab saved")}>Save rates</button>
+          </div>
+        ) : (
+          <div className="mm-jh-rates">
+            <span>Rate out <b>{money(h?.rate_out)}</b></span>
+            <span>Rate in <b>{money(h?.rate_in)}</b></span>
+          </div>
+        )}
+
+        <div className="mm-jh-money">
+          <span>Out {kg(row.out_weight)} × rate = <b>{money(h ? h.out_amount : preview.a)}</b></span>
+          <span>In {kg(row.in_weight)} × rate = <b>{money(h ? h.in_amount : preview.b)}</b></span>
+          <span>+{(h?.markup_percent ?? preview.markup)}%</span>
+          <span className="mm-jh-total">Total <b>{money(h ? h.total_amount : preview.total)}</b></span>
+        </div>
+      </div>
+
+      <div className="mm-jh-hisab-acts mm-no-print">
+        {h && status === "Draft" && (
+          <button type="button" className="mm-mini mm-mini-ok" disabled={busy}
+            onClick={() => void run(() => acc({ name: h.name }), "Accountant approved")}>
+            Accountant approve
+          </button>
+        )}
+        {h && status === "Accountant Approved" && (
+          <button type="button" className="mm-mini mm-mini-ok" disabled={busy}
+            onClick={() => void run(() => adm({ name: h.name }), "Admin approved")}>
+            Admin approve
+          </button>
+        )}
+        {h && status === "Admin Approved" && (
+          <>
+            <input className="mm-input mm-input-compact" placeholder="Bill no"
+              value={billNo} onChange={(e) => setBillNo(e.target.value)} />
+            <button type="button" className="mm-mini mm-mini-ok" disabled={busy || !billNo.trim()}
+              onClick={() => void run(() => bill({ name: h.name, bill_no: billNo.trim() }), "Bill number recorded")}>
+              Save bill no
+            </button>
+          </>
+        )}
+        {h && status === "Billed" && (
+          <button type="button" className="mm-mini mm-mini-ok" disabled={busy}
+            onClick={() => void run(() => fin({ name: h.name, cheque: 1 }), "Cheque recorded, hisab complete")}>
+            Cheque given — final approve
+          </button>
+        )}
+        {h && status !== "Draft" && status !== "Completed" && (
+          <button type="button" className="mm-mini" disabled={busy}
+            title="Send it back to Draft so the rates can be corrected"
+            onClick={() => void run(() => reopen({ name: h.name }), "Reopened")}>
+            Reopen
+          </button>
+        )}
       </div>
     </div>
   );
