@@ -26,12 +26,22 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 	if not rows:
 		return []
 
-	# The company shown beneath the name is the FIRST one filed under the party — the
-	# order they were entered in the master, which is the one the office treats as
-	# primary. Ordered by idx, so it is that row and not whichever the database returned.
+	# Which company to show beneath the name.
+	#
+	# Two answers, and the search decides between them. With nothing typed, it is the
+	# FIRST company filed under the party — the order they were entered in the master,
+	# which is the one the office treats as primary.
+	#
+	# But when the operator has typed something, the party is on the list BECAUSE one of
+	# its companies matched, and printing the primary one instead answers a question
+	# nobody asked: typing "kamal" returned Prem Jariwala and then said "Rajeshree Jari"
+	# underneath, so the one company that proved the match was the one company not shown,
+	# and the operator could not tell which of a party's firms they had actually found.
+	# The matching company wins, still in idx order so a search matching two is stable.
+	#
 	# Raw SQL for the same reason as companies_for_party: a child-table get_all is refused
 	# for restricted roles, and this keeps the row order the master's own.
-	first = {}
+	first, matched = {}, {}
 	for c in frappe.db.sql(
 		"""
 		select parent, company_name from `tabMM Party Company`
@@ -43,9 +53,11 @@ def search_party_with_company(txt: str = "", limit: int = 20):
 		as_dict=True,
 	):
 		first.setdefault(c.parent, c.company_name)
+		if txt and txt.lower() in (c.company_name or "").lower():
+			matched.setdefault(c.parent, c.company_name)
 
 	for r in rows:
-		r["company_name"] = first.get(r.party)
+		r["company_name"] = matched.get(r.party) or first.get(r.party)
 		r.pop("modified", None)
 	return rows
 

@@ -1,142 +1,220 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "hash",
-  "creation": "2026-05-03 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "branch",
-    "location",
-    "transaction_date",
-    "status",
-    "supplier",
-    "sales_order",
-    "po_number",
-    "color",
-    "cut",
-    "qty_kg",
-    "qty_box",
-    "rate",
-    "delivery_date",
-    "so_item"
-  ],
-  "fields": [
-    {
-      "fieldname": "transaction_date",
-      "fieldtype": "Date",
-      "in_list_view": 1,
-      "label": "Date",
-      "reqd": 1,
-      "default": "Today"
-    },
-    {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Branch",
-      "options": "MM Branch"
-    },
-    {
-      "fieldname": "location",
-      "fieldtype": "Link",
-      "label": "Location",
-      "options": "MM Location Master"
-    },
-    {
-      "fieldname": "status",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "label": "Status",
-      "options": "Pending\nPartially Received\nReceived",
-      "default": "Pending",
-      "read_only": 1,
-      "description": "Auto: Pending until any inward is received against this order line, Partially Received while short, Received once the inwards meet the PO weight."
-    },
-    {
-      "fieldname": "supplier",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Supplier",
-      "options": "MM Vendor Master"
-    },
-    {
-      "fieldname": "sales_order",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "SO Reference",
-      "options": "MM Sales Order"
-    },
-    {
-      "fieldname": "po_number",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "PO Number (= SO Number)",
-      "read_only": 1
-    },
-    {
-      "fieldname": "color",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Color",
-      "reqd": 1
-    },
-    {
-      "fieldname": "cut",
-      "fieldtype": "Data",
-      "label": "Cut"
-    },
-    {
-      "fieldname": "qty_kg",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Qty (KG)",
-      "precision": 3
-    },
-    {
-      "fieldname": "qty_box",
-      "fieldtype": "Float",
-      "label": "Qty (Box)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "rate",
-      "fieldtype": "Currency",
-      "label": "Rate",
-      "precision": 2
-    },
-    {
-      "fieldname": "delivery_date",
-      "fieldtype": "Date",
-      "label": "Delivery Date"
-    },
-    {
-      "fieldname": "so_item",
-      "fieldtype": "Data",
-      "label": "SO Item Ref",
-      "read_only": 1,
-      "description": "Internal link to the Sales Order line that generated this PO."
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "is_submittable": 1,
-  "links": [],
-  "modified": "2026-07-29 14:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Purchase Order",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "amend": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1, "amend": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Operations", "read": 1, "write": 1, "create": 1, "submit": 1, "cancel": 1, "amend": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "submit": 1, "cancel": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Supplier", "read": 1, "print": 1, "report": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-05-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "location",
+  "transaction_date",
+  "status",
+  "supplier",
+  "sales_order",
+  "po_number",
+  "color",
+  "cut",
+  "qty_kg",
+  "qty_box",
+  "rate",
+  "delivery_date",
+  "so_item"
+ ],
+ "fields": [
+  {
+   "fieldname": "transaction_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1,
+   "default": "Today",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Branch",
+   "options": "MM Branch",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "label": "Location",
+   "options": "MM Location Master",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nPartially Received\nReceived",
+   "default": "Pending",
+   "read_only": 1,
+   "description": "Auto: Pending until any inward is received against this order line, Partially Received while short, Received once the inwards meet the PO weight."
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Supplier",
+   "options": "MM Vendor Master",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SO Reference",
+   "options": "MM Sales Order"
+  },
+  {
+   "fieldname": "po_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "PO Number (= SO Number)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Color",
+   "reqd": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "cut",
+   "fieldtype": "Data",
+   "label": "Cut",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "qty_kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty (KG)",
+   "precision": 3,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "qty_box",
+   "fieldtype": "Float",
+   "label": "Qty (Box)",
+   "precision": 3,
+   "default": "0",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Rate",
+   "precision": 2,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "label": "Delivery Date",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "so_item",
+   "fieldtype": "Data",
+   "label": "SO Item Ref",
+   "read_only": 1,
+   "description": "Internal link to the Sales Order line that generated this PO."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Purchase Order",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "cancel": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Supplier",
+   "read": 1,
+   "print": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

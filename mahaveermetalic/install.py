@@ -10,6 +10,9 @@ MM_ROLES = [
 	{"role_name": "MM Production", "desk_access": 1},
 	{"role_name": "MM Inventory Manager", "desk_access": 1},
 	{"role_name": "MM Sales Team", "desk_access": 1},
+	# Signs the job-work hisab first, and enters the bill number once the admin has agreed
+	# it. Kept apart from MM Admin because the two halves of that flow are two people.
+	{"role_name": "MM Accounts", "desk_access": 1},
 	{"role_name": "MM Supplier", "desk_access": 0},
 ]
 

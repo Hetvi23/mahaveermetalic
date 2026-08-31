@@ -4,12 +4,43 @@
 import re
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 
 
 def _norm(s):
 	return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def received_against(po) -> float:
+	"""Kilos already inwarded against this PO's order line.
+
+	The same colour/cut matching recompute_po_status uses — deliberately the one rule, so
+	a PO can never be judged "nothing received yet" by one function and "partially
+	received" by the other.
+	"""
+	if not po or not po.get("sales_order"):
+		return 0.0
+	rows = frappe.db.sql(
+		"""
+		select ii.color_name, ii.cut, ii.weight
+		from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+		where i.docstatus = 1 and ii.customer_order = %s
+		""",
+		(po.get("sales_order"),),
+		as_dict=True,
+	)
+	want_c = _norm(po.get("color"))
+	want_cut = (po.get("cut") or "").strip()
+	total = 0.0
+	for r in rows:
+		if _norm(r.color_name) != want_c:
+			continue
+		if want_cut and (r.cut or "").strip() and (r.cut or "").strip() != want_cut:
+			continue
+		total += float(r.weight or 0)
+	return total
 
 
 def recompute_po_status(po_name):
@@ -85,14 +116,33 @@ class MMPurchaseOrder(Document):
 	def _reject_negatives(self):
 		"""Weight, box and rate can never be negative — a negative PO orders nothing and
 		quietly corrupts every total it feeds (shortage, order value, supplier pending)."""
-		from frappe import _
-
 		if float(self.qty_kg or 0) < 0:
 			frappe.throw(_("Purchase weight cannot be negative."))
 		if float(self.qty_box or 0) < 0:
 			frappe.throw(_("Purchase box quantity cannot be negative."))
 		if float(self.rate or 0) < 0:
 			frappe.throw(_("Purchase rate cannot be negative."))
+
+	def before_update_after_submit(self):
+		"""A submitted PO stays editable until the material starts arriving.
+
+		Frappe refused every change the moment the PO was submitted — "Not allowed to
+		change Qty (KG) after submission from 1800.0 to 2400.0" — even on a PO nothing had
+		been received against, so a keying mistake could only be fixed by cancelling the
+		order that had already gone to the supplier. The fields are open on submit now, and
+		the real line is drawn here instead: once ONE kilo has been inwarded against this
+		line, the PO is what the receipt was measured against and it stops moving. For
+		everybody — there is no role that can make an already-received quantity untrue.
+		"""
+		self._reject_negatives()
+		got = received_against(self.as_dict())
+		if got > 0.001:
+			frappe.throw(
+				_(
+					"{0} kg has already been received against this purchase order, so it can "
+					"no longer be edited. Raise a new purchase order for any further material."
+				).format(frappe.utils.flt(got, 3))
+			)
 
 	def validate(self):
 		self._reject_negatives()

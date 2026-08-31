@@ -245,6 +245,13 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "email", label: "Email", fieldtype: "Data" },
 			{ fieldname: "address", label: "Address", fieldtype: "Small Text" },
 			{ fieldname: "user", label: "Login User", fieldtype: "Link", options: "User" },
+			// What this person may do. Saving the record grants it to their Login User —
+			// there was no way to give anyone a permission without opening the Frappe desk,
+			// which is the one place these operators are not meant to go.
+			{
+				fieldname: "role", label: "Role", fieldtype: "Select",
+				options: "\nMM Admin\nMM Operations\nMM Production\nMM Inventory Manager\nMM Sales Team\nMM Accounts\nMM Supplier",
+			},
 		],
 	},
 	{
@@ -278,7 +285,7 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		listTagline: "People mapped to locations and departments.",
 		navGroup: "masters",
 		formSections: [
-			{ id: "e1", title: "Person", fieldnames: ["employee_name", "mobile_number", "user"] },
+			{ id: "e1", title: "Person", fieldnames: ["employee_name", "mobile_number", "user", "role"] },
 			{ id: "e2", title: "Placement", description: "Drives branch/location on inwards this user posts.", fieldnames: ["branch", "location", "department"] },
 		],
 		listColumns: [
