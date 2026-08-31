@@ -48,6 +48,11 @@ export type ChallanPrintData = {
   total_weight?: number;
   /** Nil on an unpriced challan, which is what hides the value line entirely. */
   total_amount?: number;
+  /** 1 when this challan carries a lot the party has never been sent before — the paper
+   *  says so at the top left, because the terms below it require lot-to-lot use. */
+  new_lot?: number;
+  /** Which lots those are. Not printed today; kept so the mark can name them later. */
+  new_lots?: string[];
   /** Configured in MM Settings — omitted entirely when not set. */
   company_address?: string | null;
   challan_terms?: string | null;
@@ -117,14 +122,19 @@ function copy(d: ChallanPrintData, label: string): string {
      terms below make the customer liable for a missing one. Naming them is the whole point
      of that liability, so the challan lists them when there are any and stays silent when
      there are none rather than printing an empty heading. */
-  const bobbinRows = (d.bobbins || []).filter((b) => b.bobbin && Number(b.qty || 0) > 0);
+  // Quality and quantity, and nothing else. The bobbin's own name and its weight were
+  // two more columns of width on a half-sheet that has none to spare, and neither is
+  // what the customer is being held to: the count is what has to come back.
+  //
+  // The row filter no longer demands a bobbin NAME either — with the name off the paper,
+  // an unnamed bobbin with a real quantity is still a quantity owed.
+  const bobbinRows = (d.bobbins || []).filter((b) => Number(b.qty || 0) > 0);
   const bobbinBlock = bobbinRows.length
     ? `<table class="bob">
-        <thead><tr><th>Bobbin</th><th>Quality</th><th class="rt">Qty</th><th class="rt">Weight</th></tr></thead>
+        <thead><tr><th>Quality</th><th class="rt">Qty</th></tr></thead>
         <tbody>${bobbinRows
-          .map((b) => `<tr><td>${esc(b.bobbin || "")}</td><td>${esc(b.quality || "")}</td>` +
-                      `<td class="rt">${int(b.qty)}</td>` +
-                      `<td class="rt">${Number(b.weight || 0) ? num(b.weight) : ""}</td></tr>`)
+          .map((b) => `<tr><td>${esc(b.quality || "")}</td>` +
+                      `<td class="rt">${int(b.qty)}</td></tr>`)
           .join("")}</tbody>
       </table>`
     : "";
@@ -153,7 +163,7 @@ function copy(d: ChallanPrintData, label: string): string {
 
   return `<section class="copy">
     <table class="hd"><tr>
-      <td class="brand">MAHAVIR METALIC</td>
+      <td class="brand">${d.new_lot ? `<span class="newlot">NEW LOT</span>` : ""}MAHAVIR METALIC</td>
       <td class="addr">${d.company_address ? esc(d.company_address).replace(/\n/g, "<br>") : ""}</td>
       <td class="orig">${esc(label)}</td>
     </tr></table>
@@ -208,6 +218,12 @@ export function printChallan(d: ChallanPrintData) {
     .copy:last-child { border-bottom: 0; }
     .hd td { vertical-align: top; }
     .brand { font-size: 13pt; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap; }
+    /* Top left of both copies, and INLINE before the name on purpose: nothing on this
+       sheet gives height back. .grid is a table at flex: 0 1 auto, so its automatic
+       minimum size stops it shrinking, and .sign's auto margin is already zero on a full
+       challan — so a block here came straight off the bottom and sliced the signature row
+       on a 61-box challan. Inline costs no row at all. */
+    .newlot { font-size: 9pt; font-weight: 900; letter-spacing: 1px; margin-right: 3mm; }
     .addr { font-size: 6.5pt; line-height: 1.25; text-align: center; }
     .orig { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; text-align: right; white-space: nowrap; }
     .bannerwrap { text-align: center; margin: 1mm 0 1.5mm; }
@@ -246,6 +262,9 @@ export function printChallan(d: ChallanPrintData) {
   </body></html>`);
   w.document.close();
   w.focus();
+  // Closes itself once the dialog is done with it, or silent printing leaves an orphan
+  // window behind on every challan.
+  w.onafterprint = () => w.close();
   // Give the layout a beat to settle before the print dialog opens.
   setTimeout(() => { w.print(); }, 350);
 }

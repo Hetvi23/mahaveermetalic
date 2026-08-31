@@ -10,9 +10,10 @@ const money = (v: number) =>
   `\u20B9${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
+import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 
 /**
  * The papers this screen can issue. The type picked here decides the numbering series —
@@ -113,10 +114,13 @@ export default function SalesChallanVoucher() {
   }
   // Orders not yet dispatched. An order that already has a submitted challan is gone from
   // this list — offering it again invites a second challan for the same goods.
-  const ordersCall = useFrappeGetCall<{ message: { name: string; colours?: string }[] }>(
+  const ordersCall = useFrappeGetCall<{ message: { name: string; party?: string; party_name?: string; colours?: string }[] }>(
     `${API}.orders_for_challan`,
-    party ? { party } : undefined,
-    party ? `chal-orders-${party}` : null,
+    party ? { party } : {},
+    // Fetched with or without a customer: the order can be picked first, and picking it
+    // names the customer. Separate cache keys so the narrowed and the full list do not
+    // overwrite each other.
+    party ? `chal-orders-${party}` : "chal-orders-all",
   );
 
   const totals = useMemo(() => {
@@ -232,15 +236,29 @@ export default function SalesChallanVoucher() {
             <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)}
               placeholder="Blank — numbered by the series" />
           </label>
-          <PartyPicker label="Customer *" value={party} required onChange={(v) => { setParty(v); setOrder(""); }} />
+          {/* `required` already appends the asterisk inside PartyPicker — the label
+              carried its own as well and the field read "Customer * *". */}
+          <PartyPicker label="Customer" value={party} required onChange={(v) => { setParty(v); setOrder(""); }} />
           <label className="mm-field">
             <span className="mm-field-label">Order</span>
+            {/* USABLE BEFORE THE CUSTOMER. A dispatch is identified on the floor by its
+                order number — that is what is written on the paper in the operator's hand
+                — and this field used to be greyed out until a customer had been found and
+                typed. Picking an order now fills the customer in, which is the direction
+                the information actually flows. */}
             <SearchSelect
               value={order}
-              disabled={!party}
-              placeholder={!party ? "Pick a customer first" : "— none (from stock) —"}
-              options={(ordersCall.data?.message ?? []).map((o) => ({ value: o.name, label: `${o.name}${o.colours ? ` · ${o.colours}` : ""}` }))}
-              onChange={setOrder} />
+              placeholder="— none (from stock) —"
+              options={(ordersCall.data?.message ?? []).map((o) => ({
+                value: o.name,
+                label: `${o.name}${o.colours ? ` · ${o.colours}` : ""}`,
+                meta: !party ? o.party_name || o.party : undefined,
+              }))}
+              onChange={(v) => {
+                setOrder(v);
+                const picked = (ordersCall.data?.message ?? []).find((o) => o.name === v);
+                if (picked?.party && picked.party !== party) setParty(picked.party);
+              }} />
           </label>
           <label className="mm-field">
             <span className="mm-field-label">Chalan Date *</span>

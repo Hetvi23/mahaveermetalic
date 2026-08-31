@@ -39,6 +39,39 @@ def is_dispatch(challan_type) -> bool:
 
 
 class MMSalesChallan(Document):
+	def _guard_order_cover(self):
+		"""A dispatch cannot send out more than its order has taken in.
+
+		This ceiling existed and was enforced in exactly ONE place — api.challan
+		update_challan_weights, the CORRECTION path — so editing a challan upward was
+		refused while creating that same challan outright was not. An order that had
+		inwarded 900 kg could be dispatched 1,207 kg on a new challan and the only sign was
+		a red negative balance on the Sales Challan Report afterwards.
+
+		Enforced here instead, where every path arrives: the SPA, the desk, and the challan
+		a production raises for itself. `exclude_challan` keeps this document out of the
+		already-dispatched sum, or on any edit its own weight would count against itself.
+		"""
+		from mahaveermetalic.mahaveer_metallic.api.challan import _order_cover
+
+		if not is_dispatch(self.challan_type):
+			return
+		order = self.sales_order or next((it.sales_order for it in self.items if it.sales_order), None)
+		if not order:
+			return
+		cover = _order_cover(order, exclude_challan=self.name)
+		if not cover or not cover.get("inwarded_weight"):
+			return
+		available = round(float(cover["inwarded_weight"]) - float(cover["dispatched_weight"]), 3)
+		total = round(sum(float(i.weight or 0) for i in self.items), 3)
+		if total > available:
+			frappe.throw(
+				_(
+					"{0} kg is more than order {1} can still send out. It has taken in {2} kg, "
+					"{3} kg has already gone on other challans, so {4} kg is left."
+				).format(total, order, cover["inwarded_weight"], cover["dispatched_weight"], available)
+			)
+
 	def validate(self):
 		if not self.challan_type:
 			self.challan_type = "Sales"
@@ -49,6 +82,7 @@ class MMSalesChallan(Document):
 				frappe.throw(_("Row #{0}: box and weight cannot be negative.").format(it.idx))
 		self.total_box = round(sum(float(i.qty_box or 0) for i in self.items), 3)
 		self.total_weight = round(sum(float(i.weight or 0) for i in self.items), 3)
+		self._guard_order_cover()
 		self._apply_rates()
 
 	def _apply_rates(self):

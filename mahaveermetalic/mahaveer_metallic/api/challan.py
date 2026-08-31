@@ -36,6 +36,14 @@ def _box_row(b, production=None, order=None):
 		"box_weight": b.get("box_weight") or 0,
 		"net_weight": b.get("net_weight") or 0,
 		"weight": b.get("net_weight") or 0,
+		# THE RETURN TICKS, WHICH THE TWO TABLES SPELL DIFFERENTLY. The production box
+		# calls them box_return / bobbin_return; the challan line calls them r_box /
+		# r_bobbin. Nothing mapped between the two, so the operator ticked "this box's
+		# packaging comes back" on the voucher and the printed challan said "Return No. of
+		# Box: 0 — No. of Bobbin: 0" every single time, on the one line that tells the
+		# customer what they are holding on to and are liable for.
+		"r_box": 1 if frappe.utils.cint(b.get("box_return")) else 0,
+		"r_bobbin": 1 if frappe.utils.cint(b.get("bobbin_return")) else 0,
 		"production": production,
 		"sales_order": order,
 	}
@@ -182,6 +190,19 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 		frappe.throw(_("Pick at least one box or roll for the challan."))
 	if not party:
 		frappe.throw(_("Choose the customer."))
+
+	# A SALE IS AGAINST AN ORDER. Rolls were going out on Sales challans with no order on
+	# them at all: nothing was billed against, the order's dispatch cover was never
+	# touched, and the material simply left. The other types are deliberately free of this
+	# — a plain Challan or Delivery Challan is how stock moves without a sale behind it,
+	# and that is what they are for.
+	if (challan_type or "Sales") == "Sales" and not sales_order:
+		frappe.throw(
+			_(
+				"Pick the order this is being sent against. To move stock with no sale behind "
+				"it, raise a Delivery Challan instead."
+			)
+		)
 
 	# The order fixes what may go on the challan: dispatching a colour the customer never
 	# ordered is a picking mistake, and it silently mis-bills them.
@@ -367,8 +388,18 @@ def in_stock_rolls(item=None, challan_date=None, search=None, roll=None, lot=Non
 		vals["lot"] = f"%{str(lot).strip()}%"
 	where = " and ".join(conds)
 
-	# The join that gives each roll its inventory row is the same key MM Inward uses to
-	# find or create one (branch, location, lot_number, colour) — see MMInward._find_roll.
+	# The join that gives each roll its inventory row, on the same key MM Inward uses to
+	# find or create one — see MMInward._find_roll, which now includes the ROLL.
+	#
+	# The roll matters here because `ri.name` is what a picked row is IDENTIFIED by
+	# downstream: joined lot-wise, every roll of a lot resolved to the one lot row, so
+	# selecting a single roll on the Sales Voucher put the whole lot on the challan.
+	#
+	# The NOT EXISTS arm is for stock received BEFORE the key included the roll: those
+	# rows are merged under the first roll's name, so no per-roll row exists to match and
+	# a plain equality join would drop them from the picker entirely. Where a row for this
+	# roll does exist, that arm is false and the exact match wins — so a lot cannot match
+	# twice and the join stays one-to-one.
 	src = """
 		from `tabMM Inward Item` ii
 		join `tabMM Inward` i on i.name = ii.parent
@@ -377,6 +408,17 @@ def in_stock_rolls(item=None, challan_date=None, search=None, roll=None, lot=Non
 			and ifnull(ri.color_name, '') = ifnull(ii.color_name, '')
 			and ifnull(ri.location, '') = ifnull(i.location, '')
 			and ifnull(ri.branch, '') = ifnull(i.branch, '')
+			and (
+				ifnull(ri.roll_no, '') = ifnull(ii.roll_name, '')
+				or not exists (
+					select 1 from `tabMM Roll Inventory` r2
+					where ifnull(r2.lot_number, '') = ifnull(ii.lot_number, '')
+						and ifnull(r2.color_name, '') = ifnull(ii.color_name, '')
+						and ifnull(r2.location, '') = ifnull(i.location, '')
+						and ifnull(r2.branch, '') = ifnull(i.branch, '')
+						and ifnull(r2.roll_no, '') = ifnull(ii.roll_name, '')
+				)
+			)
 	"""
 
 	total = frappe.db.sql(f"select count(*) {src} where {where}", vals)[0][0]
@@ -550,6 +592,95 @@ def _rollup_bobbins(items):
 	return list(out.values())
 
 
+def _challan_lot_keys(doc) -> set:
+	"""(colour, printed lot id) for every row on a challan, however the row was raised.
+
+	The two creation paths reach a lot by different links and neither sets the other's: a
+	challan raised from a production carries `production` (MM Production.lot, a Link to MM
+	Lot), and one picked off stock carries `roll_inventory` (lot_number, the printed id).
+	Both are resolved to the PRINTED id — LT12/26-27 — so the two paths can be compared
+	against each other and against history.
+	"""
+	prods = {it.get("production") for it in doc.items if it.get("production")}
+	invs = {it.get("roll_inventory") for it in doc.items if it.get("roll_inventory")}
+	by_prod, by_inv = {}, {}
+	if prods:
+		by_prod = {
+			r[0]: r[1]
+			for r in frappe.db.sql(
+				"""select p.name, l.lot_id from `tabMM Production` p
+				left join `tabMM Lot` l on l.name = p.lot where p.name in %s""",
+				(tuple(prods),),
+			)
+		}
+	if invs:
+		by_inv = {
+			r[0]: r[1]
+			for r in frappe.db.sql(
+				"select name, lot_number from `tabMM Roll Inventory` where name in %s",
+				(tuple(invs),),
+			)
+		}
+	keys = set()
+	for it in doc.items:
+		lot = by_inv.get(it.get("roll_inventory")) or by_prod.get(it.get("production"))
+		if lot:
+			keys.add(((it.color_name or "").strip(), str(lot).strip()))
+	return keys
+
+
+def new_lots_for_party(doc) -> list:
+	"""Lots on this challan that this PARTY has never been sent before.
+
+	The printed terms tell the weaver to use material lot to lot, so the one thing that has
+	to shout off the top of the page is that the lot has CHANGED. Scoped to the PARTY, not
+	to the order: two customers drawing from the same lot are each told when their own
+	supply moves on, and a party who has already woven with a lot is not warned about it
+	again just because a new order started.
+
+	Compared per COLOUR, because a lot is one colour of material — a party taking silver
+	from one lot and gold from another has not had a lot change, they have two products.
+
+	Only DISPATCH paper counts, on both sides. Job Out, Job In and Job Challan are material
+	moving to and from a job worker, not goods sold — asking `== "Job In"` here was the
+	fifth place in this codebase to spell that rule by hand, which is what
+	NON_DISPATCH_TYPES exists to stop. It also let job paper poison the history: a roll of
+	LT2 sent to a party on a Job Out made the first genuine SALE of LT2 to them read as a
+	lot they already had, and the mark this feature exists for never printed.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import (
+		NON_DISPATCH_TYPES,
+		is_dispatch,
+	)
+
+	if not is_dispatch(doc.get("challan_type")) or not doc.get("party"):
+		return []
+	keys = _challan_lot_keys(doc)
+	if not keys:
+		return []
+	had = set()
+	for r in frappe.db.sql(
+		"""select distinct ci.color_name as colour,
+			coalesce(nullif(ri.lot_number, ''), l.lot_id) as lot
+		from `tabMM Sales Challan Item` ci
+		join `tabMM Sales Challan` c on c.name = ci.parent
+		left join `tabMM Roll Inventory` ri on ri.name = ci.roll_inventory
+		left join `tabMM Production` p on p.name = ci.production
+		left join `tabMM Lot` l on l.name = p.lot
+		where c.party = %(party)s and c.docstatus = 1
+			and c.challan_type not in %(skip)s
+			and c.name != %(name)s and c.creation < %(creation)s""",
+		{
+			"party": doc.party, "name": doc.name, "creation": doc.creation,
+			"skip": NON_DISPATCH_TYPES,
+		},
+		as_dict=True,
+	):
+		if r.lot:
+			had.add(((r.colour or "").strip(), str(r.lot).strip()))
+	return sorted({lot for colour, lot in keys if (colour, lot) not in had})
+
+
 @frappe.whitelist()
 def challan_for_print(challan):
 	"""Everything one challan needs to print, in one call.
@@ -566,9 +697,14 @@ def challan_for_print(challan):
 	settings = frappe.db.get_value(
 		"MM Settings", "MM Settings", ["company_address", "challan_terms"], as_dict=True
 	) or {}
+	# Whether the material on this paper is a lot the customer has not had before — the
+	# warning the printed terms already imply ("use material lot to lot") but never raised.
+	new_lots = new_lots_for_party(doc)
 	return {
 		"name": doc.name,
 		"challan_type": doc.challan_type or "Sales",
+		"new_lot": 1 if new_lots else 0,
+		"new_lots": new_lots,
 		"challan_no": doc.challan_no or doc.name,
 		"company_address": settings.get("company_address") or None,
 		"challan_terms": settings.get("challan_terms") or None,
@@ -757,15 +893,20 @@ def orders_for_challan(party=None):
 	picked for its second delivery. An order is offered until the challans standing
 	against it COVER it, which is the same test the order's own status is read by.
 	"""
-	if not party:
-		return []
+	# NO PARTY IS NOT AN ERROR, IT IS A STARTING POINT. The floor identifies a dispatch by
+	# its ORDER — that is the number on the paperwork in the operator's hand — and this
+	# used to return nothing without a customer, so the screen greyed the Order box out and
+	# told them to go and find the customer first. Picking the order names the customer,
+	# not the other way round; the party is a filter when they have one, not a gate.
 	rows = frappe.db.sql(
 		"""
-		select so.name, so.transaction_date, so.ordered_weight, so.completion_mode,
+		select so.name, so.party, so.transaction_date, so.ordered_weight, so.completion_mode,
+			pm.party_name,
 			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
 			 from `tabMM Sales Order Item` x where x.parent = so.name) as colours
 		from `tabMM Sales Order` so
-		where so.party = %(party)s
+		left join `tabMM Party Master` pm on pm.name = so.party
+		where (%(party)s is null or %(party)s = '' or so.party = %(party)s)
 			and so.docstatus = 1
 			and ifnull(so.order_state, '') != 'Cancelled'
 		-- FIFO: the order that came in first is filled first. This listed the NEWEST
@@ -777,7 +918,7 @@ def orders_for_challan(party=None):
 		order by so.transaction_date asc, so.creation asc
 		limit 200
 		""",
-		{"party": party},
+		{"party": party or None},
 		as_dict=True,
 	)
 	if not rows:
@@ -1615,6 +1756,19 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 		):
 			bob_in[b.parent] = bob_in.get(b.parent, 0.0) + frappe.utils.flt(b.qty)
 
+	# Any hisab already formed against these Job Outs — the register shows its status and
+	# its money beside the weights rather than making the screen ask row by row.
+	hisabs = {}
+	for h in frappe.get_all(
+		"MM Job Hisab",
+		filters={"job_out": ["in", names]},
+		fields=["name", "job_out", "status", "rate_out", "rate_in", "out_amount",
+			"in_amount", "markup_percent", "total_amount", "wastage_weight",
+			"wastage_percent", "wastage_over_limit", "bill_no", "cheque"],
+		limit_page_length=0,
+	):
+		hisabs[h.job_out] = h
+
 	rows = []
 	t_out = t_in = t_bo = t_bi = 0.0
 	for o in outs:
@@ -1655,6 +1809,12 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 			"bobbin_in": b_in,
 			"bobbin_difference": round(b_out - b_in, 3),
 			"settled": abs(round(out_w - in_w, 3)) < 0.001 and abs(round(b_out - b_in, 3)) < 0.001,
+			# Wastage is the weight that did not come back, as a share of what went. Stated
+			# on every row whether or not a hisab exists yet: it is the material question,
+			# and it is answerable long before anyone agrees a rate.
+			"wastage_weight": round(out_w - in_w, 3),
+			"wastage_percent": round(100.0 * (out_w - in_w) / out_w, 2) if out_w else 0.0,
+			"hisab": hisabs.get(o.name),
 		}
 		if frappe.utils.cint(open_only) and row["settled"]:
 			continue
@@ -1670,6 +1830,8 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 			"out_weight": round(t_out, 3),
 			"in_weight": round(t_in, 3),
 			"balance_weight": round(t_out - t_in, 3),
+			"wastage_weight": round(t_out - t_in, 3),
+			"wastage_percent": round(100.0 * (t_out - t_in) / t_out, 2) if t_out else 0.0,
 			"bobbin_out": round(t_bo, 3),
 			"bobbin_in": round(t_bi, 3),
 			"bobbin_difference": round(t_bo - t_bi, 3),

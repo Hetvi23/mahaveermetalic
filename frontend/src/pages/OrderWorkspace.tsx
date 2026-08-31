@@ -15,8 +15,9 @@ import PartyPicker from "@/components/PartyPicker";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { todayISO } from "@/utils/localDate";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 
 type Item = {
   name?: string;
@@ -225,10 +226,12 @@ export default function OrderWorkspace() {
 
   // Purchase orders already raised against the open order — shown as the three details at
   // the end of the form. Creating/updating them happens in the pre-save dialog.
-  const { data: poRows, mutate: mutatePos } = useFrappeGetDocList<{ name: string; qty_kg?: number; rate?: number; supplier?: string; so_item?: string; docstatus?: number }>(
+  const { data: poRows, mutate: mutatePos } = useFrappeGetDocList<{ name: string; qty_kg?: number; rate?: number; supplier?: string; so_item?: string; docstatus?: number; color?: string; cut?: string }>(
     "MM Purchase Order",
     {
-      fields: ["name", "qty_kg", "rate", "supplier", "so_item", "docstatus"],
+      // colour and cut come along so a purchase can be matched to the LINE it covers —
+      // without them the only link was so_item, and a PO raised without one covered nothing.
+      fields: ["name", "qty_kg", "rate", "supplier", "so_item", "docstatus", "color", "cut"],
       filters: selected ? ([["sales_order", "=", selected]] as unknown as undefined) : undefined,
       limit: 0,
     },
@@ -290,7 +293,35 @@ export default function OrderWorkspace() {
     if (a === undefined) return 0;
     return Math.round(Math.max(0, (Number(it.qty_weight) || 0) - a) * 1000) / 1000;
   };
-  const shortageOf = (it: Item) => shortageIn(availByKey, it);
+  /**
+   * Kilos already ON ORDER for a colour — material bought and not yet arrived.
+   *
+   * Shortage was stock alone, so a line whose purchase order had already been raised —
+   * and raised for MORE than the line needed, which is how the shop buys — still read as
+   * short, and saving the order offered to raise a second purchase for material that was
+   * already on its way. The existing skip only worked when the PO carried `so_item`;
+   * matched on colour it covers the ones that do not.
+   *
+   * Cancelled purchases (docstatus 2) buy nothing and are left out.
+   */
+  const onOrderByKey = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const po of orderPos) {
+      if (po.docstatus === 2) continue;
+      const k = `${po.color || ""}||${po.cut || ""}`;
+      m[k] = (m[k] || 0) + (Number(po.qty_kg) || 0);
+      // A purchase with no cut on it covers the colour whatever the line's cut says —
+      // otherwise a PO raised before the size was keyed covers nothing at all.
+      if (!po.cut) m[`${po.color || ""}||*`] = (m[`${po.color || ""}||*`] || 0) + (Number(po.qty_kg) || 0);
+    }
+    return m;
+  }, [orderPos]);
+
+  const onOrderFor = (it: Item) =>
+    (onOrderByKey[itemKey(it)] || 0) + (onOrderByKey[`${it.color_name}||*`] || 0);
+
+  const shortageOf = (it: Item) =>
+    Math.round(Math.max(0, shortageIn(availByKey, it) - onOrderFor(it)) * 1000) / 1000;
   const availKnown = (it: Item) => availByKey[itemKey(it)] !== undefined;
 
   /** Fetch availability for these lines, publish it to the table, and return the map. */
@@ -604,7 +635,9 @@ export default function OrderWorkspace() {
     // re-sized a moment ago has no availability yet, and guessing "0" would pop the
     // purchase dialog on a line that is fully in stock.
     const avail = await loadAvailability(prepared);
-    const shorts = prepared.map((it) => shortageIn(avail, it));
+    const shorts = prepared.map(
+      (it) => Math.round(Math.max(0, shortageIn(avail, it) - onOrderFor(it)) * 1000) / 1000,
+    );
     // Only ask about lines that are short AND not already covered by a purchase order —
     // re-saving an order that already has one shouldn't offer to raise it again. Edits to
     // an existing PO happen in the purchase table on the form.
@@ -1249,8 +1282,9 @@ export default function OrderWorkspace() {
             <div className="mm-modal-body">
               <p className="mm-muted" style={{ fontSize: "0.84rem", marginTop: 0 }}>
                 {poSheet.filter((it) => shortageOf(it) > 0 && !poForItem(it, poSheet)).length} line(s) can't be covered from stock.
-                Enter the supplier, rate and weight to raise a purchase order along with the sales
-                order — or save the sales order on its own and buy later.
+                Enter the supplier, rate and weight to raise the purchase order that covers them.
+                A short line has to be bought: an order saved without one has nothing on the way
+                and nothing on the Inward screen to receive against.
               </p>
               <div className="mm-table-scroll">
                 <table className="mm-table mm-table-dense">
@@ -1289,10 +1323,6 @@ export default function OrderWorkspace() {
                 <button type="button" className="mm-btn-primary" disabled={busy}
                   onClick={() => void doSave(poSheet, true)}>
                   {busy ? "Saving…" : "Create purchase order + save"}
-                </button>
-                <button type="button" className="mm-btn-secondary" disabled={busy}
-                  onClick={() => void doSave(poSheet, false)}>
-                  Save sales order only
                 </button>
                 <button type="button" className="mm-btn-ghost" disabled={busy} onClick={() => setPoSheet(null)}>
                   Cancel
