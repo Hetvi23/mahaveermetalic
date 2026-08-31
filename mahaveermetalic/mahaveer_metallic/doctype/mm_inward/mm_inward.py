@@ -33,6 +33,20 @@ class MMInward(Document):
 					frappe.throw(_("Row #{0}: weight and box cannot be negative.").format(row.idx))
 				if (row.weight or 0) <= 0 and (row.qty_box or 0) <= 0:
 					frappe.throw(_("Row #{0}: enter a Weight or Box quantity.").format(row.idx))
+				# A ROLL WITHOUT A WEIGHT IS NOT A ROLL. The rule above only refused a line
+				# that was empty on BOTH counts, so "1 box, 0.000 kg" posted happily — and
+				# the register then counted it among the rolls received and added nothing to
+				# the kilos, which is how a lot came to hold rolls weighing nothing.
+				#
+				# Box-only material is the one real exception and it is kept: an order with
+				# no weight target at all (ordered_weight = 0) is counted in boxes, so a
+				# weightless line against one of those is the intended reading rather than a
+				# missed keystroke. Everything else — including a row with no order on it —
+				# has to carry a weight.
+				if (row.weight or 0) <= 0 and not self._is_box_only(row):
+					frappe.throw(
+						_("Row #{0}: enter the weight. A roll cannot be received at 0 kg.").format(row.idx)
+					)
 		# is_partial (a user-facing checkbox) must win even though receipt_status carries a
 		# JSON default of "Complete" on desk-created inwards; only fall back to Complete
 		# when nothing set it (post_inward sets it explicitly on the SPA path).
@@ -289,6 +303,18 @@ class MMInward(Document):
 				)
 
 
+	def _is_box_only(self, row) -> bool:
+		"""True when this line's ORDER is counted in boxes and carries no weight target.
+
+		Read off the order rather than guessed from the line: a line with boxes and no
+		weight looks identical whether it is box-only material or a weight somebody forgot
+		to key, and only the order it is received against can tell the two apart.
+		"""
+		if not row.get("customer_order"):
+			return False
+		ordered = frappe.db.get_value("MM Sales Order", row.customer_order, "ordered_weight")
+		return frappe.utils.flt(ordered) <= 0 and (row.qty_box or 0) > 0
+
 	def _set_branch_location_from_employee(self):
 		"""Default Branch/Location from the posting (logged-in) user's MM Employee
 		Master, but only when left blank — they are shown on the form and remain
@@ -446,21 +472,40 @@ class MMInward(Document):
 			recalculate_order_fulfilment(order)
 			recompute_po_status_for_order(order)
 
-	def _find_roll(self, color_name, lot_number):
-		"""Match the Roll Inventory row by the same key Roll Inventory dedups on
-		(branch, location, lot_number, color_name). Empty Link/Data fields are
-		stored as NULL, so compare in Python to avoid ''-vs-NULL mismatches."""
+	def _find_roll(self, color_name, lot_number, roll_name=None, allow_legacy=False):
+		"""Match the Roll Inventory row for ONE ROLL.
+
+		The key used to be (branch, location, lot_number, color_name) — the ROLL was not
+		part of it. So the second roll of a lot was added into the first roll's row, and
+		the third into the same one again: a lot received as five rolls of 242 kg became a
+		single stock row of 1,210 kg carrying the first roll's name. Everything that picks
+		stock reads these rows, so Cutting and the Sales Voucher could only ever offer the
+		whole lot — "select rolls" listed one line, and a single roll could not be cut or
+		sold on its own.
+
+		The roll is part of the key now, so each one keeps its own row and its own weight.
+
+		`allow_legacy` widens the match back to the old key, and is used ONLY when
+		reversing — a goods return or a cancellation of an inward posted before this
+		change has to find the merged row it actually went into. Receiving never sets it,
+		or the merge would simply happen again.
+		"""
 		candidates = frappe.get_all(
 			"MM Roll Inventory",
 			filters={"location": self.location, "color_name": color_name},
-			fields=["name", "branch", "lot_number"],
+			fields=["name", "branch", "lot_number", "roll_no"],
 		)
-		for c in candidates:
-			if (
-				(c.branch or "") == (self.branch or "")
-				and (c.lot_number or "") == (lot_number or "")
-			):
+		# Empty Link/Data fields are stored as NULL, so compare in Python to avoid
+		# ''-vs-NULL mismatches.
+		same_lot = [
+			c for c in candidates
+			if (c.branch or "") == (self.branch or "") and (c.lot_number or "") == (lot_number or "")
+		]
+		for c in same_lot:
+			if (c.roll_no or "") == (roll_name or ""):
 				return c.name
+		if allow_legacy and same_lot:
+			return same_lot[0].name
 		return None
 
 	def _apply_to_roll_inventory(self, sign: int):
@@ -476,7 +521,12 @@ class MMInward(Document):
 			# stock is held lot-wise. Falls back to the header for rows keyed before lots
 			# moved onto them.
 			lot_number = row.lot_number or self.lot_number
-			existing = self._find_roll(row.color_name, lot_number)
+			# Receiving keys on the roll itself; reversing may have to reach a row merged
+			# under the old key. See _find_roll.
+			receiving = sign > 0 and not self.is_gr
+			existing = self._find_roll(
+				row.color_name, lot_number, row.roll_name, allow_legacy=not receiving
+			)
 
 			if existing:
 				doc = frappe.get_doc("MM Roll Inventory", existing)

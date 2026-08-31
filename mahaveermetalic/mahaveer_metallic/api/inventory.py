@@ -77,13 +77,38 @@ def balances(branch=None, location=None, color=None, lot=None, search=None,
 
 @frappe.whitelist()
 def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=200):
-	"""Inventory rolls of a given colour that still have stock — the Program screen's
-	'search a roll from inventory' picker. Returns available rolls newest-colour-first."""
+	"""Inventory rolls of a given colour that still have stock AND are not already spoken
+	for — the Program screen's 'search a roll from inventory' picker.
+
+	A planned program books its roll but does not consume it: the stock only moves when the
+	operator finishes the program and the roll is actually cut. So a roll picked for one
+	program sat in stock looking free, and could be picked again for a second — two
+	programs planned on one roll, discovered only when the first one cut it and the second
+	had nothing to cut.
+
+	Reserved rolls are filtered out HERE and not in balances(), because the stock is still
+	genuinely on the floor: the Inventory screen and the ledger must go on reporting it. It
+	is only unavailable to PLAN against.
+	"""
 	rows = balances(
 		branch=branch, location=location, color=color, search=search,
 		in_stock_only=1, limit=limit,
 	)
-	return rows
+	if not rows:
+		return rows
+	# Booked by a live program: not cancelled, not closed, and not already finished with.
+	reserved = {
+		r[0]
+		for r in frappe.db.sql(
+			"""select roll_inventory from `tabMM Program`
+			where docstatus < 2
+				and ifnull(roll_inventory, '') != ''
+				and ifnull(closed, 0) = 0
+				and ifnull(status, '') != 'Completed'"""
+		)
+		if r[0]
+	}
+	return [r for r in rows if r.get("name") not in reserved]
 
 
 @frappe.whitelist()

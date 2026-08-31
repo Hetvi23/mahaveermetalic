@@ -9,8 +9,9 @@ import type { SOOption } from "@/components/SalesOrderPicker";
 import { toast } from "@/components/Toaster";
 import { LotRemarkBadge, useLotRemarks } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { todayISO } from "@/utils/localDate";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 
 const F_LOCATION: FieldSchema = { fieldname: "location", label: "Location", fieldtype: "Link", options: "MM Location Master", reqd: true };
 
@@ -170,11 +171,20 @@ export default function InwardWorkspace() {
         meta: [
           o.party_name || o.party,
           (o.colours || []).join(", "),
-          // The purchase, when it is the reason this order is still listed — 900 sold,
-          // 1,200 bought, 290 kg still on the road.
+          // WHAT IS STILL WANTED. Every line but the stock-only ones said only a party and
+          // a colour, so the one number the operator is receiving against — how much this
+          // order is still short — was the one thing the picker would not tell them.
           o.stock_only
+            // The purchase, when it is the reason this order is still listed — 900 sold,
+            // 1,200 bought, 290 kg still on the road.
             ? `stock only · ${(o.purchase_remaining || 0).toLocaleString()} kg on PO`
-            : null,
+            : Number(o.required_weight || 0) > 0
+              ? `${Number(o.required_weight).toLocaleString()} kg to come`
+              : Number(o.required_box || 0) > 0
+                // A box-only order has no weight target at all, so kg would read as zero
+                // on an order that is very much still open.
+                ? `${Number(o.required_box).toLocaleString()} box to come`
+                : null,
         ].filter(Boolean).join(" · "),
         // Only meaningful with the switch on, and then it keeps the closed ones out of
         // the queue rather than mixed into it.
@@ -360,9 +370,17 @@ export default function InwardWorkspace() {
         return {
           ...r,
           customer_order: sales_order,
-          color: r.color || colour,
+          // The ORDER's colour wins, it does not merely fill a blank. The field is
+          // read-only while an order is picked, so a colour typed before the order was
+          // chosen would otherwise stick there with no way to correct it.
+          color: colour || r.color,
           cut: r.cut || cut,
-          supplier: r.supplier || po?.supplier || "",
+          // Same rule as the colour: the order was placed on a supplier and the material
+          // arriving against it is that supplier's. This used to keep a name already typed
+          // on the row, on the reasoning that whoever actually delivered outranks the plan
+          // — but with the field locked below, that name could never be corrected, and a
+          // receipt filed against the wrong vendor is what the lock exists to stop.
+          supplier: po?.supplier || r.supplier || "",
           lines: untouched ? [{ ...first, qty, weight }] : r.lines,
         };
       }),
@@ -771,6 +789,11 @@ export default function InwardWorkspace() {
               onClick={() => setSeeAllOrders((v) => !v)}>
               Orders: {seeAllOrders ? "all" : `open (${soOptions.length})`}
             </button>
+            {/* The grid has taken Enter and Ctrl+Enter since it was written and never said
+                so anywhere. Operators were adding every row with the mouse. */}
+            <span className="mm-keys">
+              <kbd>Enter</kbd> new row · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> post
+            </span>
           </span>
         </div>
         <div className="mm-table-scroll" onKeyDown={onGridKeyDown}>
@@ -856,16 +879,22 @@ export default function InwardWorkspace() {
                       />
                     </td>
                     <td className="mm-iw-c-color" data-label="Color">
-                      {/* Always editable. Picking an order still FILLS the colour in, but
-                          it no longer owns it: what arrived is what arrived, and a colour
-                          the order got wrong has to be correctable on the line receiving
-                          it rather than by changing the order. */}
+                      {/* THE ORDER OWNS THE COLOUR ONCE ONE IS PICKED. An order is for a
+                          named colour, so material received against it is that colour by
+                          definition — and typing a different one there did not correct
+                          anything, it filed the receipt against an order that never asked
+                          for it, silently, on the row that feeds stock and the lot.
+
+                          Editable again the moment the order is cleared, because a row
+                          with no order is stock coming in on its own and nothing else
+                          knows its colour. */}
                       <LinkField
                         compact
                         label=""
                         linkDoctype="MM Item Master"
                         value={r.color}
-                        placeholder="Select Color"
+                        placeholder={r.customer_order ? "From order" : "Select Color"}
+                        disabled={!!r.customer_order}
                         createDefaults={{ item_type: "Roll" }}
                         onChange={(v) => setRow(i, { color: v })}
                       />
@@ -879,7 +908,10 @@ export default function InwardWorkspace() {
                       <SearchSelect
                         compact
                         value={r.supplier}
-                        placeholder="Supplier"
+                        placeholder={r.customer_order ? "From order" : "Supplier"}
+                        // Locked once an order is picked — the order names who it was
+                        // bought from. Clearing the order hands it back.
+                        disabled={!!r.customer_order}
                         createDoctype="MM Vendor Master"
                         emptyText="No vendors yet"
                         options={colourOnly(

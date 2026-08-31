@@ -14,6 +14,11 @@ class MMRollInventory(Document):
 		if self.available_weight < 0:
 			frappe.throw(frappe._("Available stock cannot be negative. Check reserve/issue values."))
 
+		# THE ROLL IS PART OF THE KEY. Stock is held per ROLL, not per lot: a lot received as
+		# five rolls is five rows, which is what lets Cutting and the Sales Voucher offer a
+		# single roll instead of the whole lot. This guard still enforced the old lot-wide
+		# key, so the second roll of a lot was refused as a duplicate — MMInward._find_roll
+		# would create it and this would throw. The two must agree, and they now do.
 		dup = frappe.db.get_value(
 			"MM Roll Inventory",
 			{
@@ -21,10 +26,11 @@ class MMRollInventory(Document):
 				"location": self.location,
 				"lot_number": self.lot_number or "",
 				"color_name": self.color_name,
+				"roll_no": self.roll_no or "",
 			},
 			"name",
 		)
 		if dup and dup != self.name:
 			frappe.throw(
-				frappe._("Roll inventory already exists for this Branch, Location, Lot and Color combination.")
+				frappe._("Roll inventory already exists for this Branch, Location, Lot, Color and Roll.")
 			)
