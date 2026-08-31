@@ -1978,22 +1978,32 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
      which is the cropping this replaced. Row 2 keeps a floor so the PIN and error rows
      underneath can never squeeze the table away entirely. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
-  grid-template-rows: auto minmax(180px, 1fr);
+  /* Row 1 auto: it shows the whole box form rather than scrolling it. Row 2 keeps a floor
+     so the PIN and error rows beneath can never squeeze the table away, but no longer
+     stretches to fill — with a tall row 1 that only opened a gap under a short table. */
+  grid-template-rows: auto minmax(180px, auto);
   grid-auto-rows: auto;
   gap: 0.7rem 1.4rem; align-items: stretch; min-height: 0; overflow: auto;
 }
 /* Each column scrolls on its own, so a long box list never pushes the header fields off
    the top and the voucher never reads as one tall page. */
-/* Both row-1 panels scroll inside a capped height. Without the cap an auto-sized row 1
-   grows with its content and eats the table's row — the crush this layout exists to end.
-   Capped, they simply scroll and the table keeps its height. */
-/* Capped so the box table below always gets its half of the sheet — but as a min() of a
-   viewport share and a fixed height, because a flat 46vh on a 768px laptop is 353px, which
-   puts a scrollbar inside a sheet that already scrolls. Above that height the header is
-   fully visible and the cap never bites. */
+/* NO CAP, AND NO SCROLLBAR OF THEIR OWN. Row 1 sizes to its content.
+   The cap existed to stop row 1 growing and squeezing the box table, and it did that by
+   giving each panel an inner scrollbar. That was a fair trade while the box form was three
+   columns and short. It is not one now the form reads top to bottom: the panel is taller
+   than the cap, so it scrolled — and a form you must scroll to fill in is worse than a
+   sheet you scroll to read, because the operator cannot see the weights they are checking
+   against while they key.
+   The table keeps its floor through row 2's minmax below, and the sheet as a whole scrolls
+   — ONE scrollbar for the voucher instead of three nested ones. */
 .mm-pv-col-details, .mm-pv-col-form {
-  min-width: 0; min-height: 0; max-height: min(46vh, 420px); overflow-y: auto;
+  min-width: 0; min-height: 0;
 }
+/* Top-aligned, not stretched: the details column and the box form are rarely the same
+   height, and stretching the shorter one leaves a tall panel with its controls floating in
+   the middle of empty space. */
+.mm-pv-split > .mm-pv-col-details,
+.mm-pv-split > .mm-pv-col-form { align-self: start; }
 .mm-pv-col-details { padding-right: 0.4rem; }
 /* Nothing beside it, so the fields take the whole sheet rather than leaving an empty
    track — half-width fields next to a blank half is the scattered look, not a layout. */
@@ -3436,3 +3446,27 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   color: var(--mm-text);
 }
 @media (max-width: 640px) { .mm-keys { display: none; } }
+
+/* The box panel's two non-input bands. The form reads top to bottom because only three
+   things are keyed; these keep the other six out of the way of those three. */
+.mm-bx-panel .mm-bx-strip {
+  display: flex; align-items: flex-end; gap: 0.9rem; flex-wrap: wrap;
+  padding-bottom: 0.5rem; border-bottom: 1px solid var(--mm-border);
+}
+.mm-bx-panel .mm-bx-strip-item { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.mm-bx-panel .mm-bx-strip-item:first-child { flex: 1 1 12rem; }
+.mm-bx-panel .mm-bx-strip-val {
+  font-size: 0.95rem; font-weight: 800; color: var(--mm-accent-fg);
+  font-variant-numeric: tabular-nums; white-space: nowrap; padding-bottom: 0.15rem;
+}
+/* Net = Gross − Bobbin − Box, on one line, reading like the total on a bill rather than
+   three more fields waiting to be filled in. */
+.mm-bx-panel .mm-bx-sum {
+  display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap;
+  padding-top: 0.5rem; border-top: 1px solid var(--mm-border);
+  font-size: 0.78rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums;
+}
+.mm-bx-panel .mm-bx-sum b { color: var(--mm-text); font-weight: 700; }
+.mm-bx-panel .mm-bx-sum-op { opacity: 0.5; }
+.mm-bx-panel .mm-bx-sum-net { margin-left: auto; font-size: 0.86rem; }
+.mm-bx-panel .mm-bx-sum-net b { font-size: 1.05rem; font-weight: 800; }

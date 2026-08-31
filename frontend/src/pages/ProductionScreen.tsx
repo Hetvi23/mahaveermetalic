@@ -933,14 +933,18 @@ function BoxDialog({
         <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close box details"><X size={16} /></button>
       </div>
       <div className="mm-bx">
-        <div className="mm-bx-row mm-bx-row-wide">
-          <span className="mm-bx-label">Box Sticker Printer</span>
-          <input className="mm-input mm-bx-hi" value={printer}
-            onChange={(e) => { setPrinter(e.target.value); window.localStorage.setItem("mm-box-printer", e.target.value); }} />
-        </div>
-        <div className="mm-bx-row">
-          <span className="mm-bx-label">Available Net Weight</span>
-          <input className="mm-input mm-bx-hi" value={availableNet.toLocaleString()} readOnly />
+        {/* Setting and context, not fields to fill. Full rows each, they cost a third of
+            the panel's height for two things the operator reads once and never types. */}
+        <div className="mm-bx-strip mm-bx-row-wide">
+          <label className="mm-bx-strip-item">
+            <span className="mm-bx-label">Sticker printer</span>
+            <input className="mm-input mm-input-compact mm-bx-hi" value={printer}
+              onChange={(e) => { setPrinter(e.target.value); window.localStorage.setItem("mm-box-printer", e.target.value); }} />
+          </label>
+          <span className="mm-bx-strip-item">
+            <span className="mm-bx-label">Available net</span>
+            <b className="mm-bx-strip-val">{availableNet.toLocaleString()} kg</b>
+          </span>
         </div>
         <div className="mm-bx-row mm-bx-row-wide">
           <span className="mm-bx-label">Total Weight</span>
@@ -978,13 +982,16 @@ function BoxDialog({
             <span className="seg">Kg</span>
           </div>
         </div>
-        <div className="mm-bx-row">
-          <span className="mm-bx-label">Total Bobbin Weight</span>
-          <input className="mm-input mm-bx-ro" value={totalBobbin.toLocaleString()} readOnly />
-        </div>
-        <div className="mm-bx-row mm-bx-row-net">
-          <span className="mm-bx-label">Net Weight</span>
-          <input className={`mm-input mm-bx-ro ${net < 0 ? "mm-input-warn" : ""}`} value={net.toLocaleString()} readOnly />
+        {/* THE ARITHMETIC, not more fields. Net = Gross − Bobbin − Box, so these are the
+            answer to the three boxes above and nobody types them. As full rows they read
+            like more work to do; as one line they read like the total on a bill. */}
+        <div className="mm-bx-sum mm-bx-row-wide">
+          <span>Bobbin <b>{totalBobbin.toLocaleString()}</b></span>
+          <span className="mm-bx-sum-op">−</span>
+          <span>Box <b>{(Number(boxWeight) || 0).toLocaleString()}</b></span>
+          <span className={`mm-bx-sum-net ${net < 0 ? "mm-var-over" : ""}`}>
+            Net <b>{net.toLocaleString()} kg</b>
+          </span>
         </div>
         <div className="mm-bx-row mm-bx-row-wide">
           <span className="mm-bx-label">Returns</span>
