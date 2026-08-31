@@ -160,6 +160,53 @@ def _take_patti(cutting_names, batches: int):
 	return taken
 
 
+def _held_patti(program: str) -> float:
+	"""Patti this program has actually been given, across every cut it drew from.
+
+	The plan lives in `total_batches`; this is what is behind it. The two are equal on an
+	ordinary program and differ only while a cut has come up short.
+	"""
+	row = frappe.db.sql(
+		"""select coalesce(sum(patti), 0) from `tabMM Program Patty`
+		where parent = %s and parenttype = 'MM Program'""",
+		(program,),
+	)
+	return round(float((row[0][0] if row else 0) or 0), 3)
+
+
+def _make_planned_cutting(doc, batches, colour=None, cut=None, posting_date=None):
+	"""Mint the placeholder 'to cut' cutting for a program — the red card on the board.
+
+	The same shape create_unfinished_program mints, because it is the same thing: work the
+	floor still owes this program. Used for the FIRST plan and again for the remainder when
+	a roll comes up short, so both are one kind of row and the board needs no new rule.
+	"""
+	cutting = frappe.get_doc(
+		{
+			"doctype": "MM Cutting",
+			"posting_date": posting_date or frappe.utils.nowdate(),
+			"customer_order": doc.customer_order,
+			"roll_no": colour or doc.shade or "—",
+			"shade": colour or doc.shade,
+			"cut": cut or doc.cut,
+			"status": "Open",
+			"job_work_flag": 1 if frappe.utils.cint(doc.get("job_work_flag")) else 0,
+			"roll_qty": 0,
+			"planned": 1,
+			"branch": doc.branch,
+			"location": doc.location,
+			"patti_entries": [
+				{"shade": colour or doc.shade, "cut": cut or doc.cut,
+				 "patti_qty": batches, "net_weight": 0}
+			],
+		}
+	)
+	cutting.insert(ignore_permissions=True)
+	cutting.submit()
+	frappe.db.set_value("MM Cutting", cutting.name, "program", doc.name, update_modified=False)
+	return cutting.name
+
+
 def _apply_patti(program: str, allocation) -> None:
 	"""Record the take on the program and add it to each cutting's consumed count."""
 	for a in allocation:
@@ -1018,6 +1065,52 @@ def create_unfinished_program(
 				_("No inventory stock for colour '{0}'. Search and pick a colour/roll that exists in stock.").format(color)
 			)
 
+	# PLANNING THE SAME THING TWICE IS ONE PLAN, NOT TWO. Asking for 1 patty and then 3 on
+	# the same colour, cut, machine, shift and date drew two "To cut" cards for what the
+	# floor thinks of as one job, and split the batch count across them — so the board said
+	# 1 and 3 where the operator expected 4.
+	#
+	# Only an UNFINISHED plan is topped up: once a roll is bound the program is a real
+	# piece of work with weight and a lot behind it, and the next plan is genuinely the
+	# next job. The order is part of the key too — the same colour on the same machine for
+	# two different customers is two programs, however alike they look.
+	existing = frappe.db.get_value(
+		"MM Program",
+		{
+			"docstatus": 1,
+			"unfinished": 1,
+			"closed": 0,
+			"shade": color,
+			"cut": machine_cut,
+			"machine_no": machine_no,
+			"shift": shift or None,
+			"program_date": program_date or frappe.utils.nowdate(),
+			"customer_order": customer_order or None,
+		},
+		["name", "total_batches", "source_cutting"],
+		as_dict=True,
+	)
+	if existing:
+		topped = int(existing.total_batches or 0) + batches
+		frappe.db.set_value(
+			"MM Program", existing.name,
+			{"total_batches": topped, "patti_qty": topped},
+			update_modified=True,
+		)
+		# The placeholder cutting is the same plan seen from the cutting side, so it has to
+		# grow by the same amount or the board would offer fewer patti than the program wants.
+		if existing.source_cutting:
+			frappe.db.set_value(
+				"MM Cutting", existing.source_cutting,
+				{"total_patti_qty": topped, "roll_qty": 0},
+				update_modified=True,
+			)
+			child = frappe.db.get_value("MM Cutting Patti", {"parent": existing.source_cutting}, "name")
+			if child:
+				frappe.db.set_value("MM Cutting Patti", child, "patti_qty", topped, update_modified=False)
+		return {"program": existing.name, "cutting": existing.source_cutting,
+			"unfinished": True, "topped_up": batches, "total_batches": topped}
+
 	# Placeholder Open cutting — the planned cut. Zero weight until the roll is bound.
 	cutting = frappe.get_doc(
 		{
@@ -1195,49 +1288,83 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 	# doc.save on the submitted program would raise UpdateAfterSubmitError. Status is
 	# re-derived here (same rule as MMProgram.derive_status) since we bypass validate.
 	#
-	# THE PROGRAM KEEPS THE BATCHES IT WAS PLANNED FOR. Cut 6 patti against a 4-batch
-	# program and the program still runs 4 — the other 2 patti are not swept into it; they
-	# stay on the cutting as available patty for whatever is programmed next. A cut that
-	# came up SHORT is the one case that moves the plan: there are only so many patti, so
-	# the program can't run more batches than exist.
+	# THE PROGRAM KEEPS THE BATCHES IT WAS PLANNED FOR — in BOTH directions.
+	#
+	# Cut 6 patti against a 4-batch program and the program still runs 4; the other 2 stay
+	# on the cutting as available patty for whatever is programmed next. That half always
+	# worked. The other half did not: a SHORT cut used to move the plan down to meet it
+	# (`total = min(planned, patty)`), so planning 7 and getting 6 off the roll quietly
+	# turned it into a 6-batch program and the seventh patty was simply forgotten — no
+	# card, no warning, nothing owed.
+	#
+	# The plan is a decision somebody made and only a person may change it (a short
+	# close-out, which asks for a reason and files it on the lot). So the shortfall is
+	# carried instead: this cut gives what it has, and the remainder becomes a NEW
+	# placeholder cutting — the same red "To cut" card the plan started life as. The
+	# program stays unfinished until every batch is behind it, so a half-supplied program
+	# never reaches a machine.
 	planned = int(doc.total_batches or 0) or patty
-	total = min(planned, patty)
-	done = max(0, min(int(doc.completed_batches or 0), total))
-	status = "Completed" if (total and done >= total) else ("Partially Done" if done > 0 else "Running")
-	prog_weight = round(per_patty * total, 3)
+	held = _held_patti(doc.name)          # what earlier cuts already gave this program
+	owed = max(0, planned - int(held))
+	take = int(min(owed, patty))          # this roll can only give what came off it
+	short = owed - take                   # still to cut after this one
+
+	# Weight accumulates across the rolls that supplied the program, and the rate it runs
+	# at is the blend of them — two rolls cut to the same patty count rarely weigh the same.
+	prev_weight = round(float(doc.net_weight or 0), 3)
+	prog_weight = round(prev_weight + per_patty * take, 3)
+	new_held = int(held) + take
+	blended = ceil2(prog_weight / new_held) if new_held else per_patty
+
+	done = max(0, min(int(doc.completed_batches or 0), planned))
+	if short:
+		# Still owed material: it stays a planned program, off the production queue.
+		status = "Open"
+	else:
+		status = "Completed" if (planned and done >= planned) else ("Partially Done" if done > 0 else "Running")
+
 	frappe.db.set_value(
 		"MM Program",
 		doc.name,
 		{
 			"roll_inventory": picked[0],
 			"net_weight": prog_weight,
-			"total_batches": total,
-			"patti_qty": total,
+			"total_batches": planned,
+			"patti_qty": planned,
 			"roll_no": (ri.roll_no if ri else None) or doc.roll_no,
-			"unfinished": 0,
-			"is_running": 1,
+			"unfinished": 1 if short else 0,
+			"is_running": 0 if short else 1,
 			"status": status,
-			"per_patty_weight": per_patty,
+			"per_patty_weight": blended,
 			# Written here too: this path bypasses validate, so derive_completed_weight
 			# doesn't run for it.
-			"completed_weight": round(per_patty * done, 3),
+			"completed_weight": round(blended * done, 3),
 		},
 		update_modified=True,
 	)
-	# Book only this program's batches against the cut. The rest of the patti stay
-	# unconsumed, which is exactly what makes them available to program.
-	if doc.source_cutting:
-		frappe.db.sql(
-			"delete from `tabMM Program Patty` where parent = %s and parenttype = 'MM Program'", (doc.name,)
-		)
-		frappe.db.set_value("MM Cutting", doc.source_cutting, "consumed_patti", 0, update_modified=False)
+	# Book THIS cut's take against it and nothing else. The rows from earlier cuts are left
+	# alone: wiping them (and resetting the cutting's consumed_patti to 0) was harmless
+	# while a program could only be finished once, and would hand back the first roll's
+	# patti the moment a second one is bound.
+	if doc.source_cutting and take:
 		_apply_patti(
 			doc.name,
-			[{"cutting": doc.source_cutting, "patti": total, "shade": doc.shade, "cut": cut or doc.cut}],
+			[{"cutting": doc.source_cutting, "patti": take, "shade": doc.shade, "cut": cut or doc.cut}],
 		)
-	return {"program": doc.name, "net_weight": prog_weight, "per_patty_weight": per_patty,
-		"total_batches": total, "patti_cut": patty, "spare_patti": max(0, patty - total),
-		"unfinished": False, "status": status}
+
+	# The remainder becomes the next card on the Cutting board, and the program points at
+	# it so "Pick roll & finish" on that card finishes this same program again.
+	pending = None
+	if short:
+		pending = _make_planned_cutting(
+			doc, short, colour=doc.shade, cut=cut or doc.cut, posting_date=cutting_date
+		)
+		frappe.db.set_value("MM Program", doc.name, "source_cutting", pending, update_modified=False)
+
+	return {"program": doc.name, "net_weight": prog_weight, "per_patty_weight": blended,
+		"total_batches": planned, "patti_cut": patty, "patti_taken": take,
+		"spare_patti": max(0, patty - take), "short_by": short, "pending_cutting": pending,
+		"unfinished": bool(short), "status": status}
 
 
 def _save_batches(program, completed, is_running):

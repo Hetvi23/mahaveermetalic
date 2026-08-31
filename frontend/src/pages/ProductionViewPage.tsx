@@ -4,10 +4,11 @@ import { Check, Monitor, NotebookPen, RefreshCw, Scissors, X } from "lucide-reac
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
+import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 
 type Batch = { batch: number; done?: boolean };
 type ProgramRow = {
@@ -153,13 +154,14 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
 }
 
 /**
- * One shift, read as a stack of BOXES — one box per PROGRAM, three columns across it:
- * the machine number, then what that machine is running (colour, how many patty, the note
- * the program was planned with), then the tick that records it done.
+ * One shift, machine by machine: each machine is a ROW OF ITS OWN — its number on a header
+ * line, and under that line only the programmes running on it.
  *
- * A box is a JOB, not a machine: a machine running two programmes is two boxes one under
- * the other, which is the only way the floor can tell two jobs apart at a glance. The old
- * layout hung both under a single machine heading and they read as one.
+ * A box is still a JOB, not a machine, so a machine running two programmes is two boxes one
+ * under the other. What changed is where the number lives: it used to be repeated inside
+ * every box, which made a machine with three jobs read as three machines and left the eye
+ * with no line to run down when it wanted "what is Machine 4 doing". The number is stated
+ * once, at the top of its own row, and the boxes beneath it carry only the work.
  */
 function ShiftColumn({ title, groups, onComplete, remarksFor }: {
   title: string; groups: MachineGroup[]; onComplete: (p: ProgramRow) => void;
@@ -180,24 +182,24 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
       ) : (
         <div className="mm-pvw-machines">
         {groups.map((g) => (
-          // Every machine is listed, running or not. An idle one still gets a box with its
-          // number in it and nothing beside it — blank IS the reading ("that machine is
-          // free"), and a machine that simply vanishes makes the floor count to notice.
+          // Every machine is listed, running or not.
           <div className="mm-pvw-machine" key={g.machine_no}>
-            {g.programs.length === 0 ? (
-              <div className="mm-pvw-box mm-pvw-box-idle">
-                <div className="mm-pvw-box-machine"><Monitor size={14} />{g.machine_no}</div>
-                <div className="mm-pvw-box-body">
-                  <div className="mm-pvw-box-colour mm-pvw-box-free">Free</div>
-                </div>
-              </div>
-            ) : (
-              g.programs.map((p, i) => (
-                // The machine number repeats on every box on purpose: a box has to be
-                // readable on its own from across the floor. `-more` only softens the
-                // repeat so a run of boxes still reads as one machine.
-                <div className={i ? "mm-pvw-box mm-pvw-box-more" : "mm-pvw-box"} key={p.program}>
-                  <div className="mm-pvw-box-machine"><Monitor size={14} />{g.machine_no}</div>
+            {/* The machine's own row, present whether or not anything is running: an idle
+                machine that simply vanished would make the floor count to notice. Its state
+                is stated HERE and only here — the head used to say "Free" over a dashed box
+                that also said "Free", one word twice in two type treatments. */}
+            <div className="mm-pvw-machine-head">
+              <span className="mm-pvw-machine-no"><Monitor size={14} />Machine {g.machine_no}</span>
+              <span className={`mm-pvw-machine-tally${g.programs.length ? "" : " mm-pvw-machine-free"}`}>
+                {g.programs.length === 0
+                  ? "Free"
+                  : `${g.programs.length} ${g.programs.length === 1 ? "program" : "programs"}`}
+              </span>
+            </div>
+            {/* Under the machine row, only programmes. Nothing under an idle machine is the
+                whole reading — the row above already says it is free. */}
+            {g.programs.map((p) => (
+                <div className="mm-pvw-box" key={p.program}>
                   {/* The three lines and the tick share one grid so the tick lands on the
                       patty line whether or not there is a note under it. */}
                   <div className="mm-pvw-box-body">
@@ -229,8 +231,7 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
                     </button>
                   </div>
                 </div>
-              ))
-            )}
+            ))}
           </div>
         ))}
         </div>

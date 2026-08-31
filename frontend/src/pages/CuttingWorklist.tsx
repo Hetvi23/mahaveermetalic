@@ -4,10 +4,12 @@ import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe
 import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus, Search, PackageSearch } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import SearchSelect from "@/components/SearchSelect";
+import { todayISO } from "@/utils/localDate";
+import { isAdmin } from "@/utils/roles";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 
 /** One in-stock roll on the left panel — inward is roll-wise, so the list is too. */
 type StockRoll = {
@@ -235,7 +237,16 @@ export default function CuttingWorklist() {
                           {c.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : <span className={stateClass(c.status)}>{c.status}</span>}
                         </div>
                         <div className="mm-prog-card-meta">
-                          {c.customer_order || "—"} · {(c.total_patti_qty ?? 0)} patty · {(c.total_net_weight ?? 0).toLocaleString()} kg{c.unfinished ? " · planned from inventory" : c.program ? " · planned" : ""}
+                          {/* A planned cut has NO weight yet — the roll has not been picked,
+                              so there is nothing to weigh. Printing that as "0 kg" stated a
+                              measurement that was never taken, and read as a roll that
+                              genuinely weighs nothing. Say "weight on pick" instead, and keep
+                              the number for cuts that actually have one. */}
+                          {c.customer_order || "—"} · {(c.total_patti_qty ?? 0)} patty ·{" "}
+                          {Number(c.total_net_weight ?? 0) > 0
+                            ? `${Number(c.total_net_weight).toLocaleString()} kg`
+                            : "weight on pick"}
+                          {c.unfinished ? " · planned from inventory" : c.program ? " · planned" : ""}
                         </div>
                         <div className="mm-prog-actions">
                           {c.unfinished ? (
@@ -307,7 +318,11 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
 
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Record<string, InvRoll>>({});
-  const [patty, setPatty] = useState<number>(1);
+  // BLANK, not 1. Seeded with 1 the box was never empty, so the "Enter the number of
+  // patty" check could never fire and Submit went through on a number nobody typed — a
+  // 100 kg roll booked as one patty at 100 kg per patty. The admin's cut configuration
+  // still fills it in below; what it must not do is invent a value when there is none.
+  const [patty, setPatty] = useState<number | "">("");
   const [cut, setCut] = useState<string>(card.cut || "");
   const pattyTouched = useRef(false);
   const [cuttingDate, setCuttingDate] = useState<string>(today());
@@ -322,9 +337,11 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
 
   const chosen = Object.values(picked);
   const totalWeight = chosen.reduce((s, r) => s + Number(r.stock_weight || 0), 0);
-  const perPatty = patty > 0 ? ceil2(totalWeight / patty) : 0;
+  const perPatty = Number(patty) > 0 ? ceil2(totalWeight / Number(patty)) : 0;
 
   const cfg = usePattyConfig(cut, totalWeight);
+  // Locked when the cut carries a configured yield and the user is not an admin.
+  const pattyLocked = !!cfg?.no_of_patty && !isAdmin();
   useEffect(() => {
     if (pattyTouched.current) return;
     if (cfg?.no_of_patty) setPatty(cfg.no_of_patty);
@@ -341,12 +358,12 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
     setErr(null);
     if (!card.program) return setErr("This planned cut has no linked program.");
     if (chosen.length === 0) return setErr("Select at least one roll.");
-    if (!(patty > 0)) return setErr("Enter the number of patty.");
+    if (patty === "" || !(Number(patty) > 0)) return setErr("Enter the number of patty.");
     try {
       await finishUnfinished({
         program: card.program,
         rolls: JSON.stringify(chosen.map((r) => r.name)),
-        no_of_patty: patty,
+        no_of_patty: Number(patty),
         cut: cut || undefined,
         cutting_date: cuttingDate,
         customer_order: order || undefined,
@@ -429,11 +446,19 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
                   </span>
                 ) : null}
               </span>
+              {/* A patty count that came from the CUT CONFIGURATION is the shop's own
+                  setting — how many patti this cut is meant to yield — and the floor may
+                  read it but not quietly type over it. Where there is no configuration
+                  there is nothing to protect: the box is blank and has to be filled in by
+                  whoever is doing the cutting. */}
               <span className="mm-patty-step">
-                <button type="button" className="mm-mini" onClick={() => { pattyTouched.current = true; setPatty((p) => Math.max(1, p - 1)); }}>−</button>
-                <input className="mm-input" type="number" min={1} value={patty}
-                  onChange={(e) => { pattyTouched.current = true; setPatty(Math.max(1, Number(e.target.value) || 1)); }} />
-                <button type="button" className="mm-mini" onClick={() => { pattyTouched.current = true; setPatty((p) => p + 1); }}>+</button>
+                <button type="button" className="mm-mini" disabled={pattyLocked}
+                  onClick={() => { pattyTouched.current = true; setPatty((p) => Math.max(1, Number(p || 0) - 1)); }}>−</button>
+                <input className="mm-input" type="number" min={1} value={patty} readOnly={pattyLocked}
+                  title={pattyLocked ? `Set by the cut configuration for ${cut || card.cut} — an admin can change it` : undefined}
+                  onChange={(e) => { pattyTouched.current = true; setPatty(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1)); }} />
+                <button type="button" className="mm-mini" disabled={pattyLocked}
+                  onClick={() => { pattyTouched.current = true; setPatty((p) => Number(p || 0) + 1); }}>+</button>
               </span>
             </label>
             <label className="mm-field">
@@ -572,7 +597,7 @@ function CuttingModal({ roll, onClose, onDone }: { roll: StockRoll; onClose: () 
   const [jobWork, setJobWork] = useState(!!roll.job_work);
   const [cuttingDate, setCuttingDate] = useState(today());
   const [weight, setWeight] = useState<number | "">("");
-  const [noPatty, setNoPatty] = useState(1);
+  const [noPatty, setNoPatty] = useState<number | "">("");
   const [cut, setCut] = useState(roll.cut || "");
   const [err, setErr] = useState<string | null>(null);
   // Touched once the operator types a patty count of their own — from then on the config
@@ -597,13 +622,15 @@ function CuttingModal({ roll, onClose, onDone }: { roll: StockRoll; onClose: () 
   async function submit() {
     setErr(null);
     if (!pickedItem) return setErr("Select the roll to cut.");
+    // The box starts blank now, so this is a check that can actually fail.
+    if (noPatty === "" || !(Number(noPatty) > 0)) return setErr("Enter the number of patty.");
     try {
       await create({
         inward_items: [pickedItem],
         customer_order: order,
         cut: cut || selected?.cut,
         weight: weight === "" ? selWeight : weight,
-        no_of_patty: noPatty,
+        no_of_patty: Number(noPatty),
         cutting_date: cuttingDate,
         job_work: jobWork ? 1 : 0,
       });
@@ -682,8 +709,14 @@ function CuttingModal({ roll, onClose, onDone }: { roll: StockRoll; onClose: () 
                   </span>
                 ) : null}
               </span>
-              <input className="mm-input" type="number" min={1} value={noPatty}
-                onChange={(e) => { pattyTouched.current = true; setNoPatty(Math.max(1, Number(e.target.value) || 1)); }} />
+              <input className="mm-input" type="number" min={1} value={noPatty} placeholder="—"
+                onChange={(e) => {
+                  pattyTouched.current = true;
+                  // Clearing the box has to leave it CLEARED. Clamping an empty string up
+                  // to 1 is what made this field impossible to empty and impossible to
+                  // validate.
+                  setNoPatty(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1));
+                }} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Cut</span>

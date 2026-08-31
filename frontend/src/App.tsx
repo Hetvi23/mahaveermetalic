@@ -7,6 +7,7 @@ import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
 import CuttingWorklist from "./pages/CuttingWorklist";
 import ProgramScreen from "./pages/ProgramScreen";
+import FinishedPattyPage from "@/pages/FinishedPattyPage";
 import ProductionScreen from "./pages/ProductionScreen";
 import ProductionViewPage from "./pages/ProductionViewPage";
 import CloseoutStackPage from "./pages/CloseoutStackPage";
@@ -96,6 +97,7 @@ export default function App() {
             {/* Cutting + Orders use custom full-width screens instead of the generic list. */}
             <Route path="/cutting" element={<CuttingWorklist />} />
             <Route path="/program" element={<ProgramScreen />} />
+            <Route path="/finished-patty" element={<FinishedPattyPage />} />
             <Route path="/production" element={<ProductionScreen />} />
             <Route path="/production-view" element={<ProductionViewPage />} />
             <Route path="/closeout" element={<CloseoutStackPage />} />

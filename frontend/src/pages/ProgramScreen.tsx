@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
   Plus, X, Power, RotateCcw, Check, Undo2, Monitor, LayoutGrid, List, Search, Trash2, Scissors,
@@ -8,10 +8,13 @@ import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotR
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
 import SearchSelect from "@/components/SearchSelect";
+import PattyTile from "@/components/PattyTile";
+import { filterPatties, groupPatties } from "@/utils/finishedPatty";
+import { todayISO, tomorrowISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
-const today = () => new Date().toISOString().slice(0, 10);
-const tomorrow = () => new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+const today = todayISO;
+const tomorrow = tomorrowISO;
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 // Night first everywhere it is listed — a shift pair is one night plus the NEXT day.
 const SHIFTS = ["Night", "Day"] as const;
@@ -197,48 +200,42 @@ export default function ProgramScreen() {
   // Feeder: finished patty — colour and how many patti it has, nothing else. A patty whose
   // patti are all programmed is not on the shelf at all: the shelf is what can go on a
   // machine, and a spent one cannot.
-  const pattyColours = useMemo(() => {
-    const scopeCut = (pattyScope?.cut || "").trim();
-    const g: Record<string, {
-      key: string; colour: string; lotId: string; lot: string; challan: string;
-      count: number; total: number; lots: string[]; lotIds: string[];
-    }> = {};
-    for (const p of patties) {
-      // Scoped to a machine: only patty cut the way that machine runs. A machine with no cut
-      // recorded filters nothing — it can take anything.
-      if (scopeCut && (p.cut || "").trim() !== scopeCut) continue;
-      const colour = p.shade || p.roll_no || "—";
-      // SOURCE-WISE: a tile is a colour IN ONE LOT, not a colour. Eight patti of TEST
-      // SILVER off two lots are two different materials that happen to share a name —
-      // merged into one tile the shelf said "8" and the operator could not tell which
-      // lot a program would draw from, nor read a lot's remark against the right patti.
-      const lotId = p.lot_id || "";
-      const key = `${colour}|${lotId || p.lot || "—"}`;
-      const e = (g[key] ||= {
-        key, colour, lotId, lot: p.lot || "", challan: p.lot_challan || "",
-        count: 0, total: 0, lots: [], lotIds: [],
-      });
-      if (p.lot && !e.lots.includes(p.lot)) e.lots.push(p.lot);
-      if (p.lot_id && !e.lotIds.includes(p.lot_id)) e.lotIds.push(p.lot_id);
-      // "No of patty" = the patti still available to program on this colour and lot.
-      e.count += Number(p.batches || 0);
-      e.total += Number(p.total_patti ?? p.batches ?? 0);
-    }
-    // Colour first, then lot, so the same colour's lots sit side by side.
-    return Object.values(g).sort(
-      (a, b) => a.colour.localeCompare(b.colour) || a.lotId.localeCompare(b.lotId),
-    );
-  }, [patties, pattyScope]);
+  // Feeder: finished patty — colour and how many patti it has, nothing else. A patty whose
+  // patti are all programmed is not on the shelf at all: the shelf is what can go on a
+  // machine, and a spent one cannot. Grouping and search live in utils/finishedPatty so the
+  // full Finished Patty page shows the same shelf under the same filter, by construction.
+  const pattyColours = useMemo(
+    () => groupPatties(patties, pattyScope?.cut),
+    [patties, pattyScope],
+  );
+  const shownPatties = useMemo(
+    () => filterPatties(pattyColours, pattyColourFilter),
+    [pattyColours, pattyColourFilter],
+  );
 
-  // The filter reads the lot and the challan too — with the shelf split source-wise, "the
-  // LT13 patty" is as natural a thing to look for as a colour.
-  const shownPatties = useMemo(() => {
-    const q = pattyColourFilter.trim().toLowerCase();
-    if (!q) return pattyColours;
-    return pattyColours.filter((p) =>
-      [p.colour, p.lotId, p.challan].some((v) => (v || "").toLowerCase().includes(q)),
-    );
-  }, [pattyColours, pattyColourFilter]);
+  /** What the Finished Patty page needs to reproduce this exact shelf. */
+  const pattyQuery = useMemo(() => {
+    const q = new URLSearchParams();
+    if (pattyColourFilter.trim()) q.set("q", pattyColourFilter.trim());
+    if (pattyScope?.cut) q.set("cut", pattyScope.cut);
+    if (pattyScope?.machineNo) q.set("machine", pattyScope.machineNo);
+    return q.toString();
+  }, [pattyColourFilter, pattyScope]);
+
+  // A tile picked on the Finished Patty page comes back here as ?colour=&lot=, because the
+  // Add-program dialog and everything it validates against live on this screen. The params
+  // are cleared as they are read so a refresh does not re-open the dialog.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const colour = searchParams.get("colour");
+    if (!colour) return;
+    const lotId = searchParams.get("lot") || undefined;
+    const rest = new URLSearchParams(searchParams);
+    rest.delete("colour");
+    rest.delete("lot");
+    setSearchParams(rest, { replace: true });
+    setAdding({ colour, lotId });
+  }, [searchParams, setSearchParams]);
 
   // Night first: the working day starts with the night shift and runs into the NEXT
   // calendar day's day shift, so reading the board left to right is reading it in order.
@@ -340,6 +337,14 @@ export default function ProgramScreen() {
               )}
               <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour or lot…"
                 value={pattyColourFilter} onChange={(e) => setPattyColourFilter(e.target.value)} />
+              {/* The rail shows what fits across; this is the same shelf with room for all
+                  of it. The filter and the machine scope travel in the URL, so the page
+                  opens on exactly what the shelf was showing. */}
+              <button type="button" className="mm-mini mm-patty-viewall"
+                title="Every finished patty, column-wise, on its own page"
+                onClick={() => nav(pattyQuery ? `/finished-patty?${pattyQuery}` : "/finished-patty")}>
+                <LayoutGrid size={13} /> View all{shownPatties.length ? ` (${shownPatties.length})` : ""}
+              </button>
             </div>
             {pattyCall.isLoading && shownPatties.length === 0 ? (
               <p className="mm-flow-empty-state">Loading…</p>
@@ -352,30 +357,20 @@ export default function ProgramScreen() {
                     : "No finished patty available — finish a cutting first."}
               </p>
             ) : (
-              /* Colour + patti count, one tile each. Two wide table columns made the card
-                 grow taller with every colour and shove the machine board down the page;
-                 tiles flow into MORE COLUMNS instead, inside a card of fixed height. */
-              <div className="mm-patty-scroll">
-                <div className="mm-patty-grid">
-                  {shownPatties.map((c) => (
-                    <button key={c.key} type="button" className="mm-patty-tile"
-                      title={`${c.count} of ${c.total} patti still available${c.lotId ? ` on lot ${c.lotId}` : ""}${c.challan ? ` (challan ${c.challan})` : ""} — program this patty`}
-                      onClick={() => openAdd({ colour: c.colour, lotId: c.lotId || undefined })}>
-                      <span className="mm-patty-tile-name">
-                        {c.colour}
-                        {/* The tile is a button that programs this patty — read why the last
-                            run on it stopped before committing the next one. The remark is
-                            now this LOT's, not every lot of the colour's. */}
-                        <LotRemarkBadge remarks={remarksFor(c.lots, c.lotIds)} label={c.colour} />
-                      </span>
-                      {/* Which material this is. Without it the shelf named a colour and
-                          the operator could not tell two lots of it apart. */}
-                      <span className="mm-patty-tile-src">{c.lotId || "no lot"}</span>
-                      <span className="mm-patty-tile-count">{c.count}</span>
-                      <span className="mm-patty-tile-go" aria-hidden>→</span>
-                    </button>
-                  ))}
-                </div>
+              /* ONE ROW that scrolls sideways. Wrapping into more columns inside a card of
+                 fixed height meant the last row was sliced through the middle: a tile that
+                 is half a tile reads as a rendering fault, and the count it exists to show
+                 was the part cut off. A row cannot be clipped vertically, and everything
+                 that does not fit across is on the full page a click away. */
+              <div className="mm-patty-rail">
+                {shownPatties.map((c) => (
+                  <PattyTile
+                    key={c.key}
+                    tile={c}
+                    remarks={remarksFor(c.lots, c.lotIds)}
+                    onPick={(t) => openAdd({ colour: t.colour, lotId: t.lotId || undefined })}
+                  />
+                ))}
               </div>
             )}
           </section>
