@@ -2911,34 +2911,56 @@ h1, h2, h3 { letter-spacing: -0.015em; }
    The shift column is a CONTAINER because two of them share the viewport: a viewport media
    query fires hundreds of pixels after the box itself has run out of room. */
 .mm-pvw-col { container: mm-pvw-shift / inline-size; }
-/* Machines pair up, so a box is HALF the column wide instead of stretching across it.
-   A full-width box for "Machine 2 · Free" is three words on a line built for twelve, and
-   four of them ran the board off the bottom of the screen for no reading. Two up halves
-   the width and halves the height of the board with it. */
+/* A MACHINE IS A ROW. Its cell on the left, its jobs running across to the right, one to
+   a column — so a machine with four jobs is a longer line, not a taller stack. Stacked, a
+   busy machine was four boxes deep and pushed every machine under it off the screen; along
+   the row the whole shift is one screen and "what is Machine 3 doing" is one line to read.
+
+   ONE grid for the whole shift, with each machine's wrapper set to `display: contents` so
+   the head and the boxes are laid out by it directly. That is what aligns the columns from
+   machine to machine — every first job starts on the same line down the shift, and the eye
+   can run a column as well as a row. A grid per machine would leave each row measuring
+   itself, and nothing would line up.
+
+   --mm-pvw-jobs is the busiest machine's job count, set per shift by the component. */
 .mm-pvw-machines {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem 0.6rem; align-items: start;
+  display: grid;
+  /* max-content on the machine cell, not a minmax: when the jobs overflow the panel the
+     free space goes negative and anything shrinkable shrinks — which crushed "Machine 1"
+     and "4 programs" into each other, both being nowrap. The cell that names the row is
+     the last thing that may give way. */
+  grid-template-columns: max-content repeat(var(--mm-pvw-jobs, 1), minmax(132px, 1fr));
+  gap: 0.5rem 0.45rem; align-items: stretch;
+  /* The safety valve. Columns hold their 132px rather than crushing the colour name to
+     one letter a line, and a shift with more jobs than the panel is wide scrolls sideways
+     — which keeps the row model honest instead of quietly abandoning it. */
+  overflow-x: auto;
 }
-.mm-pvw-machine { margin-bottom: 0.6rem; min-width: 0; }
+/* The wrapper groups a machine with its jobs in the markup, for reading; the grid above
+   does the laying out. */
+.mm-pvw-machine { display: contents; }
+/* Its jobs start in column 2 — the machine cell holds column 1 — and an idle machine
+   simply leaves the rest of its row empty. */
+.mm-pvw-machine > .mm-pvw-machine-head { grid-column: 1; }
 
 .mm-pvw-box {
   display: flex; align-items: stretch; gap: 0.5rem; min-width: 0;
   border: 1px solid var(--mm-border-dark); border-radius: var(--mm-radius-sm);
   background: var(--mm-card); padding: 0.5rem 0.6rem;
 }
-/* Boxes of the SAME machine sit tight; the space before the next machine is the
-   .mm-pvw-machine margin, so the grouping still reads without a heading over it. */
-.mm-pvw-box + .mm-pvw-box { margin-top: 0.3rem; }
 
-/* The machine's own row. The number used to be a cell repeated inside every box, so a
-   machine running three jobs read as three machines and there was no line for the eye to
-   run down when it wanted "what is Machine 4 doing". Stated once, at the top, with only
-   that machine's work under it. */
+/* The machine's own cell. The number used to be repeated inside every box, so a machine
+   running three jobs read as three machines and there was no line for the eye to run along
+   when it wanted "what is Machine 4 doing". Stated once, at the head of its row, with only
+   that machine's work running off it. */
 .mm-pvw-machine-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
-  padding: 0.3rem 0.55rem; margin-bottom: 0.32rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.3rem 0.55rem;
   border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius-sm);
   background: var(--mm-accent-bg);
+  /* Sticky, because the row can scroll sideways: the machine you are reading along must
+     not be the first thing to leave the screen. */
+  position: sticky; left: 0; z-index: 1;
 }
 .mm-pvw-machine-no {
   display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0;
@@ -2962,18 +2984,29 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 0.5rem; row-gap: 0.1rem; align-items: center;
 }
+/* The colour spans BOTH columns. The tick sits in the second one on the line below, and a
+   colour boxed into what is left beside a 34px button broke "K Anmol BSM" over three lines
+   in a column this narrow — for no gain, since nothing shares its line. */
 .mm-pvw-box-colour {
-  grid-column: 1; grid-row: 1; min-width: 0;
+  grid-column: 1 / -1; grid-row: 1; min-width: 0;
   display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
   /* A shade name can be long and there is nowhere else for it to go but another line. */
   overflow-wrap: anywhere;
 }
-/* Below this the two-up pairing costs more than the width it saves — one box per row. */
-@container mm-pvw-shift (max-width: 560px) {
-  .mm-pvw-machines { grid-template-columns: 1fr; }
+/* Narrower than this a row of 132px columns is unreadable however it scrolls, so the shift
+   goes back to the stacked read: one column, which with `display: contents` puts each
+   machine's head above its own jobs — the same markup, the other way up. */
+@container mm-pvw-shift (max-width: 480px) {
+  .mm-pvw-machines { grid-template-columns: 1fr; overflow-x: visible; }
+  .mm-pvw-machine-head { position: static; margin-top: 0.5rem; }
+  .mm-pvw-machine:first-child .mm-pvw-machine-head { margin-top: 0; }
 }
 @supports not (container-type: inline-size) {
-  @media (max-width: 1180px) { .mm-pvw-machines { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) {
+    .mm-pvw-machines { grid-template-columns: 1fr; overflow-x: visible; }
+    .mm-pvw-machine-head { position: static; margin-top: 0.5rem; }
+    .mm-pvw-machine:first-child .mm-pvw-machine-head { margin-top: 0; }
+  }
 }
 .mm-pvw-box-lot { font-size: 0.72rem; color: var(--mm-text-sec); font-variant-numeric: tabular-nums; }
 .mm-pvw-box-patti {

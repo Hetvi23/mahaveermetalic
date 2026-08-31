@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Check, Monitor, NotebookPen, RefreshCw, Scissors, X } from "lucide-react";
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
@@ -154,14 +154,18 @@ function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onC
 }
 
 /**
- * One shift, machine by machine: each machine is a ROW OF ITS OWN — its number on a header
- * line, and under that line only the programmes running on it.
+ * One shift, machine by machine: each machine is a ROW — its number in the first column,
+ * and its programmes running ACROSS that row, one to a column.
  *
- * A box is still a JOB, not a machine, so a machine running two programmes is two boxes one
- * under the other. What changed is where the number lives: it used to be repeated inside
- * every box, which made a machine with three jobs read as three machines and left the eye
- * with no line to run down when it wanted "what is Machine 4 doing". The number is stated
- * once, at the top of its own row, and the boxes beneath it carry only the work.
+ * A box is still a JOB, not a machine, so a machine running two programmes is two boxes;
+ * what changed is where they go. Stacked under the machine, a machine with four jobs was
+ * four boxes tall and pushed every machine below it off the screen, so "what is the floor
+ * running" needed scrolling to answer. Along the row, the whole shift is one screen deep:
+ * a machine is a line, and how far its line runs is how loaded it is.
+ *
+ * The columns are one grid for the entire shift, not a row of boxes per machine — the
+ * machine heads line up, and so does every machine's first job, second job and third. That
+ * is what makes the board readable across: the eye runs down a column as well as along a row.
  */
 function ShiftColumn({ title, groups, onComplete, remarksFor }: {
   title: string; groups: MachineGroup[]; onComplete: (p: ProgramRow) => void;
@@ -169,6 +173,10 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
 }) {
   const batches = groups.reduce((s, g) => s + g.programs.reduce((n, p) => n + (p.total_batches || 0), 0), 0);
   const idle = groups.filter((g) => g.programs.length === 0).length;
+  // How many job columns the shift needs: the busiest machine on it. Every row is laid to
+  // that width, so a two-job machine leaves two cells empty rather than stretching its
+  // boxes across the space a four-job machine uses.
+  const cols = Math.max(1, ...groups.map((g) => g.programs.length));
   return (
     <section className="mm-pvw-col">
       <header className="mm-pvw-col-head">
@@ -180,11 +188,14 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
       {groups.length === 0 ? (
         <p className="mm-pvw-empty">No machines yet.</p>
       ) : (
-        <div className="mm-pvw-machines">
+        <div className="mm-pvw-machines" style={{ "--mm-pvw-jobs": cols } as CSSProperties}>
         {groups.map((g) => (
-          // Every machine is listed, running or not.
+          // Every machine is listed, running or not. `display: contents` in the CSS — the
+          // wrapper groups the machine with its jobs for reading here, while the head and
+          // the boxes are laid out by the ONE grid above, which is what keeps the columns
+          // aligned from one machine to the next.
           <div className="mm-pvw-machine" key={g.machine_no}>
-            {/* The machine's own row, present whether or not anything is running: an idle
+            {/* The machine's own cell, present whether or not anything is running: an idle
                 machine that simply vanished would make the floor count to notice. Its state
                 is stated HERE and only here — the head used to say "Free" over a dashed box
                 that also said "Free", one word twice in two type treatments. */}
@@ -196,8 +207,8 @@ function ShiftColumn({ title, groups, onComplete, remarksFor }: {
                   : `${g.programs.length} ${g.programs.length === 1 ? "program" : "programs"}`}
               </span>
             </div>
-            {/* Under the machine row, only programmes. Nothing under an idle machine is the
-                whole reading — the row above already says it is free. */}
+            {/* Along the row, only programmes. An empty row is the whole reading for an
+                idle machine — the cell to its left already says it is free. */}
             {g.programs.map((p) => (
                 <div className="mm-pvw-box" key={p.program}>
                   {/* The three lines and the tick share one grid so the tick lands on the
