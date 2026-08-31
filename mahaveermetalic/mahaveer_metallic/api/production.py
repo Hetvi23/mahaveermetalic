@@ -618,8 +618,20 @@ def create_production(
 		frappe.throw(_("Program {0} not found.").format(source_program))
 	if prog.docstatus != 1 or prog.status not in ("Running", "Partially Done", "Completed"):
 		frappe.throw(_("Only a program that is In Threads Processing can be produced."))
+	# ONE PROGRAM, SEVERAL VOUCHERS. A 1,200 kg program is boxed a few hundred kilos at a
+	# time, and often for more than one party, so the second voucher is the normal case —
+	# not a duplicate. This refused it outright the moment ANY voucher existed, which is
+	# what made the running-total rule below unreachable.
+	#
+	# `production` is now only stamped on a program that is genuinely finished (see
+	# MMProduction._sync_source_program), so it still means what it says: this program is
+	# done and that voucher is what closed it.
 	if prog.production:
-		frappe.throw(_("This program is already produced ({0}).").format(prog.production))
+		frappe.throw(
+			_("Program {0} is finished — it was closed by {1}. Plan a new program to produce more.").format(
+				prog.name, prog.production
+			)
+		)
 
 	eff_order = customer_order or prog.customer_order
 	if eff_order:
@@ -647,34 +659,48 @@ def create_production(
 			bobbin_total += w
 		net = round(float(gross_weight or 0) - bobbin_total - float(box_weight or 0), 3)
 
-	# You cannot wind more thread out of a program than went into it. Variance and its PIN
-	# cover the two sides differently on purpose: producing LESS is ordinary (waste, a short
-	# run) and an override can accept it, but producing MORE is not a tolerance question —
-	# the weight came from somewhere else and the voucher is wrong. Refused outright.
-	if input_weight and net > input_weight:
+	# A PROGRAM IS BOXED OVER SEVERAL VOUCHERS, AND ONLY THE TOTAL MATTERS.
+	#
+	# Producing LESS than went in is ordinary: a 1,200 kg program boxed 200 kg today is
+	# 200 kg boxed, not a 1,000 kg variance, and the rest is boxed tomorrow. The old rule
+	# measured every voucher against the WHOLE program on its own, so that first 200 kg
+	# read as -83% and demanded the Admin PIN — for doing exactly the right thing. A
+	# shortfall is not an error and no longer asks for anything.
+	#
+	# Producing MORE still is an error, because that weight came from somewhere else. But
+	# it is the RUNNING TOTAL that cannot exceed the program, not the single voucher:
+	# 200 then 1,150 against a 1,200 kg program is 1,350 kg out of 1,200 and is refused
+	# on the second voucher, even though 1,150 on its own would have looked fine.
+	already = round(
+		float(
+			frappe.db.sql(
+				"""select coalesce(sum(net_weight), 0) from `tabMM Production`
+				where source_program = %s and docstatus = 1""",
+				(prog.name,),
+			)[0][0]
+			or 0
+		),
+		3,
+	)
+	total_after = round(already + net, 3)
+	# The kg floor keeps a rounding crumb on the last box of a long program from being
+	# read as material appearing out of nowhere.
+	if input_weight and total_after > input_weight + get_production_tolerance_kg():
 		frappe.throw(
-			_("Total net {0} kg is more than the {1} kg that went into this program. "
-			  "Correct the box weights — a voucher cannot produce more than its input.").format(
-				round(net, 3), round(input_weight, 3)
+			_("This voucher would take the program to {0} kg, more than the {1} kg that went "
+			  "into it{2}. Correct the box weights — a program cannot produce more than its "
+			  "input.").format(
+				total_after,
+				round(input_weight, 3),
+				_(" ({0} kg already boxed)").format(already) if already else "",
 			)
 		)
 
+	# Kept for the record on the voucher, and still measured against the program so the
+	# figure means the same thing it always did. It no longer gates anything.
 	variance = round((net - input_weight) / input_weight * 100, 2) if input_weight else 0.0
 	tol = get_tolerance_percent()
 	pin_override = 0
-	if variance_needs_override(input_weight, net, tol):
-		# Say which of the two it is. One message covered both "you typed nothing" and
-		# "you typed the wrong PIN", so entering a wrong PIN reported that a PIN was
-		# required — leaving no way to tell a typo from a missing entry.
-		if not str(pin or "").strip():
-			frappe.throw(
-				_("Variance {0}% ({1} kg) exceeds tolerance ±{2}% and the ±{3} kg leeway. "
-				  "Enter the Admin Override PIN to accept it.").format(
-					variance, round(net - input_weight, 3), tol, get_production_tolerance_kg()
-				)
-			)
-		require_admin_pin(pin)
-		pin_override = 1
 
 	prod = frappe.get_doc(
 		{

@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download } from "lucide-react";
+import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download, Barcode } from "lucide-react";
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { toast } from "@/components/Toaster";
 import { useSerialScale } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
-import { downloadBoxStickers, printBoxStickers } from "@/utils/boxSticker";
+import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
+import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayISO;
 const SHIFTS = ["Day", "Night"] as const;
 const r3 = (n: number) => Math.round((Number(n) || 0) * 1000) / 1000;
 
@@ -172,6 +174,7 @@ export default function ProductionScreen() {
                     <th>Operator</th>
                     <th className="mm-num">Net (kg)</th>
                     <th className="mm-num">Var %</th>
+                    <th className="mm-no-print" />
                   </tr>
                 </thead>
                 <tbody>
@@ -187,6 +190,13 @@ export default function ProductionScreen() {
                           {(d.variance_percent ?? 0).toFixed(2)}
                         </span>
                         {d.pin_override ? <ShieldAlert size={12} style={{ marginLeft: 4, verticalAlign: "middle" }} aria-label="PIN override" /> : null}
+                      </td>
+                      {/* One button for the whole production: every box of it on the label
+                          printer in a single job. Reprinting a single box means re-opening
+                          the voucher, and by then its stickers say PREVIEW — the real codes
+                          only exist on the challan this reads. */}
+                      <td className="mm-no-print">
+                        <ProductionLabels production={d.name} />
                       </td>
                     </tr>
                   ))}
@@ -348,7 +358,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // message belongs to the state that produced it, so changing that state clears it.
   useEffect(() => { setErr(null); }, [boxes.length]);
   const totalGross = useMemo(() => r3(boxes.reduce((s, b) => s + b.gross, 0)), [boxes]);
-  const availableNet = r3(inputWeight - totalNet);
+  // Floored at zero. A negative "available" is not a quantity anybody can act on — it
+  // read as if the program owed material back. How far PAST the input a voucher has gone
+  // is a different statement, and the footer already makes it ("Over input by X kg").
+  const availableNet = Math.max(0, r3(inputWeight - totalNet));
 
   // Variance of the produced total (Σ box net) vs the program input — server tolerance.
   useEffect(() => {
@@ -430,15 +443,47 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         job_work: jobWork ? 1 : 0,
         pin: pin || undefined,
       });
-      // Auto challan print: only when the production actually raised one (i.e. it carried
-      // a sales order). Without an order the goods went to inventory, so there is nothing
-      // to print. A print failure must never look like a failed production.
+      // Auto print: only when the production actually raised a challan (i.e. it carried a
+      // sales order). Without an order the goods went to inventory, so there is nothing to
+      // print. A print failure must never look like a failed production.
+      //
+      // The challan first, then every box's label — both off the SAME fetch, because the
+      // challan is the first thing that knows the real barcodes. The stickers on the form
+      // above read PREVIEW-1, PREVIEW-2 …: the code is minted on submit, so a label
+      // printed before this point cannot be scanned off a box.
       const prod = (res as { message?: { production?: string } })?.message?.production;
       if (prod) {
         try {
           const c = await fetchChallan({ production: prod });
-          if (c?.message) printChallan(c.message);
-        } catch { /* challan print is best-effort */ }
+          if (c?.message) {
+            printChallan(c.message);
+            const labels = stickersFromChallan(c.message, { batch: batchNo, operator });
+            // A beat apart: two window.open + print() calls fired together race each
+            // other's dialogs and one of them is silently dropped.
+            //
+            // The second popup is opened from a TIMER, so it has no user activation behind
+            // it — the submit click's was spent on the challan — and Chrome blocks it
+            // unless this site is on the popup allow-list. That is a per-PC setting we
+            // cannot make from here, so the failure is reported with the one action that
+            // does work: the Barcodes button on the production's row, which is a real
+            // click and therefore never blocked.
+            if (labels.length) {
+              setTimeout(() => {
+                if (!printBoxStickers(labels)) {
+                  toast(
+                    "Challan printed. Barcodes were blocked by the pop-up blocker — " +
+                      "use the Barcodes button on this production's row.",
+                    "error",
+                  );
+                }
+              }, 1200);
+            }
+          }
+        } catch (e) {
+          // Not silent: the production IS posted, but an operator who saw no paper has to
+          // be told why, or they submit it again.
+          toast(`Posted, but printing failed — ${extractErrorMessage(e)}`, "error");
+        }
       }
       onDone();
     } catch (e) {
@@ -580,7 +625,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Available Net (Kg)</span>
-              <input className={`mm-input ${availableNet < 0 ? "mm-input-warn" : ""}`} value={availableNet.toLocaleString()} readOnly />
+              {/* Keyed on overProduced, not on a negative available: available is floored
+                  at zero now, so `< 0` could never be true and the field would have gone
+                  quiet exactly when it needed to shout. */}
+              <input className={`mm-input ${overProduced ? "mm-input-warn" : ""}`} value={availableNet.toLocaleString()} readOnly />
             </label>
           </div>
 
@@ -828,6 +876,24 @@ function BoxDialog({
   function add() {
     setErr(null);
     if (!(Number(gross) > 0)) return setErr("Enter the total (gross) weight.");
+    // A BOX CANNOT WEIGH NOTHING, AND IT CANNOT WEIGH LESS THAN NOTHING. Only the gross
+    // was checked, so reopening the panel with a carried-over bobbin weight and a blank
+    // total gave net = 0 − 6.9 − 0.3 = −7.2, shown in red and added anyway.
+    if (!(net > 0)) {
+      return setErr(
+        `Net comes to ${net} kg. Check the total weight against the bobbin (${totalBobbin} kg) ` +
+          `and box (${Number(boxWeight) || 0} kg) being taken off it.`,
+      );
+    }
+    // …and it cannot be more than the program has left. Caught here, on the box that
+    // causes it, rather than at Submit — where the message named a total and left the
+    // operator to work out which of twenty boxes was wrong. A mis-keyed 203 kg gross on a
+    // run of 15 kg boxes is the case: it took the voucher 6.7 kg past the whole program.
+    if (!edit && availableNet > 0 && net > availableNet + 0.001) {
+      return setErr(
+        `This box is ${r3(net - availableNet)} kg more than the ${availableNet} kg the program has left to box.`,
+      );
+    }
     onAdd({
       item: defaultItem,
       gross: Number(gross) || 0,
@@ -848,7 +914,20 @@ function BoxDialog({
        full-width box table, so nothing it needs to be read against — the input weight
        and available net on the left, the boxes already weighed below — is covered by
        it, and opening it takes no width off the table. */
-    <section className="mm-bx-panel" aria-label={edit ? "Edit box" : "New box"}>
+    <section className="mm-bx-panel" aria-label={edit ? "Edit box" : "New box"}
+      // ENTER ADDS THE BOX. A voucher is twenty boxes and each one was three keystrokes
+      // and then a trip to the mouse; this is the trip removed. Escape closes, so a hand
+      // that never leaves the keys can weigh, add, weigh, add.
+      onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+        if (e.key !== "Enter") return;
+        const el = e.target as HTMLElement;
+        if (el.tagName !== "INPUT") return;
+        // Enter inside an open picker is choosing an option, not finishing the box.
+        if (el.closest(".mm-link-wrap") && document.querySelector("[data-mm-menu]")) return;
+        e.preventDefault();
+        add();
+      }}>
       <div className="mm-bx-panel-head">
         <span className="mm-bx-panel-title"><Package size={15} /> {edit ? "Edit Box" : "Box Details"}</span>
         <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close box details"><X size={16} /></button>
@@ -866,7 +945,9 @@ function BoxDialog({
         <div className="mm-bx-row mm-bx-row-wide">
           <span className="mm-bx-label">Total Weight</span>
           <div className="mm-bx-gross">
-            <input className="mm-input" type="number" value={gross} placeholder="0.000"
+            {/* The panel opens on this: it is the first of the three fields that are
+                actually keyed, and the scale writes into it too. */}
+            <input className="mm-input" type="number" value={gross} placeholder="0.000" autoFocus
               onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
             <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
           </div>
@@ -922,6 +1003,11 @@ function BoxDialog({
 
       {err && <p className="mm-error mm-bx-panel-err">{err}</p>}
       <div className="mm-bx-panel-foot">
+        {/* Said out loud. A shortcut nobody is told about is a shortcut nobody uses, and
+            these operators will not go looking for one. */}
+        <span className="mm-keys">
+          <kbd>Enter</kbd> {edit ? "save" : "add box"} · <kbd>Esc</kbd> close
+        </span>
         <button className="mm-btn-ghost mm-btn-compact" onClick={onClose}>Cancel</button>
         <button className="mm-btn-primary mm-btn-compact" onClick={add}>{edit ? "Save box" : "Add box"}</button>
       </div>
@@ -946,11 +1032,24 @@ function BoxDialog({
 const BAUDS = [9600, 2400, 4800, 19200, 38400, 1200];
 
 function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
-  const { supported, connected, connecting, error, note, portLabel, reading, connect, disconnect } = useSerialScale();
+  const { supported, connected, connecting, error, note, portLabel, reading, connect, autoConnect, disconnect } = useSerialScale();
   const [baud, setBaud] = useState<number>(() => {
     const saved = typeof window !== "undefined" ? Number(window.localStorage.getItem("mm-scale-baud")) : 0;
     return BAUDS.includes(saved) ? saved : 9600;
   });
+  // The scale connects ITSELF as soon as the box form opens. Chrome only requires a click
+  // to CHOOSE a port, never to reopen one already granted — so the operator picks the
+  // scale once on this PC and never presses Connect again. The button stays for the first
+  // time, and for the day the port has to be changed.
+  const [tried, setTried] = useState(false);
+  useEffect(() => {
+    if (!supported || connected || connecting || tried) return;
+    setTried(true);
+    void autoConnect(baud);
+    // baud deliberately not a dependency: changing it must not re-fire the auto-connect
+    // behind the operator while they are choosing one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supported, connected, connecting, tried, autoConnect]);
 
   if (!supported) {
     return (
@@ -976,7 +1075,7 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
             {BAUDS.map((b) => <option key={b} value={b}>{b} baud</option>)}
           </select>
           <button type="button" className="mm-mini" disabled={connecting} onClick={() => void connect(baud)}>
-            <Scale size={13} /> {connecting ? "Connecting…" : "Connect scale"}
+            <Scale size={13} /> {connecting ? "Connecting…" : tried ? "Connect scale" : "Connecting…"}
           </button>
           {/* The remembered port is the wrong one on any PC where the TSC printer also
               shows up as a COM port, so keep a way back to the picker. */}
@@ -999,5 +1098,46 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
       {note && <p className="mm-muted mm-scale-hint">{note}</p>}
       {error && <p className="mm-error mm-scale-hint">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * Print every barcode of one production, in one job.
+ *
+ * The codes are minted when the production is submitted and live on the challan it raised,
+ * so this reads them from there rather than rebuilding a label from the voucher form —
+ * which cannot know them and prints PREVIEW-1, PREVIEW-2 … instead.
+ *
+ * A production with no sales order raised no challan and therefore has no barcodes: the
+ * boxes went to inventory. The button says so rather than failing silently.
+ */
+function ProductionLabels({ production }: { production: string }) {
+  const [busy, setBusy] = useState(false);
+  const { call: fetchChallan } = useFrappePostCall<{ message: ChallanPrintData | null }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.challan_for_production",
+  );
+
+  async function go() {
+    setBusy(true);
+    try {
+      const c = await fetchChallan({ production });
+      const labels = c?.message ? stickersFromChallan(c.message) : [];
+      if (!labels.length) {
+        toast("No barcodes on this production — it went to inventory, not to a challan.", "error");
+        return;
+      }
+      printBoxStickers(labels);
+    } catch (e) {
+      toast(extractErrorMessage(e), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button type="button" className="mm-mini" disabled={busy} onClick={() => void go()}
+      title="Print the barcode label for every box of this production">
+      <Barcode size={13} /> {busy ? "…" : "Barcodes"}
+    </button>
   );
 }

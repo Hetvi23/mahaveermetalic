@@ -220,6 +220,96 @@ export function useSerialScale() {
     setNote(null);
   }, [clearSilence, release]);
 
+  /**
+   * Open a port the browser has already been granted, with no click and no picker.
+   *
+   * Chrome only demands a user gesture for requestPort() — the CHOOSING. A port already
+   * granted comes back from getPorts() and opens silently, so once the operator has picked
+   * the scale on this PC the app can connect to it by itself for good.
+   *
+   * Returns false when there is nothing remembered yet, which is the one case that still
+   * needs the button.
+   */
+  /** Pump the port's bytes into readings. Shared by the manual connect and the automatic
+   *  one, so a scale opened either way behaves identically. */
+  const startReading = useCallback((port: SerialPortLike) => {
+    const stream = port.readable;
+    if (!stream) { setError("Port has no readable stream."); return; }
+    const reader = stream.getReader();
+    readerRef.current = reader;
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    // Silence is its own failure and looks identical to success on screen, so name it.
+    silenceRef.current = setTimeout(() => {
+      setNote(
+        `Port is open but the indicator hasn't sent anything in ${SILENCE_MS / 1000}s. ` +
+          "Check the baud rate, and that the indicator is set to continuous / auto print " +
+          "(some only send on the PRINT key).",
+      );
+    }, SILENCE_MS);
+
+    // Background read loop — split the byte stream into CR/LF-delimited frames.
+    void (async () => {
+      try {
+        while (!stopRef.current) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split(/\r\n|\r|\n/);
+          buf = parts.pop() ?? "";
+          for (const ln of parts) {
+            if (!ln.trim()) continue;
+            clearSilence();
+            setNote(null);
+            setReading(parseScaleFrame(ln));
+          }
+        }
+      } catch (e) {
+        if (!stopRef.current) setError(String((e as Error)?.message || e));
+      } finally {
+        // The cable being pulled ends the stream; without this the UI keeps claiming it is
+        // connected and the operator waits on a reading that can never arrive.
+        if (!stopRef.current) {
+          clearSilence();
+          setConnected(false);
+          setPortLabel(null);
+        }
+      }
+    })();
+  }, [clearSilence]);
+
+  const autoConnect = useCallback(
+    async (baudRate = 9600) => {
+      if (!serial || connected || connecting) return false;
+      const port = await rememberedPort(serial);
+      if (!port) return false;
+      setError(null);
+      setNote(null);
+      setConnecting(true);
+      stopRef.current = false;
+      await release();
+      try {
+        await openPort(port, baudRate);
+        portRef.current = port;
+        setPortLabel(describePort(port));
+        setConnected(true);
+        setConnecting(false);
+        try { await port.setSignals?.({ dataTerminalReady: true, requestToSend: true }); } catch { /* ignore */ }
+        startReading(port);
+        return true;
+      } catch (e) {
+        setConnecting(false);
+        // Quietly: this runs on its own, without anybody asking. A scale that is off or
+        // held by another program must not throw an error box over the voucher — the
+        // Connect button is still there to be pressed and will say why.
+        setNote(explainOpenFailure(e, port));
+        return false;
+      }
+    },
+    [serial, connected, connecting, release],
+  );
+
   const connect = useCallback(
     async (baudRate = 9600, opts?: { pick?: boolean }) => {
       if (!serial) { setError("Web Serial is not available in this browser / context."); return; }
@@ -247,50 +337,7 @@ export function useSerialScale() {
         // usually one waiting for these lines.
         try { await port.setSignals?.({ dataTerminalReady: true, requestToSend: true }); } catch { /* ignore */ }
 
-        const stream = port.readable;
-        if (!stream) { setError("Port has no readable stream."); return; }
-        const reader = stream.getReader();
-        readerRef.current = reader;
-        const decoder = new TextDecoder();
-        let buf = "";
-
-        // Silence is its own failure and looks identical to success on screen, so name it.
-        silenceRef.current = setTimeout(() => {
-          setNote(
-            `Port is open but the indicator hasn't sent anything in ${SILENCE_MS / 1000}s. ` +
-              "Check the baud rate, and that the indicator is set to continuous / auto print " +
-              "(some only send on the PRINT key).",
-          );
-        }, SILENCE_MS);
-
-        // Background read loop — split the byte stream into CR/LF-delimited frames.
-        void (async () => {
-          try {
-            while (!stopRef.current) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              buf += decoder.decode(value, { stream: true });
-              const parts = buf.split(/\r\n|\r|\n/);
-              buf = parts.pop() ?? "";
-              for (const ln of parts) {
-                if (!ln.trim()) continue;
-                clearSilence();
-                setNote(null);
-                setReading(parseScaleFrame(ln));
-              }
-            }
-          } catch (e) {
-            if (!stopRef.current) setError(String((e as Error)?.message || e));
-          } finally {
-            // The cable being pulled ends the stream; without this the UI keeps claiming
-            // it is connected and the operator waits on a reading that can never arrive.
-            if (!stopRef.current) {
-              clearSilence();
-              setConnected(false);
-              setPortLabel(null);
-            }
-          }
-        })();
+        startReading(port);
       } catch (e) {
         setConnecting(false);
         const err = e as { name?: string; message?: string };
@@ -306,5 +353,5 @@ export function useSerialScale() {
   // Clean up the port on unmount.
   useEffect(() => () => { void disconnect(); }, [disconnect]);
 
-  return { supported, connected, connecting, error, note, portLabel, reading, connect, disconnect };
+  return { supported, connected, connecting, error, note, portLabel, reading, connect, autoConnect, disconnect };
 }

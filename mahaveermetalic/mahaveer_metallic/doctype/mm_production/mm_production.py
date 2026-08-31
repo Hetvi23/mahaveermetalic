@@ -6,12 +6,6 @@ import frappe.model.naming
 from frappe import _
 from frappe.model.document import Document
 
-from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
-	get_production_tolerance_kg,
-	get_tolerance_percent,
-	variance_needs_override,
-)
-
 
 class MMProduction(Document):
 	def validate(self):
@@ -73,28 +67,19 @@ class MMProduction(Document):
 		self.variance_percent = round((self.net_weight - base) / base * 100, 2) if base else 0.0
 
 	def _enforce_tolerance(self):
-		"""Beyond tolerance, the production cannot be saved/submitted unless an Admin PIN
-		was verified (which sets pin_override via the API).
+		"""Nothing to enforce on a shortfall — deliberately.
 
-		The gate is `variance_needs_override` — the SAME rule the API applies — so the two
-		can never disagree. They did: the percentage on its own refused a 1 kg shortfall on
-		any program under ~25 kg, which is a scale rounding, not an anomaly. It now takes
-		both the percentage AND the absolute kg leeway to require an override.
+		A program is boxed over SEVERAL vouchers, so the first 200 kg of a 1,200 kg program
+		is 200 kg boxed, not a 1,000 kg variance. This gate measured every voucher against
+		the whole program on its own and demanded the Admin Override PIN for the ordinary
+		act of boxing part of a run. `variance_percent` is still computed and stored, so the
+		figure is on the record; it simply no longer stops anybody.
+
+		Over-production IS still refused, but it cannot be judged from here: one voucher
+		cannot see the others, and the rule is about the RUNNING TOTAL across them. It
+		lives in api/production.create_production, which can.
 		"""
-		if not self.input_weight:
-			return
-		if variance_needs_override(self.input_weight, self.net_weight) and not self.pin_override:
-			frappe.throw(
-				_(
-					"Production variance is {0}% ({1} kg) — beyond both the ±{2}% tolerance and "
-					"the ±{3} kg leeway. An Admin Override PIN is required to accept this."
-				).format(
-					self.variance_percent,
-					round(float(self.net_weight or 0) - float(self.input_weight or 0), 3),
-					get_tolerance_percent(),
-					get_production_tolerance_kg(),
-				)
-			)
+		return
 
 	def on_submit(self):
 		self._sync_source_program(link=True)
@@ -207,12 +192,20 @@ class MMProduction(Document):
 		if not self.source_program or not frappe.db.exists("MM Program", self.source_program):
 			return
 		if link:
-			frappe.db.set_value(
-				"MM Program",
-				self.source_program,
-				{"production": self.name, "status": "Completed"},
-				update_modified=False,
-			)
+			# A PROGRAM IS NOT DONE JUST BECAUSE A VOUCHER TOUCHED IT. The first production
+			# marked it Completed outright, so a 1,200 kg program that had boxed 200 kg
+			# vanished off "In Threads Processing" and the other 1,000 kg had nowhere to be
+			# entered. It stays until there is genuinely nothing left to box.
+			# `production` is what REMOVES the program from the queue: api.production
+			# threads_processing filters on "production is not set", and create_production
+			# refuses a program that has one. So it must only be stamped once the program is
+			# genuinely finished — stamped on the first voucher, a 1,200 kg program boxed
+			# 200 kg vanished off the floor's list and could never be produced against again.
+			status = self._program_status_after()
+			fills = {"status": status}
+			if status == "Completed":
+				fills["production"] = self.name
+			frappe.db.set_value("MM Program", self.source_program, fills, update_modified=False)
 		else:
 			frappe.db.set_value(
 				"MM Program",
@@ -220,6 +213,56 @@ class MMProduction(Document):
 				{"production": None, "status": "In Progress"},
 				update_modified=False,
 			)
+
+	def _program_status_after(self) -> str:
+		"""Completed only when the program has nothing left worth boxing.
+
+		Two conditions, and both have to hold:
+
+		1. What is still unboxed is within the leftover tolerance in MM Settings. A program
+		   is rarely boxed to the exact gram, so a few hundred grams left over is finished
+		   in every sense that matters; 100 kg is not.
+		2. Nothing of that lot is still on the floor. Stock outlives the arithmetic — a
+		   patty or roll of the same lot sitting in inventory is material that can still be
+		   wound, and closing the program while it exists strands it.
+		"""
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+			get_leftover_tolerance,
+		)
+
+		produced = round(
+			float(
+				frappe.db.sql(
+					"""select coalesce(sum(net_weight), 0) from `tabMM Production`
+					where source_program = %s and docstatus = 1 and name != %s""",
+					(self.source_program, self.name),
+				)[0][0]
+				or 0
+			)
+			+ float(self.net_weight or 0),
+			3,
+		)
+		planned = float(frappe.db.get_value("MM Program", self.source_program, "net_weight") or 0)
+		remaining = round(planned - produced, 3)
+		if planned and remaining > get_leftover_tolerance():
+			return "Partially Done"
+		if self._lot_still_in_stock():
+			return "Partially Done"
+		return "Completed"
+
+	def _lot_still_in_stock(self) -> bool:
+		"""Is any roll of this program's lot still holding stock?"""
+		lot = frappe.db.get_value("MM Program", self.source_program, "lot")
+		lot_id = frappe.db.get_value("MM Lot", lot, "lot_id") if lot else None
+		if not lot_id:
+			return False
+		return bool(
+			frappe.db.sql(
+				"""select 1 from `tabMM Roll Inventory`
+				where lot_number = %s and ifnull(stock_weight, 0) > 0 limit 1""",
+				(lot_id,),
+			)
+		)
 
 	def _refresh_order_production(self):
 		if self.customer_order:
