@@ -402,7 +402,11 @@ def available_rolls(branch=None, location=None, finished_only=0):
 		# built straight off MM Roll Inventory, went on offering it to the next program. The
 		# same rule the Cutting and Sales-Voucher pickers ask, asked here too.
 		reserved = reserved_roll_names()
-		inv_conditions = ["(ifnull(ri.stock_weight, 0) > 0 or ifnull(ri.stock_box, 0) > 0)"]
+		# WEIGHT, not weight-or-boxes. A program is planned on a roll and finished by
+		# consuming its weight — finish_unfinished refuses a roll with none ("has no stock
+		# weight to consume") — so a box-only row was an offer the next screen would turn
+		# down, and it read "0 kg" in the list while it waited to do so.
+		inv_conditions = ["ifnull(ri.stock_weight, 0) > 0"]
 		values = {}
 		if branch:
 			inv_conditions.append("ri.branch = %(branch)s")

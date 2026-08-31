@@ -45,6 +45,8 @@ type Roll = {
    *  program records WHICH roll it booked — the field every picker reads to keep a booked
    *  roll from being offered again. available_rolls has always returned it. */
   roll_inventory?: string;
+  /** The lot an inventory roll belongs to, as printed on it. */
+  lot_number?: string;
 };
 /**
  * One selectable thing to program: a colour in ONE of its forms.
@@ -60,6 +62,10 @@ type Source = {
   /** Patty is split by LOT as well as cut — two lots of a colour are two materials, and
    *  the shelf now offers them separately, so the picker has to be able to honour that. */
   lotId: string; challan: string;
+  /** For an INVENTORY form: the ONE roll it is. A roll is a physical object with its own
+   *  weight, so it gets its own row and its own number rather than being summed into a
+   *  colour — see the grouping below. */
+  rollNo: string;
   rows: Roll[]; weight: number; perPatty: number; batches: number;
 };
 type Colour = {
@@ -598,6 +604,11 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
   // LGDT BSM already cut to 50/1.5 are two different things to program, and which one is
   // picked decides which orders can take it. Cuttings split by cut as well, since a colour
   // cut two ways is two different patties.
+  //
+  // And an inventory form splits again, PER ROLL. Three rolls of 200, 200 and 300 kg were
+  // one line reading "700 kg", which is a weight no roll on the floor has: a program runs
+  // on ONE roll, so what was offered could not be taken. Each roll is its own row now,
+  // named by its own number, and picking one is picking that roll and no other.
   const sources = useMemo(() => {
     const rank = (s: string) => (s === "Cut" ? 0 : 1);
     const out: Source[] = [];
@@ -610,13 +621,18 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
         const cut = kind === "cutting" ? (r.cut || "").trim() : "";
         // Patty splits by LOT as well: the shelf offers one tile per colour per lot, and a
         // pick that quietly drew from a different lot of the same colour would make that
-        // offer a lie. Inventory rolls are not split — they are not cut yet.
-        const lotId = kind === "cutting" ? (r.lot_id || "").trim() : "";
-        const key = `${c.colour}|${r.state}|${cut}|${lotId}`;
+        // offer a lie. An inventory roll carries its lot too — it is the lot it came in on.
+        const lotId = (r.lot_id || r.lot_number || "").trim();
+        // A roll is one physical object and is never folded into another: its own record
+        // is the key, so two rolls of the same colour, lot and weight stay two rows.
+        const rollNo = kind === "inventory" ? (r.roll_no || "").trim() : "";
+        const key = kind === "inventory"
+          ? `${c.colour}|roll|${r.roll_inventory}`
+          : `${c.colour}|${r.state}|${cut}|${lotId}`;
         let s = forms.get(key);
         if (!s) {
           s = {
-            key, colour: c.colour, kind, cut, state: r.state, lotId,
+            key, colour: c.colour, kind, cut, state: r.state, lotId, rollNo,
             challan: (r.lot_challan || "").trim(),
             rows: [], weight: 0, perPatty: 0, batches: 0,
           };
@@ -628,7 +644,9 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
         // Per-patty is a rate, not a total — carry the largest, the way the server does.
         s.perPatty = Math.max(s.perPatty, Number(r.per_patty || 0));
       }
-      out.push(...[...forms.values()].sort((a, b) => rank(a.state) - rank(b.state)));
+      out.push(...[...forms.values()].sort(
+        (a, b) => rank(a.state) - rank(b.state) || a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }),
+      ));
     }
     return out;
   }, [colours]);
@@ -648,7 +666,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
   const q = search.trim().toLowerCase();
   // Searchable by lot and challan too, matching the shelf's own filter.
   const searched = q
-    ? sources.filter((s) => [s.colour, s.lotId, s.challan].some((v) => (v || "").toLowerCase().includes(q)))
+    ? sources.filter((s) => [s.colour, s.lotId, s.challan, s.rollNo].some((v) => (v || "").toLowerCase().includes(q)))
     : sources;
 
   // A machine runs one cut. Offering it a patty cut to something else is offering a job it
@@ -847,7 +865,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
   // orders than the patty sitting right under it.
   const formLabel = (s: Source) =>
     (s.kind === "inventory"
-      ? ["roll · any cut", `${kg(s.weight)} kg`]
+      // Its number and its lot, because the rows are split by roll: three rows of the same
+      // colour differ only in which roll they are, and a row that will not say which is a
+      // row that cannot be chosen between.
+      ? ["roll · any cut", s.rollNo || "no roll no",
+         s.lotId && s.lotId !== s.rollNo ? s.lotId : "",
+         `${kg(s.weight)} kg`].filter(Boolean)
       : [`${stateWord(s.state)} · ${s.cut ? `cut ${s.cut}` : "no cut recorded"}`,
          // The lot, because the rows are split by it: two otherwise identical lines of the
          // same colour and cut differ only in the material they draw from, and picking
