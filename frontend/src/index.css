@@ -2427,9 +2427,50 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* Top row of the day sheet: what is in cutting, and the floor's notes beside it. */
 .mm-pvw-top {
   display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 1.1rem; align-items: start; margin-bottom: 1.25rem;
+  gap: 1rem; align-items: start; margin-bottom: 1.25rem;
 }
 @media (max-width: 1000px) { .mm-pvw-top { grid-template-columns: 1fr; } }
+
+/* ── The day sheet is TWO HALVES, and between them they are the screen ──────────────
+   Cutting above, the board below, each scrolling inside its own half. The cutting list
+   runs to dozens of rows on a busy day; laid out down the page it pushed the shift board
+   off the bottom, so the one thing the sheet exists to show could only be reached by
+   scrolling past a list of everything not on a machine yet. Now neither half can push the
+   other anywhere: the page itself never scrolls, and each half is always on screen.
+
+   Desktop only. Below 900px the rail is a tab bar, the halves stack into one column, and a
+   page that scrolls is the right page — pinning two scroll boxes inside a phone screen
+   gives each of them about an inch. */
+@media (min-width: 900px) {
+  .mm-pvw-page {
+    display: flex; flex-direction: column; gap: 1rem;
+    /* The app content's own top and bottom padding (1.4rem + 2.4rem) is the only chrome
+       between this page and the viewport. */
+    height: calc(100dvh - 3.8rem);
+    min-height: 0;
+  }
+  .mm-pvw-page > .mm-ws-toolbar { flex: none; margin-bottom: 0; }
+  /* Cutting takes what it needs UP TO 45% and no more; the board takes everything left.
+     A ceiling rather than a fixed share, so a two-row cutting list gives its space to the
+     board instead of sitting in a half-empty card of its own. */
+  .mm-pvw-top { flex: 0 1 auto; max-height: 45%; min-height: 0; margin-bottom: 0; align-items: stretch; }
+  .mm-pvw-grid { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+
+  /* Each card in a half is a column: a fixed head, and one part that takes the rest and
+     scrolls. Without min-height:0 a flex item refuses to shrink below its content and the
+     "scrolling" part simply grows the card instead. */
+  .mm-pvw-top > .mm-card, .mm-pvw-col { display: flex; flex-direction: column; min-height: 0; }
+  .mm-pvw-top > .mm-card > .mm-iw-sec-head, .mm-pvw-col > .mm-pvw-col-head { flex: none; }
+  .mm-pvw-cut > .mm-table-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  /* The heading stays while its rows go by — a column of colours with no header is a
+     column of words. */
+  .mm-pvw-cut .mm-table thead th { position: sticky; top: 0; z-index: 2; background: var(--mm-card); }
+  .mm-pvw-cut > .mm-empty { flex: none; }
+  /* The notes box takes whatever the notes half has left rather than a fixed 132px. */
+  .mm-pvw-notes .mm-pvw-notes-box { flex: 1 1 auto; min-height: 96px; resize: none; }
+  /* A half is tighter than a page: the cards give back some of their padding for it. */
+  .mm-pvw-page .mm-card-pad { padding: 0.9rem 1rem; }
+}
 .mm-pvw-notes { display: flex; flex-direction: column; }
 .mm-pvw-notes-box { min-height: 132px; resize: vertical; line-height: 1.5; font-family: inherit; }
 .mm-pvw-notes-foot {
@@ -2924,17 +2965,18 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 
    --mm-pvw-jobs is the busiest machine's job count, set per shift by the component. */
 .mm-pvw-machines {
-  display: grid;
+  display: grid; min-height: 0;
   /* max-content on the machine cell, not a minmax: when the jobs overflow the panel the
      free space goes negative and anything shrinkable shrinks — which crushed "Machine 1"
      and "4 programs" into each other, both being nowrap. The cell that names the row is
      the last thing that may give way. */
-  grid-template-columns: max-content repeat(var(--mm-pvw-jobs, 1), minmax(132px, 1fr));
-  gap: 0.5rem 0.45rem; align-items: stretch;
-  /* The safety valve. Columns hold their 132px rather than crushing the colour name to
-     one letter a line, and a shift with more jobs than the panel is wide scrolls sideways
-     — which keeps the row model honest instead of quietly abandoning it. */
-  overflow-x: auto;
+  grid-template-columns: max-content repeat(var(--mm-pvw-jobs, 1), minmax(118px, 1fr));
+  gap: 0.45rem 0.4rem; align-items: stretch;
+  /* The safety valve, both ways. Columns hold their 118px rather than crushing the colour
+     name to one letter a line, so a shift with more jobs than the panel is wide scrolls
+     sideways; and more machines than the half is tall scrolls down. The board keeps its
+     shape and gives up a corner of itself, rather than reflowing into something else. */
+  overflow: auto;
 }
 /* The wrapper groups a machine with its jobs in the markup, for reading; the grid above
    does the laying out. */
@@ -2954,8 +2996,12 @@ h1, h2, h3 { letter-spacing: -0.015em; }
    when it wanted "what is Machine 4 doing". Stated once, at the head of its row, with only
    that machine's work running off it. */
 .mm-pvw-machine-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
-  padding: 0.3rem 0.55rem;
+  /* Number over count, not side by side. On one line the cell measured "Machine 1" PLUS
+     "4 programs" and took a fifth of the shift's width to say something two words long —
+     width the jobs beside it needed. Stacked, the cell is as wide as its longest line. */
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 0.05rem;
+  padding: 0.35rem 0.5rem;
   border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius-sm);
   background: var(--mm-accent-bg);
   /* Sticky, because the row can scroll sideways: the machine you are reading along must
@@ -2963,13 +3009,13 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   position: sticky; left: 0; z-index: 1;
 }
 .mm-pvw-machine-no {
-  display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0;
-  font-weight: 800; font-size: 0.98rem; color: var(--mm-accent-fg);
+  display: inline-flex; align-items: center; gap: 0.3rem; min-width: 0;
+  font-weight: 800; font-size: 0.92rem; color: var(--mm-accent-fg);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .mm-pvw-machine-tally {
-  font-size: 0.72rem; font-weight: 700; color: var(--mm-accent-fg);
-  white-space: nowrap;
+  font-size: 0.68rem; font-weight: 700; color: var(--mm-accent-fg);
+  white-space: nowrap; opacity: 0.92;
 }
 /* An idle machine is the one row with no boxes under it, so its head carries the whole
    reading on its own. "Quiet" is carried by italic and size ALONE: fading it was worth
@@ -2993,7 +3039,7 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   /* A shade name can be long and there is nowhere else for it to go but another line. */
   overflow-wrap: anywhere;
 }
-/* Narrower than this a row of 132px columns is unreadable however it scrolls, so the shift
+/* Narrower than this a row of 118px columns is unreadable however it scrolls, so the shift
    goes back to the stacked read: one column, which with `display: contents` puts each
    machine's head above its own jobs — the same markup, the other way up. */
 @container mm-pvw-shift (max-width: 480px) {

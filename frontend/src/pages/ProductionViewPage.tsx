@@ -340,7 +340,12 @@ export default function ProductionViewPage() {
   };
 
   return (
-    <div className="mm-screen mm-page-enter">
+    // Two halves that between them ARE the screen: what is in cutting above, the shift
+    // board below, each scrolling inside its own half. The cutting list runs to dozens of
+    // rows on a busy day and used to push the board off the bottom of the page — the one
+    // thing the sheet exists to show, reachable only by scrolling past a list of what is
+    // not on a machine yet.
+    <div className="mm-screen mm-pvw-page mm-page-enter">
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Program view</h1>
@@ -361,7 +366,7 @@ export default function ProductionViewPage() {
 
       {/* In cutting (left) · Notes (right) */}
       <div className="mm-pvw-top">
-        <section className="mm-card mm-card-pad">
+        <section className="mm-card mm-card-pad mm-pvw-cut">
           <div className="mm-iw-sec-head">
             <h2 className="mm-panel-title"><Scissors size={16} /> In cutting</h2>
             <span className="mm-pill mm-pill-muted">{v?.in_cutting.length ?? 0}</span>
