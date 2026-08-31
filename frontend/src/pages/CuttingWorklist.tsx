@@ -303,9 +303,13 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
   const [allColours, setAllColours] = useState(false);
   // Inward is roll-wise, so list the individual rolls in stock — this colour by default,
   // or every available roll when "all colours" is on.
+  // `for_program` matters: a planned program BOOKS its roll, and a booked roll is hidden
+  // from every picker. Without saying which program is being finished, the one roll this
+  // program reserved would be missing from its own finish list and the plan could never
+  // be completed. Every OTHER program's booked roll stays hidden, as it should.
   const rollsCall = useFrappeGetCall<{ message: InvRoll[] }>(
     `${PROGRAM_API}.program_inventory_search`,
-    allColours ? {} : { color: colour },
+    { ...(allColours ? {} : { color: colour }), ...(card.program ? { for_program: card.program } : {}) },
     `finish-rolls-${card.name}-${allColours ? "all" : "one"}`,
   );
   const { call: finishUnfinished, loading } = useFrappePostCall(`${PROGRAM_API}.finish_unfinished`);

@@ -75,7 +75,7 @@ def balances(branch=None, location=None, color=None, lot=None, search=None,
 	return out[:lim] if lim > 0 else out
 
 
-def reserved_roll_names() -> set:
+def reserved_roll_names(exclude_program=None) -> set:
 	"""Rolls booked by a live program — spoken for, though still physically in stock.
 
 	Planning a program books its roll but does NOT consume it: the stock only moves when
@@ -88,6 +88,11 @@ def reserved_roll_names() -> set:
 	what is available. Deliberately NOT applied to balances() or the ledger: the stock is
 	genuinely on the floor and the Inventory screen must go on reporting it. It is only
 	unavailable to be committed a second time.
+
+	`exclude_program` is the one program the rule must not apply to: ITS OWN. A booking is
+	a claim on the roll BY that program, so the screen where that program is finished has
+	to go on offering the roll it booked — otherwise the reservation locks the operator out
+	of the very cut it was made for, and the plan can never be finished.
 	"""
 	return {
 		r[0]
@@ -96,14 +101,16 @@ def reserved_roll_names() -> set:
 			where docstatus < 2
 				and ifnull(roll_inventory, '') != ''
 				and ifnull(closed, 0) = 0
-				and ifnull(status, '') != 'Completed'"""
+				and ifnull(status, '') != 'Completed'
+				and name != %s""",
+			(exclude_program or "",),
 		)
 		if r[0]
 	}
 
 
 @frappe.whitelist()
-def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=200):
+def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=200, for_program=None):
 	"""Inventory rolls of a given colour that still have stock AND are not already spoken
 	for — the Program screen's 'search a roll from inventory' picker.
 
@@ -116,6 +123,9 @@ def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=2
 	Reserved rolls are filtered out HERE and not in balances(), because the stock is still
 	genuinely on the floor: the Inventory screen and the ledger must go on reporting it. It
 	is only unavailable to PLAN against.
+
+	`for_program` is the program this list is being picked FOR — the roll it booked itself
+	is still offered to it, because it is being finished, not double-booked.
 	"""
 	rows = balances(
 		branch=branch, location=location, color=color, search=search,
@@ -123,7 +133,7 @@ def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=2
 	)
 	if not rows:
 		return rows
-	reserved = reserved_roll_names()
+	reserved = reserved_roll_names(exclude_program=for_program)
 	return [r for r in rows if r.get("name") not in reserved]
 
 

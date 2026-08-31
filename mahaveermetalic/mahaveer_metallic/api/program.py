@@ -315,7 +315,12 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	one whose patti are all programmed is left out entirely — the list answers "what can go on
 	a machine", and a spent patty is not an answer to that. Cuttings still in progress are NOT
 	offered either: a program runs on patti that exist.
+
+	A roll already booked by a live program is left out for the same reason: it is spoken for,
+	so it is not an answer to "what can go on a machine" either — even though its stock is
+	still sitting on the floor, untouched until the program is finished and the roll cut.
 	"""
+	from mahaveermetalic.mahaveer_metallic.api.inventory import reserved_roll_names
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
 
 	rows = []
@@ -391,6 +396,12 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	# finished-patty feeder, which is cuttings only). Picking one plans a "to cut" program; the
 	# actual roll is bound (weight fetched) at finish. ---
 	if not finished_only:
+		# A roll a live program has already booked is NOT offered here. Planning books a roll
+		# without consuming it — the stock only moves when the program is finished and the
+		# roll is actually cut — so it sits in inventory looking free and this list, which is
+		# built straight off MM Roll Inventory, went on offering it to the next program. The
+		# same rule the Cutting and Sales-Voucher pickers ask, asked here too.
+		reserved = reserved_roll_names()
 		inv_conditions = ["(ifnull(ri.stock_weight, 0) > 0 or ifnull(ri.stock_box, 0) > 0)"]
 		values = {}
 		if branch:
@@ -411,6 +422,8 @@ def available_rolls(branch=None, location=None, finished_only=0):
 			values,
 			as_dict=True,
 		):
+			if ri.roll_inventory in reserved:
+				continue
 			rows.append({
 				"state": "In Inventory",
 				"source_type": "inventory",
@@ -1003,12 +1016,17 @@ def available_colours(branch=None, location=None):
 
 
 @frappe.whitelist()
-def program_inventory_search(color=None, branch=None, location=None):
+def program_inventory_search(color=None, branch=None, location=None, for_program=None):
 	"""'Search a roll from inventory' for the Add-program modal — inventory rolls of a
-	colour that still have stock. If a colour has no stock, nothing comes back."""
+	colour that still have stock and are not booked by a live program.
+
+	`for_program` is passed when the list is being picked to FINISH that program: the roll
+	it booked is offered back to it, since it is the one program entitled to cut it."""
 	from mahaveermetalic.mahaveer_metallic.api import inventory as invapi
 
-	return invapi.rolls_by_colour(color=color, branch=branch, location=location)
+	return invapi.rolls_by_colour(
+		color=color, branch=branch, location=location, for_program=for_program
+	)
 
 
 @frappe.whitelist()
@@ -1041,7 +1059,7 @@ def create_unfinished_program(
 	branch = location = None
 	if roll_inventory:
 		ri = frappe.db.get_value(
-			"MM Roll Inventory", roll_inventory, ["color_name", "branch", "location"], as_dict=True
+			"MM Roll Inventory", roll_inventory, ["color_name", "branch", "location", "roll_no", "lot_number"], as_dict=True
 		)
 		if ri:
 			color = color or ri.color_name
@@ -1074,22 +1092,67 @@ def create_unfinished_program(
 	# piece of work with weight and a lot behind it, and the next plan is genuinely the
 	# next job. The order is part of the key too — the same colour on the same machine for
 	# two different customers is two programs, however alike they look.
-	existing = frappe.db.get_value(
-		"MM Program",
+	#
+	# And so is the ROLL. Keying on colour alone folded a plan for a SECOND roll into the
+	# first plan's batch count and threw the second roll away with it — the program kept
+	# pointing at roll A, so roll B was never booked by anything and went on being offered
+	# for ever. Two rolls are two plans; the same roll asked for twice is one.
+	#
+	# Written as SQL rather than a filter dict because a plan with no roll (or no order, or
+	# no shift) can carry either NULL or '' depending on when it was made, and only ifnull
+	# treats those two spellings of "not set" as the same thing.
+	found = frappe.db.sql(
+		"""select name, total_batches, source_cutting from `tabMM Program`
+		where docstatus = 1 and ifnull(unfinished, 0) = 1 and ifnull(closed, 0) = 0
+			and ifnull(shade, '') = %(shade)s
+			and ifnull(cut, '') = %(cut)s
+			and ifnull(machine_no, '') = %(machine_no)s
+			and ifnull(shift, '') = %(shift)s
+			and program_date = %(program_date)s
+			and ifnull(customer_order, '') = %(customer_order)s
+			and ifnull(roll_inventory, '') = %(roll_inventory)s
+		order by creation desc limit 1""",
 		{
-			"docstatus": 1,
-			"unfinished": 1,
-			"closed": 0,
-			"shade": color,
-			"cut": machine_cut,
-			"machine_no": machine_no,
-			"shift": shift or None,
+			"shade": color or "",
+			"cut": machine_cut or "",
+			"machine_no": machine_no or "",
+			"shift": shift or "",
 			"program_date": program_date or frappe.utils.nowdate(),
-			"customer_order": customer_order or None,
+			"customer_order": customer_order or "",
+			"roll_inventory": roll_inventory or "",
 		},
-		["name", "total_batches", "source_cutting"],
 		as_dict=True,
 	)
+	existing = found[0] if found else None
+
+	# A ROLL IS BOOKED BY ONE PROGRAM. The pickers hide a booked roll, but hiding is a
+	# courtesy, not a rule: a modal opened before the roll was taken still holds the old
+	# list and will happily send it, and the clash would only surface when the first
+	# program cut the roll and the second had nothing to cut. The record decides, so the
+	# refusal lives here — and it names the program holding the roll, because the
+	# operator's next question is always "taken by what?".
+	#
+	# `existing` is exempt: that is not another program, it is this same plan being asked
+	# for again, and the top-up below is the right answer to that.
+	if roll_inventory:
+		taken = frappe.db.sql(
+			"""select name, machine_no from `tabMM Program`
+			where roll_inventory = %(roll)s and docstatus < 2
+				and ifnull(closed, 0) = 0 and ifnull(status, '') != 'Completed'
+				and name != %(self)s
+			limit 1""",
+			{"roll": roll_inventory, "self": (existing or {}).get("name") or ""},
+			as_dict=True,
+		)
+		if taken:
+			frappe.throw(
+				_("Roll {0} is already booked by program {1}{2}. Pick another roll, or cancel that plan first.").format(
+					(ri.roll_no or ri.lot_number or roll_inventory) if ri else roll_inventory,
+					taken[0].name,
+					_(" on machine {0}").format(taken[0].machine_no) if taken[0].machine_no else "",
+				)
+			)
+
 	if existing:
 		topped = int(existing.total_batches or 0) + batches
 		frappe.db.set_value(
@@ -1190,6 +1253,26 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 	for r in picked:
 		if not frappe.db.exists("MM Roll Inventory", r):
 			frappe.throw(_("Roll {0} not found in inventory.").format(r))
+
+	# A roll booked by ANOTHER live program is not this one's to cut. The picker hides
+	# those already, so getting here means a stale list or a direct call — and binding it
+	# anyway would consume, right now, the stock the other program is still waiting for.
+	# This program's own booking is exempt: that is the whole point of having made it.
+	from mahaveermetalic.mahaveer_metallic.api.inventory import reserved_roll_names
+
+	clashing = sorted(reserved_roll_names(exclude_program=doc.name).intersection(picked))
+	if clashing:
+		holder = frappe.db.get_value(
+			"MM Program",
+			{"roll_inventory": clashing[0], "docstatus": ["<", 2], "closed": 0, "status": ["!=", "Completed"]},
+			"name",
+		)
+		frappe.throw(
+			_("Roll {0} is booked by program {1}. Pick a different roll, or cancel that plan first.").format(
+				frappe.db.get_value("MM Roll Inventory", clashing[0], "roll_no") or clashing[0],
+				holder or _("another program"),
+			)
+		)
 
 	from mahaveermetalic.mahaveer_metallic import stock_ledger
 
