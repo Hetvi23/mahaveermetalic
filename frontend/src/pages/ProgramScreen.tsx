@@ -41,6 +41,10 @@ type Roll = {
   merged_from?: string[]; merged_count?: number;
   /** The lot this patty was cut from — its SOURCE — and the challan that lot arrived on. */
   lot?: string | null; lot_id?: string | null; lot_challan?: string | null;
+  /** For an INVENTORY row: the MM Roll Inventory record behind it. Sent with a plan so the
+   *  program records WHICH roll it booked — the field every picker reads to keep a booked
+   *  roll from being offered again. available_rolls has always returned it. */
+  roll_inventory?: string;
 };
 /**
  * One selectable thing to program: a colour in ONE of its forms.
@@ -820,6 +824,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
         // on the Cutting board and is finished (roll picked) from the Cutting page.
         await createUnfinished({
           machine_no: machine, color: sel.colour, total_batches: batches,
+          // WHICH ROLL, not just which colour. The operator picks a specific roll here and
+          // only its colour was sent, so MM Program.roll_inventory stayed empty — and the
+          // reservation that keeps a booked roll out of the other pickers reads exactly
+          // that field. The roll went on being offered to the next program, to Cutting and
+          // to the Sales Voucher, because as far as the record went nobody had taken it.
+          roll_inventory: bestRow.roll_inventory || undefined,
           remark: remark || undefined, customer_order: order || bestRow.customer_order || undefined,
           program_date: date, shift, job_work: jobWork ? 1 : 0,
         });
