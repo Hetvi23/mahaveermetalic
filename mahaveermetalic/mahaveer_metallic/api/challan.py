@@ -361,6 +361,15 @@ def in_stock_rolls(item=None, challan_date=None, search=None, roll=None, lot=Non
 		# Only what the lot still actually holds — a lot cut, dispatched or already sent to
 		# a worker has no rolls left to offer, whatever the inward once said.
 		"ifnull(ri.stock_weight, 0) > 0",
+		# …and not a roll a live program has booked. Planning books a roll without
+		# consuming it, so it sits here looking free and could be sent out from under the
+		# program that is waiting to cut it. The Program and Cutting pickers exclude these
+		# too; this one is the last way in.
+		"""ri.name not in (
+			select p.roll_inventory from `tabMM Program` p
+			where p.docstatus < 2 and ifnull(p.roll_inventory, '') != ''
+				and ifnull(p.closed, 0) = 0 and ifnull(p.status, '') != 'Completed'
+		)""",
 	]
 	vals = {}
 	if item:

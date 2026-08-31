@@ -67,7 +67,9 @@ def inward_stock_rolls(branch=None, location=None):
 			inw.posting_date           as inward_date,
 			item.qty_box               as qty_box,
 			item.weight                as weight,
-			item.job_work              as job_work
+			item.job_work              as job_work,
+			inw.branch                 as branch,
+			inw.location               as location
 		from `tabMM Inward Item` item
 		join `tabMM Inward` inw on inw.name = item.parent
 		where {" and ".join(conditions)}
@@ -80,7 +82,36 @@ def inward_stock_rolls(branch=None, location=None):
 		r["party_name"] = _party_name(r.party)
 		r["weight"] = round(float(r.weight or 0), 3)
 		r["qty_box"] = round(float(r.qty_box or 0), 3)
-	return rows
+	return _drop_reserved(rows)
+
+
+def _drop_reserved(rows):
+	"""Take out rolls a live program has already booked.
+
+	The Program screen's picker has excluded these for a while; this one did not, so a
+	roll chosen for a program was still offered here and could be cut for something else.
+	Stock is per roll now, so a booked roll is identified exactly — branch, location, lot,
+	colour and the roll's own number — rather than by its lot, which would have taken every
+	sibling roll of that lot out with it.
+	"""
+	from mahaveermetalic.mahaveer_metallic.api.inventory import reserved_roll_names
+
+	reserved = reserved_roll_names()
+	if not reserved or not rows:
+		return rows
+	booked = {
+		(r.branch or "", r.location or "", r.lot_number or "", r.color_name or "", r.roll_no or "")
+		for r in frappe.get_all(
+			"MM Roll Inventory",
+			filters={"name": ["in", list(reserved)]},
+			fields=["branch", "location", "lot_number", "color_name", "roll_no"],
+		)
+	}
+	return [
+		r for r in rows
+		if (r.get("branch") or "", r.get("location") or "", r.get("lot_number") or "",
+			r.get("color_name") or "", r.get("roll_name") or "") not in booked
+	]
 
 
 @frappe.whitelist()

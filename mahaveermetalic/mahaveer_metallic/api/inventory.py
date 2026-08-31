@@ -75,6 +75,33 @@ def balances(branch=None, location=None, color=None, lot=None, search=None,
 	return out[:lim] if lim > 0 else out
 
 
+def reserved_roll_names() -> set:
+	"""Rolls booked by a live program — spoken for, though still physically in stock.
+
+	Planning a program books its roll but does NOT consume it: the stock only moves when
+	the operator finishes the program and the roll is actually cut. So a booked roll sits
+	there looking free, and could be picked again — by another program, by a cutting, or
+	sold on a challan — and the clash surfaced only when the first program cut it and the
+	second had nothing to cut.
+
+	Every picker that offers a roll to be USED asks this, so they cannot disagree about
+	what is available. Deliberately NOT applied to balances() or the ledger: the stock is
+	genuinely on the floor and the Inventory screen must go on reporting it. It is only
+	unavailable to be committed a second time.
+	"""
+	return {
+		r[0]
+		for r in frappe.db.sql(
+			"""select roll_inventory from `tabMM Program`
+			where docstatus < 2
+				and ifnull(roll_inventory, '') != ''
+				and ifnull(closed, 0) = 0
+				and ifnull(status, '') != 'Completed'"""
+		)
+		if r[0]
+	}
+
+
 @frappe.whitelist()
 def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=200):
 	"""Inventory rolls of a given colour that still have stock AND are not already spoken
@@ -96,18 +123,7 @@ def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=2
 	)
 	if not rows:
 		return rows
-	# Booked by a live program: not cancelled, not closed, and not already finished with.
-	reserved = {
-		r[0]
-		for r in frappe.db.sql(
-			"""select roll_inventory from `tabMM Program`
-			where docstatus < 2
-				and ifnull(roll_inventory, '') != ''
-				and ifnull(closed, 0) = 0
-				and ifnull(status, '') != 'Completed'"""
-		)
-		if r[0]
-	}
+	reserved = reserved_roll_names()
 	return [r for r in rows if r.get("name") not in reserved]
 
 
