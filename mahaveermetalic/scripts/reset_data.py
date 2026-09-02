@@ -66,6 +66,9 @@ TRANSACTIONAL = [
 	# Dispatch
 	"MM Sales Challan",
 	"MM Sales Challan Item",
+	# One reconciliation per Job Out — what went to the worker against what came back.
+	# Derived entirely from the job challans above, so it cannot outlive them.
+	"MM Job Hisab",
 	# Stock and bobbin ledgers — running balances. Left behind, every new balance is
 	# computed on top of dead history and the shop owns phantom stock.
 	"MM Stock Ledger Entry",
