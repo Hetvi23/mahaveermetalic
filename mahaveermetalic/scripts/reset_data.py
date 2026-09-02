@@ -14,6 +14,15 @@ settings behind them.
         bench --site <site> execute mahaveermetalic.scripts.reset_data.run \
             --kwargs "{'apply': True, 'confirm': 'CLEAR MAHAVEER DATA'}"
 
+    ALSO CLEAR THE MASTERS (items, parties, vendors, employees, machines, branches,
+    locations, bobbins) — an empty app rather than a fresh trading year:
+        bench --site <site> execute mahaveermetalic.scripts.reset_data.run \
+            --kwargs "{'apply': True, 'confirm': 'CLEAR MAHAVEER DATA', 'masters': True}"
+
+    Add 'settings': True on top of that to drop MM Settings and the Veermetlon
+    credentials as well. Kept separate because that is configuration, not data: the VM
+    fetch stops working until somebody types the credentials back in.
+
 Two things decide what happens here, and both are deliberate.
 
 Raw SQL, not frappe.delete_doc. Every transaction in this app is submitted (docstatus 1),
@@ -85,7 +94,7 @@ TRANSACTIONAL = [
 #
 # Listed rather than inferred, so that a doctype added later is never silently wiped: the
 # script refuses to run if it meets an MM doctype it has never been told about.
-MASTERS = [
+MASTER_TABLES = [
 	"MM Item Master",
 	"MM Item Type Master",
 	"MM Party Master",
@@ -97,10 +106,20 @@ MASTERS = [
 	"MM Location Master",
 	"MM Bobbin Master",
 	"MM Cut Patty Config",
+]
+
+# Configuration, not data, and kept apart from the masters for one reason: MM Veermetlon
+# Settings holds the integration credentials and MM Settings holds the Admin Override PIN,
+# the tolerances, the company address and the challan terms. Wiping those breaks the VM
+# fetch and silently changes what the guards allow, and neither is what "clear the data"
+# means. They go only when asked for by name (settings=True).
+SETTINGS_SINGLES = [
 	"MM Settings",
 	"MM Veermetlon Settings",
 	"MM Raven Task Notification Settings",
 ]
+
+MASTERS = MASTER_TABLES + SETTINGS_SINGLES
 
 # Reminder definitions sit on the fence: nobody keys them during a shift, but somebody sat
 # down and configured who gets nudged and when. Losing that is not part of "clear the trial
@@ -271,6 +290,24 @@ def _clear_side_tables(doctypes, apply):
 	return out
 
 
+def _clear_singles(apply):
+	"""Empty this app's Single doctypes.
+
+	Singles have no table of their own — every field is a row in `tabSingles` keyed by
+	doctype — so they are cleared by deleting those rows, never by emptying a table.
+	Only ever reached with settings=True.
+	"""
+	out = {}
+	for dt in SETTINGS_SINGLES:
+		n = frappe.db.sql("select count(*) from tabSingles where doctype = %s", (dt,))[0][0]
+		if not n:
+			continue
+		out[dt] = n
+		if apply:
+			frappe.db.sql("delete from tabSingles where doctype = %s", (dt,))
+	return out
+
+
 def _reopen_machines(apply):
 	"""MM Machine is a master that carries one transactional flag, and it blocks go-live.
 
@@ -307,18 +344,37 @@ def _raven_orphans():
 	return linked or None
 
 
-def run(apply=False, confirm=None, reminders=False, backup=True):
-	"""Clear the site's transactions. Prints a plan; only acts when apply and confirm agree.
+def _flag(v):
+	"""kwargs arrive from the command line as strings, so 'False' must not read as True."""
+	return bool(v) and str(v).strip().lower() not in ("0", "false", "no", "")
+
+
+def run(apply=False, confirm=None, reminders=False, masters=False, settings=False, backup=True):
+	"""Clear the site's data. Prints a plan; only acts when apply and confirm agree.
 
 	apply     — False (default) reports and changes nothing.
 	confirm   — must be the exact string CLEAR MAHAVEER DATA when apply is True.
 	reminders — also delete the configured Task Reminders, not just their logs.
+	masters   — ALSO empty the masters: items, parties, vendors, employees, machines,
+	            branches, locations, bobbins. Off by default, because the ordinary reason
+	            to run this is go-live: clear the trial trading, keep the setup somebody
+	            spent a week typing in.
+	settings  — ALSO empty MM Settings / MM Veermetlon Settings / MM Raven Task
+	            Notification Settings. Separate from `masters` on purpose: this is where
+	            the Veermetlon credentials, the Admin Override PIN and the tolerances live,
+	            and losing them breaks the VM fetch rather than clearing data.
 	backup    — take a database backup first. Leave it on unless one was just taken.
 	"""
-	apply = bool(apply) and str(apply).lower() not in ("0", "false")
+	apply = _flag(apply)
+	reminders = _flag(reminders)
+	masters = _flag(masters)
+	settings = _flag(settings)
+	backup = _flag(backup) if str(backup).strip().lower() in ("0", "false", "no") else True
 	site = frappe.local.site
 
 	targets = list(TRANSACTIONAL) + (list(REMINDER_CONFIG) if reminders else [])
+	if masters:
+		targets += list(MASTER_TABLES)
 	_audit_doctype_coverage()
 
 	print("")
@@ -345,9 +401,31 @@ def run(apply=False, confirm=None, reminders=False, backup=True):
 		print("   {0:<38} {1}".format(dt, "(no table)" if n is None else "{0:>9,}".format(n)))
 	print("   {0:<38} {1:>9,}".format("TOTAL ROWS", total))
 
+	if masters:
+		print("\n   ** MASTERS ARE BEING CLEARED TOO — items, parties, vendors, employees,")
+		print("      machines, branches, locations and bobbins all go. Nothing re-seeds them:")
+		print("      after_install only creates roles, so they are re-typed by hand.")
+
+	singles = _clear_singles(apply=False)
+	if settings:
+		print("\n   ** SETTINGS ARE BEING CLEARED TOO. This is where the Veermetlon")
+		print("      credentials, the Admin Override PIN and the receipt tolerances live —")
+		print("      the VM fetch stops working until they are entered again.")
+		for dt, n in sorted(singles.items()):
+			print("      {0:<36} {1:>9,} stored field(s)".format(dt, n))
+
+	keep = ([] if masters else list(MASTER_TABLES)) \
+		+ ([] if settings else list(SETTINGS_SINGLES)) \
+		+ ([] if reminders else list(REMINDER_CONFIG))
 	print("\nWILL KEEP")
-	for dt in MASTERS + ([] if reminders else REMINDER_CONFIG):
+	if not keep:
+		print("   (nothing — this empties the app completely)")
+	for dt in keep:
 		n = _count(dt)
+		if n is None and dt in SETTINGS_SINGLES:
+			n = frappe.db.sql("select count(*) from tabSingles where doctype = %s", (dt,))[0][0]
+			print("   {0:<38} {1:>9,} stored field(s)".format(dt, n))
+			continue
 		print("   {0:<38} {1}".format(dt, "(no table)" if n is None else "{0:>9,}".format(n)))
 
 	series = _clear_series(apply=False)
@@ -357,7 +435,7 @@ def run(apply=False, confirm=None, reminders=False, backup=True):
 	if not series:
 		print("   (none — numbering already starts at 1)")
 
-	closed = _reopen_machines(apply=False)
+	closed = 0 if masters else _reopen_machines(apply=False)
 	if closed:
 		print("\nMACHINES TO RE-OPEN: {0} (closed=1 would block the first new program)".format(closed))
 
@@ -376,9 +454,17 @@ def run(apply=False, confirm=None, reminders=False, backup=True):
 		print("\nDry run only. Nothing was changed.")
 		print("To do it for real:")
 		print("   bench --site {0} backup --with-files".format(site))
+		# Echo back the SCOPE that was just planned. Printing the bare command invited
+		# running the real thing without the flags — a plan that said "masters too"
+		# followed by a command that quietly kept them.
+		extra = "".join(
+			", '{0}': True".format(k)
+			for k, v in (("reminders", reminders), ("masters", masters), ("settings", settings))
+			if v
+		)
 		print(
 			"   bench --site {0} execute mahaveermetalic.scripts.reset_data.run "
-			"--kwargs \"{{'apply': True, 'confirm': '{1}'}}\"".format(site, CONFIRM)
+			"--kwargs \"{{'apply': True, 'confirm': '{1}'{2}}}\"".format(site, CONFIRM, extra)
 		)
 		print("")
 		return
@@ -414,7 +500,12 @@ def run(apply=False, confirm=None, reminders=False, backup=True):
 		gone = _clear_series(apply=True)
 		print("   reset   {0:<28} {1:>9,} counters".format("tabSeries", len(gone)))
 
-		reopened = _reopen_machines(apply=True)
+		if settings:
+			gone_singles = _clear_singles(apply=True)
+			for dt, n in sorted(gone_singles.items()):
+				print("   emptied {0:<28} {1:>9,} stored field(s)".format(dt, n))
+
+		reopened = 0 if masters else _reopen_machines(apply=True)
 		if reopened:
 			print("   re-opened {0} machine(s)".format(reopened))
 
@@ -434,8 +525,12 @@ def run(apply=False, confirm=None, reminders=False, backup=True):
 		if n:
 			print("   STILL HAS ROWS: {0} = {1}".format(dt, n))
 	print("   transactional rows remaining: {0}".format(left))
-	kept = {dt: _count(dt) for dt in MASTERS}
-	print("   masters intact: " + ", ".join("{0}={1}".format(k.replace("MM ", ""), v) for k, v in kept.items() if v))
+	if masters:
+		print("   masters cleared too — items, parties, vendors, employees, machines,")
+		print("   branches, locations and bobbins are all empty.")
+	else:
+		kept = {dt: _count(dt) for dt in MASTER_TABLES}
+		print("   masters intact: " + ", ".join("{0}={1}".format(k.replace("MM ", ""), v) for k, v in kept.items() if v))
 	print("\nDone. The next inward is lot LT1, and numbering starts from 1.")
 	print("Restart so nothing serves a cached count:  bench --site {0} clear-cache".format(site))
 	print("")
