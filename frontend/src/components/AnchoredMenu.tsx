@@ -40,11 +40,14 @@ export default function AnchoredMenu({
 	anchor,
 	open,
 	className,
+	minWidth,
 	children,
 }: {
 	anchor: RefObject<HTMLElement | null>;
 	open: boolean;
 	className?: string;
+	/** Floor for the menu's width, when the field is narrower than its list needs. */
+	minWidth?: number;
 	children: ReactNode;
 }) {
 	const [box, setBox] = useState<Box | null>(null);
@@ -103,14 +106,21 @@ export default function AnchoredMenu({
 	}, [open, anchor]);
 
 	if (!open || !box) return null;
+	// A menu is normally exactly as wide as the field it belongs to, which is right until
+	// the field sits in a narrow table column and the list is full of order numbers with
+	// a party and colour under each. `minWidth` lets such a list open wider than its
+	// trigger; it is then pulled back on screen, because a wide menu on a right-hand
+	// column would otherwise open past the edge of the window.
+	const width = Math.max(box.width, minWidth ?? 0);
+	const left = Math.max(8, Math.min(box.left, window.innerWidth - width - 8));
 	return createPortal(
 		<ul
 			data-mm-menu=""
 			className={`mm-suggest mm-suggest-fixed${className ? ` ${className}` : ""}`}
 			style={
 				{
-					left: box.left,
-					width: box.width,
+					left,
+					width,
 					// Both ends are always written: leaving one to the stylesheet is what
 					// collapsed a flipped menu to nothing.
 					top: box.top ?? "auto",

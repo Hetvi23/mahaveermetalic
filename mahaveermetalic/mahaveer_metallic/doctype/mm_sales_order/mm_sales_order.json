@@ -76,6 +76,12 @@
    "default": "0",
    "description": "Raised for job work \u2014 the material was received on a job-work inward and is being processed for the party, not sold to them. Every stage downstream (program, production, challan) inherits it. The sale rate is added later."
   },
+    {
+      "description": "This order's material is bought in fixed lots. A purchase order raised for it must be an exact multiple of the lot size set in MM Settings.",
+      "fieldname": "enforce_purchase_multiple",
+      "fieldtype": "Check",
+      "label": "Purchase in fixed lots"
+    },
   {
    "fieldname": "branch",
    "fieldtype": "Link",
@@ -113,6 +119,14 @@
    "precision": 3,
    "read_only": 1
   },
+    {
+      "description": "Boxes ordered \u2014 the sum of the lines. An order placed in boxes is judged Complete on this rather than on weight.",
+      "fieldname": "ordered_box",
+      "fieldtype": "Float",
+      "label": "Ordered (Box)",
+      "precision": "3",
+      "read_only": 1
+    },
   {
    "fieldname": "inwarded_weight",
    "fieldtype": "Float",
@@ -207,7 +221,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-17 15:00:00.000000",
+ "modified": "2026-09-05 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Order",

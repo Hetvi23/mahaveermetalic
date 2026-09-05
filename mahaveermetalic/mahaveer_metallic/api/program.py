@@ -1477,13 +1477,12 @@ def complete_batches(program, completed=None, count=None, partial_keeps_machine=
 	to Revert the remainder. (`partial_keeps_machine` keeps a short program on the machine —
 	for callers that record progress as it happens rather than closing the job out.)
 
-	A SHORT CLOSE-OUT NEEDS A REASON. Six batches planned and two recorded means four
-	patti go back on offer in a state nobody can explain by looking at them, so the
-	operator says why and the sentence is filed against the lot. Recording progress that
-	keeps the machine (`partial_keeps_machine`) is not a close-out and asks for nothing.
-
-	`reason` defaults to None rather than being positional-required so an older client
-	does not 500 on the call; the enforcement is `_require_reason` on the short path.
+	A SHORT CLOSE-OUT ASKS FOR A REASON AND ACCEPTS SILENCE. Six batches planned and two
+	recorded means four patti go back on offer, and why is worth knowing — so the dialog
+	asks, and files whatever is typed against the lot. It used to REFUSE an empty answer.
+	That reads as rigour and works out as the opposite: a box you cannot get past teaches
+	the floor to type "x", and a sentence nobody meant is worse evidence than none, because
+	it can be believed. The same relaxation applies to Revert, which is the same act.
 
 	A reverted program is off the machine — completing on it is blocked.
 	(`count` kept for backward-compat: increments by that many.)
@@ -1504,7 +1503,6 @@ def complete_batches(program, completed=None, count=None, partial_keeps_machine=
 
 	if total > 0 and comp < total and not frappe.utils.cint(partial_keeps_machine):
 		# Short of plan: keep what ran, free the slot, and give the rest back.
-		reason = _require_reason(reason, _("only {0} of {1} batches were completed").format(comp, total))
 		res = revert_batches(program, completed=comp, reason=reason, event_type="Partial Completion")
 		res["auto_reverted"] = True
 		res["returned_batches"] = total - comp
@@ -1587,12 +1585,19 @@ def revert_batches(program, completed=None, reason=None, event_type=None):
 	    never ran go back to the picker. The ones it did run are spent.
 	(`completed` may be passed to override; when omitted the current completed count is used.)
 
-	A REASON IS REQUIRED. Reverting puts material back on offer that an operator chose not
-	to run, and the next person to pick it up has to be told why — so the sentence is filed
-	against the lot BEFORE anything is cancelled: a cancelled program is no longer a place
-	a remark can be hung off, and losing the reason would leave the picker showing patti
-	with no explanation at all. `reason` is None-defaulted on the signature only so an old
-	client fails with a readable message instead of a 500.
+	A REASON IS OPTIONAL, and asked for rather than insisted on. It was compulsory, on the
+	reasoning that the next person to pick this material up deserves to know why it came
+	back — which is true, and still worth asking. But a revert is often nothing more
+	interesting than a mis-key being undone, and a mandatory box in front of that teaches
+	the floor to type "x" to get past it. A forced sentence nobody meant is worse evidence
+	than no sentence, because it looks like one.
+
+	When a reason IS given it is filed against the lot BEFORE anything is cancelled: a
+	cancelled program is no longer a place a remark can be hung off, and filing afterwards
+	would silently lose it.
+
+	The SHORT CLOSE-OUT that arrives here through `complete_batches` still demands one —
+	that is a different act, and it is enforced there rather than here.
 
 	(`event_type` only labels the remark. A short close-out arrives here through
 	complete_batches and is a partial completion, not somebody abandoning the job — the
@@ -1607,9 +1612,10 @@ def revert_batches(program, completed=None, reason=None, event_type=None):
 	else:
 		comp = max(0, min(int(completed), total))
 
-	reason = _require_reason(reason, _("this program is being reverted"))
-	# Before the cancel below, never after it.
-	_file_reason(doc, reason, event_type or ("Cancelled" if comp == 0 else "Reverted"))
+	# Before the cancel below, never after it — and only when there is something to file.
+	reason = (reason or "").strip()
+	if reason:
+		_file_reason(doc, reason, event_type or ("Cancelled" if comp == 0 else "Reverted"))
 
 	if comp == 0:
 		# Nothing produced — the program never happened. Hand every patty back and clear the

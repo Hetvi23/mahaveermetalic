@@ -29,17 +29,42 @@ export type LotRemark = {
 export type LotRemarkMaps = {
   /** Keyed by MM Lot doc name — what cuttings, programs and productions carry. */
   by_lot: Record<string, LotRemark[]>;
-  /** Keyed by the printed id (LT12/26-27) — all a roll-inventory or ledger row has. */
+  /** Keyed by COLOUR + printed id (see `lotIdKey`) — never by the id alone. */
   by_lot_id: Record<string, LotRemark[]>;
 };
 
+/** A printed lot id and the colour it belongs to. Both are needed to name one lot. */
+export type LotKey = { id?: string | null; colour?: string | null };
+
 const REMARKS_API = "mahaveermetalic.mahaveer_metallic.api.lot_remark.remarks";
 const NONE: LotRemarkMaps = { by_lot: {}, by_lot_id: {} };
+
+/**
+ * The `by_lot_id` key: colour + printed id.
+ *
+ * A LOT ID IS NOT A KEY ON ITS OWN. Lot numbers run per colour, per financial year, so
+ * LT1/26-27 exists once for every colour ever received — the lot master says so outright.
+ * Keyed on the bare id, one colour's reason was handed to every other colour holding that
+ * number: the eye turned up on material nothing had been said about, and the lot the
+ * reason was really about was lost among them.
+ *
+ * Must produce byte-for-byte what `lot_remark.lot_id_key` produces on the server, which is
+ * why the normalisation (lowercase, spaces stripped) is spelled the same way in both.
+ */
+export function lotIdKey(colour?: string | null, id?: string | null): string {
+  return `${(colour ?? "").toLowerCase().replace(/\s+/g, "")}||${id ?? ""}`;
+}
 
 /** Distinct, sorted, blanks dropped — so the same screen always produces the same key. */
 function stable(values?: (string | null | undefined)[]): string[] {
   if (!values || !values.length) return [];
   return Array.from(new Set(values.filter(Boolean) as string[])).sort();
+}
+
+/** Newest-first, one entry per remark — a lot reached by two keys must not read twice. */
+function dedupe(rows: LotRemark[]): LotRemark[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.name) ? false : (seen.add(r.name), true)));
 }
 
 /**
@@ -51,9 +76,12 @@ function stable(values?: (string | null | undefined)[]): string[] {
  * keys, so it only changes when the set of lots on screen actually changes — a re-render
  * that happens to rebuild the array does not refetch.
  */
-export function useLotRemarks(keys: { lots?: (string | null | undefined)[]; lotIds?: (string | null | undefined)[] }) {
+export function useLotRemarks(keys: { lots?: (string | null | undefined)[]; lotIds?: LotKey[] }) {
   const lots = stable(keys.lots);
-  const lotIds = stable(keys.lotIds);
+  // Only the ids are asked for: the server derives each remark's colour from MM Lot and
+  // answers with colour-keyed buckets, so sending the colours too would change nothing
+  // about the reply and would refetch every time a row's colour was re-read.
+  const lotIds = stable((keys.lotIds ?? []).map((k) => k.id));
   const lotKey = lots.join("|");
   const idKey = lotIds.join("|");
 
@@ -78,7 +106,29 @@ export function useLotRemarks(keys: { lots?: (string | null | undefined)[]; lotI
     maps,
     /** Remarks for a row, by whichever key that row happens to hold. */
     forLot: (lot?: string | null) => (lot ? maps.by_lot[lot] ?? [] : []),
-    forLotId: (lotId?: string | null) => (lotId ? maps.by_lot_id[lotId] ?? [] : []),
+    /**
+     * Remarks for a printed lot id IN A COLOUR. Pass the colour the row is showing — an id
+     * on its own names as many lots as there are colours.
+     *
+     * The empty-colour bucket is always folded in: a handful of older remarks were filed
+     * before the colour was recorded and their lot has since been released, so nothing can
+     * attribute them. Showing those on every colour of the id is the old behaviour, kept
+     * deliberately for them alone — losing a reason is worse than repeating one. A caller
+     * with no colour to give gets every bucket for the id, which is that same fallback.
+     */
+    forLotId: (lotId?: string | null, colour?: string | null) => {
+      if (!lotId) return [];
+      const unattributed = maps.by_lot_id[lotIdKey("", lotId)] ?? [];
+      if (!colour) {
+        const suffix = `||${lotId}`;
+        return dedupe(
+          Object.keys(maps.by_lot_id)
+            .filter((k) => k.endsWith(suffix))
+            .flatMap((k) => maps.by_lot_id[k]),
+        );
+      }
+      return dedupe([...(maps.by_lot_id[lotIdKey(colour, lotId)] ?? []), ...unattributed]);
+    },
     refresh: mutate,
   };
 }

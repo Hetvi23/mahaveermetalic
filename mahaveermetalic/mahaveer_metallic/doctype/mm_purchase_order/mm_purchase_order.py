@@ -135,6 +135,8 @@ class MMPurchaseOrder(Document):
 		everybody — there is no role that can make an already-received quantity untrue.
 		"""
 		self._reject_negatives()
+		self._enforce_min_qty()
+		self._enforce_qty_multiple()
 		got = received_against(self.as_dict())
 		if got > 0.001:
 			frappe.throw(
@@ -144,7 +146,89 @@ class MMPurchaseOrder(Document):
 				).format(frappe.utils.flt(got, 3))
 			)
 
+	def _enforce_min_qty(self):
+		"""With NO stock for the colour, the purchase has to cover the whole order line.
+
+		A shortage PO is normally, and deliberately, for less than the order: you buy what
+		the floor cannot already cover, and buying the full order on top of existing stock
+		would order the same material twice. That reasoning holds only while there IS
+		stock. Once nothing is free for the colour, the entire order has to be bought, and
+		a purchase order for less than it is short by construction — the difference is a
+		delivery nobody is going to make, discovered when the customer is waiting for it.
+
+		So the floor applies only when free stock is nil. With material on the floor the
+		shortfall stands untouched, which is why this is not simply "PO >= SO".
+
+		`_line_available` already discounts what OTHER live orders have claimed and ignores
+		this order's own claim, so "free" here means genuinely free for this line.
+		"""
+		from mahaveermetalic.mahaveer_metallic.api.stock import _line_available
+
+		if not self.sales_order or not self.so_item:
+			return
+		line = frappe.db.get_value(
+			"MM Sales Order Item", self.so_item, ["qty_weight", "color_name", "cut"], as_dict=True
+		)
+		if not line:
+			return
+		needed = round(float(line.qty_weight or 0), 3)
+		qty = round(float(self.qty_kg or 0), 3)
+		if needed <= 0 or qty >= needed:
+			return
+		free = round(_line_available(line.color_name, line.cut, self.sales_order), 3)
+		if free > 0:
+			# Stock covers part of it — the shortfall is the right quantity to buy.
+			return
+		frappe.throw(
+			_(
+				"There is no stock of {0}, so this purchase has to cover the whole of order "
+				"{1} — {2} kg. {3} kg is {4} kg short of it."
+			).format(line.color_name or "—", self.sales_order, needed, qty, round(needed - qty, 3))
+		)
+
+	def _enforce_qty_multiple(self):
+		"""Some material is only sold in fixed lots, and the order says which.
+
+		The tick is on the SALES ORDER rather than here or in settings, because it is a
+		property of what was sold: one customer's colour comes on 600 kg beams and the next
+		one's does not. The SIZE of the lot is in MM Settings, because that is the
+		supplier's figure and shops differ.
+
+		REFUSED, never rounded. Rounding would quietly buy material nobody asked for and
+		bill it to the order; the operator is told the two lots either side and chooses. The
+		check lives on the document so it holds for the desk and for every API path, not
+		only the screen that happens to raise the PO.
+		"""
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+			get_purchase_qty_multiple,
+		)
+
+		if not self.sales_order:
+			return
+		if not frappe.db.get_value(
+			"MM Sales Order", self.sales_order, "enforce_purchase_multiple"
+		):
+			return
+		step = round(float(get_purchase_qty_multiple() or 0), 3)
+		qty = round(float(self.qty_kg or 0), 3)
+		if step <= 0 or qty <= 0:
+			return
+		# Float noise: 1200.0000000001 is 1200, and refusing it would be a lie.
+		steps = qty / step
+		if abs(steps - round(steps)) < 1e-6:
+			return
+		low = int(qty // step) * step
+		choices = [round(c, 3) for c in (low, low + step) if c > 0]
+		frappe.throw(
+			_(
+				"Order {0} is bought in fixed lots of {1} kg, so {2} kg can't be purchased. "
+				"Order {3} kg instead."
+			).format(self.sales_order, step, qty, _(" or ").join(str(c) for c in choices))
+		)
+
 	def validate(self):
 		self._reject_negatives()
+		self._enforce_min_qty()
+		self._enforce_qty_multiple()
 		if self.sales_order:
 			self.po_number = self.sales_order

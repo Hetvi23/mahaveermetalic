@@ -1,13 +1,13 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { Check, Monitor, NotebookPen, RefreshCw, Scissors, X } from "lucide-react";
+import { Check, Monitor, NotebookPen, RefreshCw, Scissors } from "lucide-react";
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
+import ProgramCompleteDialog from "@/components/ProgramCompleteDialog";
 import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
-const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = todayISO;
 
 type Batch = { batch: number; done?: boolean };
@@ -49,109 +49,6 @@ type ViewData = { date: string; in_cutting: InCutting[]; notes: string; day: Mac
  * batches are done. Fewer than planned closes the job out short (the machine frees and the
  * unrun batches hand their patty back), which is why the count is asked for and not assumed.
  */
-function CompleteDialog({ program, onClose, onDone }: { program: ProgramRow; onClose: () => void; onDone: () => void }) {
-  const total = program.total_batches ?? 0;
-  const already = program.completed_batches ?? 0;
-  const [completed, setCompleted] = useState<number | "">(total);
-  const [reason, setReason] = useState("");
-  const { call, loading } = useFrappePostCall(`${PROGRAM_API}.complete_batches`);
-  const [err, setErr] = useState<string | null>(null);
-  const comp = completed === "" ? null : completed;
-  // Recording FEWER than are already banked is not progress, it is work being taken back
-  // — a patty that was reported done is being un-reported, and the next shift will find
-  // the count lower than they left it. That is the one case worth making somebody type a
-  // reason for; an ordinary 2-of-3 here keeps the machine running and explains itself.
-  const takingBack = comp !== null && comp < already;
-
-  async function submit() {
-    if (comp === null) return setErr("Enter how many batches are completed.");
-    if (takingBack && reason.trim().length < 3) {
-      return setErr(`${already} already recorded as done — say why it is coming down to ${comp}.`);
-    }
-    setErr(null);
-    try {
-      // partial_keeps_machine: recording 2 of 3 is PROGRESS, not a short close-out. The
-      // job stays on the machine and the 2 formed patty show on Production straight away;
-      // the third is added when it comes off. Closing a job out short is the machine's
-      // own Close action, which is a different decision from "two are done".
-      await call({
-        program: program.program,
-        completed: comp,
-        partial_keeps_machine: 1,
-        ...(reason.trim() ? { reason: reason.trim() } : {}),
-      });
-      toast(
-        comp >= total
-          ? "All batches done — sent to Production"
-          : `${comp}/${total} done — ${comp} patty on Production, machine still running`,
-      );
-      onDone();
-    } catch (e) {
-      setErr(extractErrorMessage(e));
-    }
-  }
-
-  return (
-    <div className="mm-modal-scrim" onClick={onClose}>
-      <div className="mm-modal" style={{ width: "min(440px, 100%)" }} onClick={(e) => e.stopPropagation()} role="dialog">
-        <div className="mm-modal-head">
-          <span className="mm-modal-title">Complete — {program.color}</span>
-          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </div>
-        <div className="mm-modal-body">
-          <p className="mm-page-sub" style={{ marginTop: 0 }}>
-            How many of the {total} batches are completed? Whatever is done goes to Production
-            straight away — record 2 of 3 and Production shows 2, then come back and make it 3
-            when the last one comes off. The machine keeps the job until every batch is done.
-          </p>
-          <label className="mm-field">
-            <span className="mm-field-label">Batches completed</span>
-            <input className="mm-input" type="number" min={0} max={total} value={completed} autoFocus
-              onChange={(e) => setCompleted(e.target.value === "" ? "" : Math.max(0, Math.min(total, Number(e.target.value) || 0)))} />
-          </label>
-          {comp !== null && (
-            <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
-              {comp >= total ? (
-                <strong>All done → goes to Production, machine frees up</strong>
-              ) : takingBack ? (
-                <>
-                  <strong>{already - comp} patty comes back off Production</strong> ·{" "}
-                  {comp} stays done · machine keeps the job
-                </>
-              ) : (
-                <>
-                  <strong>{comp} patty</strong> to Production now ·{" "}
-                  {total - comp} still to run · machine keeps the job
-                </>
-              )}
-            </p>
-          )}
-          {/* Optional on an ordinary partial — 2 of 3 is progress and explains itself. Asked
-              for, and insisted on, only when the count goes DOWN: that is work being taken
-              back off Production and the next shift deserves the sentence. */}
-          <label className="mm-field" style={{ marginTop: "0.6rem" }}>
-            <span className="mm-field-label">
-              Reason{" "}
-              {takingBack
-                ? <span className="mm-pvw-need">— needed, this is below the {already} already recorded</span>
-                : <span className="mm-muted">(optional)</span>}
-            </span>
-            <input className="mm-input" value={reason}
-              placeholder={takingBack ? "Why is the count coming down?" : "Anything the next shift should know"}
-              onChange={(e) => setReason(e.target.value)} />
-          </label>
-          {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
-        </div>
-        <div className="mm-modal-foot">
-          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading || comp === null} onClick={() => void submit()}>
-            {loading ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * One shift, machine by machine: each machine is a ROW — its number in the first column,
@@ -320,8 +217,10 @@ export default function ProductionViewPage() {
   const { maps, forLotId } = useLotRemarks({
     lots: progs.map((p) => p.lot),
     lotIds: [
-      ...progs.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
-      ...(v?.in_cutting ?? []).map((c) => c.lot_id),
+      ...progs.flatMap((p) =>
+        (p.lot_ids?.length ? p.lot_ids : [p.lot_id]).map((id) => ({ id, colour: p.color })),
+      ),
+      ...(v?.in_cutting ?? []).map((c) => ({ id: c.lot_id, colour: c.color })),
     ],
   });
   /** Every reason on any lot this program's material came off, deduplicated. */
@@ -330,7 +229,7 @@ export default function ProductionViewPage() {
     const out: LotRemark[] = [];
     for (const r of [
       ...(p.lot ? maps.by_lot[p.lot] ?? [] : []),
-      ...(p.lot_ids?.length ? p.lot_ids : [p.lot_id]).flatMap((id) => (id ? maps.by_lot_id[id] ?? [] : [])),
+      ...(p.lot_ids?.length ? p.lot_ids : [p.lot_id]).flatMap((id) => forLotId(id, p.color)),
     ]) {
       if (seen.has(r.name)) continue;
       seen.add(r.name);
@@ -388,7 +287,7 @@ export default function ProductionViewPage() {
                         <span className="mm-colour-name">{c.color}</span>
                         {/* The cutter meets the material again here, so the lot's carried-over
                             reason has to be here too. */}
-                        <LotRemarkBadge remarks={forLotId(c.lot_id)} label={`Lot ${c.lot_id || ""}`} />
+                        <LotRemarkBadge remarks={forLotId(c.lot_id, c.color)} label={`Lot ${c.lot_id || ""}`} />
                       </td>
                       <td>{c.cut || "—"}</td>
                     </tr>
@@ -407,10 +306,11 @@ export default function ProductionViewPage() {
         <ShiftColumn title="Day" groups={v?.day ?? []} onComplete={setCompleting} remarksFor={remarksForProgram} />
         <ShiftColumn title="Night" groups={v?.night ?? []} onComplete={setCompleting} remarksFor={remarksForProgram} />
       </div>
-
       {completing && (
-        <CompleteDialog
-          program={completing}
+        <ProgramCompleteDialog
+          program={completing.program}
+          label={completing.color}
+          total={completing.total_batches ?? 0}
           onClose={() => setCompleting(null)}
           onDone={() => { setCompleting(null); void mutate(); }}
         />

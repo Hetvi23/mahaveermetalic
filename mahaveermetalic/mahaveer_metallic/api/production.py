@@ -793,6 +793,10 @@ def production_done(branch=None):
 			"name",
 			"posting_date",
 			"customer_order",
+			# The COLOUR of what was produced. The list named the roll and the operator but
+			# never the material, so telling two vouchers apart meant opening them.
+			"shade",
+			"cut",
 			"roll_no",
 			"machine_no",
 			"operator",

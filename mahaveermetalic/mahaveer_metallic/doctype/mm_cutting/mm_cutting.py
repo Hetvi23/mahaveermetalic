@@ -32,6 +32,18 @@ class MMCutting(Document):
 			net = float(row.net_weight or 0)
 			if qty <= 0:
 				frappe.throw(_("Row #{0}: Patti Qty must be greater than 0.").format(row.idx))
+			# A PATTY IS A THING, NOT A MEASUREMENT. One patty is one batch on a machine —
+			# you cannot run half of one — so 2.5 patty is a slip of the keyboard, and it
+			# propagated: per-patty weight became roll ÷ 2.5, the program planned 2.5
+			# batches against it, and the half batch could never be completed.
+			if qty != int(qty):
+				frappe.throw(
+					_("Row #{0}: patty is counted, not weighed — enter a whole number, not {1}.").format(
+						row.idx, qty
+					)
+				)
+			qty = int(qty)
+			row.patti_qty = qty
 			# A zero (or negative) weight was accepted and became per_patty_weight = 0,
 			# which the program then planned batches against — so the whole job ran on a
 			# weight of nothing. Catch it at the cutting, where it can still be corrected.

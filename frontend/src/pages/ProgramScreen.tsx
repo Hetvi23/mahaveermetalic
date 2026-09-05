@@ -7,6 +7,7 @@ import {
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
+import ProgramCompleteDialog from "@/components/ProgramCompleteDialog";
 import SearchSelect from "@/components/SearchSelect";
 import PattyTile from "@/components/PattyTile";
 import { filterPatties, groupPatties } from "@/utils/finishedPatty";
@@ -148,21 +149,28 @@ export default function ProgramScreen() {
   const patties = pattyCall.data?.message ?? [];
   // Every lot on this board in ONE request — the shelf, the machine cards and the picker
   // all draw on the same lots, and the board already polls every twenty seconds.
-  const { maps } = useLotRemarks({
+  const { maps, forLotId } = useLotRemarks({
     lots: [...patties.map((p) => p.lot), ...programs.map((p) => p.lot)],
+    // Colour travels WITH each id: a lot id is only a lot once you say which colour's.
     lotIds: [
-      ...patties.map((p) => p.lot_id),
-      ...programs.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
+      ...patties.map((p) => ({ id: p.lot_id, colour: p.shade })),
+      ...programs.flatMap((p) =>
+        (p.lot_ids?.length ? p.lot_ids : [p.lot_id]).map((id) => ({ id, colour: p.shade })),
+      ),
     ],
   });
   /** Every unresolved reason across a set of lots, deduplicated — a shelf tile is a
    *  COLOUR and a colour can be several lots, so the tile speaks for all of them. */
-  const remarksFor = (lots: (string | null | undefined)[], lotIds: (string | null | undefined)[]): LotRemark[] => {
+  const remarksFor = (
+    lots: (string | null | undefined)[],
+    lotIds: (string | null | undefined)[],
+    colour?: string | null,
+  ): LotRemark[] => {
     const seen = new Set<string>();
     const out: LotRemark[] = [];
     for (const r of [
       ...lots.flatMap((l) => (l ? maps.by_lot[l] ?? [] : [])),
-      ...lotIds.flatMap((l) => (l ? maps.by_lot_id[l] ?? [] : [])),
+      ...lotIds.flatMap((l) => forLotId(l, colour)),
     ]) {
       if (seen.has(r.name)) continue;
       seen.add(r.name);
@@ -181,13 +189,21 @@ export default function ProgramScreen() {
     void pattyCall.mutate();
   };
   const guard = (fn: () => Promise<unknown>) => async () => { try { await fn(); refresh(); } catch (e) { const m = extractErrorMessage(e); toast(m, "error"); } };
-  /** Reverting hands patty back and can cancel the program outright, so it asks why first.
-   *  Cancelling the prompt cancels the revert — an empty reason is not an answer. */
+  /** Reverting hands patty back and can cancel the program outright, so it ASKS why —
+   *  and takes no for an answer.
+   *
+   *  The reason used to be compulsory, which sounds right and was not: most reverts are a
+   *  mis-key being undone, and a box that will not let you past teaches the floor to type
+   *  "x". A sentence nobody meant is worse evidence than no sentence, because it reads
+   *  like one. Dismissing the prompt (Cancel) still cancels the revert; leaving it EMPTY
+   *  and pressing OK reverts without a note. */
   const revertWithReason = (program: string, what: string) => async () => {
-    const r = window.prompt(`${what}\n\nWhy? This stays on the lot, so whoever picks it up next can see it.`, "");
+    const r = window.prompt(
+      `${what}\n\nWhy? Optional — if you type something it stays on the lot, so whoever picks it up next can see it.`,
+      "",
+    );
     if (r === null) return;
-    if (r.trim().length < 3) { toast("A reason is needed — nothing was reverted.", "error"); return; }
-    try { await revert({ program, reason: r.trim() }); refresh(); }
+    try { await revert({ program, reason: r.trim() || undefined }); refresh(); }
     catch (e) { toast(extractErrorMessage(e), "error"); }
   };
 
@@ -261,7 +277,7 @@ export default function ProgramScreen() {
             {/* The reason an earlier run on this lot stopped — distinct from the card's own
                 remark below, which is this program's planning note. */}
             <LotRemarkBadge
-              remarks={remarksFor([p.lot], p.lot_ids?.length ? p.lot_ids : [p.lot_id])}
+              remarks={remarksFor([p.lot], p.lot_ids?.length ? p.lot_ids : [p.lot_id], p.shade)}
               label={p.shade || p.roll_no || "Lot"} />
           </span>
           {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : <span className={stateClass(p.status)}>{p.status}</span>}
@@ -377,7 +393,7 @@ export default function ProgramScreen() {
                   <PattyTile
                     key={c.key}
                     tile={c}
-                    remarks={remarksFor(c.lots, c.lotIds)}
+                    remarks={remarksFor(c.lots, c.lotIds, c.colour)}
                     onPick={(t) => openAdd({ colour: t.colour, lotId: t.lotId || undefined })}
                   />
                 ))}
@@ -466,7 +482,15 @@ export default function ProgramScreen() {
         />
       )}
       {closing && <CloseMachineModal machine={closing} onClose={() => setClosing(null)} onDone={() => { setClosing(null); refresh(); }} />}
-      {completing && <CompleteDialog program={completing} onClose={() => setCompleting(null)} onDone={() => { setCompleting(null); refresh(); }} />}
+      {completing && (
+        <ProgramCompleteDialog
+          program={completing.name}
+          label={completing.shade || completing.roll_no || "program"}
+          total={completing.total_batches ?? 0}
+          onClose={() => setCompleting(null)}
+          onDone={() => { setCompleting(null); refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -474,90 +498,6 @@ export default function ProgramScreen() {
 /* ── Complete: report how many batches are done. All of them → straight to Production;
       fewer → the program is done SHORT, so it leaves the machine and the batches it never
       ran go back to the patty shelf on their own. ── */
-function CompleteDialog({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
-  const total = program.total_batches ?? 0;
-  const [completed, setCompleted] = useState<number | "">(total);
-  const { call, loading } = useFrappePostCall(`${API}.complete_batches`);
-  const [err, setErr] = useState<string | null>(null);
-  // Why a job stopped short is the one thing the paperwork could never say afterwards, and
-  // the next person to touch this lot is the one who needs it. Required here, and carried
-  // onto the lot so it surfaces wherever that lot turns up again.
-  const [reason, setReason] = useState("");
-  const comp = completed === "" ? null : completed;
-  const short = comp !== null && comp < total;
-
-  async function submit() {
-    if (comp === null) return setErr("Enter how many batches are completed.");
-    if (short && reason.trim().length < 3) {
-      return setErr("Say why this job is stopping short — it stays with the lot.");
-    }
-    setErr(null);
-    try {
-      const res = await call({ program: program.name, completed: comp, reason: reason.trim() || undefined });
-      const back = Number((res as { message?: { returned_batches?: number } })?.message?.returned_batches || 0);
-      toast(
-        comp >= total
-          ? "All batches done — sent to Production"
-          : `${comp}/${total} done · ${back || total - comp} batch${(back || total - comp) === 1 ? "" : "es"} returned to the patty shelf`,
-      );
-      onDone();
-    } catch (e) { setErr(extractErrorMessage(e)); }
-  }
-
-  return (
-    <div className="mm-modal-scrim" onClick={onClose}>
-      <div className="mm-modal" style={{ width: "min(440px, 100%)" }} onClick={(e) => e.stopPropagation()} role="dialog">
-        <div className="mm-modal-head">
-          <span className="mm-modal-title">Complete — {program.shade || program.roll_no || "program"}</span>
-          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </div>
-        <div className="mm-modal-body">
-          <label className="mm-field">
-            <span className="mm-field-label">Batches completed</span>
-            <input className="mm-input" type="number" min={0} max={total} value={completed}
-              onChange={(e) => setCompleted(e.target.value === "" ? "" : Math.max(0, Math.min(total, Number(e.target.value) || 0)))} />
-          </label>
-          {comp !== null && (
-            <p className="mm-muted" style={{ marginTop: "0.6rem" }}>
-              {comp >= total ? (
-                <strong>All done → goes to Production</strong>
-              ) : (
-                <>
-                  {comp}/{total} done · machine frees up ·{" "}
-                  <strong>{total - comp} batch{total - comp === 1 ? "" : "es"}</strong> of patty returned
-                </>
-              )}
-            </p>
-          )}
-          {/* Always on screen, never conditional. It appeared only once the count was
-              short, which made a field nobody could find until they had already changed
-              something — and a full run is still worth a note ("re-dyed", "ran slow").
-              Required only when the job is stopping short; optional otherwise. */}
-          <label className="mm-field" style={{ marginTop: "0.6rem" }}>
-            <span className="mm-field-label">
-              Remark {short
-                ? <span className="mm-pvw-need">(required — it is stopping short)</span>
-                : <span className="mm-muted">(optional)</span>}
-            </span>
-            <textarea className="mm-input" rows={2} value={reason}
-              placeholder={short
-                ? "Thread broke, shade off, machine trouble…"
-                : "Anything worth knowing about this run"}
-              onChange={(e) => setReason(e.target.value)} />
-            <span className="mm-muted" style={{ fontSize: "0.76rem" }}>
-              Stays on this lot — anyone programming, cutting or receiving it later will see it.
-            </span>
-          </label>
-          {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
-        </div>
-        <div className="mm-modal-foot">
-          <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="mm-btn-primary" disabled={loading || comp === null} onClick={() => void submit()}>{loading ? "Saving…" : "Save"}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ── Per-machine Cut (editable; every program on the machine inherits it) ── */
 function MachineCutInput({ machine, value, onSaved }: { machine: string; value?: string; onSaved: () => void }) {
@@ -696,9 +636,10 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
   // The picker's own lookup, scoped to the sources it is offering. A Source is one colour
   // in one form and can span several cuttings — hence several lots — so every lot behind
   // it speaks, and the eye on a row means "something about this material needs reading".
-  const { maps: pickMaps } = useLotRemarks({
+  const { maps: pickMaps, forLotId: pickForLotId } = useLotRemarks({
     lots: sources.flatMap((s) => s.rows.map((r) => r.lot)),
-    lotIds: sources.flatMap((s) => s.rows.map((r) => r.lot_id)),
+    // A Source IS one colour, so every row under it carries that colour to its lot id.
+    lotIds: sources.flatMap((s) => s.rows.map((r) => ({ id: r.lot_id, colour: s.colour }))),
   });
   const pickRemarks = (src: Source): LotRemark[] => {
     const seen = new Set<string>();
@@ -706,7 +647,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
     for (const r of src.rows) {
       for (const rem of [
         ...(r.lot ? pickMaps.by_lot[r.lot] ?? [] : []),
-        ...(r.lot_id ? pickMaps.by_lot_id[r.lot_id] ?? [] : []),
+        ...pickForLotId(r.lot_id, src.colour),
       ]) {
         if (seen.has(rem.name)) continue;
         seen.add(rem.name);

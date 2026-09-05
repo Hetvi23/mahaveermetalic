@@ -42,6 +42,9 @@ type ChallanVerify = {
   closed: boolean;
   coating?: string;
   sales_order?: string;
+  /** Colours the fetch added to the catalogue because the challan named them and this
+   *  site had never seen them. Worth saying out loud — a master appeared. */
+  created_colours?: string[];
   items: ChallanItem[];
   matching_orders: MatchOrder[];
 };
@@ -287,7 +290,11 @@ export default function InwardWorkspace() {
   // A lot this grid is about to add material to may already carry a reason from the floor —
   // an earlier program on it was reverted, or a run stopped short. That is exactly the
   // moment somebody should see it, before more of the same lot goes into stock.
-  const { forLotId: lotNote } = useLotRemarks({ lotIds: lots });
+  // `lots` runs parallel to `rows`, so each id is paired with the colour of the line it
+  // was worked out for — an id alone would pull in every other colour's lot of that number.
+  const { forLotId: lotNote } = useLotRemarks({
+    lotIds: lots.map((id, i) => ({ id, colour: rows[i]?.color })),
+  });
   // Keyed on colour + challan alone, so weighing rolls doesn't re-ask for the lots.
   const lotKey = useMemo(() => JSON.stringify(rows.map((r) => [r.color, r.challan_no.trim()])), [rows]);
   useEffect(() => {
@@ -348,6 +355,21 @@ export default function InwardWorkspace() {
     return pos.length === 1 ? pos[0] : undefined;
   }
 
+  /** What the order is FOR, and what has been bought against it.
+   *
+   *  Read off the picked order, so changing the order on a row changes these with it —
+   *  they are derived at render rather than copied into the row, which is what keeps them
+   *  from going stale the moment somebody re-picks.
+   */
+  function orderTotals(sales_order: string) {
+    const opt = soByName.get(sales_order);
+    if (!opt) return null;
+    return {
+      so: Number(opt.ordered_weight ?? 0),
+      purchase: (opt.purchase ?? []).reduce((t, po) => t + (Number(po.qty_kg) || 0), 0),
+    };
+  }
+
   function pickOrder(i: number, sales_order: string) {
     const opt = soByName.get(sales_order);
     const fromMatch = orders.find((o) => o.sales_order === sales_order);
@@ -361,7 +383,6 @@ export default function InwardWorkspace() {
     // out and typing it back in; the order already knows. Only an UNTOUCHED first line is
     // filled — anything already weighed is what actually arrived and outranks the plan.
     const qty = Number(opt?.required_box ?? 0) || "";
-    const weight = Number(opt?.required_weight ?? fromMatch?.required_weight ?? 0) || "";
     setRows((prev) =>
       prev.map((r, j) => {
         if (j !== i) return r;
@@ -381,7 +402,13 @@ export default function InwardWorkspace() {
           // — but with the field locked below, that name could never be corrected, and a
           // receipt filed against the wrong vendor is what the lock exists to stop.
           supplier: po?.supplier || r.supplier || "",
-          lines: untouched ? [{ ...first, qty, weight }] : r.lines,
+          // The BOX count is what the order is still waiting for and is worth offering.
+          // The WEIGHT is not: it is whatever the scale says under this roll, and a figure
+          // sitting in the box before anything was weighed is a figure nobody measured —
+          // one Enter away from being posted as though it had been. The order's own totals
+          // are shown under the picker instead, where they inform without pretending to be
+          // a reading.
+          lines: untouched ? [{ ...first, qty }] : r.lines,
         };
       }),
     );
@@ -425,7 +452,13 @@ export default function InwardWorkspace() {
       });
       if (m.closed) setError(`Challan ${m.challan_no} is already fully received — no further inward allowed.`);
       else if (items.length === 0) setError(`Challan ${m.challan_no} found but it has no rolls — enter them by hand.`);
-      else setFlash(`Fetched ${lines.length} roll(s) from challan ${m.challan_no} into row ${i + 1}.`);
+      else {
+        const made = m.created_colours ?? [];
+        setFlash(
+          `Fetched ${lines.length} roll(s) from challan ${m.challan_no} into row ${i + 1}.` +
+            (made.length ? ` Added ${made.length === 1 ? "colour" : "colours"} ${made.join(", ")} to the catalogue.` : ""),
+        );
+      }
     } catch (e) {
       setVerify((prev) => {
         const next = { ...prev };
@@ -821,6 +854,7 @@ export default function InwardWorkspace() {
             <tbody>
               {rows.map((r, i) => {
                 const t = rowTotals(r);
+                const orderWeights = r.customer_order ? orderTotals(r.customer_order) : null;
                 // One roll stays inline — that is the common case and it must key as fast
                 // as it ever did. Several become the row's total, edited in the cart.
                 const single = r.lines.length === 1;
@@ -875,8 +909,18 @@ export default function InwardWorkspace() {
                         placeholder="Select Order"
                         emptyText="No open orders"
                         options={orderOptions}
+                        // The column is narrow and every option carries a party and colour
+                        // under its number — the list opens wider than the field it sits in.
+                        menuMinWidth={440}
                         onChange={(v) => pickOrder(i, v)}
                       />
+                      {orderWeights && (
+                        <span className="mm-iw-ordertot"
+                          title="What this order is for, and what has been bought against it">
+                          SO <b>{orderWeights.so.toLocaleString()}</b> kg · PO{" "}
+                          <b>{orderWeights.purchase.toLocaleString()}</b> kg
+                        </span>
+                      )}
                     </td>
                     <td className="mm-iw-c-color" data-label="Color">
                       {/* THE ORDER OWNS THE COLOUR ONCE ONE IS PICKED. An order is for a
@@ -948,7 +992,7 @@ export default function InwardWorkspace() {
                       >
                         {lots[i] || (r.color ? "…" : "Auto")}
                       </span>
-                      <LotRemarkBadge remarks={lotNote(lots[i])} label={`Lot ${lots[i] || ""}`} />
+                      <LotRemarkBadge remarks={lotNote(lots[i], r.color)} label={`Lot ${lots[i] || ""}`} />
                     </td>
                     <td className="mm-iw-c-roll" data-label="Roll">
                       {single ? (
@@ -1065,7 +1109,7 @@ export default function InwardWorkspace() {
               <span className="mm-modal-title">
                 Rolls — row {cartRow + 1}
                 {lots[cartRow] ? <span className="mm-iw-lot mm-iw-lot-head">{lots[cartRow]}</span> : null}
-                <LotRemarkBadge remarks={lotNote(lots[cartRow])} label={`Lot ${lots[cartRow] || ""}`} />
+                <LotRemarkBadge remarks={lotNote(lots[cartRow], rows[cartRow]?.color)} label={`Lot ${lots[cartRow] || ""}`} />
               </span>
               <button className="mm-icon-btn" onClick={() => setCartRow(null)} aria-label="Close"><X size={16} /></button>
             </div>

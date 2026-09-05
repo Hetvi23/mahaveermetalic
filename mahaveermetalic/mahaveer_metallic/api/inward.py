@@ -884,23 +884,50 @@ def post_gr(inward, items=None, reason=None):
 	if not rows:
 		frappe.throw(_("Nothing selected to return."))
 
-	# What is left to return: an earlier partial GR may already have taken some of it back.
-	returned = {}
+	# A roll that has gone to cutting cannot be handed back: its weight has been consumed
+	# into patti and a program may already be planned on it, so the return would take out
+	# material the floor has already worked. Cancel the cutting first — that releases the
+	# roll (MMCutting._release_inward_entries) and brings it back within reach.
+	blocked = [r for r in rows if r.cutting or (r.cut_status or "") == "In Cutting"]
+	if blocked:
+		frappe.throw(
+			_("These rolls have gone to cutting, so they can't be returned: {0}. Cancel the "
+			  "cutting first.").format(
+				", ".join(sorted({(r.roll_name or r.color_name or str(r.idx)) for r in blocked}))
+			)
+		)
+
+	# What is left to return: an earlier GR may already have taken some of it back.
+	#
+	# Matched on the SOURCE ROW, because the obvious key does not identify a roll. A lot
+	# arrives as many rolls weighed under one colour and one lot, and most carry no roll
+	# number of their own — so (roll, colour, lot) is the same tuple for every one of them,
+	# and returning the first read as having returned all ten.
+	#
+	# `legacy` catches GR rows posted before that link existed and too ambiguous for the
+	# patch to backfill. Its bucket is charged against EVERY sibling sharing the tuple,
+	# which can only ever refuse a return that was already made — the safe direction to
+	# be wrong in, and the one those rows were posted under anyway (whole-receipt returns).
+	by_row, legacy = {}, {}
 	for prev in frappe.get_all(
 		"MM Inward", filters={"gr_against": inward, "is_gr": 1, "docstatus": 1}, pluck="name"
 	):
 		for r in frappe.get_all(
-			"MM Inward Item", filters={"parent": prev}, fields=["roll_name", "color_name", "lot_number", "weight", "qty_box"]
+			"MM Inward Item",
+			filters={"parent": prev},
+			fields=["roll_name", "color_name", "lot_number", "weight", "qty_box", "gr_against_row"],
 		):
-			key = (r.roll_name or "", r.color_name or "", r.lot_number or "")
-			acc = returned.setdefault(key, [0.0, 0.0])
+			bucket = by_row if r.gr_against_row else legacy
+			key = r.gr_against_row or (r.roll_name or "", r.color_name or "", r.lot_number or "")
+			acc = bucket.setdefault(key, [0.0, 0.0])
 			acc[0] += abs(float(r.weight or 0))
 			acc[1] += abs(float(r.qty_box or 0))
 
 	gr_items = []
 	for r in rows:
 		key = (r.roll_name or "", r.color_name or "", r.lot_number or "")
-		done_w, done_b = returned.get(key, [0.0, 0.0])
+		mine, old = by_row.get(r.name, [0.0, 0.0]), legacy.get(key, [0.0, 0.0])
+		done_w, done_b = mine[0] + old[0], mine[1] + old[1]
 		left_w = round(float(r.weight or 0) - done_w, 3)
 		left_b = round(float(r.qty_box or 0) - done_b, 3)
 		if left_w <= 0 and left_b <= 0:
@@ -908,6 +935,8 @@ def post_gr(inward, items=None, reason=None):
 		gr_items.append(
 			{
 				"idx": len(gr_items) + 1,
+				# Which roll this hands back — see the matching note above.
+				"gr_against_row": r.name,
 				"job_work": r.job_work,
 				"supplier": r.supplier,
 				"challan_number": r.challan_number,
@@ -968,6 +997,27 @@ def cancel_inward(inward):
 		frappe.throw(_("Inward {0} is already cancelled.").format(inward))
 	if doc.docstatus == 0:
 		frappe.throw(_("Inward {0} is a draft — nothing posted to reverse.").format(inward))
+	# A roll that has gone to cutting cannot be un-received: its weight has been consumed
+	# into patti, so reversing the receipt would pull stock that is no longer there. The
+	# inventory guard does stop it — with "Available stock cannot be negative", which tells
+	# the operator nothing about what to do. Name the cutting and the order of operations,
+	# the same way the dispatch check below already does.
+	cut = frappe.db.sql(
+		"""
+		select ii.roll_name, ii.color_name, ii.cutting
+		from `tabMM Inward Item` ii
+		where ii.parent = %s and (ii.cutting is not null or ii.cut_status = 'In Cutting')
+		limit 1
+		""",
+		(doc.name,),
+		as_dict=True,
+	)
+	if cut:
+		frappe.throw(
+			_("This inward can't be cancelled — roll {0} has already gone to cutting ({1}). "
+			  "Cancel that cutting first.").format(
+				cut[0].roll_name or cut[0].color_name or "—", cut[0].cutting or "—")
+		)
 	doc.cancel()
 	return {"inward": doc.name, "docstatus": doc.docstatus}
 
@@ -1049,3 +1099,198 @@ def set_inward_status(inward, status, reason=None):
 			recalculate_order_fulfilment(order)
 
 	return {"inward": doc.name, "receipt_status": status, "changed": True, "was": before}
+
+
+# ── Correcting a receipt after the fact ───────────────────────────────────────────────
+#
+# A roll is keyed at the weighing scale, at speed, and two things are got wrong often
+# enough to need fixing without unpicking the receipt: the CHALLAN NUMBER it arrived on,
+# and the ORDER it belongs to. Neither is a statement about material — the rolls came in
+# and are in stock whichever number is written beside them — so they are corrections, not
+# a goods return.
+#
+# CUTTING IS THE CUT-OFF, and it is the same cut-off for a per-roll GR. Once a roll has
+# gone to cutting its weight has been consumed into patti, a program may be planned on it
+# and production measured against it; moving it to another order or handing it back then
+# would restate figures the floor has already worked to. Cancel the cutting first, which
+# releases the roll (MMCutting._release_inward_entries) and brings these back.
+
+
+def _row_with_parent(row):
+	"""One inward row and the receipt it sits on, in a single read."""
+	hit = frappe.db.sql(
+		"""
+		select ii.name, ii.parent, ii.idx, ii.cutting, ii.cut_status, ii.customer_order,
+			ii.challan_number, ii.weight, ii.qty_box, ii.color_name, ii.roll_name,
+			ii.supplier, ifnull(ii.to_inventory, 0) as to_inventory,
+			i.docstatus, ifnull(i.is_gr, 0) as is_gr, ifnull(i.gr_returned, 0) as gr_returned,
+			i.sales_order as header_order, i.challan_number as header_challan
+		from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+		where ii.name = %s
+		""",
+		(row,),
+		as_dict=True,
+	)
+	if not hit:
+		frappe.throw(_("Inward roll {0} not found.").format(row or ""))
+	return hit[0]
+
+
+def row_block_reason(row):
+	"""Why this roll can no longer be corrected or returned — or None when it can.
+
+	Returned as a reason rather than a bare boolean so the register can say WHICH wall it
+	hit, and so the screen and the server agree on the answer instead of the screen
+	guessing from the columns it happens to show.
+	"""
+	if int(row.get("docstatus") or 0) != 1:
+		return _("Only a posted inward can be changed.")
+	if int(row.get("is_gr") or 0):
+		return _("This is a goods return — correct the receipt it returns instead.")
+	if row.get("cutting") or (row.get("cut_status") or "") == "In Cutting":
+		return _("Roll {0} has gone to cutting ({1}). Cancel that cutting first.").format(
+			row.get("roll_name") or row.get("color_name") or "—", row.get("cutting") or "—"
+		)
+	return None
+
+
+def _assert_row_correctable(row):
+	reason = row_block_reason(row)
+	if reason:
+		frappe.throw(reason)
+	return row
+
+
+def _assert_order_has_room(order, weight, exclude_row=None):
+	"""Refuse moving a roll onto an order that has no room left to receive it.
+
+	The same ceiling MMInward._guard_order_over_receipt applies at the door. It has to be
+	repeated here because this path writes with db.set_value — the receipt is already
+	submitted and re-saving it would re-run the whole document — so the controller's
+	validate() never sees the move. Without this an order could be filled past its ordered
+	weight by reassigning rolls one at a time, which is exactly the walk-past-in-small-steps
+	the original guard was written to stop.
+	"""
+	weight = round(float(weight or 0), 3)
+	if weight <= 0:
+		return
+	ordered = float(frappe.db.get_value("MM Sales Order", order, "ordered_weight") or 0)
+	if ordered <= 0:
+		# A box-only order carries no weight target — nothing to measure against.
+		return
+	prior = float(
+		frappe.db.sql(
+			"""
+			select coalesce(sum(ii.weight), 0)
+			from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+			where ii.customer_order = %(o)s and i.docstatus = 1 and ii.name != %(me)s
+				and ifnull(ii.to_inventory, 0) = 0
+			""",
+			{"o": order, "me": exclude_row or ""},
+		)[0][0]
+		or 0
+	)
+	cum = round(prior + weight, 3)
+	allowed = round(ordered + max(_RECEIPT_TOLERANCE, ordered * get_inward_over_tolerance() / 100.0), 3)
+	if cum > allowed:
+		frappe.throw(
+			_(
+				"Order {0} has no room for this roll: it ordered {1} kg, {2} kg is already "
+				"received against it, and this roll adds {3} kg (total {4} kg)."
+			).format(order, ordered, round(prior, 3), weight, cum)
+		)
+
+
+@frappe.whitelist()
+def correct_inward_roll(row, challan_no=None, sales_order=None):
+	"""Correct one received roll: the challan it came on, the order it is for, or both.
+
+	Two different scopes on purpose, and they are not a slip:
+
+	  · ORDER is per ROLL. A lot arrives as many rolls and they do not all have to serve
+	    the same customer — allocating them one at a time is the whole point of a roll-wise
+	    register.
+
+	  · CHALLAN NUMBER is per INWARD. A challan number is a property of the delivery, not
+	    of one roll on it: half-renaming it would leave one receipt claiming to be two
+	    challans, and the receipt ceiling (_prior_receipt / challan_closed_by) is computed
+	    per challan, so a split number would be measured against the wrong one. So the
+	    correction lands on the header and on every row of the receipt — including any that
+	    have already been cut, because a paper reference on a consumed roll is still that
+	    roll's paper reference and leaving it stale is worse than moving it.
+
+	Pass `sales_order=""` to take the roll OFF its order and leave it unallocated; omit the
+	argument entirely to leave the order alone. The same distinction applies to `challan_no`.
+
+	The lot is deliberately NOT re-stamped when the challan number changes. A lot is keyed
+	(challan, colour) and is REUSED across receipts — resolve_lot hands the same lot back
+	when a challan is entered again — so rewriting it from one inward's correction would
+	relabel material that came in on other receipts too.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
+		assert_order_submitted,
+		recalculate_order_fulfilment,
+	)
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_purchase_order.mm_purchase_order import (
+		recompute_po_status_for_order,
+	)
+
+	r = _assert_row_correctable(_row_with_parent(row))
+	changed = {}
+	affected_orders = set()
+
+	# ── The order this roll is for (this row only) ──
+	if sales_order is not None:
+		want = (sales_order or "").strip() or None
+		if want != (r.customer_order or None):
+			if want:
+				if not frappe.db.exists("MM Sales Order", want):
+					frappe.throw(_("Sales Order {0} not found.").format(want))
+				assert_order_submitted(want)
+				_assert_order_has_room(want, r.weight if not r.to_inventory else 0, exclude_row=r.name)
+			if r.customer_order:
+				affected_orders.add(r.customer_order)
+			frappe.db.set_value("MM Inward Item", r.name, "customer_order", want, update_modified=False)
+			if want:
+				affected_orders.add(want)
+			changed["customer_order"] = want
+
+	# ── The challan this receipt came in on (the whole inward) ──
+	if challan_no is not None:
+		want = (challan_no or "").strip() or None
+		current = (r.challan_number or r.header_challan or None)
+		if want != current:
+			if want:
+				# Do not let a correction file this receipt under a challan another
+				# receipt has already closed — that challan is finished and nothing more
+				# may be received on it, which is precisely what this would claim.
+				closed_by = challan_closed_by(want, exclude=r.parent, supplier=r.supplier)
+				if closed_by:
+					frappe.throw(
+						_("Challan {0} was already fully received on inward {1}, so this "
+						  "receipt can't be filed under it.").format(want, closed_by)
+					)
+			frappe.db.sql(
+				"update `tabMM Inward Item` set challan_number = %(ch)s where parent = %(p)s",
+				{"ch": want, "p": r.parent},
+			)
+			frappe.db.set_value("MM Inward", r.parent, "challan_number", want, update_modified=False)
+			changed["challan_number"] = want
+
+	if not changed:
+		return {"row": r.name, "inward": r.parent, "changed": {}}
+
+	# The order's received weight moves with the roll, both ways.
+	for order in filter(None, affected_orders):
+		recalculate_order_fulfilment(order)
+		recompute_po_status_for_order(order)
+
+	frappe.get_doc("MM Inward", r.parent).add_comment(
+		"Comment",
+		_("Roll {0} corrected by {1}: {2}").format(
+			r.roll_name or r.color_name or r.idx,
+			frappe.session.user,
+			", ".join(f"{k} → {v or '—'}" for k, v in sorted(changed.items())),
+		),
+	)
+	return {"row": r.name, "inward": r.parent, "changed": changed}

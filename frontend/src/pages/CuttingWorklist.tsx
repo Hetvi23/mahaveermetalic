@@ -54,6 +54,9 @@ type BoardCard = {
   status?: string;
   program?: string;
   unfinished?: number;
+  /** Notes off the program(s) that asked for this cut — a list, because one card can be
+   *  several programs' cuts merged by lot. */
+  program_remarks?: string[];
   program_name?: string;
 };
 
@@ -248,6 +251,19 @@ export default function CuttingWorklist() {
                             : "weight on pick"}
                           {c.unfinished ? " · planned from inventory" : c.program ? " · planned" : ""}
                         </div>
+                        {/* What the planner wrote on the PROGRAM that asked for this cut.
+                            A "to cut" card is somebody's request, and the instruction
+                            behind it lived only on the Program board — so the cutter was
+                            being told to cut a colour without being shown what was said
+                            about it. Several notes appear when one card is several
+                            programs' cuts merged together. */}
+                        {(c.program_remarks ?? []).length > 0 && (
+                          <div className="mm-cut-note" title="Note from the program">
+                            {(c.program_remarks ?? []).map((note, k) => (
+                              <p key={k}>{note}</p>
+                            ))}
+                          </div>
+                        )}
                         <div className="mm-prog-actions">
                           {c.unfinished ? (
                             <button className="mm-mini mm-mini-ok" onClick={() => setFinishing(c)} title="Pick the roll from inventory and finish">
@@ -458,9 +474,13 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
               <span className="mm-patty-step">
                 <button type="button" className="mm-mini" disabled={pattyLocked}
                   onClick={() => { pattyTouched.current = true; setPatty((p) => Math.max(1, Number(p || 0) - 1)); }}>−</button>
-                <input className="mm-input" type="number" min={1} value={patty} readOnly={pattyLocked}
+                {/* Whole numbers only — one patty is one batch on a machine and there is
+                    no half of one. `step` stops the spinner offering decimals and the
+                    round catches a typed "2.5"; the same rule is enforced on the document
+                    (MMCutting._compute_patti_weights), because a screen is not a guard. */}
+                <input className="mm-input" type="number" min={1} step={1} value={patty} readOnly={pattyLocked}
                   title={pattyLocked ? `Set by the cut configuration for ${cut || card.cut} — an admin can change it` : undefined}
-                  onChange={(e) => { pattyTouched.current = true; setPatty(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1)); }} />
+                  onChange={(e) => { pattyTouched.current = true; setPatty(e.target.value === "" ? "" : Math.max(1, Math.round(Number(e.target.value) || 1))); }} />
                 <button type="button" className="mm-mini" disabled={pattyLocked}
                   onClick={() => { pattyTouched.current = true; setPatty((p) => Number(p || 0) + 1); }}>+</button>
               </span>

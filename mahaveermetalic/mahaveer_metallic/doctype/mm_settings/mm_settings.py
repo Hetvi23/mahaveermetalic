@@ -109,6 +109,17 @@ def inward_tolerances():
 	return {"under": get_inward_match_tolerance(), "over": get_inward_over_tolerance()}
 
 
+def get_purchase_qty_multiple() -> float:
+	"""The lot size some material is bought in, in kg. Defaults to 600 when unset.
+
+	Configurable because it is a SUPPLIER's figure — how the beam comes — not a fact about
+	the app. Which orders it applies to is a separate decision and lives on the order
+	itself (`enforce_purchase_multiple`), because one customer's colour comes in fixed lots
+	and the next one's does not.
+	"""
+	return _mm_setting_float("purchase_qty_multiple", 600.0)
+
+
 def verify_admin_pin(pin) -> bool:
 	"""True when `pin` matches the configured Admin Override PIN.
 

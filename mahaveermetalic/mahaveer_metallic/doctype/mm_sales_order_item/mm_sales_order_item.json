@@ -9,6 +9,7 @@
     "delivery_date",
     "qty_weight",
     "qty_box",
+    "weight_per_box",
     "cut",
     "sale_rate",
     "purchase_party",
@@ -45,6 +46,14 @@
       "default": "0"
     },
     {
+      "description": "Weight of ONE box. The line's weight is worked out from this \u00d7 the box qty, so it is asked for whenever a box quantity is entered.",
+      "fieldname": "weight_per_box",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Wt / Box (Kg)",
+      "precision": "3"
+    },
+    {
       "fieldname": "cut",
       "fieldtype": "Data",
       "in_list_view": 1,
@@ -74,7 +83,7 @@
   "index_web_pages_for_search": 0,
   "istable": 1,
   "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
+  "modified": "2026-09-05 13:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Sales Order Item",

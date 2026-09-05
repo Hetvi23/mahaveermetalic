@@ -22,7 +22,7 @@ import frappe
 
 @frappe.whitelist()
 def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=None,
-	party=None, lot=None, order=None, job_work=None, limit=500):
+	party=None, lot=None, order=None, job_work=None, pending=None, limit=500):
 	"""Roll-wise inward rows, newest first, with the filter facets and live totals."""
 	limit = max(1, min(int(limit or 500), 5000))
 	conds, vals = [], {"limit": limit}
@@ -56,6 +56,14 @@ def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=
 	if job_work not in (None, "", "all"):
 		conds.append("ifnull(it.job_work, 0) = %(job_work)s")
 		vals["job_work"] = 1 if frappe.utils.cint(job_work) else 0
+	# PENDING = the challan is still open. A receipt posted Partial is one the shop expects
+	# more against; a Complete one is finished. Cancelled receipts and goods-return rows are
+	# excluded outright rather than filtered on status: neither is waiting for anything, and
+	# leaving them in would pad the very list that exists to show what is outstanding.
+	if frappe.utils.cint(pending):
+		conds.append("ifnull(inw.receipt_status, 'Complete') = 'Partial'")
+		conds.append("inw.docstatus = 1")
+		conds.append("ifnull(inw.is_gr, 0) = 0")
 	where = (" and " + " and ".join(conds)) if conds else ""
 
 	rows = frappe.db.sql(
@@ -67,6 +75,10 @@ def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=
 			coalesce(nullif(it.challan_number, ''), inw.challan_number)    as challan_no,
 			it.customer_order, it.color_name as item, it.roll_name, it.cut,
 			it.qty_box, it.weight, it.job_work, it.supplier,
+			-- Cutting is the cut-off for correcting or returning a roll, so the register
+			-- carries it: the screen must not have to infer from the columns it happens to
+			-- show which rows it may still offer actions on.
+			it.cutting, it.cut_status,
 			-- A return's rows are negative and net the receipt off; the receipt it returns
 			-- stays listed, marked, so the register keeps the whole story.
 			ifnull(inw.is_gr, 0)        as is_gr,
@@ -85,6 +97,15 @@ def rolls_report(challan=None, from_date=None, to_date=None, company=None, item=
 		vals,
 		as_dict=True,
 	)
+
+	# Whether each roll may still be corrected or returned, decided by the SAME function the
+	# endpoints enforce it with — a screen that worked this out for itself would be a second
+	# copy of the rule, and two copies drift.
+	from mahaveermetalic.mahaveer_metallic.api.inward import row_block_reason
+
+	for r in rows:
+		r["block_reason"] = row_block_reason({**r, "color_name": r.get("item")})
+		r["can_edit"] = not r["block_reason"]
 
 	live = [r for r in rows if int(r.docstatus or 0) != 2]
 	totals = {

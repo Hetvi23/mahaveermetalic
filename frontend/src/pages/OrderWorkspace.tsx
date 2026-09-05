@@ -26,6 +26,8 @@ type Item = {
   delivery_date: string;
   qty_weight: number | "";
   qty_box: number | "";
+  /** Weight of ONE box. A box line's weight is worked out from this, not typed. */
+  weight_per_box: number | "";
   sale_rate: number | "";
   purchase_party: string;
   purchase_rate: number | "";
@@ -37,6 +39,7 @@ const blankItem = (): Item => ({
   delivery_date: "",
   qty_weight: "",
   qty_box: "",
+  weight_per_box: "",
   sale_rate: "",
   purchase_party: "",
   purchase_rate: "",
@@ -51,6 +54,7 @@ const F: Record<string, FieldSchema> = {
   item_delivery_date: { fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
   qty_weight: { fieldname: "qty_weight", label: "Weight (Kg)", fieldtype: "Float" },
   qty_box: { fieldname: "qty_box", label: "Box", fieldtype: "Float" },
+  weight_per_box: { fieldname: "weight_per_box", label: "Wt / Box (Kg)", fieldtype: "Float" },
   sale_rate: { fieldname: "sale_rate", label: "Sale rate", fieldtype: "Currency", reqd: true },
   purchase_party: { fieldname: "purchase_party", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },
   purchase_rate: { fieldname: "purchase_rate", label: "Purchase rate", fieldtype: "Currency" },
@@ -146,7 +150,9 @@ function isAdmin(): boolean {
 
 export default function OrderWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [header, setHeader] = useState({ transaction_date: today(), delivery_date: "", party: "", company: "" });
+  const [header, setHeader] = useState({
+    transaction_date: today(), delivery_date: "", party: "", company: "", fixedLots: false,
+  });
   const [items, setItems] = useState<Item[]>([]);
   const [draft, setDraft] = useState<Item>(blankItem());
   // Available roll stock per "colour||cut" (for the shortage calc) + per-item PO overrides.
@@ -495,6 +501,7 @@ export default function OrderWorkspace() {
       delivery_date: doc.delivery_date ? String(doc.delivery_date) : "",
       party: String(doc.party || ""),
       company: String(doc.company_name || ""),
+      fixedLots: Boolean(doc.enforce_purchase_multiple),
     });
     const docItems = (doc.items as Record<string, unknown>[] | undefined) || [];
     const asItem = (r: Record<string, unknown>): Item => ({
@@ -504,6 +511,7 @@ export default function OrderWorkspace() {
       delivery_date: r.delivery_date ? String(r.delivery_date) : "",
       qty_weight: (r.qty_weight as number) ?? "",
       qty_box: (r.qty_box as number) ?? "",
+      weight_per_box: (r.weight_per_box as number) ?? "",
       sale_rate: (r.sale_rate as number) ?? "",
       purchase_party: String(r.purchase_party ?? ""),
       purchase_rate: (r.purchase_rate as number) ?? "",
@@ -528,7 +536,7 @@ export default function OrderWorkspace() {
   function resetNew() {
     setSelected(null);
     hydrated.current = null;
-    setHeader({ transaction_date: today(), delivery_date: "", party: "", company: "" });
+    setHeader({ transaction_date: today(), delivery_date: "", party: "", company: "", fixedLots: false });
     setItems([]);
     setDraft(blankItem());
     setPoByIndex({});
@@ -538,14 +546,41 @@ export default function OrderWorkspace() {
     setFormError(null);
   }
 
+  /** True while this line is ordered in boxes — its weight is derived, not typed. */
+  const byBox = (Number(draft.qty_box) || 0) > 0;
+
+  /** Edit the box side of the line and let the weight follow.
+   *
+   *  The shop sells a colour as so many boxes, so the box and the weight of one box are
+   *  what get asked; the line weight is their product. Mirrored on the server
+   *  (MMSalesOrder._derive_box_weights), which recomputes it on every save — this is only
+   *  so the operator sees the figure as they type rather than after saving.
+   */
+  function setBoxSide(patch: Partial<Item>) {
+    setDraft((d) => {
+      const next = { ...d, ...patch };
+      const b = Number(next.qty_box) || 0;
+      const p = Number(next.weight_per_box) || 0;
+      if (b > 0 && p > 0) next.qty_weight = Math.round(b * p * 1000) / 1000;
+      return next;
+    });
+  }
+
   // Shared item rules (also enforced server-side in mm_sales_order._validate_lines).
   function itemError(d: Item): string | null {
     if (!d.color_name.trim()) return "Pick a colour for the item.";
     if (d.cut.trim() && /[A-Za-z]/.test(d.cut)) return "Size must not contain letters (digits only, e.g. 50/85).";
     const w = Number(d.qty_weight) || 0;
     const b = Number(d.qty_box) || 0;
+    const p = Number(d.weight_per_box) || 0;
     if (w < 0 || b < 0) return "Weight and box cannot be negative.";
+    if (p < 0) return "Weight per box cannot be negative.";
     if (!(w > 0) && !(b > 0)) return "Enter a weight or a box quantity (at least one).";
+    // A box line's weight comes from the box, so the per-box figure is what has to be
+    // asked for — the same rule the server applies in _derive_box_weights.
+    if (b > 0 && !(p > 0) && !(w > 0)) {
+      return "Enter the weight per box — the line's weight is worked out from it.";
+    }
     if (d.sale_rate === "" || Number(d.sale_rate) < 0) return "Enter a valid (non-negative) sale rate.";
     if (d.purchase_rate !== "" && Number(d.purchase_rate) < 0) return "Purchase rate cannot be negative.";
     return null;
@@ -670,6 +705,7 @@ export default function OrderWorkspace() {
       delivery_date: header.delivery_date || null,
       party: header.party,
       company_name: header.company || null,
+      enforce_purchase_multiple: header.fixedLots ? 1 : 0,
     };
     const lineFor = (it: Item, builderIndex: number, lineIdx: number) => ({
       ...(it.name ? { name: it.name } : {}),
@@ -679,6 +715,7 @@ export default function OrderWorkspace() {
       delivery_date: it.delivery_date || null,
       qty_weight: it.qty_weight || 0,
       qty_box: it.qty_box || 0,
+      weight_per_box: it.weight_per_box || 0,
       sale_rate: it.sale_rate || 0,
       purchase_party: (withPo ? poDraft[builderIndex]?.vendor : "") || it.purchase_party || null,
       purchase_rate: (withPo ? poDraft[builderIndex]?.rate : "") || it.purchase_rate || 0,
@@ -932,6 +969,18 @@ export default function OrderWorkspace() {
                 onChange={(v) => setHeader((h) => ({ ...h, company: v }))}
               />
             </label>
+            {/* Some material is only sold in fixed lots (600 kg beams, say). Ticked, a
+                purchase order raised for this order has to be a whole number of them —
+                the lot size lives in MM Settings, because it is the supplier's figure. */}
+            <label className="mm-field mm-field-check">
+              <input
+                type="checkbox"
+                checked={header.fixedLots}
+                disabled={ro}
+                onChange={(e) => setHeader((h) => ({ ...h, fixedLots: e.target.checked }))}
+              />
+              <span className="mm-field-label">Purchase in fixed lots</span>
+            </label>
           </div>
 
           {/* The order's item — always shown, so an approved (locked) order still displays
@@ -946,8 +995,12 @@ export default function OrderWorkspace() {
                 <FieldInput field={F.color_name} value={draft.color_name} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, color_name: String(v ?? "") }))} />
                 <FieldInput field={F.cut} value={draft.cut} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, cut: String(v ?? "") }))} />
                 <FieldInput field={F.item_delivery_date} value={draft.delivery_date} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, delivery_date: String(v ?? "") }))} />
-                <FieldInput field={F.qty_weight} value={draft.qty_weight} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, qty_weight: v as number }))} />
-                <FieldInput field={F.qty_box} value={draft.qty_box} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, qty_box: v as number }))} />
+                <FieldInput field={F.qty_box} value={draft.qty_box} disabled={ro} onChange={(v) => setBoxSide({ qty_box: v as number })} />
+                <FieldInput field={F.weight_per_box} value={draft.weight_per_box} disabled={ro} onChange={(v) => setBoxSide({ weight_per_box: v as number })} />
+                {/* Read-only the moment a box qty stands: the weight is box x per-box and
+                    a second editable copy of it could only ever disagree. */}
+                <FieldInput field={F.qty_weight} value={draft.qty_weight} disabled={ro || byBox}
+                  onChange={(v) => setDraft((d) => ({ ...d, qty_weight: v as number }))} />
                 <FieldInput field={F.sale_rate} value={draft.sale_rate} disabled={ro} onChange={(v) => setDraft((d) => ({ ...d, sale_rate: v as number }))} />
               </div>
               {/* One order = one item, so there is nothing to "add" onto a saved order. */}

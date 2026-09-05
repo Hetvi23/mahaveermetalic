@@ -143,6 +143,14 @@ REMINDER_CONFIG = [
 #   MM<yymmdd>                   one key per posting date, for production box barcodes
 SERIES_PATTERNS = [
 	"MM-SO-%",
+	# Both numbering schemes: the MMU series in use, and the MM-XX- one that preceded it.
+	"MMUSC-%",
+	"MMUJO-%",
+	"MMUJI-%",
+	"MMUJC-%",
+	"MMUCH-%",
+	"MMUDC-%",
+	"MMURC-%",
 	"MM-SC-%",
 	"MM-JO-%",
 	"MM-JI-%",

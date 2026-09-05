@@ -17,6 +17,9 @@ type Cover = {
 type Row = {
   name: string; challan_type?: string; challan_no?: string; transaction_date?: string;
   party?: string; party_name?: string; sales_order?: string;
+  /** Every colour on the challan. A challan carrying two names both — collapsing it to
+   *  the first would make two different dispatches to one party look identical. */
+  colours?: string[];
   total_box?: number; total_weight?: number; docstatus?: number; line_count?: number;
   job_work_flag?: number; cover?: Cover | null;
 };
@@ -65,7 +68,7 @@ export default function ChallanReportPage() {
     const t = q.trim().toLowerCase();
     if (!t) return rows;
     return rows.filter((r) =>
-      [r.name, r.challan_no, r.party_name, r.party, r.sales_order, r.challan_type]
+      [r.name, r.challan_no, r.party_name, r.party, r.sales_order, r.challan_type, (r.colours ?? []).join(" ")]
         .filter(Boolean).join(" ").toLowerCase().includes(t),
     );
   }, [rows, q]);
@@ -128,7 +131,7 @@ export default function ChallanReportPage() {
             <table className="mm-table mm-table-dense mm-table-hover">
               <thead>
                 <tr>
-                  <th>Challan</th><th>Date</th><th>Type</th><th>Party</th><th>Order</th>
+                  <th>Challan</th><th>Date</th><th>Type</th><th>Party</th><th>Item</th><th>Order</th>
                   <th className="mm-num">Box</th><th className="mm-num">Weight</th>
                   {/* The order's own arithmetic, so a correction can be judged before it
                       is made rather than by reading the error afterwards. */}
@@ -145,6 +148,11 @@ export default function ChallanReportPage() {
                     <td>{r.transaction_date || "—"}</td>
                     <td>{r.challan_type || "—"}</td>
                     <td title={r.party || ""}>{r.party_name || r.party || "—"}</td>
+                    <td>
+                      {(r.colours ?? []).length
+                        ? <span className="mm-colour-name">{(r.colours ?? []).join(", ")}</span>
+                        : <span className="mm-muted">—</span>}
+                    </td>
                     <td>{r.sales_order || "—"}</td>
                     <td className="mm-num">{Number(r.total_box || 0).toLocaleString()}</td>
                     <td className="mm-num">{kg(r.total_weight)}</td>
@@ -165,7 +173,9 @@ export default function ChallanReportPage() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={6}><strong>{shown.length} challan{shown.length === 1 ? "" : "s"}</strong></td>
+                  {/* Challan · Date · Type · Party · Item · Order · Box — the Weight total
+                      below has to stay under the Weight column. */}
+                  <td colSpan={7}><strong>{shown.length} challan{shown.length === 1 ? "" : "s"}</strong></td>
                   <td className="mm-num"><strong>{kg(totalWt)}</strong></td>
                   <td colSpan={4} />
                 </tr>

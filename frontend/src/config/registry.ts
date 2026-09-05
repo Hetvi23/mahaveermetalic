@@ -161,13 +161,12 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				id: "def",
 				title: "Item definition",
 				description: "Classification drives reporting and stock views.",
-				fieldnames: ["item_type", "item_name", "uom"],
+				fieldnames: ["item_type", "item_name"],
 			},
 		],
 		listColumns: [
 			{ fieldname: "item_name", label: "Name" },
 			{ fieldname: "item_type", label: "Type" },
-			{ fieldname: "uom", label: "UOM" },
 		],
 		searchField: "item_name",
 		fields: [
@@ -177,9 +176,12 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				fieldtype: "Select",
 				reqd: true,
 				options: "Cut\nPatti\nJari\nKasab\nRoll",
+				// Nearly everything catalogued here is a roll — it is what arrives on a
+				// challan and what stock is held as. Typing the same answer every time is
+				// what a default is for; the other four stay one click away.
+				default: "Roll",
 			},
 			{ fieldname: "item_name", label: "Name", fieldtype: "Data", reqd: true },
-			{ fieldname: "uom", label: "UOM", fieldtype: "Data" },
 		],
 	},
 	{
@@ -498,8 +500,11 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				columns: [
 					{ fieldname: "color_name", label: "Color", fieldtype: "Data", reqd: true },
 					{ fieldname: "delivery_date", label: "Delivery date", fieldtype: "Date" },
-					{ fieldname: "qty_weight", label: "Qty (weight)", fieldtype: "Float" },
+					{ fieldname: "qty_weight", label: "Qty (weight)", fieldtype: "Float", readOnly: true },
 					{ fieldname: "qty_box", label: "Qty (box)", fieldtype: "Float" },
+					// Weight follows the box on a box line, which is why the weight above is
+					// read-only — see MMSalesOrder._derive_box_weights.
+					{ fieldname: "weight_per_box", label: "Wt / box", fieldtype: "Float" },
 					{ fieldname: "cut", label: "Size", fieldtype: "Data" },
 					{ fieldname: "sale_rate", label: "Sale rate", fieldtype: "Currency", reqd: true },
 					{ fieldname: "purchase_party", label: "Supplier", fieldtype: "Link", options: "MM Vendor Master" },

@@ -12,6 +12,16 @@ seconds and shows dozens of tiles; `remarks` therefore takes every key on the sc
 once and answers with both maps, because the rows on one screen do not all hold the same
 key — MM Roll Inventory and MM Stock Ledger Entry rows carry only the human `lot_id`
 string, while cuttings, programs and productions carry the MM Lot doc name.
+
+A LOT ID IS NOT A KEY ON ITS OWN. Lot numbers run per colour, per financial year (see
+MM Lot), so LT1/26-27 exists once for every colour that has been received — a fact the
+lot master states plainly and this file used to ignore. `by_lot_id` was keyed on the bare
+id, so one colour's reason was handed to every other colour holding the same number, and
+the eye appeared on material nothing had ever been said about. The map is keyed on
+COLOUR + id instead, and the colour is taken from MM Lot rather than trusted from the
+remark, because the lot master is the only place it cannot be wrong.
+
+`by_lot` needs none of this: an MM Lot doc name identifies one lot outright.
 """
 
 import json
@@ -21,6 +31,20 @@ from frappe import _
 
 REMARK_FIELDS = ["name", "lot", "lot_id", "reason", "event_type", "program", "owner",
 	"creation", "resolved"]
+
+
+def colour_key(value):
+	"""How a colour is matched here: case and spacing on a hand-typed shade are not a
+	difference in material. Mirrors api.challan._key, and the SPA's own `lotIdKey` has to
+	produce the same string — it builds the lookup key this function's output is half of."""
+	return "".join((value or "").lower().split())
+
+
+def lot_id_key(colour, lot_id):
+	"""The composite `by_lot_id` key. An empty colour is allowed and meaningful: it is the
+	bucket for remarks whose colour could not be resolved, which the caller falls back to
+	rather than lose."""
+	return f"{colour_key(colour)}||{lot_id or ''}"
 
 
 def _as_list(value):
@@ -39,13 +63,18 @@ def _as_list(value):
 
 
 def _resolve_lot(lot=None, lot_id=None, color=None):
-	"""Fill in whichever key the caller did not have. Returns (lot, lot_id).
+	"""Fill in whichever of (lot, lot_id, colour) the caller did not have.
 
-	Colour narrows it first. Lot ids were only made unique per colour later, so two legacy
-	lots can both read "LT1/26-27" — one gold, one silver — and a bare lot_id lookup returns
-	whichever row the database hands back. The eye would then appear on the wrong colour's
-	patti and never on the material the reason is about. Every other lot lookup in this app
-	filters on colour first and falls back; this matches them.
+	Colour narrows the lot_id lookup first. Lot ids run per colour, so two lots both read
+	"LT1/26-27" — one gold, one silver — and a bare lot_id lookup returns whichever row the
+	database hands back. The eye would then appear on the wrong colour's patti and never on
+	the material the reason is about. Every other lot lookup in this app filters on colour
+	first and falls back; this matches them.
+
+	The colour is also filled IN, from the lot, whenever the caller did not pass one. It is
+	what the read side keys on, and the write points do not all know it — `_program_lots`
+	hands back bare lot ids for a program that drew patty from several cuttings. Deriving it
+	here means a remark cannot be filed colourless while its lot knows the answer.
 	"""
 	lot = (lot or "").strip() or None
 	lot_id = (lot_id or "").strip() or None
@@ -57,7 +86,9 @@ def _resolve_lot(lot=None, lot_id=None, color=None):
 			(frappe.db.get_value("MM Lot", {"lot_id": lot_id, "color": color}, "name") if color else None)
 			or frappe.db.get_value("MM Lot", {"lot_id": lot_id}, "name")
 		)
-	return lot, lot_id
+	if not color and lot:
+		color = frappe.db.get_value("MM Lot", lot, "color")
+	return lot, lot_id, color
 
 
 def record(lot=None, lot_id=None, reason=None, event_type=None, program=None,
@@ -72,7 +103,7 @@ def record(lot=None, lot_id=None, reason=None, event_type=None, program=None,
 	reason = (reason or "").strip()
 	if not reason:
 		return None
-	lot, lot_id = _resolve_lot(lot, lot_id, color)
+	lot, lot_id, color = _resolve_lot(lot, lot_id, color)
 	if not lot and not lot_id:
 		return None
 	try:
@@ -104,7 +135,7 @@ def add_remark(lot=None, lot_id=None, reason=None, event_type=None, program=None
 	reason = (reason or "").strip()
 	if len(reason) < 3:
 		frappe.throw(_("Please type a reason (at least 3 characters)."))
-	lot, lot_id = _resolve_lot(lot, lot_id, color)
+	lot, lot_id, color = _resolve_lot(lot, lot_id, color)
 	if not lot and not lot_id:
 		frappe.throw(_("A lot is required to attach a remark to."))
 	doc = frappe.get_doc({
@@ -130,6 +161,10 @@ def remarks(lots=None, lot_ids=None, include_resolved=0):
 	remarks (newest first) — a lot can collect several reasons over its life and the badge
 	shows all of them. A row appears under BOTH maps whenever it has both keys, so a
 	caller looks up whichever key its rows happen to carry without knowing the other.
+
+	`by_lot` is keyed on the MM Lot doc name. `by_lot_id` is keyed COLOUR + id (see the
+	module note) — the caller builds the same key with the colour its row is showing, and
+	falls back to the empty-colour bucket for the few remarks whose colour is unknown.
 	"""
 	lots = _as_list(lots)
 	lot_ids = _as_list(lot_ids)
@@ -141,21 +176,27 @@ def remarks(lots=None, lot_ids=None, include_resolved=0):
 	conditions = []
 	values = {}
 	if lots:
-		conditions.append("lot in %(lots)s")
+		conditions.append("r.lot in %(lots)s")
 		values["lots"] = tuple(lots)
 	if lot_ids:
-		conditions.append("lot_id in %(lot_ids)s")
+		conditions.append("r.lot_id in %(lot_ids)s")
 		values["lot_ids"] = tuple(lot_ids)
 	where = f"({' or '.join(conditions)})"
 	if not frappe.utils.cint(include_resolved):
-		where += " and ifnull(resolved, 0) = 0"
+		where += " and ifnull(r.resolved, 0) = 0"
 
+	# The colour comes off MM LOT, not off the remark. The remark carries a colour only when
+	# whoever filed it happened to know one — `_program_lots` hands back bare lot ids — while
+	# the lot has always had to have one. The remark's own value is the fallback for the rare
+	# row whose lot has since gone.
 	rows = frappe.db.sql(
 		f"""
-		select {", ".join(f"`{f}`" for f in REMARK_FIELDS)}
-		from `tabMM Lot Remark`
+		select {", ".join(f"r.`{f}`" for f in REMARK_FIELDS)},
+			coalesce(nullif(l.color, ''), r.color) as colour
+		from `tabMM Lot Remark` r
+		left join `tabMM Lot` l on l.name = r.lot
 		where {where}
-		order by creation desc
+		order by r.creation desc
 		""",
 		values,
 		as_dict=True,
@@ -164,10 +205,11 @@ def remarks(lots=None, lot_ids=None, include_resolved=0):
 	by_lot, by_lot_id = {}, {}
 	for r in rows:
 		r["resolved"] = int(r.get("resolved") or 0)
+		colour = r.pop("colour", None)
 		if r.get("lot"):
 			by_lot.setdefault(r["lot"], []).append(r)
 		if r.get("lot_id"):
-			by_lot_id.setdefault(r["lot_id"], []).append(r)
+			by_lot_id.setdefault(lot_id_key(colour, r["lot_id"]), []).append(r)
 	return {"by_lot": by_lot, "by_lot_id": by_lot_id}
 
 

@@ -21,3 +21,6 @@ mahaveermetalic.patches.inward_gr_and_view_notes
 mahaveermetalic.patches.order_reject_keeps_number
 mahaveermetalic.patches.dispatch_based_completion
 mahaveermetalic.patches.add_accounts_role
+mahaveermetalic.patches.gr_per_roll
+mahaveermetalic.patches.lot_remark_colour
+mahaveermetalic.patches.order_box_weight

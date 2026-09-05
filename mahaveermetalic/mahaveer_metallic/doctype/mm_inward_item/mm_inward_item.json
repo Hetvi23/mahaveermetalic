@@ -19,7 +19,8 @@
     "qty_box",
     "weight",
     "cut_status",
-    "cutting"
+    "cutting",
+    "gr_against_row"
   ],
   "fields": [
     {
@@ -135,12 +136,20 @@
       "read_only": 1,
       "allow_on_submit": 1,
       "description": "The MM Cutting this inward entry was assigned to."
+    },
+    {
+      "description": "On a goods-return row: the MM Inward Item this row hands back. Identifies the source ROLL, which (roll, colour, lot) cannot when a lot's rolls are unnamed.",
+      "fieldname": "gr_against_row",
+      "fieldtype": "Data",
+      "label": "GR Against Row",
+      "no_copy": 1,
+      "read_only": 1
     }
   ],
   "index_web_pages_for_search": 0,
   "istable": 1,
   "links": [],
-  "modified": "2026-08-25 12:00:00.000000",
+  "modified": "2026-09-05 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Inward Item",

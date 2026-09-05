@@ -1,5 +1,5 @@
 import type { FieldSchema } from "@/config/registry";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import LinkField from "./LinkField";
 import SearchSelect from "./SearchSelect";
@@ -221,30 +221,49 @@ export function FieldInput({ field, value, onChange, disabled, compact, record }
 		);
 	}
 
-	const inputType =
-		field.fieldtype === "Int" ||
-		field.fieldtype === "Float" ||
-		field.fieldtype === "Currency" ||
-		field.fieldtype === "Percent"
-			? "number"
-			: field.fieldtype === "Date"
-				? "date"
-				: "text";
+	const isDecimal =
+		field.fieldtype === "Float" || field.fieldtype === "Currency" || field.fieldtype === "Percent";
+	const inputType = field.fieldtype === "Int"
+		? "number"
+		// A DECIMAL FIELD IS A TEXT BOX, DELIBERATELY.
+		//
+		// `<input type="number">` runs a sanitisation step that empties the field whenever
+		// its contents are not a valid floating-point number — and "0." is not one, because
+		// the spec insists on digits after the point. So the instant somebody typed the dot
+		// of "0.5" the browser handed us "", the value went to null, and the box cleared
+		// under their fingers. A bobbin could not be given any weight below 1.
+		//
+		// Text keeps exactly what was typed; `inputMode="decimal"` still raises the numeric
+		// keypad on the floor's tablets, and the parsing below is ours to control.
+		: isDecimal ? "text" : field.fieldtype === "Date" ? "date" : "text";
+
+	// What the operator is part-way through typing. "0." and "-" and "1." are all real
+	// states on the road to a number, and none of them survives a round-trip through
+	// parseFloat — so the keystrokes are held here and the PARSED value is what goes up.
+	// Dropped on blur, so the field then shows the canonical number ("0.50" → 0.5).
+	const [draft, setDraft] = useState<string | null>(null);
+	const shown = draft != null ? draft : value == null ? "" : String(value);
 
 	return lab(
 		<input
 			className={ic}
 			disabled={ro}
 			type={inputType}
-			step={field.fieldtype === "Int" ? 1 : field.fieldtype === "Float" || field.fieldtype === "Currency" || field.fieldtype === "Percent" ? "any" : undefined}
-			value={value == null ? "" : String(value)}
+			inputMode={isDecimal ? "decimal" : undefined}
+			step={field.fieldtype === "Int" ? 1 : undefined}
+			value={shown}
 			required={field.reqd}
+			onBlur={() => setDraft(null)}
 			onChange={(e) => {
 				const raw = e.target.value;
-				if (field.fieldtype === "Int") onChange(raw === "" ? null : parseInt(raw, 10));
-				else if (field.fieldtype === "Float" || field.fieldtype === "Currency") onChange(raw === "" ? null : parseFloat(raw));
-				else if (field.fieldtype === "Percent") onChange(raw === "" ? null : parseFloat(raw));
-				else onChange(raw);
+				if (field.fieldtype === "Int") return onChange(raw === "" ? null : parseInt(raw, 10));
+				if (!isDecimal) return onChange(raw);
+				// Refuse anything that is not on the way to a number, so the box cannot hold
+				// letters — the one thing the number input was doing for us.
+				if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
+				setDraft(raw);
+				const n = parseFloat(raw);
+				onChange(raw === "" || Number.isNaN(n) ? null : n);
 			}}
 		/>,
 	);

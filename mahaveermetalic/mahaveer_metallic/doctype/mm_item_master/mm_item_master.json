@@ -5,9 +5,10 @@
   "creation": "2026-05-03 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
-  "field_order": ["item_type", "item_name", "uom"],
+  "field_order": ["item_type", "item_name"],
   "fields": [
     {
+      "default": "Roll",
       "fieldname": "item_type",
       "fieldtype": "Select",
       "in_list_view": 1,
@@ -22,17 +23,11 @@
       "label": "Name",
       "reqd": 1,
       "unique": 1
-    },
-    {
-      "fieldname": "uom",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "UOM"
     }
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
+  "modified": "2026-09-05 12:30:00.000000",
   "modified_by": "Administrator",
   "module": "Mahaveer Metallic",
   "name": "MM Item Master",

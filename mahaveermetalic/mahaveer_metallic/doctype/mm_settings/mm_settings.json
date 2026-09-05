@@ -19,7 +19,8 @@
   "challan_terms",
   "section_job_work",
   "job_markup_percent",
-  "job_wastage_limit_percent"
+  "job_wastage_limit_percent",
+    "purchase_qty_multiple"
  ],
  "fields": [
   {
@@ -128,7 +129,15 @@
    "default": "5",
    "precision": "2",
    "description": "A hisab wasting more than this is flagged for the admin to look at twice."
-  }
+  },
+    {
+      "default": "600",
+      "description": "Material bought in fixed lots \u2014 the size of one lot, in kg. Applied only to orders ticked \"Purchase in fixed lots\".",
+      "fieldname": "purchase_qty_multiple",
+      "fieldtype": "Float",
+      "label": "Purchase Lot Size (Kg)",
+      "precision": "3"
+    }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,

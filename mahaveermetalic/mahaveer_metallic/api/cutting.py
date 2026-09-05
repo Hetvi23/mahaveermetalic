@@ -330,7 +330,12 @@ def cutting_board(branch=None):
 			c.status, c.roll_qty, c.total_patti_qty, c.total_net_weight, c.program,
 			c.lot, l.lot_id,
 			case when p.unfinished = 1 then 1 else 0 end as unfinished,
-			p.name as program_name
+			p.name as program_name,
+			-- The note the planner wrote on the program. A "to cut" card IS a program's
+			-- request, and the instruction behind it was only readable on the Program
+			-- board — so the cutter was being asked to cut something without being shown
+			-- what was said about it.
+			p.remark as program_remark
 		from `tabMM Cutting` c
 		left join `tabMM Program` p on p.name = c.program
 		left join `tabMM Lot` l on l.name = c.lot
@@ -356,6 +361,10 @@ def _merge_by_lot(rows):
 	merged = {}
 	out = []
 	for r in rows:
+		# Carried as a LIST from the start: merging folds several programs' cards into one
+		# and each may carry its own note, so a single field would silently keep the first
+		# and drop the rest.
+		r["program_remarks"] = [r["program_remark"]] if r.get("program_remark") else []
 		if not r.get("lot"):
 			out.append(r)
 			continue
@@ -372,6 +381,9 @@ def _merge_by_lot(rows):
 		head["total_net_weight"] = round(float(head.get("total_net_weight") or 0) + float(r.get("total_net_weight") or 0), 3)
 		head["merged_from"].append(r["name"])
 		head["merged_count"] += 1
+		for note in r["program_remarks"]:
+			if note not in head["program_remarks"]:
+				head["program_remarks"].append(note)
 		# A merged card is only "finished" if every part of it is.
 		if r.get("unfinished"):
 			head["unfinished"] = 1

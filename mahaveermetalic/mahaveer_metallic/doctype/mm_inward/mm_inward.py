@@ -89,24 +89,39 @@ class MMInward(Document):
 			if row.to_inventory:
 				continue
 			order = row.customer_order or self.sales_order
-			if order:
-				mine[order] = round(mine.get(order, 0.0) + float(row.weight or 0), 3)
+			if not order:
+				continue
+			acc = mine.setdefault(order, [0.0, 0.0])
+			acc[0] = round(acc[0] + float(row.weight or 0), 3)
+			acc[1] = round(acc[1] + float(row.qty_box or 0), 3)
 		over_pct = get_inward_over_tolerance() / 100.0
 		for order in sorted(mine):
-			this_w = mine[order]
-			if this_w <= 0:
-				continue
-			ordered = float(frappe.db.get_value("MM Sales Order", order, "ordered_weight") or 0)
-			if ordered <= 0:
-				# A box-only order carries no weight target — nothing to measure against.
+			this_w, this_b = mine[order]
+			so = (
+				frappe.db.get_value(
+					"MM Sales Order", order, ["ordered_weight", "ordered_box"], as_dict=True
+				)
+				or {}
+			)
+			# AN ORDER PLACED IN BOXES IS CAPPED IN BOXES. Its weight is derived from the box
+			# (MMSalesOrder._derive_box_weights), so a delivery of exactly the boxes ordered
+			# that happens to run a shade heavy is the right delivery — refusing it on kg
+			# would block the very receipt the order was placed for.
+			by_box = float(so.get("ordered_box") or 0) > 0
+			ordered = float((so.get("ordered_box") if by_box else so.get("ordered_weight")) or 0)
+			this = this_b if by_box else this_w
+			unit = _("box") if by_box else _("kg")
+			if ordered <= 0 or this <= 0:
+				# No target in the unit this order is read in — nothing to measure against.
 				continue
 			# Everything already received on the order, this document excluded so an amend
-			# is not counted twice. Goods returns are in the sum with their negative weight,
+			# is not counted twice. Goods returns are in the sum with their negative figure,
 			# which is what makes returned material receivable again.
+			column = "qty_box" if by_box else "weight"
 			prior = float(
 				frappe.db.sql(
-					"""
-					select coalesce(sum(ii.weight), 0)
+					f"""
+					select coalesce(sum(ii.{column}), 0)
 					from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
 					where ii.customer_order = %(o)s and i.docstatus = 1 and i.name != %(me)s
 						and ifnull(ii.to_inventory, 0) = 0
@@ -115,16 +130,16 @@ class MMInward(Document):
 				)[0][0]
 				or 0
 			)
-			cum = round(prior + this_w, 3)
+			cum = round(prior + this, 3)
 			allowed = round(ordered + max(_ORDER_RECEIPT_TOLERANCE, ordered * over_pct), 3)
 			if cum > allowed:
 				frappe.throw(
 					_(
-						"Over-receipt blocked: order {0} is for {1} kg and {2} kg has already been "
-						"received against it. This inward adds {3} kg, taking it to {4} kg — more "
-						"than the {5} kg limit. Check the weights, or receive the extra against the "
+						"Over-receipt blocked: order {0} is for {1} {6} and {2} {6} has already been "
+						"received against it. This inward adds {3} {6}, taking it to {4} {6} — more "
+						"than the {5} {6} limit. Check the entry, or receive the extra against the "
 						"order it belongs to."
-					).format(order, ordered, round(prior, 3), this_w, cum, allowed)
+					).format(order, ordered, round(prior, 3), this, cum, allowed, unit)
 				)
 
 	def _require_challan(self):

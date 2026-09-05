@@ -352,7 +352,35 @@ def create_purchase_order_from_so(sales_order, full=0):
 	only the shortfall is ordered — lines already covered by stock are skipped."""
 	full = frappe.utils.cint(full)
 	so = frappe.get_doc("MM Sales Order", sales_order)
-	created, updated = [], []
+	# Material bought in fixed lots: the shortfall is what is NEEDED, the lot is what can
+	# actually be bought, so the generated figure is raised to the next whole lot. Rounded
+	# UP and never down — buying less than the shortfall leaves the order short, which is
+	# the one outcome raising the PO was meant to prevent. A hand-typed quantity is refused
+	# outright rather than adjusted (MMPurchaseOrder._enforce_qty_multiple); this is the
+	# app proposing a number, not silently correcting the operator's.
+	step = 0.0
+	if so.get("enforce_purchase_multiple"):
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+			get_purchase_qty_multiple,
+		)
+
+		step = round(float(get_purchase_qty_multiple() or 0), 3)
+
+	def to_lot(qty):
+		"""The smallest whole number of lots that covers `qty`.
+
+		The near-exact case takes the NEAREST lot count, not the floored one: 1799.9999 kg
+		is 3 lots of 600 that a float lost a fraction of, and flooring it bought 2 — a
+		whole lot short of the shortfall this exists to cover.
+		"""
+		if step <= 0 or qty <= 0:
+			return qty
+		ratio = qty / step
+		nearest = round(ratio)
+		lots = nearest if abs(ratio - nearest) < 1e-6 else int(ratio) + 1
+		return round(max(lots, 1) * step, 3)
+
+	created, updated, rounded = [], [], []
 	for it in so.items:
 		required = float(it.qty_weight or 0)
 		if full:
@@ -361,6 +389,10 @@ def create_purchase_order_from_so(sales_order, full=0):
 			qty = round(max(0.0, required - _line_available(it.color_name, it.cut, so.name)), 3)
 		if qty <= 0:
 			continue
+		lot_qty = to_lot(qty)
+		if lot_qty != qty:
+			rounded.append((it.color_name, qty, lot_qty))
+			qty = lot_qty
 		existing = frappe.db.get_value("MM Purchase Order", {"so_item": it.name}, "name")
 		if existing:
 			po = frappe.get_doc("MM Purchase Order", existing)
@@ -386,6 +418,14 @@ def create_purchase_order_from_so(sales_order, full=0):
 		)
 		po.insert(ignore_permissions=True)
 		created.append(po.name)
+	if rounded:
+		frappe.msgprint(
+			_("Rounded up to whole {0} kg lots: {1}.").format(
+				step,
+				", ".join(f"{c or '—'} {a} → {b} kg" for c, a, b in rounded),
+			),
+			alert=True,
+		)
 	if not created and not updated:
 		frappe.msgprint(
 			_("No lines to purchase — every line is box-only or has zero weight.")

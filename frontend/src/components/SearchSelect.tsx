@@ -33,6 +33,9 @@ type Props = {
 	 *  where a fixed option list replaced a link field but creating the master in place
 	 *  must not be lost. */
 	createDoctype?: string;
+	/** Open the list wider than the field. For a picker in a narrow table column whose
+	 *  options carry a second line — an order number over its party and colour. */
+	menuMinWidth?: number;
 };
 
 /**
@@ -56,6 +59,7 @@ export default function SearchSelect({
 	emptyText,
 	className,
 	createDoctype,
+	menuMinWidth,
 }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
@@ -160,7 +164,8 @@ export default function SearchSelect({
 					<Plus size={15} />
 				</button>
 			)}
-			<AnchoredMenu anchor={wrap} open={open} className={options.some((o) => o.meta) ? "mm-suggest-rich" : undefined}>
+			<AnchoredMenu anchor={wrap} open={open} minWidth={menuMinWidth}
+				className={options.some((o) => o.meta) ? "mm-suggest-rich" : undefined}>
 				<>
 					{!noClear && (
 						<li className="mm-suggest-item mm-suggest-muted"

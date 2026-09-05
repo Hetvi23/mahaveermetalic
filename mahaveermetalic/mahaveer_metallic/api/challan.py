@@ -87,6 +87,11 @@ def create_challan_from_production(production):
 	challan = frappe.get_doc(
 		{
 			"doctype": "MM Sales Challan",
+			# Stated, not inherited: this used to be left blank and take whichever series
+			# happened to be first in the Select, which is a numbering scheme held together
+			# by the order of a list.
+			"challan_type": "Sales",
+			"naming_series": SERIES["Sales"],
 			"transaction_date": prod.posting_date or frappe.utils.today(),
 			"party": prod.party,
 			"sales_order": prod.customer_order,
@@ -324,13 +329,24 @@ def scan_box(barcode):
 # The series each challan type is numbered in. The type IS the choice the operator makes
 # on the voucher screen; the series follows from it, so the two can never disagree.
 SERIES = {
-	"Sales": "MM-SC-.YYYY.-",
-	"Job Out": "MM-JO-.YYYY.-",
-	"Job In": "MM-JI-.YYYY.-",
-	"Job Challan": "MM-JC-.YYYY.-",
-	"Challan": "MM-CH-.YYYY.-",
-	"Delivery Challan": "MM-DC-.YYYY.-",
+	"Sales": "MMUSC-.YYYY.-",
+	"Job Out": "MMUJO-.YYYY.-",
+	"Job In": "MMUJI-.YYYY.-",
+	"Job Challan": "MMUJC-.YYYY.-",
+	"Challan": "MMUCH-.YYYY.-",
+	"Delivery Challan": "MMUDC-.YYYY.-",
+	# A Roll Challan sends rolls to the customer against their order, so it is a DISPATCH:
+	# it moves stock out and counts toward what the order has had. That falls out of
+	# NON_DISPATCH_TYPES listing only the job types, which is why nothing is added there —
+	# see the note on that list before changing it.
+	"Roll Challan": "MMURC-.YYYY.-",
 }
+# Challans issued before the MMU numbering. Nothing writes these any more; they are kept
+# on the doctype's Select so the documents already carrying them stay valid.
+LEGACY_SERIES = (
+	"MM-SC-.YYYY.-", "MM-JO-.YYYY.-", "MM-JI-.YYYY.-",
+	"MM-JC-.YYYY.-", "MM-CH-.YYYY.-", "MM-DC-.YYYY.-",
+)
 _JOB_SERIES = SERIES  # kept for the job screens, which only ever index Job Out / Job In
 
 
@@ -909,7 +925,7 @@ def orders_for_challan(party=None):
 	# not the other way round; the party is a filter when they have one, not a gate.
 	rows = frappe.db.sql(
 		"""
-		select so.name, so.party, so.transaction_date, so.ordered_weight, so.completion_mode,
+		select so.name, so.party, so.transaction_date, so.ordered_weight, so.ordered_box, so.completion_mode,
 			pm.party_name,
 			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
 			 from `tabMM Sales Order Item` x where x.parent = so.name) as colours
@@ -934,24 +950,30 @@ def orders_for_challan(party=None):
 		return []
 
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
-		dispatched_weight_by_order,
+		dispatched_by_order,
 		fulfilment_state,
 	)
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 		get_inward_match_tolerance,
 	)
 
-	out_kg = dispatched_weight_by_order([r.name for r in rows])
+	out_by = dispatched_by_order([r.name for r in rows])
 	tol = get_inward_match_tolerance()
 	open_rows = []
 	for r in rows:
-		sent = out_kg.get(r.name, 0.0)
-		if fulfilment_state(r.ordered_weight, sent, r.completion_mode, tol) == "Complete":
+		went = out_by.get(r.name) or {"weight": 0.0, "box": 0.0}
+		sent = went["weight"]
+		# Judged in whichever unit the order was placed in — a box order that is one box
+		# short is still open, however close its kilos happen to land.
+		if fulfilment_state(r.ordered_weight, sent, r.completion_mode, tol,
+			ordered_box=r.get("ordered_box"), dispatched_box=went["box"]) == "Complete":
 			continue
 		r["dispatched_weight"] = sent
+		r["dispatched_box"] = went["box"]
 		# What this order can still take on a challan — the picker shows it, so nobody
 		# has to open the order to find out how much of it is left to send.
 		r["pending_weight"] = round(max(0.0, float(r.ordered_weight or 0) - sent), 3)
+		r["pending_box"] = round(max(0.0, float(r.get("ordered_box") or 0) - went["box"]), 3)
 		open_rows.append(r)
 	return open_rows
 
@@ -1036,6 +1058,26 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 		vals,
 		as_dict=True,
 	)
+	# The COLOUR on each challan. One grouped query for the whole page, never one per row —
+	# the register runs to hundreds of challans. A challan carrying several colours names
+	# them all: it is what the floor reads to tell two dispatches to the same party apart,
+	# and collapsing it to the first would make them look identical.
+	colours = {}
+	if rows:
+		for ci in frappe.db.sql(
+			"""
+			select ci.parent, ci.color_name
+			from `tabMM Sales Challan Item` ci
+			where ci.parent in %(n)s and ifnull(ci.color_name, '') != ''
+			order by ci.parent, ci.idx
+			""",
+			{"n": tuple(r.name for r in rows)},
+			as_dict=True,
+		):
+			bucket = colours.setdefault(ci.parent, [])
+			if ci.color_name not in bucket:
+				bucket.append(ci.color_name)
+
 	names = {r.party for r in rows if r.party}
 	party_names = {}
 	if names:
@@ -1047,6 +1089,7 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 	covers = {}
 	for r in rows:
 		r["party_name"] = party_names.get(r.party, r.party)
+		r["colours"] = colours.get(r.name) or []
 		if r.sales_order and r.sales_order not in covers:
 			covers[r.sales_order] = _order_cover(r.sales_order)
 		r["cover"] = covers.get(r.sales_order)

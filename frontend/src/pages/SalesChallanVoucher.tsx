@@ -22,13 +22,18 @@ const today = todayISO;
  * the type, so a stale prefix here can only ever mislabel the hint, never misnumber.
  *
  * Job Challan sends material to a worker, so it does not close the customer's order;
- * the other three do.
+ * the other four — Sales, Challan, Delivery Challan and Roll Challan — do.
  */
+// Display only — the series that actually numbers the document is chosen server-side from
+// the type (api.challan.SERIES), so the two cannot drift into disagreeing.
 const CHALLAN_TYPES = [
-  { value: "Sales", label: "Sales Chalan", series: "MM-SC-" },
-  { value: "Job Challan", label: "Job Challan", series: "MM-JC-" },
-  { value: "Challan", label: "Challan", series: "MM-CH-" },
-  { value: "Delivery Challan", label: "Delivery Challan", series: "MM-DC-" },
+  { value: "Sales", label: "Sales Chalan", series: "MMUSC-" },
+  { value: "Job Challan", label: "Job Challan", series: "MMUJC-" },
+  { value: "Challan", label: "Challan", series: "MMUCH-" },
+  { value: "Delivery Challan", label: "Delivery Challan", series: "MMUDC-" },
+  // Rolls going out to the customer against their order — a dispatch like the three
+  // above it, not a job movement: it takes stock out and counts toward the order.
+  { value: "Roll Challan", label: "Roll Challan", series: "MMURC-" },
 ];
 
 type BoxRow = {

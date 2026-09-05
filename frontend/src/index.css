@@ -1033,14 +1033,22 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 /* Scoped (the default) reads as the active state — filtering is ON, not a limitation. */
 .mm-iw-scope.is-on { background: #fff; color: var(--mm-primary); border-color: #fff; }
 
-.mm-iw-grid-table { width: 100%; }
+/* The grid keeps its columns at their real widths and SCROLLS when they don't fit.
+   Without the floor the table shrank to its container, and with nowrap cells that meant
+   inputs were clipped rather than the table overflowing into .mm-table-scroll — fields
+   cut off with no way to reach them. */
+.mm-iw-grid-table { width: 100%; min-width: 1400px; }
 .mm-iw-grid-table th, .mm-iw-grid-table td { white-space: nowrap; vertical-align: middle; }
 .mm-iw-grid-table td { padding: 0.35rem 0.5rem; }
 .mm-iw-grid-table .mm-input { min-width: 0; width: 100%; }
 .mm-iw-c-no { width: 42px; color: var(--mm-text-sec); }
 .mm-iw-c-jw { width: 78px; text-align: center; }
 .mm-iw-c-chalan { width: 172px; }
+.mm-iw-c-order { width: 260px; }
 .mm-iw-c-supplier { width: 168px; }
+/* The order's own weight and what was bought against it, under the picker. */
+.mm-iw-ordertot { display: block; margin-top: 0.2rem; font-size: 0.68rem; color: var(--mm-text-sec); white-space: nowrap; }
+.mm-iw-ordertot b { color: var(--mm-text); font-variant-numeric: tabular-nums; }
 .mm-iw-c-lot { width: 104px; }
 .mm-iw-c-roll { width: 150px; }
 .mm-iw-c-qty { width: 210px; }
@@ -2139,6 +2147,10 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-cutcol { flex: 0 0 280px; background: var(--mm-card); border: 1px solid var(--mm-border); border-radius: var(--mm-radius); overflow: hidden; }
 .mm-cutcol-head { background: var(--mm-primary); color: #fff; padding: 0.55rem 0.85rem; font-weight: 800; font-size: 0.85rem; }
 .mm-cutcol-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.55rem; min-height: 60px; }
+/* The program's note on a cutting card — an instruction, so it reads as quoted speech
+   rather than as one more figure in the meta line above it. */
+.mm-cut-note { margin-top: 0.4rem; padding-left: 0.5rem; border-left: 2px solid var(--mm-accent-soft); }
+.mm-cut-note p { margin: 0.15rem 0; font-size: 0.74rem; color: var(--mm-text-sec); white-space: pre-wrap; }
 /* Inline editable status select in the cutting list */
 .mm-status-select { font-weight: 750; border-radius: 99px; padding: 0.25rem 0.6rem; min-width: 130px; }
 
@@ -2798,6 +2810,15 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-orep-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .mm-orep-totals { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--mm-text-sec); }
 .mm-orep-totals b { color: var(--mm-text); font-variant-numeric: tabular-nums; }
+
+/* Register pager — the page controls under the order report. The footer totals above it
+   are for the WHOLE filtered set, so the count here says what the PAGE is showing. */
+.mm-orep-pager { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 0.9rem; font-size: 0.78rem; }
+.mm-orep-pager b { color: var(--mm-text); font-variant-numeric: tabular-nums; }
+.mm-orep-pagebtns { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.mm-orep-pagebtns .mm-mini { min-width: 2rem; justify-content: center; font-variant-numeric: tabular-nums; }
+.mm-mini-on { background: var(--mm-primary); border-color: var(--mm-primary); color: #fff; }
+.mm-mini-on:hover { background: var(--mm-primary); border-color: var(--mm-primary); color: #fff; }
 .mm-orep-table th, .mm-orep-table td { white-space: nowrap; }
 
 /* ── Order summary: the three logs behind one order's totals ──────────────────

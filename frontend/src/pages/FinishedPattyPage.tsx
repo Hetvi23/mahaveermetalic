@@ -42,9 +42,10 @@ export default function FinishedPattyPage() {
   const tiles = useMemo(() => groupPatties(patties, scopeCut), [patties, scopeCut]);
   const shown = useMemo(() => filterPatties(tiles, q), [tiles, q]);
 
-  const { maps } = useLotRemarks({
+  const { maps, forLotId } = useLotRemarks({
     lots: tiles.flatMap((t) => t.lots),
-    lotIds: tiles.flatMap((t) => t.lotIds),
+    // A tile is a colour in one lot, so its colour is what names its ids.
+    lotIds: tiles.flatMap((t) => t.lotIds.map((id) => ({ id, colour: t.colour }))),
   });
   /** Every unresolved reason across a tile's lots, deduplicated — same rule as the shelf. */
   const remarksFor = (t: Tile): LotRemark[] => {
@@ -52,7 +53,7 @@ export default function FinishedPattyPage() {
     const out: LotRemark[] = [];
     for (const r of [
       ...t.lots.flatMap((l) => (l ? maps.by_lot[l] ?? [] : [])),
-      ...t.lotIds.flatMap((l) => (l ? maps.by_lot_id[l] ?? [] : [])),
+      ...t.lotIds.flatMap((l) => forLotId(l, t.colour)),
     ]) {
       if (seen.has(r.name)) continue;
       seen.add(r.name);

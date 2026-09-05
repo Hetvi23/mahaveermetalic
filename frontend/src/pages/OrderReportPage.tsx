@@ -3,11 +3,9 @@ import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { Eye, ScrollText, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
-import { monthsAgoISO, todayISO } from "@/utils/localDate";
+import Pager, { pageSlice } from "@/components/Pager";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.order_report";
-const today = todayISO;
-const monthAgo = () => monthsAgoISO(1);
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 type Rate = { lo: number; hi: number; same: boolean } | null;
@@ -45,9 +43,12 @@ type Summary = {
   party_name?: string; company?: string; approval: string; status: string; completion_mode?: string | null;
   items: { color_name?: string; cut?: string; qty_weight?: number; qty_box?: number; sale_rate?: number }[];
   inwards: InwardLine[]; productions: ProdLine[]; sales: SaleLine[];
+  /** Which unit this order is READ in. A box order's verdict is reached on boxes. */
+  unit?: "box" | "weight";
   totals: {
     ordered: number; inwarded: number; produced: number; dispatched: number;
     remaining: number; in_hand: number; tolerance_percent: number; complete_at: number;
+    ordered_box: number; dispatched_box: number; remaining_box: number; complete_at_box: number;
   };
 };
 
@@ -57,6 +58,14 @@ type Summary = {
    Approval (pending / accepted / rejected) is a different question and lives on the order
    list; this register carries APPROVED orders only, so it never has to ask it. */
 const STATUSES = ["Complete", "Incomplete"];
+
+/* The PURCHASE side of the same order — has the material been bought, and has it arrived.
+   A different question from the order's own status, which is why they filter separately:
+   "what have I still to deliver" and "what have I still to buy" are asked by different
+   people. An order with no purchase order and nothing received has no purchase state at
+   all and shows a blank cell, so it matches none of these. */
+const PURCHASE_STATUSES = ["Pending", "Partial", "Completed"];
+
 
 /** One rate, or the spread when an order's lines disagree. A rate never entered is a
  *  gap, not a zero — 0 would read as "bought for nothing". */
@@ -72,16 +81,23 @@ const purchaseCls = (s?: string) =>
  * list cannot give: a date range, filters, totals and something printable.
  */
 export default function OrderReportPage() {
-  const [from, setFrom] = useState(monthAgo());
-  const [to, setTo] = useState(today());
+  // No date range to begin with. The register used to open on the last month, which
+  // quietly hid every older order — an order placed in March and still undelivered simply
+  // was not there, and nothing on screen said a date filter was doing it. Opening on
+  // everything states the truth; the range is there to narrow it when somebody wants that.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [party, setParty] = useState("");
   const [status, setStatus] = useState("");
+  const [purchase, setPurchase] = useState("");
   const [company, setCompany] = useState("");
   const [item, setItem] = useState("");
   const [order, setOrder] = useState("");
   const [applied, setApplied] = useState({
-    from: monthAgo(), to: today(), party: "", status: "", company: "", item: "", order: "",
+    from: "", to: "", party: "", status: "", purchase: "", company: "", item: "", order: "",
   });
+  /** Which page of the register is on screen. */
+  const [page, setPage] = useState(1);
   /** The order whose drill-down is open. */
   const [viewing, setViewing] = useState<string | null>(null);
 
@@ -100,14 +116,17 @@ export default function OrderReportPage() {
       to_date: applied.to || undefined,
       party: applied.party || undefined,
       status: applied.status || undefined,
+      purchase_status: applied.purchase || undefined,
       company: applied.company || undefined,
       item: applied.item || undefined,
       order: applied.order.trim() || undefined,
     },
-    `order-report-${applied.from}-${applied.to}-${applied.party}-${applied.status}-${applied.company}-${applied.item}-${applied.order}`,
+    `order-report-${applied.from}-${applied.to}-${applied.party}-${applied.status}-${applied.purchase}-${applied.company}-${applied.item}-${applied.order}`,
   );
   const rows = useMemo(() => data?.message?.rows ?? [], [data]);
   const totals = data?.message?.totals;
+
+  const { pages, current, start, rows: pageRows } = pageSlice(rows, page);
 
   /** CSV of exactly what is on screen, so a printed copy and an exported one agree. */
   function exportCsv() {
@@ -129,7 +148,9 @@ export default function OrderReportPage() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `orders-${applied.from}-to-${applied.to}.csv`;
+    a.download = applied.from || applied.to
+      ? `orders-${applied.from || "start"}-to-${applied.to || "today"}.csv`
+      : "orders.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -147,10 +168,16 @@ export default function OrderReportPage() {
       </header>
 
       <ReportFilters
-        onApply={() => setApplied({ from, to, party, status, company, item, order })}
+        onApply={() => {
+          setApplied({ from, to, party, status, purchase, company, item, order });
+          // A new filter is a new list, and page 4 of the old one means nothing in it.
+          setPage(1);
+        }}
         onReset={() => {
-          setFrom(monthAgo()); setTo(today()); setParty(""); setStatus(""); setCompany(""); setItem(""); setOrder("");
-          setApplied({ from: monthAgo(), to: today(), party: "", status: "", company: "", item: "", order: "" });
+          setFrom(""); setTo(""); setParty(""); setStatus(""); setPurchase("");
+          setCompany(""); setItem(""); setOrder("");
+          setApplied({ from: "", to: "", party: "", status: "", purchase: "", company: "", item: "", order: "" });
+          setPage(1);
         }}
         onPrint={() => window.print()}
         onExport={exportCsv}
@@ -173,9 +200,13 @@ export default function OrderReportPage() {
           <SearchSelect value={item} placeholder="All items"
             options={(items.data ?? []).map((i) => ({ value: i.name, label: i.name }))} onChange={setItem} />
         </Filter>
-        <Filter label="Status">
+        <Filter label="Order status">
           <SearchSelect value={status} placeholder="All statuses"
             options={STATUSES.map((x) => ({ value: x, label: x }))} onChange={setStatus} />
+        </Filter>
+        <Filter label="Purchase status">
+          <SearchSelect value={purchase} placeholder="All purchases"
+            options={PURCHASE_STATUSES.map((x) => ({ value: x, label: x }))} onChange={setPurchase} />
         </Filter>
         <Filter label="Order no">
           <input className="mm-input" value={order} placeholder="e.g. 37"
@@ -185,7 +216,11 @@ export default function OrderReportPage() {
 
       <section className="mm-card mm-card-pad">
         <div className="mm-orep-head">
-          <h2 className="mm-panel-title">Orders {applied.from} — {applied.to}</h2>
+          <h2 className="mm-panel-title">
+            {applied.from || applied.to
+              ? `Orders ${applied.from || "start"} — ${applied.to || "today"}`
+              : "Orders — all dates"}
+          </h2>
           {totals && (
             <div className="mm-orep-totals">
               <span><b>{totals.orders}</b> orders</span>
@@ -218,9 +253,9 @@ export default function OrderReportPage() {
             <tbody>
               {isLoading && <tr><td colSpan={13} className="mm-muted">Loading…</td></tr>}
               {!isLoading && rows.length === 0 && (
-                <tr><td colSpan={13} className="mm-empty">No orders in this period.</td></tr>
+                <tr><td colSpan={13} className="mm-empty">No orders match these filters.</td></tr>
               )}
-              {rows.map((r) => {
+              {pageRows.map((r) => {
                 const p = rate(r.purchase_rate);
                 const s = rate(r.sale_rate);
                 return (
@@ -273,7 +308,7 @@ export default function OrderReportPage() {
             </tbody>
             {rows.length > 0 && totals && (
               <tfoot>
-                <tr>
+                <tr title="Every order matching the filters, not only this page">
                   <td colSpan={5}><strong>{totals.orders} orders</strong></td>
                   <td className="mm-num"><strong>{kg(totals.ordered)}</strong></td>
                   <td className="mm-num"><strong>{kg(totals.inwarded)}</strong></td>
@@ -286,6 +321,9 @@ export default function OrderReportPage() {
             )}
           </table>
         </div>
+
+        <Pager total={rows.length} start={start} pages={pages} current={current}
+          onPage={setPage} noun="orders" />
       </section>
 
       {viewing && <OrderSummaryModal order={viewing} onClose={() => setViewing(null)} />}
@@ -304,6 +342,8 @@ function OrderSummaryModal({ order, onClose }: { order: string; onClose: () => v
   );
   const d = data?.message;
   const t = d?.totals;
+  // A box order is judged on boxes — the server says which unit it reads in.
+  const byBox = d?.unit === "box" || Number(t?.ordered_box || 0) > 0;
 
   /** One log column: its rows, its total, and nothing it cannot account for. */
   const Log = ({ title, count, children, foot }: {
@@ -397,19 +437,32 @@ function OrderSummaryModal({ order, onClose }: { order: string; onClose: () => v
 
               {/* The arithmetic the status is decided on, spelled out — so Complete is
                   something the reader can check rather than something they are told. */}
+              {/* Stated in the unit the order was PLACED in. A box order is sold as so many
+                  boxes and its weight is worked out from them, so footing the verdict in
+                  kilos answers a question nobody asked — 24 of 25 boxes is what one box
+                  short looks like. The kilos are still shown underneath, because that is
+                  what the challans and the scale actually record. */}
               <div className="mm-osum-verdict">
-                <div className={`mm-osum-remaining ${t.remaining > 0 ? "mm-var-over" : ""}`}>
+                <div className={`mm-osum-remaining ${(byBox ? t.remaining_box : t.remaining) > 0 ? "mm-var-over" : ""}`}>
                   <span>REMAINING TO DISPATCH</span>
-                  <span><strong>{kg(t.remaining)}</strong> kg</span>
+                  <span>
+                    <strong>{byBox ? (t.remaining_box ?? 0).toLocaleString() : kg(t.remaining)}</strong>
+                    {byBox ? " box" : " kg"}
+                  </span>
                 </div>
                 <p className="mm-osum-explain">
-                  {kg(t.dispatched)} of {kg(t.ordered)} kg has gone out.{" "}
+                  {byBox
+                    ? <>{(t.dispatched_box ?? 0).toLocaleString()} of {(t.ordered_box ?? 0).toLocaleString()} box has gone out.{" "}</>
+                    : <>{kg(t.dispatched)} of {kg(t.ordered)} kg has gone out.{" "}</>}
                   {d.completion_mode === "Force"
                     ? "An admin closed this order by hand, so it counts as Complete whatever the figures say."
-                    : t.ordered > 0
-                      ? <>It reads <strong>Complete</strong> at {kg(t.complete_at)} kg — the ordered weight less the {t.tolerance_percent}% variance allowance.</>
-                      : "This order carries no weight target, so anything dispatched closes it."}
+                    : byBox
+                      ? <>It reads <strong>Complete</strong> when all {(t.complete_at_box ?? 0).toLocaleString()} box have gone out — a count carries no variance allowance.</>
+                      : t.ordered > 0
+                        ? <>It reads <strong>Complete</strong> at {kg(t.complete_at)} kg — the ordered weight less the {t.tolerance_percent}% variance allowance.</>
+                        : "This order carries no weight target, so anything dispatched closes it."}
                   {" "}In hand (received but not yet sent): <strong>{kg(t.in_hand)}</strong> kg.
+                  {byBox ? <> Weight against this order: {kg(t.dispatched)} of {kg(t.ordered)} kg.</> : null}
                 </p>
               </div>
             </>

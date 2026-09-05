@@ -46,6 +46,9 @@ type Produced = {
   name: string;
   posting_date?: string;
   customer_order?: string;
+  /** What was produced — the colour, and the cut it ran at. */
+  shade?: string;
+  cut?: string;
   roll_no?: string;
   machine_no?: string;
   operator?: string;
@@ -68,9 +71,11 @@ export default function ProductionScreen() {
   // One request for the whole queue. A program that drew patty from several cuttings has
   // several lots, so BOTH keys go in — `lot_id` is a joined display string in that case
   // and would match nothing on its own.
-  const { maps } = useLotRemarks({
+  const { maps, forLotId } = useLotRemarks({
     lots: queue.map((p) => p.lot),
-    lotIds: queue.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
+    lotIds: queue.flatMap((p) =>
+      (p.lot_ids?.length ? p.lot_ids : [p.lot_id]).map((id) => ({ id, colour: p.shade })),
+    ),
   });
   /** Every reason standing against any lot this program's material came off. */
   const remarksForProgram = (p: Program): LotRemark[] => {
@@ -78,7 +83,7 @@ export default function ProductionScreen() {
     const out: LotRemark[] = [];
     for (const r of [
       ...(p.lot ? maps.by_lot[p.lot] ?? [] : []),
-      ...(p.lot_ids?.length ? p.lot_ids : [p.lot_id]).flatMap((id) => (id ? maps.by_lot_id[id] ?? [] : [])),
+      ...(p.lot_ids?.length ? p.lot_ids : [p.lot_id]).flatMap((id) => forLotId(id, p.shade)),
     ]) {
       if (seen.has(r.name)) continue;
       seen.add(r.name);
@@ -170,6 +175,7 @@ export default function ProductionScreen() {
                   <tr>
                     <th>V.No</th>
                     <th>Date</th>
+                    <th>Color</th>
                     <th>Roll</th>
                     <th>Operator</th>
                     <th className="mm-num">Net (kg)</th>
@@ -182,6 +188,10 @@ export default function ProductionScreen() {
                     <tr key={d.name}>
                       <td>{d.name}</td>
                       <td>{d.posting_date || "—"}</td>
+                      <td>
+                        <span className="mm-colour-name">{d.shade || "—"}</span>
+                        {d.cut ? <span className="mm-suggest-meta">{d.cut}</span> : null}
+                      </td>
                       <td>{d.roll_no || "—"}</td>
                       <td>{d.operator || "—"}</td>
                       <td className="mm-num">{(d.net_weight ?? 0).toLocaleString()}</td>
@@ -236,10 +246,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // not the queue, where a hook per row would have been dozens of requests.
   const lotRemarks = useLotRemarks({
     lots: [program.lot],
-    lotIds: program.lot_ids?.length ? program.lot_ids : [program.lot_id],
+    lotIds: (program.lot_ids?.length ? program.lot_ids : [program.lot_id]).map((id) => ({
+      id,
+      colour: program.shade,
+    })),
   });
   const lotNotes = (program.lot_ids?.length ? program.lot_ids : [program.lot_id])
-    .flatMap((id) => lotRemarks.forLotId(id))
+    .flatMap((id) => lotRemarks.forLotId(id, program.shade))
     .concat(lotRemarks.forLot(program.lot))
     .filter((r, i, a) => a.findIndex((x) => x.name === r.name) === i);
   const inputWeight = program.input_weight ?? program.net_weight ?? 0;
@@ -309,7 +322,14 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     // box the moment the operator unticks it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [party, company, partyFlags]);
-  const [order, setOrder] = useState<string>(program.customer_order || "");
+  // BLANK by default, even when the program carries an order.
+  //
+  // It used to arrive pre-filled with the program's own order, which reads as helpful and
+  // is not: the voucher is signed off against whatever is in that box, and a value nobody
+  // chose is one the operator scrolls past. A production is often wound against a
+  // different order from the one that planned the cut, or against none at all — so the
+  // question is asked rather than answered on their behalf.
+  const [order, setOrder] = useState<string>("");
   const [size, setSize] = useState<string>(program.cut || "");
   const [showAll, setShowAll] = useState(false);
 

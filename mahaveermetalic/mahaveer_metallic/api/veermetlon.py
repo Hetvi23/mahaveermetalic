@@ -174,6 +174,47 @@ def _normalize_items(doc: dict, default_colour: str = ""):
 
 
 @frappe.whitelist()
+def _ensure_colours(names):
+	"""Add any colour a VM challan names that the catalogue does not have yet.
+
+	A challan arrives carrying the coating its rolls were run under, and that colour has to
+	exist in MM Item Master before the receipt can be filed against it — the operator was
+	stopping mid-inward to go and key it into the master by hand, then coming back and
+	fetching the challan again.
+
+	Matched loosely, on case and spacing, against what is already there: "K BCH BSM" must
+	find "K  BCH  bsm" rather than stand a second row beside it. The colour is the master's
+	IDENTITY here (MM Item Master autonames on item_name and a colour in use can never be
+	renamed — see MMItemMaster), so a duplicate created by a stray space is permanent and
+	splits the material in two.
+
+	Created as a Roll, which is what arrives on a challan.
+
+	Never fatal. A colour that cannot be created is one the operator adds themselves; taking
+	the whole fetch down over it would leave them with neither the colour nor the challan.
+	Returns the names actually created, so the screen can say what it did.
+	"""
+	made = []
+	for name in names:
+		name = (name or "").strip()
+		if not name:
+			continue
+		key = "".join(name.lower().split())
+		existing = frappe.db.sql(
+			"select name from `tabMM Item Master` where replace(lower(item_name), ' ', '') = %s limit 1",
+			(key,),
+		)
+		if existing:
+			continue
+		try:
+			doc = frappe.get_doc({"doctype": "MM Item Master", "item_name": name, "item_type": "Roll"})
+			doc.insert(ignore_permissions=True)
+			made.append(doc.name)
+		except Exception:
+			frappe.log_error(title=f"could not auto-create colour {name}")
+	return made
+
+
 def fetch_challan(challan_no: str):
 	"""Pull a VM challan + its rolls, and the open MM SOs its colours can fulfil."""
 	challan_no = (challan_no or "").strip()
@@ -196,8 +237,15 @@ def fetch_challan(challan_no: str):
 	colour_candidates = _distinct([it["color"] for it in items])
 	if doc.get("coating"):
 		colour_candidates.append(doc.get("coating"))
+	# Anything the challan actually puts on a ROLL has to be a colour in the catalogue, or
+	# the inward cannot be filed against it. The coating is deliberately NOT created: it is
+	# only a fallback candidate for matching orders and is often a heading rather than a
+	# material ("K BCH BSM (22-12-2025)"), so minting a master from it would litter the
+	# catalogue with dated one-offs that can never be renamed away.
+	created_colours = _ensure_colours(_distinct([it["color"] for it in items]))
 	matching = _matching_orders(colour_candidates)
 	return {
+		"created_colours": created_colours,
 		"challan_no": doc.get("challan_no") or challan_no,
 		"coating": doc.get("coating"),  # lot id in MM = the coating selected on the VM challan
 		"sales_order": doc.get("sales_order"),

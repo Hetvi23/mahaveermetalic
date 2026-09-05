@@ -23,7 +23,7 @@ turn a 600-row register into 2,400 round trips.
 import frappe
 
 from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
-	dispatched_weight_by_order,
+	dispatched_by_order,
 	fulfilment_state,
 	purchase_state,
 )
@@ -43,8 +43,19 @@ def _rate_range(vals):
 
 @frappe.whitelist()
 def orders_report(from_date=None, to_date=None, party=None, status=None, company=None,
-	item=None, order=None, limit=2000):
-	"""Rows + totals for the order register."""
+	item=None, order=None, purchase_status=None, limit=2000):
+	"""Rows + totals for the order register.
+
+	`status` is the ORDER's status (Complete / Incomplete — has it all gone out) and
+	`purchase_status` is the PURCHASE side (Pending / Partial / Completed — has the material
+	been bought and has it arrived). Two different questions about the same order, so they
+	filter independently: "what have I still to deliver" and "what have I still to buy" are
+	asked by different people on different days.
+
+	Both are derived per row rather than stored, so neither can be pushed into the SQL —
+	they are applied as the rows are built, and the totals therefore count what SURVIVES
+	the filter rather than what the query returned.
+	"""
 	# Approved orders only. docstatus 1 IS approval here, so this one condition drops
 	# drafts (both pending and rejected) and anything cancelled after approval — a cancel
 	# on an approved order cancels the document, taking it to docstatus 2. A cancelled
@@ -80,7 +91,7 @@ def orders_report(from_date=None, to_date=None, party=None, status=None, company
 	orders = frappe.db.sql(
 		f"""
 		select so.name, so.transaction_date, so.delivery_date, so.party, so.company_name,
-			so.ordered_weight, so.inwarded_weight, so.required_weight,
+			so.ordered_weight, so.ordered_box, so.inwarded_weight, so.required_weight,
 			so.production_completed_percent, so.completed, so.completion_mode, so.docstatus,
 			so.order_state, pm.party_name
 		from `tabMM Sales Order` so
@@ -135,13 +146,16 @@ def orders_report(from_date=None, to_date=None, party=None, status=None, company
 	# the whole register rather than twice per row.
 	tol = get_inward_match_tolerance()
 	# One query for the whole page: what has physically left against each order.
-	out_kg = dispatched_weight_by_order(names)
+	out_by = dispatched_by_order(names)
 
 	rows, t_ord, t_inw, t_req, t_out, t_pend = [], 0.0, 0.0, 0.0, 0.0, 0.0
 	for o in orders:
 		# The order's ONE status: has all of it gone out, or not yet.
-		dispatched = out_kg.get(o.name, 0.0)
-		st = fulfilment_state(o.ordered_weight, dispatched, o.completion_mode, tol)
+		went = out_by.get(o.name) or {"weight": 0.0, "box": 0.0}
+		dispatched = went["weight"]
+		# A box order is judged on boxes — see fulfilment_state.
+		st = fulfilment_state(o.ordered_weight, dispatched, o.completion_mode, tol,
+			ordered_box=o.get("ordered_box"), dispatched_box=went["box"])
 		if status and st != status:
 			continue
 		ln = lines.get(o.name, {"colours": [], "cuts": [], "p": [], "s": []})
@@ -149,6 +163,9 @@ def orders_report(from_date=None, to_date=None, party=None, status=None, company
 		ordered = float(o.ordered_weight or 0)
 		inwarded = float(o.inwarded_weight or 0)
 		required = float(o.required_weight or 0)
+		ps = purchase_state(ordered, inwarded, bool(po), tol)
+		if purchase_status and ps != purchase_status:
+			continue
 		t_ord += ordered
 		t_inw += inwarded
 		t_req += required
@@ -174,7 +191,7 @@ def orders_report(from_date=None, to_date=None, party=None, status=None, company
 			# trusts, so the figure behind it travels with it.
 			"dispatched_weight": round(dispatched, 3),
 			"pending_weight": round(max(0.0, float(ordered) - dispatched), 3),
-			"purchase_status": purchase_state(ordered, inwarded, bool(po), tol),
+			"purchase_status": ps,
 			"purchase_count": (po or {}).get("count", 0),
 			"supplier": (po or {}).get("supplier"),
 			"has_po": bool(po),
@@ -210,7 +227,7 @@ def order_summary(order):
 	"""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
 		approval_state,
-		order_dispatched_weight,
+		dispatched_by_order,
 	)
 
 	if not order or not frappe.db.exists("MM Sales Order", order):
@@ -219,7 +236,7 @@ def order_summary(order):
 	so = frappe.db.get_value(
 		"MM Sales Order",
 		order,
-		["name", "transaction_date", "delivery_date", "party", "company_name", "ordered_weight",
+		["name", "transaction_date", "delivery_date", "party", "company_name", "ordered_weight", "ordered_box",
 		 "inwarded_weight", "required_weight", "docstatus", "order_state", "completion_mode",
 		 "production_completed_percent"],
 		as_dict=True,
@@ -289,7 +306,9 @@ def order_summary(order):
 	in_total = round(sum(float(r.weight or 0) for r in inwards if not r.to_inventory), 3)
 	stock_only_total = round(sum(float(r.weight or 0) for r in inwards if r.to_inventory), 3)
 	prod_total = round(sum(float(r.net_weight or 0) for r in productions), 3)
-	out_total = order_dispatched_weight(order)
+	out_by = dispatched_by_order([order]).get(order) or {"weight": 0.0, "box": 0.0}
+	out_total = out_by["weight"]
+	out_box = out_by["box"]
 	tol = get_inward_match_tolerance()
 
 	return {
@@ -300,7 +319,13 @@ def order_summary(order):
 		"party_name": so.party_name,
 		"company": so.company_name,
 		"approval": approval_state(so.docstatus, so.order_state),
-		"status": fulfilment_state(ordered, out_total, so.completion_mode, tol),
+		"status": fulfilment_state(ordered, out_total, so.completion_mode, tol,
+			ordered_box=so.get("ordered_box"), dispatched_box=out_box),
+		# The unit this order is READ in. A box order's summary foots in boxes, because
+		# that is what was sold; its kilos are a consequence and are still carried.
+		"unit": "box" if float(so.get("ordered_box") or 0) > 0 else "weight",
+		"ordered_box": float(so.get("ordered_box") or 0),
+		"dispatched_box": out_box,
 		"completion_mode": so.completion_mode or None,
 		"items": [
 			{**it, "delivery_date": str(it.delivery_date) if it.delivery_date else None}
@@ -334,6 +359,14 @@ def order_summary(order):
 			# whether or not it belongs to the order's fulfilment.
 			"in_hand": round(in_total + stock_only_total - out_total, 3),
 			"tolerance_percent": tol,
+			# The BOX side of the same arithmetic. An order placed in boxes is judged on
+			# these (see fulfilment_state), so the summary has to be able to show the
+			# figures its verdict was actually reached on rather than the kilos beside them.
+			"ordered_box": round(float(so.get("ordered_box") or 0), 3),
+			"dispatched_box": out_box,
+			"remaining_box": round(max(0.0, float(so.get("ordered_box") or 0) - out_box), 3),
+			# A count has no variance allowance — see fulfilment_state.
+			"complete_at_box": round(float(so.get("ordered_box") or 0), 3),
 			# Below this, the order counts as delivered in full.
 			"complete_at": round(ordered * (1 - tol / 100.0), 3),
 		},

@@ -30,6 +30,7 @@ class MMSalesOrder(Document):
 	def validate(self):
 		self._guard_state()
 		self._validate_lines()
+		self._derive_box_weights()
 		self._require_weight_or_box()
 		self._compute_ordered_weight()
 		self._prevent_duplicate_order()
@@ -66,6 +67,7 @@ class MMSalesOrder(Document):
 		self._guard_post_approval_edit()
 		self._guard_purchased_lines_kept()
 		self._validate_lines()
+		self._derive_box_weights()
 		self._require_weight_or_box()
 		self._compute_ordered_weight()
 
@@ -180,6 +182,8 @@ class MMSalesOrder(Document):
 				frappe.throw(_("Row #{0}: sale rate cannot be negative.").format(it.idx))
 			if (it.purchase_rate or 0) < 0:
 				frappe.throw(_("Row #{0}: purchase rate cannot be negative.").format(it.idx))
+			if (it.get("weight_per_box") or 0) < 0:
+				frappe.throw(_("Row #{0}: weight per box cannot be negative.").format(it.idx))
 			# Size (cut) is optional; only validate the format when one is entered.
 			cut = (it.cut or "").strip()
 			if cut and re.search(r"[A-Za-z]", cut):
@@ -189,6 +193,38 @@ class MMSalesOrder(Document):
 	# on demand, for lines that are short on stock, via the "Create PO for shortfall"
 	# action (api.stock.create_purchase_order_from_so). This is the requested behaviour:
 	# no stock shortfall → no PO.
+
+	def _derive_box_weights(self):
+		"""A line ordered in BOXES gets its weight from the box, not from a second keystroke.
+
+		"25 boxes" used to be entered alongside a weight somebody had worked out on paper,
+		so the two could disagree the moment either was edited — and every ceiling
+		downstream is measured against the weight. The per-box weight is asked for instead
+		and the line weight follows from it; the weight field is read-only on the form for
+		the same reason. One number, not two that have to be kept in step by hand.
+
+		A line with no box qty is left entirely alone: plenty of material is still ordered
+		by weight, and inventing a box count for it would be worse than leaving it be.
+
+		Lines keyed BEFORE this existed carry a box qty and a typed weight and no per-box
+		figure. They keep their weight and have the per-box figure derived from it, so the
+		line becomes self-consistent without restating what the customer ordered. Only a box
+		line with no weight at all has to be told, because nothing else can supply it.
+		"""
+		for it in self.items:
+			box = float(it.qty_box or 0)
+			if box <= 0:
+				continue
+			per = float(it.get("weight_per_box") or 0)
+			if per > 0:
+				it.qty_weight = round(box * per, 3)
+			elif float(it.qty_weight or 0) > 0:
+				it.weight_per_box = round(float(it.qty_weight) / box, 3)
+			else:
+				frappe.throw(
+					_("Row #{0}: enter the weight per box — the line's weight is worked out "
+					  "from it.").format(it.idx)
+				)
 
 	def _require_weight_or_box(self):
 		"""Each line must carry a Weight or a Box quantity (at least one, both allowed)."""
@@ -210,10 +246,16 @@ class MMSalesOrder(Document):
 		return
 
 	def _compute_ordered_weight(self):
-		"""Order weight = sum of line weights. Required = ordered − already inwarded."""
+		"""Order weight = sum of line weights. Required = ordered − already inwarded.
+
+		The box count is summed the same way, because an order placed in boxes is judged
+		Complete on boxes (see `fulfilment_state`) and that figure has to be stored rather
+		than re-derived by every screen that asks.
+		"""
 		total = sum(float(i.qty_weight or 0) for i in self.items)
 		self.ordered_weight = round(total, 3)
 		self.required_weight = round(total - float(self.inwarded_weight or 0), 3)
+		self.ordered_box = round(sum(float(i.qty_box or 0) for i in self.items), 3)
 
 	def _enforce_lock_rules(self):
 		if self.is_new():
@@ -320,12 +362,15 @@ def mark_dispatched(order):
 	if not order:
 		return
 	row = frappe.db.get_value(
-		"MM Sales Order", order, ["ordered_weight", "completion_mode"], as_dict=True
+		"MM Sales Order", order, ["ordered_weight", "ordered_box", "completion_mode"], as_dict=True
 	)
 	if not row or row.completion_mode == "Force":
 		return
-	dispatched = order_dispatched_weight(order)
-	state = fulfilment_state(row.ordered_weight, dispatched, tol=get_inward_match_tolerance())
+	sent = dispatched_by_order([order]).get(order) or {"weight": 0.0, "box": 0.0}
+	state = fulfilment_state(
+		row.ordered_weight, sent["weight"], tol=get_inward_match_tolerance(),
+		ordered_box=row.get("ordered_box"), dispatched_box=sent["box"],
+	)
 	if state == "Complete":
 		frappe.db.set_value(
 			"MM Sales Order", order,
@@ -706,7 +751,8 @@ def purchase_state(ordered, inwarded, has_po=False, tol=None):
 	return "Partial"
 
 
-def fulfilment_state(ordered, dispatched, completion_mode=None, tol=None):
+def fulfilment_state(ordered, dispatched, completion_mode=None, tol=None,
+	ordered_box=0, dispatched_box=0):
 	"""Complete / Incomplete — THE order status, and the only two values it has.
 
 	Measured on what has GONE OUT, not what came in: an order is finished when challans
@@ -720,18 +766,35 @@ def fulfilment_state(ordered, dispatched, completion_mode=None, tol=None):
 	Inward-mode completion is deliberately NOT honoured here: material arriving says
 	nothing about whether the customer has had it.
 
+	AN ORDER PLACED IN BOXES IS JUDGED IN BOXES. The shop sells a colour as so many boxes,
+	and the weight of that order is worked out from the box (see `_derive_box_weights`) —
+	so measuring delivery in kg asks a question nobody placed the order in. 24 of 25 boxes
+	is what "one box short" looks like, and the kilos it happens to weigh are a consequence,
+	not the promise. Weight remains the measure for every line ordered by weight, which is
+	most of them.
+
 	`tol` lets a caller looping over a whole register read the tolerance once instead of
 	once per row — it is a raw settings query, and a 600-order report would make 600.
 	"""
 	if completion_mode in ("Force", "Dispatch"):
 		return "Complete"
+	if tol is None:
+		tol = get_inward_match_tolerance()
+	ordered_box = float(ordered_box or 0)
+	if ordered_box > 0:
+		# EXACTLY the boxes ordered — the tolerance does not apply to a count.
+		#
+		# The variance allowance exists because weight is measured: 597 kg against 600 is
+		# the same delivery, weighed on a different scale on a different day. A box is
+		# counted, and 24 of 25 is not 25 by any tolerance — it is one box the customer
+		# has paid for and not received. Letting the weight allowance run on a box order
+		# would close it two boxes short and bill it as delivered.
+		return "Complete" if float(dispatched_box or 0) >= ordered_box else "Incomplete"
 	ordered = float(ordered or 0)
 	dispatched = float(dispatched or 0)
 	if ordered <= 0:
-		# A box-only order has no weight to measure against; anything sent out closes it.
+		# Neither a weight nor a box target: anything sent out closes it.
 		return "Complete" if dispatched > 0 else "Incomplete"
-	if tol is None:
-		tol = get_inward_match_tolerance()
 	return "Complete" if dispatched >= ordered * (1 - tol / 100.0) else "Incomplete"
 
 
@@ -754,19 +817,22 @@ def approval_state(docstatus, order_state=None):
 	return "Accepted" if docstatus == 1 or order_state == "Approved" else "Pending"
 
 
-def dispatched_weight_by_order(orders):
-	"""How many kg have gone out on submitted challans, per order.
+def dispatched_by_order(orders):
+	"""What has gone out on submitted challans, per order — kilos AND boxes.
 
-	The order status is decided on this figure, so it is summed the same way the dispatch
-	CHECK below decides membership: job challans send material to a worker and fulfil
-	nothing, and a challan line naming its own order wins over the header's.
+	The order status is decided on these figures, so they are summed the same way the
+	dispatch CHECK below decides membership: job challans send material to a worker and
+	fulfil nothing, and a challan line naming its own order wins over the header's.
+
+	Boxes are carried alongside the weight because an order placed in boxes is closed on
+	boxes; one query answers both rather than the register making a second pass.
 	"""
 	if not orders:
 		return {}
 	rows = frappe.db.sql(
 		"""
 		select coalesce(nullif(ci.sales_order, ''), c.sales_order) as so,
-			coalesce(sum(ci.weight), 0) as wt
+			coalesce(sum(ci.weight), 0) as wt, coalesce(sum(ci.qty_box), 0) as box
 		from `tabMM Sales Challan` c
 		join `tabMM Sales Challan Item` ci on ci.parent = c.name
 		where c.docstatus = 1
@@ -777,7 +843,20 @@ def dispatched_weight_by_order(orders):
 		{"o": tuple(orders)},
 		as_dict=True,
 	)
-	return {r.so: round(float(r.wt or 0), 3) for r in rows if r.so}
+	return {
+		r.so: {"weight": round(float(r.wt or 0), 3), "box": round(float(r.box or 0), 3)}
+		for r in rows if r.so
+	}
+
+
+def dispatched_weight_by_order(orders):
+	"""Just the kilos, for callers that only ask about weight."""
+	return {k: v["weight"] for k, v in dispatched_by_order(orders).items()}
+
+
+def dispatched_box_by_order(orders):
+	"""Just the boxes."""
+	return {k: v["box"] for k, v in dispatched_by_order(orders).items()}
 
 
 def order_dispatched_weight(order) -> float:
@@ -818,8 +897,8 @@ def order_states(orders=None):
 		"MM Sales Order",
 		filters=filters,
 		fields=[
-			"name", "ordered_weight", "inwarded_weight", "docstatus", "order_state",
-			"completed", "completion_mode",
+			"name", "ordered_weight", "ordered_box", "inwarded_weight", "docstatus",
+			"order_state", "completed", "completion_mode",
 		],
 		limit_page_length=0,
 	)
@@ -835,7 +914,7 @@ def order_states(orders=None):
 		if p.sales_order
 	}
 	dispatched = orders_with_dispatch(names)
-	out_kg = dispatched_weight_by_order(names)
+	out_by = dispatched_by_order(names)
 	# Whether anything has been RECEIVED against the order — one grouped query for the whole
 	# list, because it is now what decides editability and the screen has to agree with the
 	# server about it rather than guessing from a netted weight (a goods return can take
@@ -864,8 +943,13 @@ def order_states(orders=None):
 			# Where the order stands with the admin — the list's status column.
 			"approval": approval_state(r.docstatus, r.order_state),
 			# The order status proper: has all of it gone out to the customer?
-			"fulfilment": fulfilment_state(r.ordered_weight, out_kg.get(r.name, 0), r.completion_mode, tol),
-			"dispatched_weight": out_kg.get(r.name, 0),
+			"fulfilment": fulfilment_state(
+				r.ordered_weight, (out_by.get(r.name) or {}).get("weight", 0), r.completion_mode, tol,
+				ordered_box=r.ordered_box, dispatched_box=(out_by.get(r.name) or {}).get("box", 0),
+			),
+			"dispatched_weight": (out_by.get(r.name) or {}).get("weight", 0),
+			"dispatched_box": (out_by.get(r.name) or {}).get("box", 0),
+			"ordered_box": r.ordered_box or 0,
 			# Receipt, not approval, is what closes an order to editing now.
 			"has_inward": r.name in with_inward,
 			# A challan against the order is the whole test: the goods have gone out.
@@ -915,7 +999,8 @@ def save_order(sales_order, header=None, items=None):
 
 	# Only the fields the Orders screen owns. Everything else on the document — the state,
 	# the counters, the completion — is derived, and a client must not be able to post over it.
-	for field in ("transaction_date", "delivery_date", "party", "company_name"):
+	for field in ("transaction_date", "delivery_date", "party", "company_name",
+		"enforce_purchase_multiple"):
 		if header and field in header:
 			doc.set(field, header.get(field))
 
