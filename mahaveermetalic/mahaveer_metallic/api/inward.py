@@ -3,6 +3,7 @@
 """Inward posting helpers."""
 
 import json
+import re
 
 import frappe
 from frappe import _
@@ -1122,9 +1123,12 @@ def _row_with_parent(row):
 		"""
 		select ii.name, ii.parent, ii.idx, ii.cutting, ii.cut_status, ii.customer_order,
 			ii.challan_number, ii.weight, ii.qty_box, ii.color_name, ii.roll_name,
+			ii.cut, ii.lot, ii.lot_number,
 			ii.supplier, ifnull(ii.to_inventory, 0) as to_inventory,
 			i.docstatus, ifnull(i.is_gr, 0) as is_gr, ifnull(i.gr_returned, 0) as gr_returned,
-			i.sales_order as header_order, i.challan_number as header_challan
+			i.sales_order as header_order, i.challan_number as header_challan,
+			i.location, i.branch, i.posting_date, i.item_type,
+			i.lot_number as header_lot
 		from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
 		where ii.name = %s
 		""",
@@ -1205,31 +1209,151 @@ def _resync_inward_order(inward):
 	)
 
 
+
+def _refile_row_stock(r, *, colour, lot_number, roll, weight, box):
+	"""Move this roll's contribution in MM Roll Inventory when it is corrected.
+
+	The receipt posted the roll into a row keyed (location, branch, lot, colour, roll), and
+	every picker on the floor reads those rows. So changing the roll's colour, its number,
+	its lot or its weight is not a change to a line of text — the stock has to move with it.
+	Writing the new figures onto the child row alone would leave the register saying one
+	thing and the shop's stock another, which is the disagreement the whole register exists
+	to prevent.
+
+	Same key, new amounts  -> adjust that row by the difference.
+	New key                -> take the whole of the old amount off the old row and put the
+	                          new amount on the new one, creating it if this is the first
+	                          roll to land there.
+
+	Refuses rather than inventing negative stock: material that has already been cut or
+	dispatched is no longer this row's to move, and the roll-inventory guard would only say
+	"available stock cannot be negative", which names neither the roll nor the remedy.
+	"""
+	from mahaveermetalic.mahaveer_metallic import stock_ledger
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_inward.mm_inward import find_roll_row
+
+	old_lot = r.lot_number or r.header_lot
+	same_key = (
+		(colour or "") == (r.color_name or "")
+		and (roll or "") == (r.roll_name or "")
+		and (lot_number or "") == (old_lot or "")
+	)
+	d_w = round(float(weight) - float(r.weight or 0), 3)
+	d_b = round(float(box) - float(r.qty_box or 0), 3)
+	if same_key and not d_w and not d_b:
+		return
+
+	def _row(colour_, lot_, roll_, legacy=False):
+		"""`legacy` widens the match to the pre-roll key, and is for finding where stock
+		ALREADY WENT — never for deciding where it should land. Used on the destination it
+		hands back the old row itself, so the move subtracts the weight and adds it straight
+		back to the same place: the rename appears to work and the stock never moves."""
+		name = find_roll_row(r.location, r.branch, colour_, lot_, roll_, allow_legacy=legacy)
+		return frappe.get_doc("MM Roll Inventory", name) if name else None
+
+	def _post(doc, in_w, out_w, in_b, out_b, note):
+		stock_ledger.post_movement(
+			voucher_type="Adjustment", voucher_no=r.parent, branch=r.branch,
+			location=r.location, lot_number=doc.lot_number, color_name=doc.color_name,
+			roll_no=doc.roll_no, item_type=r.item_type,
+			in_weight=in_w, out_weight=out_w, in_box=in_b, out_box=out_b,
+			balance_weight=doc.stock_weight, balance_box=doc.stock_box,
+			customer_order=r.customer_order, challan_number=r.challan_number,
+			remarks=note,
+		)
+
+	def _take(doc, w, b, what):
+		"""Remove w/b from doc, refusing to go below what is actually there."""
+		have_w, have_b = float(doc.stock_weight or 0), float(doc.stock_box or 0)
+		if round(have_w - w, 3) < 0 or round(have_b - b, 3) < 0:
+			frappe.throw(
+				_("Only {0} kg / {1} box of {2} is still in stock, so this roll can no longer "
+				  "be corrected to {3}. Some of it has been cut or dispatched — reverse that "
+				  "first.").format(round(have_w, 3), round(have_b, 3), what,
+					f"{round(weight, 3)} kg / {round(box, 3)} box")
+			)
+		doc.stock_weight = round(have_w - w, 3)
+		doc.stock_box = round(have_b - b, 3)
+		doc.save(ignore_permissions=True)
+
+	if same_key:
+		doc = _row(r.color_name, old_lot, r.roll_name, legacy=True)
+		if not doc:
+			frappe.throw(
+				_("No stock row for {0} / lot {1} — this roll's stock has already been moved "
+				  "or reversed, so it cannot be corrected here.").format(
+					r.color_name or "—", old_lot or "—")
+			)
+		if d_w < 0 or d_b < 0:
+			_take(doc, max(0.0, -d_w), max(0.0, -d_b), f"{r.color_name} / {old_lot or '—'}")
+		else:
+			doc.stock_weight = round(float(doc.stock_weight or 0) + max(0.0, d_w), 3)
+			doc.stock_box = round(float(doc.stock_box or 0) + max(0.0, d_b), 3)
+			doc.save(ignore_permissions=True)
+		_post(doc, max(0.0, d_w), max(0.0, -d_w), max(0.0, d_b), max(0.0, -d_b),
+			_("Inward corrected"))
+		return
+
+	# The key itself moved: unwind the old contribution, then lay down the new one.
+	src = _row(r.color_name, old_lot, r.roll_name, legacy=True)
+	if not src:
+		frappe.throw(
+			_("No stock row for {0} / lot {1} — this roll's stock has already been moved or "
+			  "reversed, so it cannot be corrected here.").format(
+				r.color_name or "—", old_lot or "—")
+		)
+	_take(src, float(r.weight or 0), float(r.qty_box or 0), f"{r.color_name} / {old_lot or '—'}")
+	_post(src, 0, float(r.weight or 0), 0, float(r.qty_box or 0), _("Corrected off this roll"))
+
+	dst = _row(colour, lot_number, roll)
+	if dst:
+		dst.stock_weight = round(float(dst.stock_weight or 0) + float(weight), 3)
+		dst.stock_box = round(float(dst.stock_box or 0) + float(box), 3)
+		dst.save(ignore_permissions=True)
+	else:
+		dst = frappe.get_doc({
+			"doctype": "MM Roll Inventory", "roll_no": roll, "lot_number": lot_number,
+			"branch": r.branch, "location": r.location, "supplier": r.supplier,
+			"color_name": colour, "item_type": r.item_type,
+			"stock_weight": float(weight), "stock_box": float(box),
+		})
+		dst.insert(ignore_permissions=True)
+	_post(dst, float(weight), 0, float(box), 0, _("Corrected onto this roll"))
+
+
 @frappe.whitelist()
-def correct_inward_roll(row, challan_no=None, sales_order=None):
-	"""Correct one received roll: the challan it came on, the order it is for, or both.
+def correct_inward_roll(row, challan_no=None, sales_order=None, supplier=None, cut=None,
+		roll_name=None, color_name=None, weight=None, qty_box=None, posting_date=None):
+	"""Correct one received roll — any of it, after the fact.
 
-	Two different scopes on purpose, and they are not a slip:
+	SCOPE IS PER FIELD, and the split is not a slip:
 
-	  · ORDER is per ROLL. A lot arrives as many rolls and they do not all have to serve
-	    the same customer — allocating them one at a time is the whole point of a roll-wise
-	    register.
+	  · PER ROLL — the order it is for, the supplier it came from, its number, its size and
+	    its colour. A lot arrives as many rolls and they do not all have to be the same
+	    thing; correcting them one at a time is the whole point of a roll-wise register.
 
-	  · CHALLAN NUMBER is per INWARD. A challan number is a property of the delivery, not
-	    of one roll on it: half-renaming it would leave one receipt claiming to be two
-	    challans, and the receipt ceiling (_prior_receipt / challan_closed_by) is computed
-	    per challan, so a split number would be measured against the wrong one. So the
-	    correction lands on the header and on every row of the receipt — including any that
-	    have already been cut, because a paper reference on a consumed roll is still that
-	    roll's paper reference and leaving it stale is worse than moving it.
+	  · PER INWARD — the challan number and the receipt date. Both are properties of the
+	    DELIVERY, not of one roll on it. Half-renaming a challan would leave one receipt
+	    claiming to be two, and the receipt ceiling (_prior_receipt / challan_closed_by) is
+	    computed per challan, so a split number would be measured against the wrong one.
+	    They land on the header and on every row — including rows already cut, because a
+	    paper reference on a consumed roll is still that roll's reference and leaving it
+	    stale is worse than moving it.
 
-	Pass `sales_order=""` to take the roll OFF its order and leave it unallocated; omit the
-	argument entirely to leave the order alone. The same distinction applies to `challan_no`.
+	THE ORDER OWNS THE COLOUR. An order is placed for a named colour, so material received
+	against it IS that colour by definition — changing it would not correct anything, it
+	would file the receipt against an order that never asked for it. So the colour may only
+	be corrected on a roll that is on NO order; clear the order first if it is genuinely the
+	wrong colour. This is the same rule the entry grid enforces by locking the field.
 
-	The lot is deliberately NOT re-stamped when the challan number changes. A lot is keyed
-	(challan, colour) and is REUSED across receipts — resolve_lot hands the same lot back
-	when a challan is entered again — so rewriting it from one inward's correction would
-	relabel material that came in on other receipts too.
+	STOCK MOVES WITH THE CORRECTION. Colour, roll number and the two quantities are all part
+	of what the shop has on the floor, so `_refile_row_stock` moves the material rather than
+	just rewriting the line — and refuses when the stock has already been cut or dispatched
+	away. A colour change also re-points the LOT, because a lot is keyed (challan, colour)
+	and one that disagreed with its own row's colour would file this roll's history, and its
+	remarks, under material it is not.
+
+	Pass "" to clear a field, omit the argument to leave it alone.
 	"""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
 		assert_order_submitted,
@@ -1238,43 +1362,117 @@ def correct_inward_roll(row, challan_no=None, sales_order=None):
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_purchase_order.mm_purchase_order import (
 		recompute_po_status_for_order,
 	)
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot import resolve_lot
 
 	r = _assert_row_correctable(_row_with_parent(row))
 	changed = {}
 	affected_orders = set()
+	row_fields = {}
+
+	def _txt(v):
+		return (v or "").strip() or None
+
+	# ── What this roll ends up being. Resolved first, together, because the ceiling and
+	#    the stock move both need the FINAL shape, not one field at a time.
+	new_order = _txt(sales_order) if sales_order is not None else (r.customer_order or None)
+	new_colour = _txt(color_name) if color_name is not None else (r.color_name or None)
+	new_roll = (roll_name.strip() if roll_name is not None else (r.roll_name or "")) or ""
+	new_weight = round(float(weight), 3) if weight not in (None, "") else float(r.weight or 0)
+	new_box = round(float(qty_box), 3) if qty_box not in (None, "") else float(r.qty_box or 0)
+
+	if new_weight < 0 or new_box < 0:
+		frappe.throw(_("Weight and box cannot be negative."))
+	if not new_colour:
+		frappe.throw(_("A roll has to have a colour."))
+	if new_weight <= 0 and new_box <= 0:
+		frappe.throw(_("Enter a weight or a box quantity for this roll."))
+
+	# ── The order owns the colour ──
+	colour_moved = (new_colour or "") != (r.color_name or "")
+	if colour_moved and new_order:
+		frappe.throw(
+			_("Order {0} is for {1}, so this roll's colour can't be changed while it is on "
+			  "that order. Clear the order first if the colour is genuinely wrong.").format(
+				new_order, r.color_name or "—")
+		)
 
 	# ── The order this roll is for (this row only) ──
-	if sales_order is not None:
-		want = (sales_order or "").strip() or None
-		if want != (r.customer_order or None):
-			if want:
-				if not frappe.db.exists("MM Sales Order", want):
-					frappe.throw(_("Sales Order {0} not found.").format(want))
-				assert_order_submitted(want)
-				_assert_order_has_room(
-					want,
-					0 if r.to_inventory else r.weight,
-					0 if r.to_inventory else r.qty_box,
-					exclude_row=r.name,
-				)
-			if r.customer_order:
-				affected_orders.add(r.customer_order)
-			frappe.db.set_value("MM Inward Item", r.name, "customer_order", want, update_modified=False)
-			if want:
-				affected_orders.add(want)
-			changed["customer_order"] = want
-			# THE HEADER IS A SUMMARY OF THE ROWS, NOT A STAMP. post_inward writes it only
-			# when the whole receipt is for one order, and every reader treats it as the
-			# fallback for a row that names none — inward_report resolves an order as
-			# coalesce(row.customer_order, header.sales_order). Leaving it behind after a
-			# correction is not a stale field, it is a wrong answer: a roll taken OFF its
-			# order went on being listed under it, because the reader fell through to a
-			# header that still claimed it. Re-derived from the rows, on the same rule.
-			_resync_inward_order(r.parent)
+	if sales_order is not None and new_order != (r.customer_order or None):
+		if new_order:
+			if not frappe.db.exists("MM Sales Order", new_order):
+				frappe.throw(_("Sales Order {0} not found.").format(new_order))
+			assert_order_submitted(new_order)
+		if r.customer_order:
+			affected_orders.add(r.customer_order)
+		if new_order:
+			affected_orders.add(new_order)
+		row_fields["customer_order"] = new_order
+		changed["customer_order"] = new_order
+
+	# ── The ceiling, measured on what the roll is ABOUT to be, against the order it is
+	#    about to be on. Stock-only rows fulfil nothing and are never measured.
+	if new_order and not r.to_inventory:
+		_assert_order_has_room(new_order, new_weight, new_box, exclude_row=r.name)
+	elif r.customer_order and not r.to_inventory and (new_weight, new_box) != (
+		float(r.weight or 0), float(r.qty_box or 0)
+	):
+		_assert_order_has_room(r.customer_order, new_weight, new_box, exclude_row=r.name)
+		affected_orders.add(r.customer_order)
+
+	# ── A new colour needs the lot that belongs to it ──
+	new_lot_name, new_lot_id = r.lot, (r.lot_number or r.header_lot)
+	if colour_moved:
+		res = resolve_lot(
+			color=new_colour,
+			challan_number=_txt(r.challan_number or r.header_challan),
+			posting_date=r.posting_date,
+		)
+		new_lot_name, new_lot_id = res["lot"], res["lot_id"]
+		row_fields["lot"], row_fields["lot_number"] = new_lot_name, new_lot_id
+		changed["lot"] = new_lot_id
+
+	# ── Move the material, then write the line ──
+	_refile_row_stock(r, colour=new_colour, lot_number=new_lot_id, roll=new_roll,
+		weight=new_weight, box=new_box)
+
+	if colour_moved:
+		row_fields["color_name"] = new_colour
+		changed["color_name"] = new_colour
+	if roll_name is not None and new_roll != (r.roll_name or ""):
+		row_fields["roll_name"] = new_roll or None
+		changed["roll_name"] = new_roll or "—"
+	if weight is not None and new_weight != float(r.weight or 0):
+		row_fields["weight"] = new_weight
+		changed["weight"] = new_weight
+	if qty_box is not None and new_box != float(r.qty_box or 0):
+		row_fields["qty_box"] = new_box
+		changed["qty_box"] = new_box
+	if supplier is not None and _txt(supplier) != (r.supplier or None):
+		want = _txt(supplier)
+		if want and not frappe.db.exists("MM Vendor Master", want):
+			frappe.throw(_("Supplier {0} not found.").format(want))
+		row_fields["supplier"] = want
+		changed["supplier"] = want
+	if cut is not None and _txt(cut) != (r.cut or None):
+		want = _txt(cut)
+		if want and re.search(r"[A-Za-z]", want):
+			frappe.throw(_("Size must not contain letters (digits only, e.g. 50/85)."))
+		row_fields["cut"] = want
+		changed["cut"] = want
+
+	if row_fields:
+		frappe.db.set_value("MM Inward Item", r.name, row_fields, update_modified=False)
+	if "customer_order" in row_fields:
+		# THE HEADER IS A SUMMARY OF THE ROWS, NOT A STAMP — see _resync_inward_order.
+		_resync_inward_order(r.parent)
+	if r.customer_order and not affected_orders and (
+		"weight" in row_fields or "qty_box" in row_fields
+	):
+		affected_orders.add(r.customer_order)
 
 	# ── The challan this receipt came in on (the whole inward) ──
 	if challan_no is not None:
-		want = (challan_no or "").strip() or None
+		want = _txt(challan_no)
 		current = (r.challan_number or r.header_challan or None)
 		if want != current:
 			if want:
@@ -1293,6 +1491,13 @@ def correct_inward_roll(row, challan_no=None, sales_order=None):
 			)
 			frappe.db.set_value("MM Inward", r.parent, "challan_number", want, update_modified=False)
 			changed["challan_number"] = want
+
+	# ── The date the receipt came in on (the whole inward, same reasoning) ──
+	if posting_date is not None:
+		want = _txt(posting_date)
+		if want and str(want) != str(r.posting_date):
+			frappe.db.set_value("MM Inward", r.parent, "posting_date", want, update_modified=False)
+			changed["posting_date"] = want
 
 	if not changed:
 		return {"row": r.name, "inward": r.parent, "changed": {}}

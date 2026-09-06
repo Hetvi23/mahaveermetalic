@@ -10,6 +10,39 @@ from frappe.model.document import Document
 _ORDER_RECEIPT_TOLERANCE = 0.5
 
 
+
+def find_roll_row(location, branch, color_name, lot_number, roll_name=None, allow_legacy=False):
+	"""The MM Roll Inventory row holding ONE roll — the key stock is actually kept under.
+
+	Module-level, not a method, because two places need it now: the receipt posting its
+	rolls in, and the correction path re-filing a roll whose weight, number or colour has
+	been changed after the fact. A correction that could not find the row a receipt wrote
+	to would silently strand the stock it was trying to move.
+
+	`allow_legacy` widens the match back to the pre-roll key (branch, location, lot,
+	colour), and is used ONLY when reversing — a return or a cancellation of an inward
+	posted before the roll joined the key has to find the merged row it really went into.
+	Receiving never sets it, or the merge would simply happen again.
+	"""
+	candidates = frappe.get_all(
+		"MM Roll Inventory",
+		filters={"location": location, "color_name": color_name},
+		fields=["name", "branch", "lot_number", "roll_no"],
+	)
+	# Empty Link/Data fields are stored as NULL, so compare in Python to avoid
+	# ''-vs-NULL mismatches.
+	same_lot = [
+		c for c in candidates
+		if (c.branch or "") == (branch or "") and (c.lot_number or "") == (lot_number or "")
+	]
+	for c in same_lot:
+		if (c.roll_no or "") == (roll_name or ""):
+			return c.name
+	if allow_legacy and same_lot:
+		return same_lot[0].name
+	return None
+
+
 def assert_order_room(order, add_weight, add_box, *, exclude_inward=None, exclude_row=None):
 	"""Refuse a receipt that takes an order past what it asked for — in EITHER dimension.
 
@@ -506,40 +539,10 @@ class MMInward(Document):
 			recompute_po_status_for_order(order)
 
 	def _find_roll(self, color_name, lot_number, roll_name=None, allow_legacy=False):
-		"""Match the Roll Inventory row for ONE ROLL.
-
-		The key used to be (branch, location, lot_number, color_name) — the ROLL was not
-		part of it. So the second roll of a lot was added into the first roll's row, and
-		the third into the same one again: a lot received as five rolls of 242 kg became a
-		single stock row of 1,210 kg carrying the first roll's name. Everything that picks
-		stock reads these rows, so Cutting and the Sales Voucher could only ever offer the
-		whole lot — "select rolls" listed one line, and a single roll could not be cut or
-		sold on its own.
-
-		The roll is part of the key now, so each one keeps its own row and its own weight.
-
-		`allow_legacy` widens the match back to the old key, and is used ONLY when
-		reversing — a goods return or a cancellation of an inward posted before this
-		change has to find the merged row it actually went into. Receiving never sets it,
-		or the merge would simply happen again.
-		"""
-		candidates = frappe.get_all(
-			"MM Roll Inventory",
-			filters={"location": self.location, "color_name": color_name},
-			fields=["name", "branch", "lot_number", "roll_no"],
+		return find_roll_row(
+			self.location, self.branch, color_name, lot_number, roll_name, allow_legacy
 		)
-		# Empty Link/Data fields are stored as NULL, so compare in Python to avoid
-		# ''-vs-NULL mismatches.
-		same_lot = [
-			c for c in candidates
-			if (c.branch or "") == (self.branch or "") and (c.lot_number or "") == (lot_number or "")
-		]
-		for c in same_lot:
-			if (c.roll_no or "") == (roll_name or ""):
-				return c.name
-		if allow_legacy and same_lot:
-			return same_lot[0].name
-		return None
+
 
 	def _apply_to_roll_inventory(self, sign: int):
 		from mahaveermetalic.mahaveer_metallic import stock_ledger

@@ -143,15 +143,30 @@ export default function InwardReportPage() {
   const { call: cancelCall, loading: cancelling } = useFrappePostCall<{ message: { inward: string } }>(
     `${INWARD}.cancel_inward`,
   );
+  // The two link cells the editor offers. Loaded once for the screen, not per row.
+  const vendors = useFrappeGetDocList<{ name: string }>("MM Vendor Master", { fields: ["name"], limit: 0 });
+  const colours = useFrappeGetDocList<{ name: string }>("MM Item Master", { fields: ["name"], limit: 0 });
 
   // Which roll is being corrected, and what it is being corrected to. One row at a time:
   // the edit is two fields on a line the operator is already looking at, not a form.
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ challan_no: "", customer_order: "" });
+  const [draft, setDraft] = useState({
+    challan_no: "", chalan_date: "", supplier: "", customer_order: "",
+    item: "", roll_name: "", qty_box: "", weight: "",
+  });
 
   function startEdit(r: Row) {
     setEditing(r.row_id);
-    setDraft({ challan_no: r.challan_no ?? "", customer_order: r.customer_order ?? "" });
+    setDraft({
+      challan_no: r.challan_no ?? "",
+      chalan_date: r.chalan_date ?? "",
+      supplier: r.supplier ?? "",
+      customer_order: r.customer_order ?? "",
+      item: r.item ?? "",
+      roll_name: r.roll_name ?? "",
+      qty_box: String(r.qty_box ?? ""),
+      weight: String(r.weight ?? ""),
+    });
   }
 
   async function saveEdit(r: Row) {
@@ -159,15 +174,24 @@ export default function InwardReportPage() {
       const res = await correctCall({
         row: r.row_id,
         challan_no: draft.challan_no.trim(),
+        posting_date: draft.chalan_date,
+        supplier: draft.supplier,
         sales_order: draft.customer_order,
+        // The colour is only ever sent for a roll that is on NO order — the order owns it.
+        // Sending it unchanged would be harmless, but sending it at all on an ordered roll
+        // invites the server's refusal for a field the operator could not even edit.
+        ...(draft.customer_order ? {} : { color_name: draft.item }),
+        roll_name: draft.roll_name,
+        qty_box: draft.qty_box,
+        weight: draft.weight,
       });
       const changed = Object.keys(res?.message?.changed ?? {});
       setEditing(null);
       await mutate();
       toast(
         changed.length
-          ? changed.includes("challan_number")
-            ? "Roll corrected — the challan number moved on every roll of this receipt"
+          ? changed.some((k) => k === "challan_number" || k === "posting_date")
+            ? "Roll corrected — the challan details moved on every roll of this receipt"
             : "Roll corrected"
           : "Nothing changed",
       );
@@ -409,8 +433,24 @@ export default function InwardReportPage() {
                         r.challan_no || "—"
                       )}
                     </td>
-                    <td className="mm-ow-cell-date">{r.chalan_date || "—"}</td>
-                    <td>{r.supplier || <span className="mm-muted">—</span>}</td>
+                    <td className="mm-ow-cell-date">
+                      {onEdit ? (
+                        <input className="mm-input mm-input-compact" type="date" value={draft.chalan_date}
+                          title="Applies to every roll on this receipt"
+                          onChange={(e) => setDraft((d) => ({ ...d, chalan_date: e.target.value }))} />
+                      ) : (
+                        r.chalan_date || "—"
+                      )}
+                    </td>
+                    <td>
+                      {onEdit ? (
+                        <SearchSelect value={draft.supplier} placeholder="— no supplier —" compact
+                          options={(vendors.data ?? []).map((v) => ({ value: v.name, label: v.name }))}
+                          onChange={(v) => setDraft((d) => ({ ...d, supplier: v }))} />
+                      ) : (
+                        r.supplier || <span className="mm-muted">—</span>
+                      )}
+                    </td>
                     <td>
                       {onEdit ? (
                         <SearchSelect value={draft.customer_order} placeholder="— no order —" compact
@@ -423,7 +463,21 @@ export default function InwardReportPage() {
                       )}
                     </td>
                     <td>
-                      <span className="mm-colour-name">{r.item || "—"}</span>
+                      {onEdit && !draft.customer_order ? (
+                        /* THE ORDER OWNS THE COLOUR. An order is placed for a named colour,
+                           so material received against it IS that colour — editing it here
+                           would not correct anything, it would file the receipt against an
+                           order that never asked for it. Editable again the moment the
+                           order is cleared, which is the same rule the entry grid enforces
+                           by locking the field. */
+                        <SearchSelect value={draft.item} placeholder="— colour —" compact
+                          options={(colours.data ?? []).map((c) => ({ value: c.name, label: c.name }))}
+                          onChange={(v) => setDraft((d) => ({ ...d, item: v }))} />
+                      ) : (
+                      <>
+                      <span className="mm-colour-name" title={onEdit ? "From the order — clear the order to change the colour" : undefined}>
+                        {onEdit ? draft.item || "—" : r.item || "—"}
+                      </span>
                       {r.is_gr ? (
                         <span className="mm-irep-gr" title={r.gr_reason || "Goods return — posted back out of stock"}>GR</span>
                       ) : r.gr_returned ? (
@@ -431,15 +485,45 @@ export default function InwardReportPage() {
                       ) : null}
                       {r.job_work ? <span className="mm-irep-jw" title="Job work — the customer's own material">JW</span> : null}
                       {r.cut ? <span className="mm-suggest-meta">{r.cut}</span> : null}
+                      </>
+                      )}
                     </td>
                     {/* Lot rides under the roll rather than taking a column of its own —
                         they identify the same physical thing, and the register has to fit. */}
                     <td>
-                      {r.roll_name || <span className="mm-muted">—</span>}
+                      {onEdit ? (
+                        <input className="mm-input mm-input-compact" value={draft.roll_name}
+                          placeholder="Roll"
+                          onChange={(e) => setDraft((d) => ({ ...d, roll_name: e.target.value }))} />
+                      ) : (
+                        r.roll_name || <span className="mm-muted">—</span>
+                      )}
                       {r.lot_number ? <span className="mm-suggest-meta">{r.lot_number}</span> : null}
                     </td>
-                    <td className="mm-num">{(r.qty_box ?? 0).toLocaleString()}</td>
-                    <td className="mm-num">{kg(r.weight)}</td>
+                    {/* Text inputs, not number ones: `input[type=number]` empties itself on
+                        anything that is not a valid float — "0." among them — so the dot of
+                        "0.5" cleared the box. Same reasoning as FieldInputs. */}
+                    <td className="mm-num">
+                      {onEdit ? (
+                        <input className="mm-input mm-input-compact mm-num" inputMode="decimal"
+                          value={draft.qty_box}
+                          onChange={(e) => { const v = e.target.value;
+                            if (v === "" || /^\d*\.?\d*$/.test(v)) setDraft((d) => ({ ...d, qty_box: v })); }} />
+                      ) : (
+                        (r.qty_box ?? 0).toLocaleString()
+                      )}
+                    </td>
+                    <td className="mm-num">
+                      {onEdit ? (
+                        <input className="mm-input mm-input-compact mm-num" inputMode="decimal"
+                          value={draft.weight}
+                          onChange={(e) => { const v = e.target.value;
+                            if (v === "" || /^\d*\.?\d*$/.test(v)) setDraft((d) => ({ ...d, weight: v })); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") void saveEdit(r); if (e.key === "Escape") setEditing(null); }} />
+                      ) : (
+                        kg(r.weight)
+                      )}
+                    </td>
                     <td className="mm-no-print">
                         <div className="mm-irep-acts" title={r.inward}>
                           {/* The receipt's own state, and the admin override of it, belong to

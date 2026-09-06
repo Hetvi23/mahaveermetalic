@@ -137,7 +137,13 @@ export default function ProductionScreen() {
                 <div key={p.name} className="mm-pick-row" onClick={() => setProducing(p)}>
                   <div style={{ flex: 1 }}>
                     <div>
-                      <strong>{p.roll_no || p.shade || "—"}</strong> · {p.cut || "—"}{p.party ? ` · ${p.party}` : ""}
+                      {/* COLOUR first, and always. It used to be `roll_no || shade`, so the
+                          moment a roll carried a number the colour vanished — and the queue
+                          reads "1 · 50/85 · Dhruv Singapuri", which names the roll, the cut
+                          and the customer but not the material being wound. */}
+                      <strong className="mm-colour-name">{p.shade || "—"}</strong>
+                      {p.roll_no ? <span className="mm-suggest-meta">roll {p.roll_no}</span> : null}
+                      {" · "}{p.cut || "—"}{p.party ? ` · ${p.party}` : ""}
                       {p.lot_id ? <span className="mm-prod-lot" title={`Lot ${p.lot_id} — from the patty this program took`}>{p.lot_id}</span> : null}
                       {/* Why an earlier program on this lot stopped short — read before winding
                           it, not after. The row is clickable; the badge stops its own clicks. */}
