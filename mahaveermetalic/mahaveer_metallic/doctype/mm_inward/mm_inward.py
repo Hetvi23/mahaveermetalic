@@ -10,6 +10,72 @@ from frappe.model.document import Document
 _ORDER_RECEIPT_TOLERANCE = 0.5
 
 
+def assert_order_room(order, add_weight, add_box, *, exclude_inward=None, exclude_row=None):
+	"""Refuse a receipt that takes an order past what it asked for — in EITHER dimension.
+
+	An order carries a weight target, a box target, or both: a box line derives a weight
+	(MMSalesOrder._derive_box_weights), and an order may mix box lines with weight-only
+	ones. Measuring only ONE of them leaves the other completely unbounded, and that is not
+	theoretical — capping a box order in boxes alone let a roll carrying weight and NO box
+	count through unmeasured, and 20,060 kg went onto a 200 kg order with its required
+	weight at -19,860. A negative requirement is the exact symptom this guard exists to
+	prevent, arrived at through the guard itself.
+
+	So each dimension is measured against its own target, independently, and the receipt
+	has to clear both. A dimension the order set no target in is not a ceiling — a
+	weight-only order is never capped on boxes.
+
+	ONE function, two callers: the door (MMInward.validate, on a whole document) and the
+	correction path (api.inward.correct_inward_roll, on a single row moved after the fact).
+	They were separate copies and promptly disagreed about which dimension an order is kept
+	in, which is the only reason the hole above existed. `exclude_inward` / `exclude_row`
+	is what each caller leaves out of the running total so its own figures are not counted
+	twice.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+		get_inward_over_tolerance,
+	)
+
+	so = frappe.db.get_value(
+		"MM Sales Order", order, ["ordered_weight", "ordered_box"], as_dict=True
+	) or {}
+	cond, params = "", {"o": order}
+	if exclude_inward:
+		cond, params["x"] = "and i.name != %(x)s", exclude_inward
+	elif exclude_row:
+		cond, params["x"] = "and ii.name != %(x)s", exclude_row
+	# Everything already received on the order, both dimensions, in one pass. Goods returns
+	# are in the sum with their negative figures, which is what makes returned material
+	# receivable again.
+	prior = frappe.db.sql(
+		f"""
+		select coalesce(sum(ii.weight), 0), coalesce(sum(ii.qty_box), 0)
+		from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
+		where ii.customer_order = %(o)s and i.docstatus = 1
+			and ifnull(ii.to_inventory, 0) = 0 {cond}
+		""",
+		params,
+	)[0]
+	over_pct = get_inward_over_tolerance() / 100.0
+	for target, already, adding, unit in (
+		(float(so.get("ordered_box") or 0), float(prior[1] or 0), float(add_box or 0), _("box")),
+		(float(so.get("ordered_weight") or 0), float(prior[0] or 0), float(add_weight or 0), _("kg")),
+	):
+		if target <= 0 or adding <= 0:
+			continue
+		cum = round(already + adding, 3)
+		allowed = round(target + max(_ORDER_RECEIPT_TOLERANCE, target * over_pct), 3)
+		if cum > allowed:
+			frappe.throw(
+				_(
+					"Over-receipt blocked: order {0} is for {1} {5} and {2} {5} has already been "
+					"received against it. This adds {3} {5}, taking it to {4} {5} — more than the "
+					"{6} {5} limit. Check the entry, or receive the extra against the order it "
+					"belongs to."
+				).format(order, target, round(already, 3), round(adding, 3), cum, unit, allowed)
+			)
+
+
 class MMInward(Document):
 	def validate(self):
 		self._set_branch_location_from_employee()
@@ -75,17 +141,13 @@ class MMInward(Document):
 
 		A GOODS RETURN is exempt — it only ever gives weight back.
 		"""
-		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
-			get_inward_over_tolerance,
-		)
-
 		if self.is_gr:
 			return
 		mine = {}
 		for row in self.items:
 			# Surplus bought over and above what was sold. It is stock, not fulfilment, so
 			# it is measured against the PURCHASE order (see _guard_purchase_over_receipt)
-			# and never against the sales order's own weight.
+			# and never against the sales order's own figures.
 			if row.to_inventory:
 				continue
 			order = row.customer_order or self.sales_order
@@ -94,53 +156,9 @@ class MMInward(Document):
 			acc = mine.setdefault(order, [0.0, 0.0])
 			acc[0] = round(acc[0] + float(row.weight or 0), 3)
 			acc[1] = round(acc[1] + float(row.qty_box or 0), 3)
-		over_pct = get_inward_over_tolerance() / 100.0
 		for order in sorted(mine):
-			this_w, this_b = mine[order]
-			so = (
-				frappe.db.get_value(
-					"MM Sales Order", order, ["ordered_weight", "ordered_box"], as_dict=True
-				)
-				or {}
-			)
-			# AN ORDER PLACED IN BOXES IS CAPPED IN BOXES. Its weight is derived from the box
-			# (MMSalesOrder._derive_box_weights), so a delivery of exactly the boxes ordered
-			# that happens to run a shade heavy is the right delivery — refusing it on kg
-			# would block the very receipt the order was placed for.
-			by_box = float(so.get("ordered_box") or 0) > 0
-			ordered = float((so.get("ordered_box") if by_box else so.get("ordered_weight")) or 0)
-			this = this_b if by_box else this_w
-			unit = _("box") if by_box else _("kg")
-			if ordered <= 0 or this <= 0:
-				# No target in the unit this order is read in — nothing to measure against.
-				continue
-			# Everything already received on the order, this document excluded so an amend
-			# is not counted twice. Goods returns are in the sum with their negative figure,
-			# which is what makes returned material receivable again.
-			column = "qty_box" if by_box else "weight"
-			prior = float(
-				frappe.db.sql(
-					f"""
-					select coalesce(sum(ii.{column}), 0)
-					from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
-					where ii.customer_order = %(o)s and i.docstatus = 1 and i.name != %(me)s
-						and ifnull(ii.to_inventory, 0) = 0
-					""",
-					{"o": order, "me": self.name or ""},
-				)[0][0]
-				or 0
-			)
-			cum = round(prior + this, 3)
-			allowed = round(ordered + max(_ORDER_RECEIPT_TOLERANCE, ordered * over_pct), 3)
-			if cum > allowed:
-				frappe.throw(
-					_(
-						"Over-receipt blocked: order {0} is for {1} {6} and {2} {6} has already been "
-						"received against it. This inward adds {3} {6}, taking it to {4} {6} — more "
-						"than the {5} {6} limit. Check the entry, or receive the extra against the "
-						"order it belongs to."
-					).format(order, ordered, round(prior, 3), this, cum, allowed, unit)
-				)
+			w, b = mine[order]
+			assert_order_room(order, w, b, exclude_inward=self.name or "")
 
 	def _require_challan(self):
 		"""Every receipt names the challan it came in on.

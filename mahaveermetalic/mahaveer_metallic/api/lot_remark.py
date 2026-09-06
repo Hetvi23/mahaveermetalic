@@ -82,12 +82,34 @@ def _resolve_lot(lot=None, lot_id=None, color=None):
 	if lot and not lot_id:
 		lot_id = frappe.db.get_value("MM Lot", lot, "lot_id")
 	elif lot_id and not lot:
-		lot = (
-			(frappe.db.get_value("MM Lot", {"lot_id": lot_id, "color": color}, "name") if color else None)
-			or frappe.db.get_value("MM Lot", {"lot_id": lot_id}, "name")
-		)
-	if not color and lot:
-		color = frappe.db.get_value("MM Lot", lot, "color")
+		if color:
+			# NAMED COLOUR, OR NOTHING. This used to fall through to "any lot with that id"
+			# when the colour did not match — so a caller who said which colour they meant
+			# got the reason hung on somebody else's material, which is the exact hazard the
+			# note above describes. A colour that has no lot with this id is a question this
+			# function cannot answer, and guessing is worse than leaving it unattributed.
+			lot = frappe.db.get_value("MM Lot", {"lot_id": lot_id, "color": color}, "name")
+		else:
+			# No colour to narrow by: take the id only when it belongs to exactly ONE lot.
+			# Ids run per colour, so a bare id is usually ambiguous, and picking whichever
+			# row the database happened to return attributed the reason at random — then
+			# STAMPED that guess into `color` below, making it look deliberate.
+			hits = frappe.db.sql(
+				"select name from `tabMM Lot` where lot_id = %s limit 2", (lot_id,)
+			)
+			lot = hits[0][0] if len(hits) == 1 else None
+	if lot:
+		# The LOT is the authority on colour — it is what the read side buckets by, so a
+		# colour that disagrees with it would file the remark where nobody looks.
+		color = frappe.db.get_value("MM Lot", lot, "color") or color
+	# `color` is a Link to MM Item Master, but every caller reads it off a free-text shade
+	# (MM Cutting.shade, MM Program.shade, MM Production.shade are Data). A shade that was
+	# never catalogued — or a colour since renamed — made the insert raise, and `record`
+	# swallows exceptions, so the reason was silently lost at the very moment somebody was
+	# explaining why a lot stopped. The remark matters more than the tag: drop an
+	# unresolvable colour and keep the lot link, which is what the read side uses anyway.
+	if color and not frappe.db.exists("MM Item Master", color):
+		color = None
 	return lot, lot_id, color
 
 

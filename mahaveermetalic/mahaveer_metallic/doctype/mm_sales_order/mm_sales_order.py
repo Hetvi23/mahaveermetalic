@@ -1005,11 +1005,30 @@ def save_order(sales_order, header=None, items=None):
 			doc.set(field, header.get(field))
 
 	if items is not None:
+		# weight_per_box belongs here with the rest of the line. Left out, doc.set() rebuilt
+		# each row without it, `_derive_box_weights` saw a box qty and no per-box figure,
+		# and took the branch meant for lines keyed before the field existed — back-deriving
+		# the per-box weight from the STALE qty_weight. Editing 25 boxes to 30 then kept the
+		# old 600 kg and quietly restated the box as 20 kg instead of the 24 that was sent.
 		allowed = (
 			"name", "idx", "color_name", "cut", "delivery_date", "qty_weight", "qty_box",
-			"sale_rate", "purchase_party", "purchase_rate",
+			"weight_per_box", "sale_rate", "purchase_party", "purchase_rate",
 		)
-		doc.set("items", [{k: row.get(k) for k in allowed if k in row} for row in items])
+		# A caller that omits weight_per_box must not silently restate the box. doc.set()
+		# rebuilds each row from the payload ALONE, so an absent field reads as "no per-box
+		# figure" and _derive_box_weights takes its legacy branch — back-deriving the per-box
+		# weight from a qty_weight the caller may not have updated. The screen always sends
+		# it, but this is a whitelisted endpoint and the failure is silent, so the stored
+		# value stands in when the payload has nothing to say.
+		stored = {r.name: r for r in doc.items if r.name}
+		rebuilt = []
+		for row in items:
+			line = {k: row.get(k) for k in allowed if k in row}
+			was = stored.get(row.get("name"))
+			if was is not None and not line.get("weight_per_box"):
+				line["weight_per_box"] = was.get("weight_per_box")
+			rebuilt.append(line)
+		doc.set("items", rebuilt)
 
 	# The two flags are what let a submitted document be saved at all. They are safe ONLY
 	# because everything they switch off has been done above by hand: permission was

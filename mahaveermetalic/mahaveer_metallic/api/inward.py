@@ -1161,44 +1161,48 @@ def _assert_row_correctable(row):
 	return row
 
 
-def _assert_order_has_room(order, weight, exclude_row=None):
-	"""Refuse moving a roll onto an order that has no room left to receive it.
+def _assert_order_has_room(order, weight, box=0, exclude_row=None):
+	"""The correction path's ceiling — the SAME one the door applies.
 
-	The same ceiling MMInward._guard_order_over_receipt applies at the door. It has to be
-	repeated here because this path writes with db.set_value — the receipt is already
-	submitted and re-saving it would re-run the whole document — so the controller's
-	validate() never sees the move. Without this an order could be filled past its ordered
-	weight by reassigning rolls one at a time, which is exactly the walk-past-in-small-steps
-	the original guard was written to stop.
+	It was a second implementation, and the two promptly disagreed about which dimension an
+	order is measured in: the door capped a box order in boxes while this read only kilos,
+	so a box order's box ceiling could be walked past one reassigned roll at a time. Making
+	them agree by rewriting this one in boxes then left the WEIGHT dimension unmeasured, and
+	a 0-box roll of any size landed on a full box order. Two copies of a rule is two rules.
+	There is one now, and it measures both.
 	"""
-	weight = round(float(weight or 0), 3)
-	if weight <= 0:
-		return
-	ordered = float(frappe.db.get_value("MM Sales Order", order, "ordered_weight") or 0)
-	if ordered <= 0:
-		# A box-only order carries no weight target — nothing to measure against.
-		return
-	prior = float(
-		frappe.db.sql(
-			"""
-			select coalesce(sum(ii.weight), 0)
-			from `tabMM Inward Item` ii join `tabMM Inward` i on i.name = ii.parent
-			where ii.customer_order = %(o)s and i.docstatus = 1 and ii.name != %(me)s
-				and ifnull(ii.to_inventory, 0) = 0
-			""",
-			{"o": order, "me": exclude_row or ""},
-		)[0][0]
-		or 0
-	)
-	cum = round(prior + weight, 3)
-	allowed = round(ordered + max(_RECEIPT_TOLERANCE, ordered * get_inward_over_tolerance() / 100.0), 3)
-	if cum > allowed:
-		frappe.throw(
-			_(
-				"Order {0} has no room for this roll: it ordered {1} kg, {2} kg is already "
-				"received against it, and this roll adds {3} kg (total {4} kg)."
-			).format(order, ordered, round(prior, 3), weight, cum)
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_inward.mm_inward import assert_order_room
+
+	assert_order_room(order, weight, box, exclude_row=exclude_row)
+
+
+def _resync_inward_order(inward):
+	"""Re-derive an inward's header order from its rows — one order, or none.
+
+	The same rule post_inward applies when it first stamps the header: it carries an order
+	only when the WHOLE receipt is for that one order, because a header that names one of
+	several rows is a claim about material it does not cover.
+	"""
+	rows = [
+		(r[0] or "")
+		for r in frappe.db.sql(
+			"select customer_order from `tabMM Inward Item` where parent = %s", (inward,)
 		)
+	]
+	# A BLANK ROW IS A DISAGREEMENT, not an abstention. Blanks were discarded before the
+	# count, and both halves of that were wrong in the same way — because every reader
+	# resolves a blank row through the header (coalesce(row.customer_order, header)):
+	#   · clearing one row of a multi-row receipt left the header still naming the order,
+	#     so the roll just taken OFF it went on being listed under it — the very bug the
+	#     resync was written to close, merely narrowed to receipts with more than one row;
+	#   · allocating one row of an unallocated receipt PROMOTED the header, dragging its
+	#     still-blank siblings under an order nobody had put them on.
+	# The header speaks for the whole receipt or it says nothing.
+	first = rows[0] if rows else ""
+	agreed = bool(first) and all(r == first for r in rows)
+	frappe.db.set_value(
+		"MM Inward", inward, "sales_order", first if agreed else None, update_modified=False
+	)
 
 
 @frappe.whitelist()
@@ -1247,13 +1251,26 @@ def correct_inward_roll(row, challan_no=None, sales_order=None):
 				if not frappe.db.exists("MM Sales Order", want):
 					frappe.throw(_("Sales Order {0} not found.").format(want))
 				assert_order_submitted(want)
-				_assert_order_has_room(want, r.weight if not r.to_inventory else 0, exclude_row=r.name)
+				_assert_order_has_room(
+					want,
+					0 if r.to_inventory else r.weight,
+					0 if r.to_inventory else r.qty_box,
+					exclude_row=r.name,
+				)
 			if r.customer_order:
 				affected_orders.add(r.customer_order)
 			frappe.db.set_value("MM Inward Item", r.name, "customer_order", want, update_modified=False)
 			if want:
 				affected_orders.add(want)
 			changed["customer_order"] = want
+			# THE HEADER IS A SUMMARY OF THE ROWS, NOT A STAMP. post_inward writes it only
+			# when the whole receipt is for one order, and every reader treats it as the
+			# fallback for a row that names none — inward_report resolves an order as
+			# coalesce(row.customer_order, header.sales_order). Leaving it behind after a
+			# correction is not a stale field, it is a wrong answer: a roll taken OFF its
+			# order went on being listed under it, because the reader fell through to a
+			# header that still claimed it. Re-derived from the rows, on the same rule.
+			_resync_inward_order(r.parent)
 
 	# ── The challan this receipt came in on (the whole inward) ──
 	if challan_no is not None:

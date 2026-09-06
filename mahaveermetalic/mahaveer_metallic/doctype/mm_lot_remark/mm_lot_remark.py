@@ -33,16 +33,12 @@ class MMLotRemark(Document):
 		the other is routinely all they hold. Resolving here — rather than at each write
 		point — is what guarantees a row is findable by either key.
 		"""
-		if self.lot and not self.lot_id:
-			self.lot_id = frappe.db.get_value("MM Lot", self.lot, "lot_id")
-		elif self.lot_id and not self.lot:
-			# Colour first: lot ids were only made unique per colour later, so two legacy
-			# lots can both read "LT1/26-27" and a bare lookup would attach this reason to
-			# whichever the database returned — quite possibly the other colour's.
-			self.lot = (
-				(frappe.db.get_value("MM Lot", {"lot_id": self.lot_id, "color": self.color}, "name")
-				 if self.color else None)
-				or frappe.db.get_value("MM Lot", {"lot_id": self.lot_id}, "name")
-			)
-		if self.lot and not self.color:
-			self.color = frappe.db.get_value("MM Lot", self.lot, "color")
+		# ONE resolver, in api.lot_remark. This used to be a second copy of it, and it
+		# carried the cross-colour fallback the API side was fixed to remove — so it ran on
+		# every insert and quietly put the fix back: a remark written for one colour was
+		# re-linked to another colour's lot that happened to share the id, and because the
+		# read side keys on the LOT's colour, it surfaced on material nobody wrote it about.
+		# A rule worth stating once is worth stating only once.
+		from mahaveermetalic.mahaveer_metallic.api.lot_remark import _resolve_lot
+
+		self.lot, self.lot_id, self.color = _resolve_lot(self.lot, self.lot_id, self.color)
