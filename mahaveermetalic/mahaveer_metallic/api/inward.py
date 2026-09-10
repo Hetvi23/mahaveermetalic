@@ -62,8 +62,25 @@ _SAME_SUPPLIER = (
 	"(ifnull(ii.supplier, '') = '' or %(sup)s = '' or ii.supplier = %(sup)s)"
 )
 
+_ORDER_OF_ITEM = "coalesce(nullif(ii.customer_order, ''), i.sales_order)"
 
-def _prior_receipt(challan_no: str, exclude: str = None, supplier: str = None):
+# …AND THE ORDER IT WAS RECEIVED AGAINST. One supplier's challan legitimately carries
+# material for more than one of our orders, and it arrives separately: challan 123 for
+# order 3 today, challan 123 for order 5 next week. Keyed on (supplier, number) alone the
+# first receipt CLOSED the challan and the second was refused as "already fully received",
+# so the only way to book it was to invent a challan number that does not exist on the
+# supplier's paper.
+#
+# The identity is therefore (supplier, number, order). A row that names no order cannot be
+# told apart from anything, so it still matches on the pair alone — the guard stays exactly
+# as strong as it was wherever the order is unknown, and only relaxes where we positively
+# know the two receipts are for different orders.
+_SAME_ORDER = (
+	f"(ifnull({_ORDER_OF_ITEM}, '') = '' or %(ord)s = '' or {_ORDER_OF_ITEM} = %(ord)s)"
+)
+
+
+def _prior_receipt(challan_no: str, exclude: str = None, supplier: str = None, order: str = None):
 	"""What is already received on this challan, and whether it is closed.
 
 	Tracks both weight and box received, so box-only challans (no weight target) can
@@ -75,10 +92,11 @@ def _prior_receipt(challan_no: str, exclude: str = None, supplier: str = None):
 		from `tabMM Inward` i
 		join `tabMM Inward Item` ii on ii.parent = i.name
 		where i.docstatus = 1 and i.name != %(me)s and {_CHALLAN_OF_ITEM} = %(ch)s
-			and {_SAME_SUPPLIER}
+			and {_SAME_SUPPLIER} and {_SAME_ORDER}
 		group by i.name, i.receipt_status, i.is_gr
 		""",
-		{"ch": challan_no, "me": exclude or "", "sup": (supplier or "").strip()},
+		{"ch": challan_no, "me": exclude or "", "sup": (supplier or "").strip(),
+			"ord": (order or "").strip()},
 		as_dict=True,
 	)
 	return {
@@ -92,7 +110,7 @@ def _prior_receipt(challan_no: str, exclude: str = None, supplier: str = None):
 	}
 
 
-def challan_closed_by(challan_no: str, exclude: str = None, supplier: str = None):
+def challan_closed_by(challan_no: str, exclude: str = None, supplier: str = None, order: str = None):
 	"""The submitted inward that closed this challan, if one did.
 
 	A challan is closed once an inward that received it was posted Complete; a Partial one
@@ -110,33 +128,36 @@ def challan_closed_by(challan_no: str, exclude: str = None, supplier: str = None
 		where i.docstatus = 1 and ifnull(i.receipt_status, 'Complete') = 'Complete'
 			and ifnull(i.is_gr, 0) = 0
 			and i.name != %(me)s and {_CHALLAN_OF_ITEM} = %(ch)s
-			and {_SAME_SUPPLIER}
+			and {_SAME_SUPPLIER} and {_SAME_ORDER}
 		limit 1
 		""",
-		{"ch": challan_no, "me": exclude or "", "sup": (supplier or "").strip()},
+		{"ch": challan_no, "me": exclude or "", "sup": (supplier or "").strip(),
+			"ord": (order or "").strip()},
 	)
 	return hit[0][0] if hit else None
 
 
-def _challan_lock_key(challan_no: str, supplier: str = None):
-	"""The lock names the same thing the guards do — one supplier's challan. Keyed on the
-	number alone it serialized two unrelated suppliers against each other."""
-	return f"mm_inward_challan_{(supplier or '').strip()}_{challan_no}"
+def _challan_lock_key(challan_no: str, supplier: str = None, order: str = None):
+	"""The lock names the same thing the guards do — one supplier's challan for one order.
+	Keyed more loosely it serializes receipts that cannot collide: on the number alone, two
+	unrelated suppliers; on (supplier, number), the same challan being booked against two
+	different orders."""
+	return f"mm_inward_challan_{(supplier or '').strip()}_{(order or '').strip()}_{challan_no}"
 
 
-def _acquire_challan_lock(challan_no: str, supplier: str = None):
+def _acquire_challan_lock(challan_no: str, supplier: str = None, order: str = None):
 	"""Serialize concurrent post_inward calls for the same challan with a MariaDB
 	advisory lock, so two operators posting the same challan at once can't both pass the
 	closed / over-receipt checks and double-post. Best-effort: reduces the TOCTOU window
 	to the commit boundary."""
-	got = frappe.db.sql("select get_lock(%s, 10)", (_challan_lock_key(challan_no, supplier),))
+	got = frappe.db.sql("select get_lock(%s, 10)", (_challan_lock_key(challan_no, supplier, order),))
 	if not (got and got[0][0]):
 		frappe.throw(_("Another inward for challan {0} is being posted — please retry.").format(challan_no))
 
 
-def _release_challan_lock(challan_no: str, supplier: str = None):
+def _release_challan_lock(challan_no: str, supplier: str = None, order: str = None):
 	try:
-		frappe.db.sql("select release_lock(%s)", (_challan_lock_key(challan_no, supplier),))
+		frappe.db.sql("select release_lock(%s)", (_challan_lock_key(challan_no, supplier, order),))
 	except Exception:
 		pass
 
@@ -418,6 +439,22 @@ def _supplier_on_challan(items, challan: str, header_challan: str):
 	return ""
 
 
+def _order_on_challan(items, challan: str, header_challan: str):
+	"""The order this challan's rows were received against, or "" when they disagree.
+
+	Mirrors _supplier_on_challan. Rows of one challan naming DIFFERENT orders cannot be
+	scoped to any single one, so the guard falls back to the stricter (supplier, number)
+	behaviour rather than picking one of them and letting the others through.
+	"""
+	seen = {
+		(i.get("customer_order") or "").strip()
+		for i in items
+		if ((i.get("challan_number") or "").strip() or header_challan) == challan
+	}
+	seen.discard("")
+	return seen.pop() if len(seen) == 1 else ""
+
+
 def _weight_on_challan(items, challan: str, header_challan: str):
 	"""Weight and box being received on ONE challan by this inward."""
 	w = b = 0.0
@@ -506,8 +543,9 @@ def post_inward(payload):
 	# taken in a fixed (sorted) order so two operators posting the same pair of challans
 	# can't deadlock on each other.
 	challan_supplier = {c: _supplier_on_challan(items, c, header_challan) for c in verified}
+	challan_order = {c: _order_on_challan(items, c, header_challan) for c in verified}
 	for challan in verified:
-		_acquire_challan_lock(challan, challan_supplier[challan])
+		_acquire_challan_lock(challan, challan_supplier[challan], challan_order[challan])
 	try:
 		over_pct = get_inward_over_tolerance() / 100.0
 		expected_w = expected_b = 0.0
@@ -515,7 +553,8 @@ def post_inward(payload):
 		reaches_all = True
 		for challan in verified:
 			exp = _challan_expected_from_vm(challan)
-			prior = _prior_receipt(challan, supplier=challan_supplier[challan])
+			prior = _prior_receipt(challan, supplier=challan_supplier[challan],
+				order=challan_order[challan])
 			if prior["closed"]:
 				frappe.throw(
 					_("Challan {0} is already fully received. No further inward is allowed.").format(challan)
@@ -569,7 +608,7 @@ def post_inward(payload):
 		return {"name": doc.name, "receipt_status": doc.receipt_status}
 	finally:
 		for challan in verified:
-			_release_challan_lock(challan, challan_supplier[challan])
+			_release_challan_lock(challan, challan_supplier[challan], challan_order[challan])
 
 
 def _attach_purchase(by_so):
@@ -1479,7 +1518,8 @@ def correct_inward_roll(row, challan_no=None, sales_order=None, supplier=None, c
 				# Do not let a correction file this receipt under a challan another
 				# receipt has already closed — that challan is finished and nothing more
 				# may be received on it, which is precisely what this would claim.
-				closed_by = challan_closed_by(want, exclude=r.parent, supplier=r.supplier)
+				closed_by = challan_closed_by(want, exclude=r.parent, supplier=r.supplier,
+					order=r.customer_order)
 				if closed_by:
 					frappe.throw(
 						_("Challan {0} was already fully received on inward {1}, so this "

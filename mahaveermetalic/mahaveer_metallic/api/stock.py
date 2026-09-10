@@ -295,6 +295,17 @@ def sync_shortage_pos(sales_order, lines=None, clamp_to_shortage=1):
 				}
 			)
 			po.insert(ignore_permissions=True)
+		# THE LINE CARRIES WHAT ITS PURCHASE ACTUALLY COST. MM Sales Order Item holds
+		# purchase_rate / purchase_party, and the flow ran ONE WAY only: the line seeded a
+		# new purchase order and nothing ever came back. So a rate typed into the purchase
+		# panel after the order was saved lived on the PO alone, and every reader of the
+		# line — the order list's P/S Rate column, the CSV, the order register — went on
+		# showing a blank beside a purchase that had a perfectly good rate on it.
+		frappe.db.set_value(
+			"MM Sales Order Item", so_item,
+			{"purchase_rate": w["rate"] or 0, "purchase_party": w["supplier"]},
+			update_modified=False,
+		)
 		created.append(po.name)
 
 	return {"created": created, "removed": removed, "locked": locked}
@@ -417,6 +428,11 @@ def create_purchase_order_from_so(sales_order, full=0):
 			}
 		)
 		po.insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"MM Sales Order Item", it.name,
+			{"purchase_rate": po.rate or 0, "purchase_party": po.supplier},
+			update_modified=False,
+		)
 		created.append(po.name)
 	if rounded:
 		frappe.msgprint(

@@ -643,10 +643,23 @@ def order_line_summary(orders=None):
 	rows = frappe.get_all(
 		"MM Sales Order Item",
 		filters=filters,
-		fields=["parent", "color_name", "cut", "purchase_rate", "sale_rate"],
+		fields=["name", "parent", "color_name", "cut", "purchase_rate", "sale_rate"],
 		order_by="parent asc, idx asc",
 		limit_page_length=0,
 	)
+
+	# The rate a purchase ACTUALLY carries, per line. The line's own purchase_rate is the
+	# figure keyed when the order was written; the purchase order is what was really placed,
+	# so where one exists it is the answer. Orders whose PO was rated before the line
+	# learned to follow it read correctly here without anybody re-saving them.
+	po_rate = {}
+	for po in frappe.get_all(
+		"MM Purchase Order",
+		filters={"sales_order": ["in", list({r.parent for r in rows})] or [""], "docstatus": ["<", 2]},
+		fields=["so_item", "rate"],
+	):
+		if po.so_item and float(po.rate or 0) > 0:
+			po_rate[po.so_item] = float(po.rate)
 
 	out = {}
 	for r in rows:
@@ -655,6 +668,8 @@ def order_line_summary(orders=None):
 			e["colours"].append(r.color_name)
 		if r.cut and r.cut not in e["cuts"]:
 			e["cuts"].append(r.cut)
+		rate = po_rate.get(r.name) or float(r.purchase_rate or 0)
+		r.purchase_rate = rate
 		if float(r.purchase_rate or 0) > 0:
 			e["p_rates"].append(float(r.purchase_rate))
 		if float(r.sale_rate or 0) > 0:

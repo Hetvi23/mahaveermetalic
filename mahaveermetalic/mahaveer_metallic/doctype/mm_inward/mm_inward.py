@@ -304,9 +304,12 @@ class MMInward(Document):
 		to the row it was entered on, so one inward can receive several of them and the
 		header names one only when the whole inward shares it.
 
-		Scoped by SUPPLIER. A challan number is the supplier's own serial — they all number
-		from 1 — so two suppliers may each send a challan 123 and neither closes the other.
-		A row with no supplier on file still matches on the number alone.
+		Scoped by SUPPLIER and by ORDER. A challan number is the supplier's own serial —
+		they all number from 1 — so two suppliers may each send a challan 123 and neither
+		closes the other. And one supplier's challan 123 may carry material for order 3 and,
+		on a later delivery, for order 5: those are separate receipts and the first must not
+		close the second. A row that names neither still matches on what is known, so the
+		guard is never weaker than the information it has.
 		"""
 		from mahaveermetalic.mahaveer_metallic.api.inward import challan_closed_by
 
@@ -314,19 +317,27 @@ class MMInward(Document):
 		if self.is_gr:
 			return
 		header = (self.challan_number or "").strip()
-		# challan -> the supplier the rows put against it (first one that names any).
+		# challan -> (supplier, order) the rows put against it. Rows that DISAGREE leave the
+		# field blank, which scopes the guard more strictly rather than picking one of them.
 		pairs = {}
 		for row in self.items:
 			challan = (row.challan_number or "").strip() or header
 			if not challan:
 				continue
-			pairs.setdefault(challan, "")
-			if not pairs[challan]:
-				pairs[challan] = (row.supplier or "").strip()
+			sup = (row.supplier or "").strip()
+			order = (row.customer_order or self.sales_order or "").strip()
+			if challan not in pairs:
+				pairs[challan] = [sup, order]
+				continue
+			if pairs[challan][0] != sup:
+				pairs[challan][0] = ""
+			if pairs[challan][1] != order:
+				pairs[challan][1] = ""
 		if header:
-			pairs.setdefault(header, "")
+			pairs.setdefault(header, ["", (self.sales_order or "").strip()])
 		for challan in sorted(pairs):
-			closed = challan_closed_by(challan, exclude=self.name or "", supplier=pairs[challan])
+			sup, order = pairs[challan]
+			closed = challan_closed_by(challan, exclude=self.name or "", supplier=sup, order=order)
 			if closed:
 				frappe.throw(
 					_(
