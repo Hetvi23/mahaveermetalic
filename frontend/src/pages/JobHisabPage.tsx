@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { Disc3, ScrollText, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
@@ -319,8 +320,8 @@ function AddBobbinModal({ row, onClose, onDone }: { row: Row; onClose: () => voi
           </label>
           <label className="mm-field">
             <span className="mm-field-label">Quantity</span>
-            <input className="mm-input" type="number" min={0} value={n} autoFocus
-              onChange={(e) => setN(e.target.value === "" ? "" : Number(e.target.value))} />
+            <NumInput className="mm-input" value={n} autoFocus
+              onChange={(v) => setN(v === "" ? "" : Number(v))} />
           </label>
           {err && <p className="mm-error" style={{ marginTop: "0.5rem" }}>{err}</p>}
         </div>

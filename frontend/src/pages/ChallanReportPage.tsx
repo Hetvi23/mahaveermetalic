@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { FileText, Printer, RefreshCw, Search, X } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
@@ -293,20 +294,20 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                         <td>{it.color_name || "—"}</td>
                         <td>{it.cut || "—"}</td>
                         <td className="mm-num">
-                          <input className="mm-input mm-input-compact mm-iw-num" type="number"
+                          <NumInput className="mm-input mm-input-compact mm-iw-num"
                             value={String(valueOf(it, "gross_weight") ?? "")}
-                            onChange={(e) => setField(it, "gross_weight", Number(e.target.value))} />
+                            onChange={(v) => setField(it, "gross_weight", Number(v))} />
                         </td>
                         <td className="mm-num">{it.bobbin || "—"} | {Number(it.bobbin_pcs || 0)}</td>
                         <td className="mm-num">
-                          <input className="mm-input mm-input-compact mm-iw-num" type="number"
+                          <NumInput className="mm-input mm-input-compact mm-iw-num"
                             value={String(valueOf(it, "box_weight") ?? "")}
-                            onChange={(e) => setField(it, "box_weight", Number(e.target.value))} />
+                            onChange={(v) => setField(it, "box_weight", Number(v))} />
                         </td>
                         <td className="mm-num">
-                          <input className="mm-input mm-input-compact mm-iw-num" type="number"
+                          <NumInput className="mm-input mm-input-compact mm-iw-num"
                             value={String(netOf(it))}
-                            onChange={(e) => setField(it, "net_weight", Number(e.target.value))} />
+                            onChange={(v) => setField(it, "net_weight", Number(v))} />
                         </td>
                         <td className="mm-num">
                           <input type="checkbox" checked={!!valueOf(it, "r_box")}

@@ -1,4 +1,5 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import NumInput from "@/components/NumInput";
 import {
   useFrappeCreateDoc,
   useFrappeDeleteDoc,
@@ -1358,12 +1359,12 @@ export default function OrderWorkspace() {
                           <td>{it.color_name}{it.cut ? ` · ${it.cut}` : ""}</td>
                           <td className="mm-num"><span className="mm-var-over">{short.toLocaleString()}</span></td>
                           <td className="mm-num">
-                            <input className="mm-input mm-input-compact mm-iw-num" type="number" value={wt} autoFocus={i === 0}
-                              onChange={(e) => setPo({ weight: e.target.value === "" ? "" : Number(e.target.value) })} />
+                            <NumInput className="mm-input mm-input-compact mm-iw-num" value={wt} autoFocus={i === 0}
+                              onChange={(v) => setPo({ weight: v === "" ? "" : Number(v) })} />
                           </td>
                           <td className="mm-num">
-                            <input className="mm-input mm-input-compact mm-iw-num" type="number" value={po.rate ?? ""}
-                              onChange={(e) => setPo({ rate: e.target.value === "" ? "" : Number(e.target.value) })} />
+                            <NumInput className="mm-input mm-input-compact mm-iw-num" value={po.rate ?? ""}
+                              onChange={(v) => setPo({ rate: v === "" ? "" : Number(v) })} />
                           </td>
                           <td><VendorSelect value={po.vendor ?? ""} onChange={(v) => setPo({ vendor: v })} /></td>
                         </tr>

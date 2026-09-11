@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import NumInput from "@/components/NumInput";
 import { Link } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus, Search, PackageSearch } from "lucide-react";
@@ -573,12 +574,12 @@ function NewCuttingModal({ onClose, onDone }: { onClose: () => void; onDone: () 
                 No of Patty *
                 {cfg?.no_of_patty ? <span className="mm-patty-cfg">cut {cfg.cut} is set to {cfg.no_of_patty}</span> : null}
               </span>
-              <input className="mm-input" type="number" min={1} value={patti}
-                onChange={(e) => { pattyTouched.current = true; setPatti(e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1)); }} />
+              <input className="mm-input" type="number" min={1} step={1} value={patti}
+                onChange={(e) => { pattyTouched.current = true; setPatti(e.target.value === "" ? "" : Math.max(1, Math.round(Number(e.target.value) || 1))); }} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Weight (Kg) *</span>
-              <input className="mm-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+              <NumInput className="mm-input" value={weight} onChange={(v) => setWeight(v)} />
             </label>
             <label className="mm-field mm-field-inline">
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
@@ -720,7 +721,7 @@ function CuttingModal({ roll, onClose, onDone }: { roll: StockRoll; onClose: () 
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Weight (Kg) *</span>
-              <input className="mm-input" type="number" placeholder={String(selWeight || "")} value={weight} onChange={(e) => setWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+              <NumInput className="mm-input" placeholder={String(selWeight || "")} value={weight} onChange={(v) => setWeight(v)} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">

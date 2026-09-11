@@ -1,4 +1,5 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Download, PackageCheck, Plus, ShoppingCart, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
@@ -1071,10 +1072,10 @@ export default function InwardWorkspace() {
                         )}
                         {single ? (
                           <>
-                            <input className="mm-input mm-input-compact" type="number" value={r.lines[0].qty} placeholder="Qty"
-                              onChange={(e) => setLine(i, 0, { qty: e.target.value === "" ? "" : Number(e.target.value) })} />
-                            <input className="mm-input mm-input-compact" type="number" value={r.lines[0].weight} placeholder="Weight"
-                              onChange={(e) => setLine(i, 0, { weight: e.target.value === "" ? "" : Number(e.target.value) })} />
+                            <NumInput className="mm-input mm-input-compact" value={r.lines[0].qty} placeholder="Qty"
+                              onChange={(v) => setLine(i, 0, { qty: v === "" ? "" : Number(v) })} />
+                            <NumInput className="mm-input mm-input-compact" value={r.lines[0].weight} placeholder="Weight"
+                              onChange={(v) => setLine(i, 0, { weight: v === "" ? "" : Number(v) })} />
                           </>
                         ) : (
                           <>
@@ -1206,12 +1207,12 @@ export default function InwardWorkspace() {
                   <input className="mm-input" data-cart-roll value={l.roll} placeholder="Roll no"
                     aria-label={`Roll no, line ${i + 1}`}
                     onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, roll: e.target.value } : x)))} />
-                  <input className="mm-input mm-iw-cart-num" type="number" min={0} value={l.qty} placeholder="Qty"
+                  <NumInput className="mm-input mm-iw-cart-num" value={l.qty} placeholder="Qty"
                     aria-label={`Qty, line ${i + 1}`}
-                    onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, qty: e.target.value === "" ? "" : Number(e.target.value) } : x)))} />
-                  <input className="mm-input mm-iw-cart-num" type="number" value={l.weight} placeholder="Weight"
+                    onChange={(v) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, qty: v === "" ? "" : Number(v) } : x)))} />
+                  <NumInput className="mm-input mm-iw-cart-num" value={l.weight} placeholder="Weight"
                     aria-label={`Weight, line ${i + 1}`}
-                    onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, weight: e.target.value === "" ? "" : Number(e.target.value) } : x)))}
+                    onChange={(v) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, weight: v === "" ? "" : Number(v) } : x)))}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter") return;
                       e.preventDefault();

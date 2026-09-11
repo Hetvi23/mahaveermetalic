@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import NumInput from "@/components/NumInput";
 import { createPortal } from "react-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
@@ -627,8 +628,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                             onChange={(e) => setPicked((p) => p.map((x, j) => (j === i ? { ...x, cut: e.target.value } : x)))} />
                         </td>
                         <td className="mm-num">
-                          <input className="mm-input mm-input-compact mm-iw-num" type="number" value={r.weight}
-                            onChange={(e) => setPicked((p) => p.map((x, j) => (j === i ? { ...x, weight: Number(e.target.value) || 0 } : x)))} />
+                          <NumInput className="mm-input mm-input-compact mm-iw-num" value={r.weight}
+                            onChange={(v) => setPicked((p) => p.map((x, j) => (j === i ? { ...x, weight: Number(v) || 0 } : x)))} />
                         </td>
                         <td className="mm-num">
                           <button type="button" className="mm-icon-btn" title="Remove"

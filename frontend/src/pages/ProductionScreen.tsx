@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download, Barcode } from "lucide-react";
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
@@ -977,15 +978,15 @@ function BoxDialog({
           <div className="mm-bx-gross">
             {/* The panel opens on this: it is the first of the three fields that are
                 actually keyed, and the scale writes into it too. */}
-            <input className="mm-input" type="number" value={gross} placeholder="0.000" autoFocus
-              onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
+            <NumInput className="mm-input" value={gross} placeholder="0.000" autoFocus
+              onChange={(v) => setGross(v === "" ? "" : Number(v))} />
             <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
           </div>
         </div>
         <div className="mm-bx-row">
           <span className="mm-bx-label">Box Weight</span>
-          <input className="mm-input" type="number" value={boxWeight}
-            onChange={(e) => setBoxWeight(e.target.value === "" ? "" : Number(e.target.value))} />
+          <NumInput className="mm-input" value={boxWeight}
+            onChange={(v) => setBoxWeight(v === "" ? "" : Number(v))} />
         </div>
         <div className="mm-bx-row">
           <span className="mm-bx-label">Bobbin</span>
@@ -1003,8 +1004,8 @@ function BoxDialog({
             <span className="seg">Pcs</span>
             <input type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
             <span className="seg">×</span>
-            <input type="number" value={perPcs} placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "0.000"}
-              onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+            <NumInput value={perPcs} placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "0.000"}
+              onChange={(v) => setPerPcs(v === "" ? "" : Number(v))} />
             <span className="seg">Kg</span>
           </div>
         </div>
