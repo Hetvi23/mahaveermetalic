@@ -1065,15 +1065,19 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
   // them. Producing in-house is the other way round (gross on the scale, net derived), and
   // this screen used to ask for it that way: gross first, box tare computed. That asked the
   // operator for a number nobody weighs and hid the one they do.
-  const [net, setNet] = useState<number | "">("");
-  const [boxWt, setBoxWt] = useState<number | "">(prev?.boxWeight ?? "");
+  // HELD AS TEXT, not as a number. "90." is a real state on the way to "90.5", and
+  // Number("90.") is 90 — so storing the parsed value re-rendered the box without the dot
+  // and ate the keystroke. The operator could not type a decimal at all. Parsed only where
+  // the arithmetic needs it. Same reasoning as FieldInputs.
+  const [net, setNet] = useState<string>("");
+  const [boxWt, setBoxWt] = useState<string>(prev?.boxWeight != null ? String(prev.boxWeight) : "");
   // No Qty field: receiving is weighed, not counted, and the box's piece count is not
   // something the worker reports back. Carried from the previous box so a repeated pack
   // keeps whatever was set, and 0 otherwise — never invented from the bobbin count.
   const qty = prev?.qty ?? 0;
   const [bobbin, setBobbin] = useState(prev?.bobbin ?? "");
-  const [pcs, setPcs] = useState<number | "">(prev?.bobbinPcs ?? "");
-  const [perPcs, setPerPcs] = useState<number | "">(prev?.perPcsWeight ?? "");
+  const [pcs, setPcs] = useState<string>(prev?.bobbinPcs != null ? String(prev.bobbinPcs) : "");
+  const [perPcs, setPerPcs] = useState<string>(prev?.perPcsWeight != null ? String(prev.perPcsWeight) : "");
   const [err, setErr] = useState<string | null>(null);
 
   const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
@@ -1112,7 +1116,7 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
           <input className={`mm-input mm-bx-hi ${over ? "mm-input-warn" : ""}`} inputMode="decimal"
             placeholder="Weight" value={net} autoFocus
             onChange={(e) => { const v = e.target.value;
-              if (v === "" || /^\d*\.?\d*$/.test(v)) setNet(v === "" ? "" : Number(v)); }} />
+              if (v === "" || /^\d*\.?\d*$/.test(v)) setNet(v); }} />
         </label>
         <label className="mm-bx-row">
           <span className="mm-bx-label">Bobbin</span>
@@ -1126,11 +1130,11 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
           <span className="mm-bx-pair">
             <input className="mm-input" inputMode="decimal" placeholder="Pcs" value={pcs}
               onChange={(e) => { const v = e.target.value;
-                if (v === "" || /^\d*\.?\d*$/.test(v)) setPcs(v === "" ? "" : Number(v)); }} />
+                if (v === "" || /^\d*\.?\d*$/.test(v)) setPcs(v); }} />
             <span className="mm-bx-x">x</span>
             <input className="mm-input" inputMode="decimal" placeholder="Kg" value={perPcs}
               onChange={(e) => { const v = e.target.value;
-                if (v === "" || /^\d*\.?\d*$/.test(v)) setPerPcs(v === "" ? "" : Number(v)); }} />
+                if (v === "" || /^\d*\.?\d*$/.test(v)) setPerPcs(v); }} />
           </span>
         </label>
         <label className="mm-bx-row">
@@ -1141,7 +1145,7 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
           <span className="mm-bx-label" title="The empty box's own weight">Box wt</span>
           <input className="mm-input" inputMode="decimal" placeholder="0.000" value={boxWt}
             onChange={(e) => { const v = e.target.value;
-              if (v === "" || /^\d*\.?\d*$/.test(v)) setBoxWt(v === "" ? "" : Number(v)); }} />
+              if (v === "" || /^\d*\.?\d*$/.test(v)) setBoxWt(v); }} />
         </label>
         {/* The answer, not a field: net + bobbins + box is what the whole box weighs. */}
         <label className="mm-bx-row mm-bx-row-net">
