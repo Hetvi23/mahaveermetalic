@@ -355,6 +355,35 @@ export default function InwardWorkspace() {
     return pos.length === 1 ? pos[0] : undefined;
   }
 
+  /** Colours are matched the way the rest of the app matches them — case and spacing on a
+   *  hand-typed shade are not a difference in material. */
+  const colourKey = (v?: string | null) => (v ?? "").toLowerCase().replace(/\s+/g, "");
+
+  /**
+   * Open orders this row's colour could be received against.
+   *
+   * A row keyed with NO order sends its material to STOCK, and stock deliberately fulfils
+   * nothing — that is what `to_inventory` means and it is right. But it is easy to do by
+   * accident while an order for exactly this colour sits open and waiting, and nothing on
+   * the screen said so. The row says so now, and picking one ALLOCATES it: the roll stops
+   * being stock and the order's pending comes down the ordinary way, through
+   * recalculate_order_fulfilment on submit. Nothing about the stock rule changes.
+   *
+   * Read off the orders the picker is already holding, so this costs no extra request.
+   * Stock-only orders are left out — their sale is settled and only the purchase is
+   * outstanding, so receiving against them fulfils nothing either.
+   */
+  function pendingFor(colour: string) {
+    const key = colourKey(colour);
+    if (!key) return [];
+    return soOptions.filter(
+      (o) =>
+        !o.stock_only &&
+        (Number(o.required_weight || 0) > 0 || Number(o.required_box || 0) > 0) &&
+        (o.colours || []).some((c) => colourKey(c) === key),
+    );
+  }
+
   /** What the order is FOR, and what has been bought against it.
    *
    *  Read off the picked order, so changing the order on a row changes these with it —
@@ -855,6 +884,8 @@ export default function InwardWorkspace() {
               {rows.map((r, i) => {
                 const t = rowTotals(r);
                 const orderWeights = r.customer_order ? orderTotals(r.customer_order) : null;
+                // Only worth saying when the row is actually heading for stock.
+                const waiting = !r.customer_order && r.color ? pendingFor(r.color) : [];
                 // One roll stays inline — that is the common case and it must key as fast
                 // as it ever did. Several become the row's total, edited in the cart.
                 const single = r.lines.length === 1;
@@ -919,6 +950,27 @@ export default function InwardWorkspace() {
                           title="What this order is for, and what has been bought against it">
                           SO <b>{orderWeights.so.toLocaleString()}</b> kg · PO{" "}
                           <b>{orderWeights.purchase.toLocaleString()}</b> kg
+                        </span>
+                      )}
+                      {/* Going to stock while somebody is waiting for this colour. Picking
+                          one allocates the row — it stops being stock and the order's
+                          pending comes down when the inward is posted. */}
+                      {waiting.length > 0 && (
+                        <span className="mm-iw-waiting">
+                          <span className="mm-iw-waiting-lead">
+                            To stock — {waiting.length} open order{waiting.length > 1 ? "s" : ""} for this colour:
+                          </span>
+                          {waiting.slice(0, 3).map((o) => (
+                            <button key={o.sales_order} type="button" className="mm-mini"
+                              title={`Receive this row against order ${o.sales_order} (${o.party_name || o.party || "—"}) instead of stock`}
+                              onClick={() => pickOrder(i, o.sales_order)}>
+                              {o.sales_order} ·{" "}
+                              {Number(o.required_weight || 0) > 0
+                                ? `${Number(o.required_weight).toLocaleString()} kg`
+                                : `${Number(o.required_box || 0).toLocaleString()} box`}
+                            </button>
+                          ))}
+                          {waiting.length > 3 ? <span className="mm-muted">+{waiting.length - 3} more</span> : null}
                         </span>
                       )}
                     </td>

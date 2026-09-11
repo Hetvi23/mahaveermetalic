@@ -1049,6 +1049,11 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 /* The order's own weight and what was bought against it, under the picker. */
 .mm-iw-ordertot { display: block; margin-top: 0.2rem; font-size: 0.68rem; color: var(--mm-text-sec); white-space: nowrap; }
 .mm-iw-ordertot b { color: var(--mm-text); font-variant-numeric: tabular-nums; }
+/* "This is going to stock, and these orders are waiting for it." A nudge, not a warning —
+   stock is a legitimate destination, so it reads as an offer rather than an error. */
+.mm-iw-waiting { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-top: 0.3rem; }
+.mm-iw-waiting-lead { font-size: 0.68rem; color: var(--mm-accent-fg); font-weight: 700; }
+.mm-iw-waiting .mm-mini { padding: 0.14rem 0.4rem; font-size: 0.68rem; }
 .mm-iw-c-lot { width: 104px; }
 .mm-iw-c-roll { width: 150px; }
 .mm-iw-c-qty { width: 210px; }
