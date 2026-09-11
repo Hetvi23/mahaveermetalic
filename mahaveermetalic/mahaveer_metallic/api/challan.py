@@ -796,6 +796,52 @@ def challan_for_production(production):
 
 
 @frappe.whitelist()
+def production_box_labels(production):
+	"""The box labels a production minted — read off its OWN boxes.
+
+	`challan_for_production` answers from the dispatch challan a production raises, and a
+	JOB IN production raises none on purpose: material coming back from a worker must not
+	dispatch itself the moment it arrives. So a received box had a real barcode stamped on
+	it (MMProduction._assign_box_barcodes) and no way on earth to print it — the labels
+	source every screen used simply returned nothing.
+
+	Shaped like `challan_for_print` so the sticker builder takes it unchanged; the cut and
+	the colour come off the production where the box row does not carry its own.
+	"""
+	if not production or not frappe.db.exists("MM Production", production):
+		return None
+	prod = frappe.db.get_value(
+		"MM Production", production,
+		["posting_date", "shade", "cut", "batch_no", "operator"], as_dict=True,
+	)
+	rows = frappe.get_all(
+		"MM Production Box",
+		filters={"parent": production},
+		fields=["barcode", "item", "gross_weight", "box_weight", "total_bobbin_weight",
+			"net_weight", "bobbin_pcs"],
+		order_by="idx",
+	)
+	return {
+		"transaction_date": str(prod.posting_date) if prod.posting_date else None,
+		"batch_no": prod.batch_no,
+		"operator": prod.operator,
+		"items": [
+			{
+				"barcode": r.barcode,
+				"color_name": r.item or prod.shade,
+				"cut": prod.cut,
+				"gross_weight": r.gross_weight,
+				"box_weight": r.box_weight,
+				"total_bobbin_weight": r.total_bobbin_weight,
+				"net_weight": r.net_weight,
+				"bobbin_pcs": r.bobbin_pcs,
+			}
+			for r in rows
+		],
+	}
+
+
+@frappe.whitelist()
 def job_report(party=None, from_date=None, to_date=None, company=None):
 	"""Job work report: what went out, what came back, and what is still with the worker.
 
@@ -1506,12 +1552,23 @@ def _job_in_box_rows(boxes, shade):
 			bob = round(
 				frappe.utils.flt(b.get("bobbin_pcs") or 0) * frappe.utils.flt(b.get("bobbin_pcs_weight") or 0), 3
 			)
-		box_wt = round(gross - bob - net, 3)
+		# RECEIVING SOLVES FOR THE TOTAL. The box is weighed NET on the floor and its
+		# packaging is known — bobbins by count, the empty box by its tare — so the gross is
+		# what falls out. The screen used to send a gross and have the box tare derived from
+		# it, which asked for a number nobody weighs; that shape is still accepted so an
+		# older client keeps working, and is the branch below.
+		box_wt = frappe.utils.flt(b.get("box_weight") or 0)
+		if b.get("box_weight") is not None:
+			gross = round(net + bob + box_wt, 3)
+		else:
+			box_wt = round(gross - bob - net, 3)
+			if box_wt < 0:
+				frappe.throw(
+					_("A box's net ({0} kg) plus its bobbins ({1} kg) is more than its gross ({2} kg). "
+					  "One of the three is keyed wrong.").format(net, bob, gross)
+				)
 		if box_wt < 0:
-			frappe.throw(
-				_("A box's net ({0} kg) plus its bobbins ({1} kg) is more than its gross ({2} kg). "
-				  "One of the three is keyed wrong.").format(net, bob, gross)
-			)
+			frappe.throw(_("A box's own weight cannot be negative ({0} kg).").format(box_wt))
 		rows.append({
 			"item": b.get("item") or shade,
 			"gross_weight": gross,
@@ -1531,16 +1588,27 @@ def _job_in_box_rows(boxes, shade):
 
 
 @frappe.whitelist()
-def preview_job_in_box(gross_weight, net_weight, bobbin_pcs=0, bobbin_pcs_weight=0, total_bobbin_weight=0):
-	"""The inverted box sum, for the screen — so it shows what the server will store."""
-	gross = frappe.utils.flt(gross_weight or 0)
+def preview_job_in_box(gross_weight=None, net_weight=None, bobbin_pcs=0, bobbin_pcs_weight=0,
+		total_bobbin_weight=0, box_weight=None):
+	"""The box sum, for the screen — so it shows what the server will store.
+
+	Solved for whichever number is missing: given a box tare it returns the TOTAL (the
+	receiving direction, where the box is weighed net), given a gross it returns the box
+	tare (the older shape, kept so an out-of-date client still gets a sane answer).
+	"""
 	net = frappe.utils.flt(net_weight or 0)
 	bob = frappe.utils.flt(total_bobbin_weight or 0) or round(
 		frappe.utils.flt(bobbin_pcs or 0) * frappe.utils.flt(bobbin_pcs_weight or 0), 3
 	)
+	if box_weight is not None:
+		box = frappe.utils.flt(box_weight or 0)
+		return {"total_bobbin_weight": bob, "box_weight": box,
+			"gross_weight": round(net + bob + box, 3), "valid": box >= 0}
+	gross = frappe.utils.flt(gross_weight or 0)
 	return {
 		"total_bobbin_weight": bob,
 		"box_weight": round(gross - bob - net, 3),
+		"gross_weight": gross,
 		"valid": round(gross - bob - net, 3) >= 0,
 	}
 

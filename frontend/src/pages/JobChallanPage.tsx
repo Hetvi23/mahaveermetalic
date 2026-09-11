@@ -8,6 +8,7 @@ import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
+import { printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
@@ -716,6 +717,11 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const { call: create, loading } = useFrappePostCall<{ message: { production: string; job_in: string; net_weight: number; variance_percent: number } }>(
     `${API}.create_job_in_production`,
   );
+  // Off the PRODUCTION's own boxes, not off a dispatch challan — a job-in production
+  // deliberately raises none, so the challan route hands back nothing at all.
+  const { call: fetchProdPrint } = useFrappePostCall<{ message: ChallanPrintData }>(
+    `${API}.production_box_labels`,
+  );
   const bobbinMasters = useFrappeGetDocList<{ name: string }>("MM Bobbin Master", { fields: ["name"], limit: 0 });
 
   const totals = useMemo(() => ({
@@ -743,7 +749,11 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
         box_return: boxReturn ? 1 : 0,
         bobbin_return: bobbinReturn ? 1 : 0,
         boxes: JSON.stringify(boxes.map((b) => ({
-          gross_weight: b.gross, net_weight: b.net, qty: b.qty,
+          // box_weight is what makes the server solve for the TOTAL rather than for the
+          // tare. Without it the receipt is back to the producing direction and the
+          // operator's own box weight is silently recomputed from a gross they never
+          // weighed.
+          gross_weight: b.gross, net_weight: b.net, box_weight: b.boxWeight, qty: b.qty,
           bobbin: b.bobbin || undefined, bobbin_pcs: b.bobbinPcs, bobbin_pcs_weight: b.perPcsWeight,
           total_bobbin_weight: b.totalBobbin,
           box_return: b.boxReturn ? 1 : 0, bobbin_return: b.bobbinReturn ? 1 : 0,
@@ -751,6 +761,25 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
       });
       const m = res?.message;
       toast(`Received — production ${m?.production}, Job In ${m?.job_in}`);
+      // A job-in box is a real box with a real barcode — the production behind this
+      // receipt stamps one on every row — and the labels have to go on before the boxes
+      // are put away. Producing in-house has printed them since the start; receiving them
+      // back never did, so the boxes existed with codes nobody could scan.
+      if (m?.production) {
+        try {
+          const c = await fetchProdPrint({ production: m.production });
+          const labels = c?.message ? stickersFromChallan(c.message, { batch: batchNo }) : [];
+          if (labels.length && !printBoxStickers(labels)) {
+            toast(
+              "Received. The barcodes were blocked by the pop-up blocker — allow pop-ups " +
+                "for this site and print them from the production.",
+              "error",
+            );
+          }
+        } catch {
+          /* Printing is best-effort: the receipt is posted and must not be undone by it. */
+        }
+      }
       setBoxes([]); setCNo(""); setBatchNo("");
       onDone();
     } catch (e) {
@@ -882,6 +911,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               <JobInBoxForm
                 bobbins={(bobbinMasters.data ?? []).map((b) => b.name)}
                 defaults={{ box: boxReturn, bobbin: bobbinReturn }}
+                available={r3(Math.max(0, (meta?.outstanding_weight ?? meta?.total_weight ?? 0) - totals.net))}
                 prev={boxes[boxes.length - 1]}
                 onCancel={() => setAdding(false)}
                 onAdd={(b) => setBoxes((p) => [...p, b])}
@@ -989,59 +1019,71 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
 }
 
 
-function JobInBoxForm({ bobbins, defaults, prev, onCancel, onAdd }: {
+function JobInBoxForm({ bobbins, defaults, prev, available, onCancel, onAdd }: {
   bobbins: string[];
   defaults: { box: boolean; bobbin: boolean };
   prev?: JobInBox;
+  /** Net still owed on this Job Out, less what this voucher has already booked. */
+  available: number;
   onCancel: () => void;
   onAdd: (b: JobInBox) => void;
 }) {
   // Packing repeats box after box, so the bobbin and its per-piece weight carry over from
   // the last one keyed. Only the weights are asked for again — they are what really change.
-  const [gross, setGross] = useState<number | "">("");
+  // WEIGHED ON THE FLOOR, NOT WORKED OUT. Receiving job work, the box is put on the scale
+  // NET — the material is what the worker owes back — and its packaging is known: the
+  // bobbins by count and the empty box by its own tare. The TOTAL is what falls out of
+  // them. Producing in-house is the other way round (gross on the scale, net derived), and
+  // this screen used to ask for it that way: gross first, box tare computed. That asked the
+  // operator for a number nobody weighs and hid the one they do.
   const [net, setNet] = useState<number | "">("");
-  const [qty, setQty] = useState<number | "">(prev?.qty ?? "");
+  const [boxWt, setBoxWt] = useState<number | "">(prev?.boxWeight ?? "");
+  // No Qty field: receiving is weighed, not counted, and the box's piece count is not
+  // something the worker reports back. Carried from the previous box so a repeated pack
+  // keeps whatever was set, and 0 otherwise — never invented from the bobbin count.
+  const qty = prev?.qty ?? 0;
   const [bobbin, setBobbin] = useState(prev?.bobbin ?? "");
   const [pcs, setPcs] = useState<number | "">(prev?.bobbinPcs ?? "");
   const [perPcs, setPerPcs] = useState<number | "">(prev?.perPcsWeight ?? "");
   const [err, setErr] = useState<string | null>(null);
 
   const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
-  const boxWeight = r3((Number(gross) || 0) - totalBobbin - (Number(net) || 0));
-  const impossible = (Number(gross) || 0) > 0 && boxWeight < 0;
+  const gross = r3((Number(net) || 0) + totalBobbin + (Number(boxWt) || 0));
+  const over = (Number(net) || 0) > r3(available) + 0.001;
 
   function add() {
-    if (!(Number(gross) > 0)) return setErr("Enter the gross weight.");
     if (!(Number(net) > 0)) return setErr("Enter the net weight — it is what came back.");
-    if (impossible) {
-      return setErr("Net plus bobbins is more than gross — one of the three is keyed wrong.");
+    if ((Number(boxWt) || 0) < 0) return setErr("Box weight cannot be negative.");
+    if (over) {
+      return setErr(
+        `Only ${kg(available)} kg is still owed on this job out — this box says ${kg(Number(net))} kg.`,
+      );
     }
     setErr(null);
     onAdd({
-      gross: Number(gross), qty: Number(qty) || 0, bobbin, bobbinPcs: Number(pcs) || 0,
-      perPcsWeight: Number(perPcs) || 0, totalBobbin, net: Number(net), boxWeight,
+      gross, qty: Number(qty) || 0, bobbin, bobbinPcs: Number(pcs) || 0,
+      perPcsWeight: Number(perPcs) || 0, totalBobbin, net: Number(net),
+      boxWeight: Number(boxWt) || 0,
       boxReturn: defaults.box, bobbinReturn: defaults.bobbin,
     });
-    setGross(""); setNet("");
+    setNet("");
   }
 
   return (
     <div className="mm-bx-panel">
       <div className="mm-bx">
+        {/* What the worker still owes back — the ceiling every box below is measured
+            against, so it is stated before anything is keyed rather than after. */}
         <label className="mm-bx-row">
-          <span className="mm-bx-label" title="Total (gross) weight">Gross wt</span>
-          <input className="mm-input mm-bx-hi" type="number" value={gross} autoFocus
-            onChange={(e) => setGross(e.target.value === "" ? "" : Number(e.target.value))} />
+          <span className="mm-bx-label" title="Net still owed on this job out">Available net wt</span>
+          <input className="mm-input mm-bx-avail" value={kg(available)} readOnly />
         </label>
         <label className="mm-bx-row">
           <span className="mm-bx-label" title="Net weight — what actually came back">Net wt</span>
-          <input className="mm-input mm-bx-hi" type="number" value={net}
-            onChange={(e) => setNet(e.target.value === "" ? "" : Number(e.target.value))} />
-        </label>
-        <label className="mm-bx-row">
-          <span className="mm-bx-label">Qty</span>
-          <input className="mm-input" type="number" value={qty}
-            onChange={(e) => setQty(e.target.value === "" ? "" : Number(e.target.value))} />
+          <input className={`mm-input mm-bx-hi ${over ? "mm-input-warn" : ""}`} inputMode="decimal"
+            placeholder="Weight" value={net} autoFocus
+            onChange={(e) => { const v = e.target.value;
+              if (v === "" || /^\d*\.?\d*$/.test(v)) setNet(v === "" ? "" : Number(v)); }} />
         </label>
         <label className="mm-bx-row">
           <span className="mm-bx-label">Bobbin</span>
@@ -1049,23 +1091,31 @@ function JobInBoxForm({ bobbins, defaults, prev, onCancel, onAdd }: {
             options={bobbins.map((b) => ({ value: b, label: b }))} />
         </label>
         <label className="mm-bx-row">
-          <span className="mm-bx-label">Pcs</span>
-          <input className="mm-input" type="number" value={pcs}
-            onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+          <span className="mm-bx-label" title="Pieces x weight per piece">Bobbin wt</span>
+          <span className="mm-bx-pair">
+            <input className="mm-input" inputMode="decimal" placeholder="Pcs" value={pcs}
+              onChange={(e) => { const v = e.target.value;
+                if (v === "" || /^\d*\.?\d*$/.test(v)) setPcs(v === "" ? "" : Number(v)); }} />
+            <span className="mm-bx-x">x</span>
+            <input className="mm-input" inputMode="decimal" placeholder="Kg" value={perPcs}
+              onChange={(e) => { const v = e.target.value;
+                if (v === "" || /^\d*\.?\d*$/.test(v)) setPerPcs(v === "" ? "" : Number(v)); }} />
+          </span>
         </label>
         <label className="mm-bx-row">
-          <span className="mm-bx-label">Wt / pc</span>
-          <input className="mm-input" type="number" value={perPcs}
-            onChange={(e) => setPerPcs(e.target.value === "" ? "" : Number(e.target.value))} />
-        </label>
-        <label className="mm-bx-row">
-          <span className="mm-bx-label" title="Pcs × weight per piece">Bobbin wt</span>
+          <span className="mm-bx-label">Total bobbin wt</span>
           <input className="mm-input" value={kg(totalBobbin)} readOnly />
         </label>
-        {/* The answer, not a field: this is what the voucher is for. */}
+        <label className="mm-bx-row">
+          <span className="mm-bx-label" title="The empty box's own weight">Box wt</span>
+          <input className="mm-input" inputMode="decimal" placeholder="0.000" value={boxWt}
+            onChange={(e) => { const v = e.target.value;
+              if (v === "" || /^\d*\.?\d*$/.test(v)) setBoxWt(v === "" ? "" : Number(v)); }} />
+        </label>
+        {/* The answer, not a field: net + bobbins + box is what the whole box weighs. */}
         <label className="mm-bx-row mm-bx-row-net">
-          <span className="mm-bx-label" title="Worked out: Gross − Bobbin − Net">Box wt <b className="mm-bx-calc">calc</b></span>
-          <input className={`mm-input ${impossible ? "mm-input-warn" : ""}`} value={kg(boxWeight)} readOnly />
+          <span className="mm-bx-label" title="Worked out: Net + Bobbin + Box">Total wt <b className="mm-bx-calc">calc</b></span>
+          <input className="mm-input" value={kg(gross)} readOnly />
         </label>
       </div>
       {err && <p className="mm-error mm-bx-panel-err">{err}</p>}

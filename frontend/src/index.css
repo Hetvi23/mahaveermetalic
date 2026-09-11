@@ -1054,6 +1054,12 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-iw-waiting { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-top: 0.3rem; }
 .mm-iw-waiting-lead { font-size: 0.68rem; color: var(--mm-accent-fg); font-weight: 700; }
 .mm-iw-waiting .mm-mini { padding: 0.14rem 0.4rem; font-size: 0.68rem; }
+
+/* Job In box panel — what is still owed, and the pcs x weight pair. */
+.mm-bx-avail { background: var(--mm-primary); color: #fff; font-weight: 800; border-color: var(--mm-primary); font-variant-numeric: tabular-nums; }
+.mm-bx-pair { display: flex; align-items: center; gap: 0.3rem; }
+.mm-bx-pair .mm-input { min-width: 0; }
+.mm-bx-x { font-weight: 800; color: var(--mm-text-sec); }
 .mm-iw-c-lot { width: 104px; }
 .mm-iw-c-roll { width: 150px; }
 .mm-iw-c-qty { width: 210px; }
