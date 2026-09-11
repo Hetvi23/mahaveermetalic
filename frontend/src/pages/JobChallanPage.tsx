@@ -8,7 +8,7 @@ import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
-import { printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
+import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
@@ -786,15 +786,23 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
         try {
           const c = await fetchProdPrint({ production: m.production });
           const labels = c?.message ? stickersFromChallan(c.message, { batch: batchNo }) : [];
-          if (labels.length && !printBoxStickers(labels)) {
-            toast(
-              "Received. The barcodes were blocked by the pop-up blocker — allow pop-ups " +
-                "for this site and print them from the production.",
-              "error",
-            );
+          if (labels.length) {
+            // SAVED FIRST, ALWAYS. Printing opens a pop-up, and by now the submit's click
+            // has been spent on the awaits above — so the browser is entitled to block it,
+            // and a blocked print used to mean the labels were simply gone. A download is
+            // a blob and an anchor: nothing to block. The file is the same document the
+            // print dialog would have shown, so opening it and pressing print gives exactly
+            // the same labels.
+            downloadBoxStickers(labels, `barcodes-${m.job_in || m.production}`);
+            if (!printBoxStickers(labels)) {
+              toast(
+                "Received. The print pop-up was blocked, but the barcodes have been saved — " +
+                  "open the downloaded file and print it.",
+              );
+            }
           }
         } catch {
-          /* Printing is best-effort: the receipt is posted and must not be undone by it. */
+          /* Labels are best-effort: the receipt is posted and must not be undone by them. */
         }
       }
       setBoxes([]); setCNo(""); setBatchNo("");
