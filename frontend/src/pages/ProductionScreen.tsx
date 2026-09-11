@@ -1137,26 +1137,31 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
 /**
  * Print every barcode of one production, in one job.
  *
- * The codes are minted when the production is submitted and live on the challan it raised,
- * so this reads them from there rather than rebuilding a label from the voucher form —
- * which cannot know them and prints PREVIEW-1, PREVIEW-2 … instead.
+ * The codes are minted when the production is SUBMITTED (MMProduction._assign_box_barcodes),
+ * so this reads them off the production rather than rebuilding a label from the voucher
+ * form — which cannot know them and prints PREVIEW-1, PREVIEW-2 … instead.
  *
- * A production with no sales order raised no challan and therefore has no barcodes: the
- * boxes went to inventory. The button says so rather than failing silently.
+ * It used to read them off the CHALLAN the production raised, and told anyone it found
+ * none that "this production went to inventory, not to a challan" — which was wrong twice
+ * over. Barcodes are stamped on every box of every production, challan or not, so a
+ * production with no sales order HAS them and could not print them; and a JOB IN
+ * production deliberately raises no challan at all, so receiving job work could never
+ * print the labels for the boxes that had just come back. The boxes are where the codes
+ * live, so the boxes are what this asks.
  */
 function ProductionLabels({ production }: { production: string }) {
   const [busy, setBusy] = useState(false);
-  const { call: fetchChallan } = useFrappePostCall<{ message: ChallanPrintData | null }>(
-    "mahaveermetalic.mahaveer_metallic.api.challan.challan_for_production",
+  const { call: fetchLabels } = useFrappePostCall<{ message: ChallanPrintData | null }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.production_box_labels",
   );
 
   async function go() {
     setBusy(true);
     try {
-      const c = await fetchChallan({ production });
+      const c = await fetchLabels({ production });
       const labels = c?.message ? stickersFromChallan(c.message) : [];
       if (!labels.length) {
-        toast("No barcodes on this production — it went to inventory, not to a challan.", "error");
+        toast("This production has no boxes to label.", "error");
         return;
       }
       printBoxStickers(labels);
