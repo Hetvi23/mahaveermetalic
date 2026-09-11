@@ -5,6 +5,7 @@ import { extractErrorMessage } from "@/utils/frappeError";
 import { useFrappeCreateDoc } from "frappe-react-sdk";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Lightweight inline "+ New <master>" dialog. Lets the user create a master
@@ -72,7 +73,17 @@ export default function QuickCreateMaster({
 		}
 	}
 
-	return (
+	/**
+	 * PORTALLED TO <body>, unlike the dialogs that open from the top of a screen.
+	 *
+	 * This one opens from inside a FIELD, inside a form, inside a card — and z-index only
+	 * competes within a stacking context, so 250 on the scrim meant nothing against a
+	 * sticky bar painted by an ancestor that had already made its own. The result was a
+	 * dialog with the page's table headings showing through it and the Submit bar drawn
+	 * over the top of it. Fixed positioning inside <body> has no ancestor to be trapped
+	 * by, which is the same reason AnchoredMenu portals.
+	 */
+	return createPortal(
 		<div className="mm-modal-scrim" onMouseDown={onClose}>
 			<div className="mm-modal" onMouseDown={(e) => e.stopPropagation()}>
 				<header className="mm-modal-head">
@@ -103,6 +114,7 @@ export default function QuickCreateMaster({
 					</button>
 				</footer>
 			</div>
-		</div>
+		</div>,
+		document.body,
 	);
 }

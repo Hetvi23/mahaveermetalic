@@ -2077,7 +2077,11 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 @media (prefers-reduced-motion: reduce) { .mm-modal.mm-sheet { animation: none; } }
 .mm-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--mm-border); }
 .mm-modal-title { font-weight: 800; font-size: 1.05rem; }
-.mm-modal-body { padding: 1.1rem 1.25rem; overflow: auto; }
+/* `overflow: auto` alone never scrolled: a flex child will not shrink below its own
+   content, so the body grew past the modal's max-height instead of scrolling inside it,
+   pushing the foot off the screen. min-height: 0 is what lets it shrink. */
+.mm-modal-body { padding: 1.1rem 1.25rem; overflow: auto; flex: 1 1 auto; min-height: 0; }
+.mm-modal-head, .mm-modal-foot { flex: 0 0 auto; }
 .mm-modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; padding: 0.9rem 1.25rem; border-top: 1px solid var(--mm-border); }
 
 /* Picker rows inside a modal */
