@@ -36,6 +36,11 @@ type Props = {
 	/** Open the list wider than the field. For a picker in a narrow table column whose
 	 *  options carry a second line — an order number over its party and colour. */
 	menuMinWidth?: number;
+	/** What to do with the record the "+" just created. By default it is selected, which
+	 *  is right whenever the field's value IS that record's name. It is not always: the
+	 *  job screens pick a COMPANY, and creating one means creating the PARTY that owns it,
+	 *  so the caller has to map the new party back to the company to select. */
+	onCreated?: (name: string) => void;
 };
 
 /**
@@ -60,6 +65,7 @@ export default function SearchSelect({
 	className,
 	createDoctype,
 	menuMinWidth,
+	onCreated,
 }: Props) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
@@ -209,7 +215,11 @@ export default function SearchSelect({
 					meta={master}
 					seed={dirty ? text.trim() : ""}
 					onClose={() => setQuickCreate(false)}
-					onCreated={(name) => { pick(name); setQuickCreate(false); }}
+					onCreated={(name) => {
+						if (onCreated) onCreated(name);
+						else pick(name);
+						setQuickCreate(false);
+					}}
 				/>
 			)}
 		</>

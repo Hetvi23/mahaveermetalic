@@ -330,6 +330,10 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                   value={bobbin}
                   onChange={setBobbin}
                   placeholder="Select bobbin"
+                  // The field's value IS the bobbin's name, so the created record can be
+                  // selected as it stands — no mapping needed, unlike Company above.
+                  createDoctype="MM Bobbin Master"
+                  onCreated={(n) => { setBobbin(n); void bobbinMasters.mutate(); }}
                   options={(bobbinMasters.data ?? []).map((b) => ({ value: b.name, label: b.name }))}
                 />
               </label>
@@ -579,6 +583,19 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                   required
                   placeholder="Search company or party…"
                   options={companies.map((c) => ({ value: c.company_name, label: c.company_name, meta: c.party_name }))}
+                  // A COMPANY IS NOT A MASTER OF ITS OWN — it is a row on the party that
+                  // owns it (MM Party Company), so "new company" means "new party, with
+                  // this company on it". The dialog therefore creates the PARTY, and what
+                  // comes back is the party's name, not the company's — which is why this
+                  // field maps it back itself instead of letting the picker select it.
+                  createDoctype="MM Party Master"
+                  onCreated={async (newParty) => {
+                    const fresh = await companiesCall.mutate();
+                    const rows = (fresh as { message?: { company_name: string; party: string }[] } | undefined)?.message ?? [];
+                    const hit = rows.find((c) => c.party === newParty);
+                    setParty(newParty);
+                    if (hit) setCompany(hit.company_name);
+                  }}
                 />
                 {party && <span className="mm-job-partyhint">Party: <strong>{party}</strong></span>}
               </label>
@@ -912,6 +929,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 bobbins={(bobbinMasters.data ?? []).map((b) => b.name)}
                 defaults={{ box: boxReturn, bobbin: bobbinReturn }}
                 available={r3(Math.max(0, (meta?.outstanding_weight ?? meta?.total_weight ?? 0) - totals.net))}
+                onBobbinCreated={() => void bobbinMasters.mutate()}
                 prev={boxes[boxes.length - 1]}
                 onCancel={() => setAdding(false)}
                 onAdd={(b) => setBoxes((p) => [...p, b])}
@@ -1019,8 +1037,11 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
 }
 
 
-function JobInBoxForm({ bobbins, defaults, prev, available, onCancel, onAdd }: {
+function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onCancel, onAdd }: {
   bobbins: string[];
+  /** The list lives on the voucher above, so a bobbin created here asks it to refetch —
+   *  otherwise the next box would not find the one just made. */
+  onBobbinCreated?: () => void;
   defaults: { box: boolean; bobbin: boolean };
   prev?: JobInBox;
   /** Net still owed on this Job Out, less what this voucher has already booked. */
@@ -1088,6 +1109,8 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onCancel, onAdd }: {
         <label className="mm-bx-row">
           <span className="mm-bx-label">Bobbin</span>
           <SearchSelect compact value={bobbin} onChange={setBobbin} placeholder="— bobbin —"
+            createDoctype="MM Bobbin Master"
+            onCreated={(n) => { setBobbin(n); onBobbinCreated?.(); }}
             options={bobbins.map((b) => ({ value: b, label: b }))} />
         </label>
         <label className="mm-bx-row">
