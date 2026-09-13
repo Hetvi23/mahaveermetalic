@@ -1525,6 +1525,12 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-input { padding-right: 5.2rem; }
 .mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-clear { right: 2.3rem; }
 .mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-caret { right: 4.1rem; }
+/* `.mm-input-compact` sets its padding with !important, which flattened the room above
+   and ran a compact picker's value under its clear, caret and + buttons. */
+.mm-link-wrap .mm-link-input.mm-input-compact { padding-right: 1.9rem !important; }
+.mm-link-wrap-addable .mm-link-input.mm-input-compact { padding-right: 3.5rem !important; }
+.mm-link-wrap-clearable .mm-link-input.mm-input-compact { padding-right: 3.4rem !important; }
+.mm-link-wrap-addable.mm-link-wrap-clearable .mm-link-input.mm-input-compact { padding-right: 5.2rem !important; }
 .mm-link-clear {
 	position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
 	width: 22px; height: 22px; display: grid; place-items: center;
@@ -2088,6 +2094,8 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-pick-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; padding: 0.55rem 0.6rem; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); margin-bottom: 0.4rem; cursor: pointer; }
 .mm-pick-row:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); }
 .mm-pick-row-active { border-color: var(--mm-text); background: var(--mm-primary-soft); }
+/* The roll number sits against the colour with no text between them. */
+.mm-pick-row .mm-colour-name + .mm-suggest-meta { margin-left: 0.4rem; }
 
 /* Machine grid (Program) */
 .mm-mach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; align-items: start; }
