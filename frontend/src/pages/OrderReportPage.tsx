@@ -4,6 +4,7 @@ import { Eye, ScrollText, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
 import Pager, { pageSlice } from "@/components/Pager";
+import { fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.order_report";
 const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -261,7 +262,7 @@ export default function OrderReportPage() {
                 return (
                   <tr key={r.order}>
                     <td className="mm-ow-cell-order">{r.order}</td>
-                    <td className="mm-ow-cell-date">{r.date || "—"}</td>
+                    <td className="mm-ow-cell-date">{fmtDate(r.date) || "—"}</td>
                     <td>
                       <span className="mm-colour-name">{r.party || "—"}</span>
                       {r.company && <span className="mm-suggest-meta">{r.company}</span>}

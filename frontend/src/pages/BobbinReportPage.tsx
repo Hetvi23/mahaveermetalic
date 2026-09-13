@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { Printer, Disc3 } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
-import { todayISO } from "@/utils/localDate";
+import { todayISO, fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.bobbin";
 const today = todayISO;
@@ -129,7 +129,7 @@ export default function BobbinReportPage() {
                 </tr>
                 {(r?.rows ?? []).map((row, i) => (
                   <tr key={i}>
-                    <td>{row.date || "—"}</td>
+                    <td>{fmtDate(row.date) || "—"}</td>
                     <td>{row.voucher_no || "—"}</td>
                     <td>{row.voucher_type || "—"}</td>
                     <td>{row.bobbin || "—"}</td>

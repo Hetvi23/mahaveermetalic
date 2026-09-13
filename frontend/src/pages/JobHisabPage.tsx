@@ -6,7 +6,7 @@ import SearchSelect from "@/components/SearchSelect";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
-import { monthsAgoISO, todayISO } from "@/utils/localDate";
+import { monthsAgoISO, todayISO, fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -217,7 +217,7 @@ export default function JobHisabPage() {
                         {/* The bill's own date and number are stated once, the way the
                             register writes them — repeating them down every roll would
                             read as several bills. */}
-                        <td className="mm-jh-date-cell">{i === 0 ? r.date || "—" : ""}</td>
+                        <td className="mm-jh-date-cell">{i === 0 ? fmtDate(r.date) || "—" : ""}</td>
                         <td title={roll?.roll_no || ""}>
                           {roll ? (
                             <>
@@ -228,7 +228,7 @@ export default function JobHisabPage() {
                         </td>
                         <td>{i === 0 ? r.bill_no : ""}</td>
                         <td className="mm-num">{roll ? kg(roll.weight) : ""}</td>
-                        <td className="mm-jh-date-cell mm-jh-in">{ji?.date || (i === 0 && !ji ? "—" : "")}</td>
+                        <td className="mm-jh-date-cell mm-jh-in">{fmtDate(ji?.date) || (i === 0 && !ji ? "—" : "")}</td>
                         <td className="mm-jh-in">{ji?.challan_no || ""}</td>
                         <td className="mm-num mm-jh-in">{ji ? kg(ji.weight) : ""}</td>
                         <td className="mm-num mm-jh-in">{ji ? qty(ji.bobbin) : ""}</td>

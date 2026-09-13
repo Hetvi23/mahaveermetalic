@@ -82,8 +82,42 @@ class MMSalesChallan(Document):
 				frappe.throw(_("Row #{0}: box and weight cannot be negative.").format(it.idx))
 		self.total_box = round(sum(float(i.qty_box or 0) for i in self.items), 3)
 		self.total_weight = round(sum(float(i.weight or 0) for i in self.items), 3)
+		self._guard_challan_no_unique()
 		self._guard_order_cover()
 		self._apply_rates()
+
+	def _guard_challan_no_unique(self):
+		"""A typed challan number is the number the paper goes out under, so it cannot repeat.
+
+		The job screens suggest the next number and the operator may overwrite it; nothing
+		checked either, so two receipts booked back to back both printed as challan 2.
+		Scoped to the challan TYPE (each keeps its own book) and the financial year (paper
+		books restart in April). Only checked when the number is set or changed, so an older
+		pair that already shares a number can still be corrected.
+		"""
+		self.challan_no = (self.challan_no or "").strip() or None
+		if not self.challan_no or not (self.is_new() or self.has_value_changed("challan_no")):
+			return
+		d = frappe.utils.getdate(self.transaction_date or frappe.utils.today())
+		start = frappe.utils.getdate(f"{d.year if d.month >= 4 else d.year - 1}-04-01")
+		end = frappe.utils.add_days(frappe.utils.add_years(start, 1), -1)
+		clash = frappe.db.get_value(
+			"MM Sales Challan",
+			{
+				"challan_type": self.challan_type,
+				"challan_no": self.challan_no,
+				"docstatus": ["<", 2],
+				"name": ["!=", self.name or ""],
+				"transaction_date": ["between", [start, end]],
+			},
+			"name",
+		)
+		if clash:
+			frappe.throw(
+				_("{0} challan no {1} is already used on {2}. Type a different number.").format(
+					self.challan_type, self.challan_no, clash
+				)
+			)
 
 	def _apply_rates(self):
 		"""Carry the agreed rate onto the challan, and foot it.
@@ -101,6 +135,22 @@ class MMSalesChallan(Document):
 		no order behind it simply has no rate to find, which is not an error — it foots at
 		zero and the line can still be priced by hand.
 		"""
+		# A WORKER CHALLAN IS NOT A SALE, so the customer's price has no business on it.
+		#
+		# Job Out sends material to a worker and Job In brings it back; the order's rate is
+		# what the CUSTOMER pays for finished goods, and stamping it on either values the
+		# worker's movement at the selling price and foots a receipt in rupees nobody is
+		# charging. It stayed off them only because neither carried an order — and the Job
+		# In now does, so the customer can be named on it.
+		#
+		# A rate typed by hand still stands: this skips the automatic fill, not the line.
+		# "Job Challan" is deliberately left alone — it goes to the customer and is priced.
+		if (self.challan_type or "Sales") in ("Job Out", "Job In"):
+			for it in self.items:
+				it.amount = round(float(it.rate or 0) * float(it.weight or 0), 2)
+			self.total_amount = round(sum(float(it.amount or 0) for it in self.items), 2)
+			return
+
 		rates = {}
 		orders = {(it.sales_order or self.sales_order) for it in self.items}
 		for order in filter(None, orders):
@@ -199,6 +249,23 @@ class MMSalesChallan(Document):
 			weight = round(float(it.weight or 0), 3)
 			boxes = round(float(it.qty_box or 0), 3)
 			if weight <= 0 and boxes <= 0:
+				continue
+			# A JOB IN LINE THAT NAMES A PRODUCTION IS ALREADY IN STOCK.
+			#
+			# Receiving job work raises two documents for one physical arrival: the
+			# production, which books the boxes into finished goods, and this challan,
+			# which reconciles them against the Job Out. Both posted, so one arrival was
+			# counted twice — 300 kg sent out and 290.8 kg back left 590.8 kg on the books
+			# for 290.8 kg of real material, every cycle.
+			#
+			# The production is the right half to keep: it is the document that knows the
+			# lot, the colour and the box count, and it books in-house output the same way.
+			# This challan is the paperwork beside it. A Job In line with no production
+			# behind it still moves — that is a hand-built receipt nothing else recorded.
+			#
+			# Deliberately narrow: a SALES challan's lines name a production too, and there
+			# the movement is the dispatch itself and must not be skipped.
+			if (self.challan_type == "Job In") and it.get("production"):
 				continue
 			row = self._inventory_row(it)
 			if not row:

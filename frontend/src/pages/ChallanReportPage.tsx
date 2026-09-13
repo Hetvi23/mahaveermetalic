@@ -7,6 +7,7 @@ import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
+import { fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 
@@ -146,7 +147,7 @@ export default function ChallanReportPage() {
                 {shown.map((r) => (
                   <tr key={r.name} className="mm-ws-row" onClick={() => setOpen(r.name)}>
                     <td>{r.challan_no || r.name}</td>
-                    <td>{r.transaction_date || "—"}</td>
+                    <td>{fmtDate(r.transaction_date) || "—"}</td>
                     <td>{r.challan_type || "—"}</td>
                     <td title={r.party || ""}>{r.party_name || r.party || "—"}</td>
                     <td>

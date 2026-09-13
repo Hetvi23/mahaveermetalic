@@ -1,4 +1,5 @@
 import { code128Svg } from "./barcode";
+import { fmtDate } from "@/utils/localDate";
 
 export type StickerBox = {
   barcode?: string | null;
@@ -150,6 +151,6 @@ export function stickersFromChallan(d: {
       no: it.bobbin_pcs,
       batch: extra?.batch ?? null,
       operator: extra?.operator ?? null,
-      date: d.transaction_date ?? null,
+      date: fmtDate(d.transaction_date) || null,
     }));
 }

@@ -597,6 +597,7 @@ def create_production(
 	bobbin_return=0,
 	job_work=0,
 	pin=None,
+	delivery_by=None,
 ):
 	"""Submit handler: wind a program's threads into a completed MM Production voucher.
 
@@ -719,6 +720,9 @@ def create_production(
 			"cut": cut if cut not in (None, "") else prog.cut,
 			"machine_no": prog.machine_no,
 			"operator": operator,
+			# Who physically takes the goods out. Recorded on the voucher and carried onto
+			# the challan it raises — internal only, never printed.
+			"delivery_by": (delivery_by or "").strip() or None,
 			"shift": shift or None,
 			"batch_no": batch_no or None,
 			"box_return": 1 if frappe.utils.cint(box_return) else 0,

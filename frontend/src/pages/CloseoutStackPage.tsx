@@ -3,6 +3,7 @@ import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Undo2, Archive, RefreshCw } from "lucide-react";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { fmtDateTime } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.closeout";
 
@@ -104,7 +105,7 @@ export default function CloseoutStackPage() {
                     <td>{r.cut || "—"}</td>
                     <td className="mm-num">{(r.weight ?? 0).toLocaleString()}</td>
                     <td className="mm-num">{(r.leftover_weight ?? 0).toLocaleString()}</td>
-                    <td>{r.closed_on ? r.closed_on.slice(0, 16) : "—"}</td>
+                    <td>{fmtDateTime(r.closed_on) || "—"}</td>
                     <td>
                       <span className={`mm-state-chip ${r.close_mode === "Force" ? "mm-state-inventory" : "mm-state-cut"}`}>
                         {r.close_mode || "Auto"}

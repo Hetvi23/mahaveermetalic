@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download, Barcode } from "lucide-react";
+import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download } from "lucide-react";
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
@@ -11,6 +11,7 @@ import { getMasterByDoctype } from "@/config/registry";
 import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
+import DeliveryByInput from "@/components/DeliveryByInput";
 import { todayISO } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
@@ -43,28 +44,10 @@ type Program = {
   lot_id?: string | null;
   lot_ids?: string[];
 };
-type Produced = {
-  name: string;
-  posting_date?: string;
-  customer_order?: string;
-  /** What was produced — the colour, and the cut it ran at. */
-  shade?: string;
-  cut?: string;
-  roll_no?: string;
-  machine_no?: string;
-  operator?: string;
-  gross_weight?: number;
-  bobbin_weight?: number;
-  box_weight?: number;
-  net_weight?: number;
-  variance_percent?: number;
-  pin_override?: number;
-};
 type BobbinMaster = { name: string; weight?: number; quality?: string };
 
 export default function ProductionScreen() {
   const queueCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "prod-queue");
-  const doneCall = useFrappeGetCall<{ message: Produced[] }>(`${API}.production_done`, undefined, "prod-done");
   const [producing, setProducing] = useState<Program | null>(null);
   const [q, setQ] = useState("");
 
@@ -101,9 +84,7 @@ export default function ProductionScreen() {
         .filter(Boolean).join(" ").toLowerCase().includes(t),
     );
   }, [queue, q]);
-  const done = doneCall.data?.message ?? [];
-
-  const refresh = () => { void queueCall.mutate(); void doneCall.mutate(); };
+  const refresh = () => { void queueCall.mutate(); };
 
   return (
     <div className="mm-screen mm-page-enter">
@@ -114,7 +95,7 @@ export default function ProductionScreen() {
         </div>
       </header>
 
-      <div className="mm-iw-grid">
+      <div className="mm-iw-grid mm-iw-grid-single">
         {/* Queue — programs in threads processing */}
         <section className="mm-card mm-card-pad">
           <div className="mm-iw-sec-head">
@@ -167,61 +148,6 @@ export default function ProductionScreen() {
           )}
         </section>
 
-        {/* Finished goods */}
-        <section className="mm-card mm-card-pad">
-          <div className="mm-iw-sec-head">
-            <h2 className="mm-panel-title">Produced (finished goods)</h2>
-            <span className="mm-pill mm-pill-muted">{done.length}</span>
-          </div>
-          {done.length === 0 ? (
-            <p className="mm-empty">Nothing produced yet.</p>
-          ) : (
-            <div className="mm-table-scroll">
-              <table className="mm-table mm-table-dense">
-                <thead>
-                  <tr>
-                    <th>V.No</th>
-                    <th>Date</th>
-                    <th>Color</th>
-                    <th>Roll</th>
-                    <th>Operator</th>
-                    <th className="mm-num">Net (kg)</th>
-                    <th className="mm-num">Var %</th>
-                    <th className="mm-no-print" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {done.map((d) => (
-                    <tr key={d.name}>
-                      <td>{d.name}</td>
-                      <td>{d.posting_date || "—"}</td>
-                      <td>
-                        <span className="mm-colour-name">{d.shade || "—"}</span>
-                        {d.cut ? <span className="mm-suggest-meta">{d.cut}</span> : null}
-                      </td>
-                      <td>{d.roll_no || "—"}</td>
-                      <td>{d.operator || "—"}</td>
-                      <td className="mm-num">{(d.net_weight ?? 0).toLocaleString()}</td>
-                      <td className="mm-num">
-                        <span className={Math.abs(d.variance_percent ?? 0) > 0 ? "mm-var" : undefined}>
-                          {(d.variance_percent ?? 0).toFixed(2)}
-                        </span>
-                        {d.pin_override ? <ShieldAlert size={12} style={{ marginLeft: 4, verticalAlign: "middle" }} aria-label="PIN override" /> : null}
-                      </td>
-                      {/* One button for the whole production: every box of it on the label
-                          printer in a single job. Reprinting a single box means re-opening
-                          the voucher, and by then its stickers say PREVIEW — the real codes
-                          only exist on the challan this reads. */}
-                      <td className="mm-no-print">
-                        <ProductionLabels production={d.name} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
       </div>
 
       {producing && (
@@ -289,6 +215,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // they pick a different party.
   const [jobWorkTouched, setJobWorkTouched] = useState(false);
   const [operator, setOperator] = useState("");
+  const [deliveryBy, setDeliveryBy] = useState("");
   const [shift, setShift] = useState<string>(program.shift || "Day");
   const [jobWork, setJobWork] = useState<boolean>(!!program.job_work_flag);
   const [batchNo, setBatchNo] = useState("");
@@ -458,6 +385,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
           })),
         ),
         operator: operator || undefined,
+        delivery_by: deliveryBy || undefined,
         shift,
         customer_order: order || undefined,
         party: party || undefined,
@@ -642,6 +570,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <span className="mm-field-label">Shift</span>
               <SearchSelect noClear value={shift} options={SHIFTS.map((s) => ({ value: s, label: s }))} onChange={setShift} />
             </label>
+            <DeliveryByInput value={deliveryBy} onChange={setDeliveryBy} />
             <label className="mm-field">
               <span className="mm-field-label">Machine</span>
               <input className="mm-input" value={program.machine_no || "—"} readOnly />
@@ -1150,33 +1079,3 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
  * print the labels for the boxes that had just come back. The boxes are where the codes
  * live, so the boxes are what this asks.
  */
-function ProductionLabels({ production }: { production: string }) {
-  const [busy, setBusy] = useState(false);
-  const { call: fetchLabels } = useFrappePostCall<{ message: ChallanPrintData | null }>(
-    "mahaveermetalic.mahaveer_metallic.api.challan.production_box_labels",
-  );
-
-  async function go() {
-    setBusy(true);
-    try {
-      const c = await fetchLabels({ production });
-      const labels = c?.message ? stickersFromChallan(c.message) : [];
-      if (!labels.length) {
-        toast("This production has no boxes to label.", "error");
-        return;
-      }
-      printBoxStickers(labels);
-    } catch (e) {
-      toast(extractErrorMessage(e), "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <button type="button" className="mm-mini" disabled={busy} onClick={() => void go()}
-      title="Print the barcode label for every box of this production">
-      <Barcode size={13} /> {busy ? "…" : "Barcodes"}
-    </button>
-  );
-}

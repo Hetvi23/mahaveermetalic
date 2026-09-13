@@ -16,7 +16,7 @@ import PartyPicker from "@/components/PartyPicker";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
-import { todayISO } from "@/utils/localDate";
+import { todayISO, fmtDate } from "@/utils/localDate";
 
 const today = todayISO;
 
@@ -1052,7 +1052,7 @@ export default function OrderWorkspace() {
                       <tr key={i}>
                         <td>{it.color_name}</td>
                         <td>{it.cut || "—"}</td>
-                        <td>{it.delivery_date || "—"}</td>
+                        <td>{fmtDate(it.delivery_date) || "—"}</td>
                         <td className="mm-num">{Number(it.qty_weight) || 0}</td>
                         <td className="mm-num">{Number(it.qty_box) || 0}</td>
                         <td className="mm-num">{Number(it.sale_rate) || 0}</td>
@@ -1278,11 +1278,11 @@ export default function OrderWorkspace() {
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
                       <td className="mm-ow-cell-order">{o.name}</td>
-                      <td className="mm-ow-cell-date">{o.transaction_date || "—"}</td>
+                      <td className="mm-ow-cell-date">{fmtDate(o.transaction_date) || "—"}</td>
                       <td title={o.company_name || (o.party ?? "")}>{o.company_name || o.party || "—"}</td>
                       <td title={linesByOrder[o.name]?.colours.join(", ") || ""}>{linesByOrder[o.name]?.colours.join(", ") || "—"}</td>
                       <td className="mm-num mm-ow-rates">{ratePair(linesByOrder[o.name])}</td>
-                      <td className={overdue ? "mm-open-overdue" : undefined}>{o.delivery_date || "—"}{overdue ? " · overdue" : ""}</td>
+                      <td className={overdue ? "mm-open-overdue" : undefined}>{fmtDate(o.delivery_date) || "—"}{overdue ? " · overdue" : ""}</td>
                       {/* Received against ordered — the figures the Complete / Incomplete
                           status is read off, so the status is never a claim you have to
                           take on trust. */}

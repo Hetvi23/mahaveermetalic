@@ -10,7 +10,8 @@ import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
-import { todayISO } from "@/utils/localDate";
+import { todayISO, fmtDate } from "@/utils/localDate";
+import DeliveryByInput from "@/components/DeliveryByInput";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -48,6 +49,16 @@ type PickedBobbin = { bobbin: string; qty: number };
 /** A Job Out still holding material — one row of the Job In picker. */
 /** One ROLL still with a worker. `name` is the Job Out it belongs to — a Job In answers
  *  the whole challan — while `line` is this roll's own identity on the list. */
+/** A customer order this Job Out was given against — what the Job In is filed under. */
+type JobOutOrder = {
+  order: string;
+  customer?: string;
+  customer_name?: string;
+  company_name?: string;
+  transaction_date?: string;
+  ordered_weight?: number;
+};
+
 type JobOutRow = {
   name: string; line?: string; challan_no?: string; transaction_date?: string;
   party?: string; party_label?: string;
@@ -134,9 +145,13 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
   const nextNo = useFrappeGetCall<{ message: string }>(
     `${API}.next_job_challan_no`, { challan_type: type }, `job-no-${type}`,
   );
+  // The suggestion follows the books until the operator types their own number. Filling
+  // only an EMPTY box took the cached number the instant it was cleared after a submit, and
+  // the fresh one arrived to a box no longer empty — so the next challan reused the last.
+  const [challanNoTyped, setChallanNoTyped] = useState(false);
   useEffect(() => {
-    if (!challanNo && nextNo.data?.message) setChallanNo(String(nextNo.data.message));
-  }, [nextNo.data, challanNo]);
+    if (!challanNoTyped && nextNo.data?.message) setChallanNo(String(nextNo.data.message));
+  }, [nextNo.data, challanNoTyped]);
 
   const { call: createJobChallan, loading: submitting } = useFrappePostCall<{
     message: { challan: string; rolls: number; bobbins: number; total_weight: number };
@@ -282,6 +297,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
       }
       clearChallan();
       setChallanNo("");
+      setChallanNoTyped(false);
       void stockCall.mutate();
       // The Job Out just received is no longer outstanding — refresh so it drops off.
       void jobOutsCall.mutate();
@@ -402,7 +418,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                       {jobOutRows.map((r, i) => (
                         <tr key={r.line || `${r.name}-${i}`}
                           className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
-                          <td className="mm-job-date">{r.transaction_date || "—"}</td>
+                          <td className="mm-job-date">{fmtDate(r.transaction_date) || "—"}</td>
                           <td>{r.challan_no || r.name}</td>
                           <td>{r.party_label || r.party || "—"}</td>
                           {/* The ROLL, at its own weight. This column used to carry the
@@ -482,7 +498,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                     const off = blockedByColour(r);
                     return (
                       <tr key={rollKey(r)} className={`${on ? "mm-job-row-picked" : ""} ${off ? "mm-job-row-offcolour" : ""}`}>
-                        <td className="mm-job-date">{r.challan_date || "—"}</td>
+                        <td className="mm-job-date">{fmtDate(r.challan_date) || "—"}</td>
                         <td className="mm-job-order">{r.customer_order || "—"}</td>
                         <td title={`${r.roll_no || ""}${r.lot_number ? ` · lot ${r.lot_number}` : ""}${r.challan_number ? ` · challan ${r.challan_number}` : ""}`}>
                           <span className="mm-colour-name">{r.color_name || "—"}</span>
@@ -571,7 +587,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Chalan no *</span>
-                <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)} />
+                <input className="mm-input" value={challanNo} placeholder="Next number, or type your own"
+                  onChange={(e) => { setChallanNo(e.target.value); setChallanNoTyped(true); }} />
               </label>
               <label className="mm-field mm-job-company">
                 <span className="mm-field-label">Company *</span>
@@ -621,7 +638,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                       <tr key={r.name}>
                         <td>
                           <span className="mm-colour-name">{r.color_name || r.roll_no || "—"}</span>
-                          <span className="mm-suggest-meta">{r.challan_date || ""}</span>
+                          <span className="mm-suggest-meta">{fmtDate(r.challan_date)}</span>
                         </td>
                         <td>
                           <input className="mm-input mm-input-compact" value={r.cut} placeholder="50/85"
@@ -723,9 +740,12 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
 }) {
   const [vDate, setVDate] = useState(today());
   const [cNo, setCNo] = useState("");
+  // True once the operator types over the suggested number — see the effect below.
+  const [cNoTyped, setCNoTyped] = useState(false);
   const [batchNo, setBatchNo] = useState("");
   const [size, setSize] = useState("");
   const [order, setOrder] = useState("");
+  const [deliveryBy, setDeliveryBy] = useState("");
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
   const [boxes, setBoxes] = useState<JobInBox[]>([]);
@@ -742,6 +762,23 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   );
   const bobbinMasters = useFrappeGetDocList<{ name: string }>("MM Bobbin Master", { fields: ["name"], limit: 0 });
 
+  // The orders THIS Job Out was given against — the only ones a receipt on it can belong
+  // to, so the box is a pick from them rather than a name to be remembered and typed.
+  const ordersCall = useFrappeGetCall<{ message: JobOutOrder[] }>(
+    `${API}.job_out_orders`,
+    jobOut ? { challan: jobOut } : undefined,
+    jobOut ? `job-out-orders-${jobOut}` : null,
+  );
+  const orderOpts = ordersCall.data?.message ?? [];
+  const picked = orderOpts.find((o) => o.order === order);
+
+  // The next Job In number, so the operator is not asked for the one thing the books
+  // already know. Refetched per Job Out: another receipt may have been booked meanwhile.
+  const nextNo = useFrappeGetCall<{ message: string }>(
+    `${API}.next_job_challan_no`, { challan_type: "Job In" },
+    jobOut ? `next-job-in-${jobOut}` : null,
+  );
+
   const totals = useMemo(() => ({
     boxes: boxes.length,
     net: r3(boxes.reduce((s, b) => s + b.net, 0)),
@@ -749,7 +786,25 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   }), [boxes]);
   const sent = Number(meta?.total_weight || 0);
 
-  useEffect(() => { setBoxes([]); setErr(null); setAdding(false); }, [jobOut]);
+  useEffect(() => { setBoxes([]); setErr(null); setAdding(false); setCNoTyped(false); }, [jobOut]);
+
+  // A fresh Job Out means a fresh receipt: the number comes from the series and the order
+  // from the challan. Only ONE order is chosen automatically — where the Job Out covers
+  // several, which of them this material belongs to is the operator's call, not a guess.
+  useEffect(() => {
+    if (!jobOut) return;
+    setOrder(orderOpts.length === 1 ? orderOpts[0].order : "");
+  }, [jobOut, orderOpts]);
+
+  useEffect(() => {
+    const n = nextNo.data?.message;
+    // Never overwrite a number already typed — the suggestion is a starting point, and
+    // the shop's own challan book sometimes runs ahead of ours. Until then it FOLLOWS the
+    // books: filling only an empty box took the cached number when a second receipt was
+    // opened on the same Job Out, and the fresh one arrived too late to replace it, so
+    // back-to-back receipts both went out as the same challan number.
+    if (n && !cNoTyped) setCNo(n);
+  }, [nextNo.data, cNoTyped]);
 
   async function submit() {
     setErr(null);
@@ -764,6 +819,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
         batch_no: batchNo || undefined,
         cut: size || undefined,
         challan_no: cNo || undefined,
+        delivery_by: deliveryBy || undefined,
         box_return: boxReturn ? 1 : 0,
         bobbin_return: bobbinReturn ? 1 : 0,
         boxes: JSON.stringify(boxes.map((b) => ({
@@ -806,7 +862,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
           /* Labels are best-effort: the receipt is posted and must not be undone by them. */
         }
       }
-      setBoxes([]); setCNo(""); setBatchNo("");
+      setBoxes([]); setCNo(""); setCNoTyped(false); setBatchNo("");
+      void nextNo.mutate();
       onDone();
     } catch (e) {
       const msg = extractErrorMessage(e);
@@ -842,8 +899,13 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
             <span className="mm-ji-sub">
               <span>against <strong>{meta?.challan_no || jobOut}</strong></span>
               {(meta?.party_label || party) && <><i /><span>{meta?.party_label || party}</span></>}
+              {picked?.customer_name && (
+                <><i /><span title="The customer whose order this material belongs to">
+                  for <strong>{picked.customer_name}</strong>
+                </span></>
+              )}
               {meta?.color_name && <><i /><span className="mm-colour-name">{meta.color_name}</span></>}
-              {meta?.transaction_date && <><i /><span>{meta.transaction_date}</span></>}
+              {meta?.transaction_date && <><i /><span>{fmtDate(meta.transaction_date)}</span></>}
             </span>
           </span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -890,8 +952,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">C.No <b className="mm-req">*</b></span>
-                <input className="mm-input" value={cNo} placeholder="Challan no"
-                  onChange={(e) => setCNo(e.target.value)} />
+                <input className="mm-input" value={cNo} placeholder="Next number, or type your own"
+                  onChange={(e) => { setCNo(e.target.value); setCNoTyped(true); }} />
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">B.No</span>
@@ -905,10 +967,23 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Order</span>
-                <input className="mm-input" value={order}
-                  placeholder="From the Job Out"
-                  onChange={(e) => setOrder(e.target.value)} />
+                <SearchSelect
+                  value={order}
+                  onChange={setOrder}
+                  options={orderOpts.map((o) => ({
+                    value: o.order,
+                    label: o.order,
+                    // The customer under the number: an order id says nothing on its own,
+                    // and picking the wrong one files the receipt against the wrong firm.
+                    meta: [o.customer_name, o.company_name].filter(Boolean).join(" · "),
+                  }))}
+                  placeholder={ordersCall.isLoading ? "Loading…" : "No order"}
+                  emptyText="This Job Out names no customer order."
+                />
               </label>
+              {/* Who brought it back — the same question a dispatch asks, read the other
+                  way round, so it is the same box with the same suggestions. */}
+              <DeliveryByInput value={deliveryBy} onChange={setDeliveryBy} placeholder="Who brought it back" />
             </div>
 
             {/* Two switches that apply to every box keyed after them — chips, not bare

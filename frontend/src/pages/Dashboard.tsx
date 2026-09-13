@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { useState } from "react";
-import { todayISO } from "@/utils/localDate";
+import { todayISO, fmtDate } from "@/utils/localDate";
 import {
   ShoppingCart,
   ScrollText,
@@ -212,7 +212,7 @@ function HomeView() {
                 <Link key={o.name} to={`/sales-order/${encodeURIComponent(o.name)}`} className="mm-open-row">
                   <span className="mm-open-name">{o.name}</span>
                   <span className={`mm-open-date ${isOverdue ? "mm-open-overdue" : "mm-open-due"}`}>
-                    {o.delivery_date}
+                    {fmtDate(o.delivery_date)}
                     {isOverdue ? " · overdue" : " · today"}
                   </span>
                   <span className="mm-open-party">{o.party || "—"}</span>
@@ -286,7 +286,7 @@ function HomeView() {
               return (
                 <Link key={o.name} to={`/sales-order/${encodeURIComponent(o.name)}`} className="mm-open-row">
                   <span className="mm-open-name">{o.name}</span>
-                  <span className="mm-open-date">{o.transaction_date || "—"}</span>
+                  <span className="mm-open-date">{fmtDate(o.transaction_date) || "—"}</span>
                   <span className="mm-open-party">{o.party || "—"}</span>
                   <span className="mm-open-prog">
                     <span className="mm-open-bar">

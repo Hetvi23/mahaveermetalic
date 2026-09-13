@@ -16,6 +16,7 @@
   "location",
   "challan_no",
   "section_transport",
+  "delivery_by",
   "transport",
   "vehicle_no",
   "section_items",
@@ -101,6 +102,11 @@
    "fieldname": "section_transport",
    "fieldtype": "Section Break",
    "label": "Transport"
+  },
+  {
+   "fieldname": "delivery_by",
+   "fieldtype": "Data",
+   "label": "Delivery By"
   },
   {
    "fieldname": "transport",
@@ -191,7 +197,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-05 15:00:00.000000",
+ "modified": "2026-09-12 17:18:18.864989",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Challan",

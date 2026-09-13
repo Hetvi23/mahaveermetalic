@@ -11,7 +11,7 @@ import ProgramCompleteDialog from "@/components/ProgramCompleteDialog";
 import SearchSelect from "@/components/SearchSelect";
 import PattyTile from "@/components/PattyTile";
 import { filterPatties, groupPatties } from "@/utils/finishedPatty";
-import { todayISO, tomorrowISO } from "@/utils/localDate";
+import { todayISO, tomorrowISO, fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = todayISO;
@@ -731,7 +731,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
       ? [[qty(o.matched_cut_weight, o.matched_cut_box), colour].filter(Boolean).join(" "), `cut ${pattyCut}`]
       : [[qty(o.matched_weight, o.matched_box), colour].filter(Boolean).join(" "),
          o.matched_cuts?.length ? `cut ${o.matched_cuts.join(", ")}` : ""]
-    ).concat(o.delivery_date ? `due ${o.delivery_date}` : "").filter(Boolean).join(" · "),
+    ).concat(o.delivery_date ? `due ${fmtDate(o.delivery_date)}` : "").filter(Boolean).join(" · "),
   }));
   // Empty means something specific here, and saying which saves a trip to the Orders
   // screen to find out.
@@ -1123,7 +1123,7 @@ function ProgramList() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.key}>
-                  <td>{r.date || "—"}</td>
+                  <td>{fmtDate(r.date) || "—"}</td>
                   <td>{r.order || "—"}</td>
                   <td>{r.roll || "—"}</td>
                   <td>{r.cut || "—"}</td>

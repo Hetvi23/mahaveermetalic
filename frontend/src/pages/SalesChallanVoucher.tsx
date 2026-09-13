@@ -10,7 +10,8 @@ const money = (v: number) =>
   `\u20B9${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
-import { todayISO } from "@/utils/localDate";
+import { todayISO, fmtDate } from "@/utils/localDate";
+import DeliveryByInput from "@/components/DeliveryByInput";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -63,6 +64,7 @@ export default function SalesChallanVoucher() {
   const [challanNo, setChallanNo] = useState("");
   const [date, setDate] = useState(today());
   const [remark, setRemark] = useState("");
+  const [deliveryBy, setDeliveryBy] = useState("");
   const [jobWork, setJobWork] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [picker, setPicker] = useState<"box" | "roll" | null>(null);
@@ -180,6 +182,7 @@ export default function SalesChallanVoucher() {
     try {
       const res = await createChallan({
         party, sales_order: order || undefined, challan_date: date, remark: remark || undefined,
+        delivery_by: deliveryBy || undefined,
         challan_type: challanType,
         job_work: jobWork ? 1 : 0, challan_no: challanNo || undefined,
         boxes: JSON.stringify(lines.filter((l) => l.kind === "box").map((l) => l.ref)),
@@ -279,6 +282,7 @@ export default function SalesChallanVoucher() {
             <span className="mm-field-label">Remark</span>
             <input className="mm-input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Remark" />
           </label>
+          <DeliveryByInput value={deliveryBy} onChange={setDeliveryBy} />
           <button type="button" className="mm-btn-secondary" onClick={() => setPicker("box")}><Boxes size={15} /> Select box</button>
           <button type="button" className="mm-btn-secondary" onClick={() => setPicker("roll")}><PackageSearch size={15} /> Select roll</button>
           {/* Scan the sticker barcode — the gun types the code then presses Enter. */}
@@ -374,7 +378,7 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
               onClick={() => setSel((p) => { const n = { ...p }; if (n[r.box]) delete n[r.box]; else n[r.box] = r; return n; })}
               style={{ cursor: "pointer" }}>
               <td><input type="checkbox" checked={!!sel[r.box]} readOnly /></td>
-              <td>{r.posting_date || "—"}</td>
+              <td>{fmtDate(r.posting_date) || "—"}</td>
               <td>{r.item || "—"}</td>
               <td>{r.cut || "—"}</td>
               <td>{r.customer_order || "—"}</td>

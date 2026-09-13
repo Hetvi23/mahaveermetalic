@@ -6,6 +6,7 @@ import { Filter, ReportFilters } from "@/components/ReportFilters";
 import Pager, { pageSlice } from "@/components/Pager";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
+import { fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.inward_report";
 const INWARD = "mahaveermetalic.mahaveer_metallic.api.inward";
@@ -283,7 +284,7 @@ export default function InwardReportPage() {
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
     };
     const body = rows.map((r) => [
-      r.challan_no ?? "", r.chalan_date ?? "", r.supplier ?? "", r.customer_order ?? "", r.item ?? "", r.roll_name ?? "",
+      r.challan_no ?? "", fmtDate(r.chalan_date), r.supplier ?? "", r.customer_order ?? "", r.item ?? "", r.roll_name ?? "",
       r.cut ?? "", r.qty_box ?? 0, r.weight ?? 0, r.job_work ? "Yes" : "", r.company_name ?? "",
       r.lot_number ?? "", r.inward, r.docstatus === 2 ? "Cancelled" : r.receipt_status ?? "",
       r.is_gr ? "GR entry" : r.gr_returned ? "Returned" : "",
@@ -439,7 +440,7 @@ export default function InwardReportPage() {
                           title="Applies to every roll on this receipt"
                           onChange={(e) => setDraft((d) => ({ ...d, chalan_date: e.target.value }))} />
                       ) : (
-                        r.chalan_date || "—"
+                        fmtDate(r.chalan_date) || "—"
                       )}
                     </td>
                     <td>

@@ -3,7 +3,7 @@ import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { ArrowDownFromLine, ArrowUpFromLine } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
-import { monthsAgoISO, todayISO } from "@/utils/localDate";
+import { monthsAgoISO, todayISO, fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -116,7 +116,7 @@ export default function JobReportPage() {
               )}
               {rows.map((x) => (
                 <tr key={x.challan}>
-                  <td>{x.date || "—"}</td>
+                  <td>{fmtDate(x.date) || "—"}</td>
                   <td><span className={`mm-state ${x.type === "Job Out" ? "mm-state-unfinished" : "mm-state-incutting"}`}>{x.type}</span></td>
                   <td>{x.challan_no || x.challan}</td>
                   <td>{x.party || "—"}</td>

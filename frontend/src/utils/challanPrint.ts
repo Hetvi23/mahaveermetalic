@@ -9,6 +9,8 @@
  * into many boxes, so repeating them on every row spent the width the weights need.
  */
 
+import { fmtDate } from "@/utils/localDate";
+
 export type ChallanItem = {
   idx?: number;
   color_name?: string;
@@ -43,6 +45,12 @@ export type ChallanPrintData = {
   sales_order?: string;
   transport?: string;
   vehicle_no?: string;
+  /** Whose ORDER this is — only present when it differs from the party the challan is
+   *  addressed to, which in practice means a job challan (party = the worker). */
+  customer?: string;
+  customer_name?: string;
+  customer_address?: string;
+  customer_mobile?: string;
   remarks?: string;
   total_box?: number;
   total_weight?: number;
@@ -175,8 +183,14 @@ function copy(d: ChallanPrintData, label: string): string {
       </tr>
       <tr>
         <td class="k">Item</td><td class="c">:</td><td class="v">${esc(itemLine || "—")}</td>
-        <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(d.transaction_date || "")}</td>
+        <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(fmtDate(d.transaction_date))}</td>
       </tr>
+      ${d.customer_name ? `<tr>
+        <td class="k">Customer</td><td class="c">:</td><td class="v"><b>${esc(d.customer_name)}</b>${
+          d.customer_mobile ? ` <span class="sub">${esc(d.customer_mobile)}</span>` : ""
+        }</td>
+        <td class="k2">Order</td><td class="c">:</td><td class="v2">${esc(d.sales_order || "")}</td>
+      </tr>` : ""}
     </table>
     <table class="grid">
       <thead><tr>
@@ -234,6 +248,9 @@ export function printChallan(d: ChallanPrintData) {
     .meta td { padding: 0.4mm 0; vertical-align: top; }
     .meta .k { width: 13mm; } .meta .k2 { width: 24mm; padding-left: 4mm; white-space: nowrap; }
     .meta .c { width: 3mm; } .meta .v2 { width: 30mm; }
+    /* The customer's phone, set beside their name rather than on a row of its own —
+       the header block is tight and a whole row for one number costs the grid below. */
+    .meta .sub { font-size: 7pt; font-weight: 400; }
     /* The grid IS the challan — it takes whatever height is left on the half-sheet. */
     .grid { font-size: 7.5pt; table-layout: fixed; }
     .grid th, .grid td { border: 0.4pt solid #000; padding: 0.5mm 1.2mm; }

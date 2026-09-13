@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowDownToLine, ArrowUpFromLine, RefreshCw, ScrollText, X } from "lucide-react";
 import { TableSkeleton } from "@/components/Skeleton";
 import SearchSelect from "@/components/SearchSelect";
+import { fmtDate } from "@/utils/localDate";
 
 type Entry = {
   name: string;
@@ -213,7 +214,7 @@ export default function StockLedgerScreen() {
                   const isIn = (r.in_weight ?? 0) > 0;
                   return (
                     <tr key={r.name}>
-                      <td>{r.posting_date || "—"}</td>
+                      <td>{fmtDate(r.posting_date) || "—"}</td>
                       <td>
                         <span className={`mm-vtag ${isIn ? "mm-vtag-in" : "mm-vtag-out"}`}>
                           {isIn ? <ArrowDownToLine size={11} /> : <ArrowUpFromLine size={11} />} {r.voucher_type}

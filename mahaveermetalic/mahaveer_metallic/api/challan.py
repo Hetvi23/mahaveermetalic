@@ -99,6 +99,9 @@ def create_challan_from_production(production):
 			"location": prod.location,
 			"source_production": prod.name,
 			"job_work_flag": prod.job_work_flag,
+			# Carried from the voucher: the challan is the dispatch, so whoever the
+			# production named as taking it out is who this challan went with.
+			"delivery_by": prod.get("delivery_by"),
 			"items": rows,
 			# The bobbins entered on the production voucher, carried onto the challan.
 			# They were being written onto each LINE (bobbin / pcs / weight per box) but
@@ -175,7 +178,7 @@ def available_boxes(party=None, sales_order=None, limit=200):
 @frappe.whitelist()
 def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None,
-	challan_type="Sales", **kwargs):
+	challan_type="Sales", delivery_by=None, **kwargs):
 	"""Build a challan by hand from picked produced boxes and/or inventory rolls.
 
 	`challan_type` is the paper being issued — Sales, Job Challan, Challan or Delivery
@@ -277,6 +280,7 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 			"challan_no": challan_no or None,
 			"remarks": remark or None,
 			"job_work_flag": 1 if frappe.utils.cint(job_work) else 0,
+			"delivery_by": (delivery_by or "").strip() or None,
 			"location": location,
 			"branch": branch,
 			"items": rows,
@@ -486,11 +490,18 @@ def next_job_challan_no(challan_type="Job Out"):
 
 @frappe.whitelist()
 def create_job_challan(challan_type="Job Out", party=None, challan_date=None, challan_no=None,
-	rolls=None, bobbins=None, remark=None, location=None, branch=None, against_job_out=None):
+	rolls=None, bobbins=None, remark=None, location=None, branch=None, against_job_out=None,
+	items=None, delivery_by=None, sales_order=None):
 	"""Create a Job Out / Job In challan from the picked rolls and bobbins.
 
 	Stock and the bobbin ledger both move on submit (see MMSalesChallan.on_submit), so
 	the challan is submitted straight away — the job material has physically moved.
+
+	`items` is the other shape this document comes in: ready-built challan lines, used by
+	the Job In receipt, where what comes back is BOXES and not the rolls that went out.
+	A Job In was being rebuilt from its Job Out's roll lines, so it carried the weight
+	that was SENT and none of the box detail that was received — no barcode, no box tare,
+	no bobbin count, and no return ticks. Given `items`, those lines are the challan.
 	"""
 	if challan_type not in ("Job Out", "Job In"):
 		frappe.throw(_("Challan type must be Job Out or Job In."))
@@ -498,10 +509,11 @@ def create_job_challan(challan_type="Job Out", party=None, challan_date=None, ch
 		frappe.throw(_("Choose the party."))
 	roll_list = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
 	bob_list = json.loads(bobbins) if isinstance(bobbins, str) else (bobbins or [])
-	if not roll_list and not bob_list:
+	item_list = json.loads(items) if isinstance(items, str) else (items or [])
+	if not roll_list and not bob_list and not item_list:
 		frappe.throw(_("Add at least one roll or bobbin to the challan."))
 
-	rows = []
+	rows = list(item_list)
 	# The colours as INVENTORY holds them — plain text, always present. The row's own
 	# `color_name` is a Link and `_valid_colour` blanks it for any shade not in MM Item
 	# Master, so a rule written against that silently passes two unknown colours as "both
@@ -564,6 +576,13 @@ def create_job_challan(challan_type="Job Out", party=None, challan_date=None, ch
 		"challan_no": challan_no or None,
 		"remarks": remark or None,
 		"job_work_flag": 1,
+		"delivery_by": (delivery_by or "").strip() or None,
+		# WHOSE order this material belongs to. `party` above stays the WORKER — job_report
+		# runs its balance per party across the Job Out / Job In pair, so repointing it at
+		# the customer would leave the worker holding the material for ever. The order is
+		# how the customer is reached instead, and a job challan is not a dispatch, so
+		# naming one here cannot mark it delivered (see NON_DISPATCH_TYPES).
+		"sales_order": (sales_order or "").strip() or None,
 		"location": location,
 		"branch": branch,
 		# A Job In names the Job Out it answers, which is what makes "still with the
@@ -706,6 +725,29 @@ def new_lots_for_party(doc) -> list:
 	return sorted({lot for colour, lot in keys if (colour, lot) not in had})
 
 
+def _customer_block(doc):
+	"""The customer behind a challan's order — name, address, phone.
+
+	Only worth adding when it says something the paper does not already: on a Sales challan
+	the party IS the customer and repeating them would print the same name twice.
+	"""
+	order = doc.sales_order or next((it.sales_order for it in doc.items if it.sales_order), None)
+	if not order:
+		return {}
+	customer = frappe.db.get_value("MM Sales Order", order, "party")
+	if not customer or customer == doc.party:
+		return {}
+	row = frappe.db.get_value(
+		"MM Party Master", customer, ["party_name", "address", "mobile_number"], as_dict=True
+	) or {}
+	return {
+		"customer": customer,
+		"customer_name": row.get("party_name") or customer,
+		"customer_address": row.get("address"),
+		"customer_mobile": row.get("mobile_number"),
+	}
+
+
 @frappe.whitelist()
 def challan_for_print(challan):
 	"""Everything one challan needs to print, in one call.
@@ -747,6 +789,10 @@ def challan_for_print(challan):
 		"address": party.get("address"),
 		"mobile_no": party.get("mobile_number"),
 		"sales_order": doc.sales_order,
+		# On a job challan `party` is the WORKER, so the customer would otherwise appear
+		# nowhere on the paper. Read off the order the challan names; absent on anything
+		# with no order behind it, which the print renders by leaving the row out.
+		**_customer_block(doc),
 		"transport": doc.transport,
 		"vehicle_no": doc.vehicle_no,
 		"remarks": doc.remarks,
@@ -1537,7 +1583,7 @@ def job_out_rolls(challan):
 # Same four numbers, solved for the other unknown.
 
 
-def _job_in_box_rows(boxes, shade):
+def _job_in_box_rows(boxes, shade, box_return=0, bobbin_return=0):
 	"""Map the entered boxes onto MM Production Box rows, deriving the box tare.
 
 	Every row is solved the same way, server-side, rather than trusting whatever the
@@ -1581,8 +1627,15 @@ def _job_in_box_rows(boxes, shade):
 			# The measured figure — it is the INPUT here, not the result, which is the whole
 			# difference between receiving job work and producing in-house.
 			"net_weight": net,
-			"box_return": 1 if frappe.utils.cint(b.get("box_return")) else 0,
-			"bobbin_return": 1 if frappe.utils.cint(b.get("bobbin_return")) else 0,
+			# The header ticks are the DEFAULT each row carries, exactly as they are on a
+			# production voucher — a row that says nothing inherits what the operator set
+			# for the receipt rather than silently reading as "not returnable".
+			"box_return": 1 if frappe.utils.cint(
+				b.get("box_return", frappe.utils.cint(box_return))
+			) else 0,
+			"bobbin_return": 1 if frappe.utils.cint(
+				b.get("bobbin_return", frappe.utils.cint(bobbin_return))
+			) else 0,
 		})
 	return rows
 
@@ -1616,7 +1669,7 @@ def preview_job_in_box(gross_weight=None, net_weight=None, bobbin_pcs=0, bobbin_
 @frappe.whitelist()
 def create_job_in_production(against_job_out, boxes=None, customer_order=None, party=None,
 	posting_date=None, batch_no=None, cut=None, operator=None, shift=None, challan_no=None,
-	box_return=0, bobbin_return=0):
+	box_return=0, bobbin_return=0, delivery_by=None):
 	"""Receive a Job Out back as a PRODUCTION voucher, and close the Job Out with a Job In.
 
 	Two records, because they answer two questions the shop asks separately: the production
@@ -1655,7 +1708,7 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 			_("Job Out {0} has no colour on it, so what came back cannot be filed against one.")
 			.format(jo.name)
 		)
-	rows = _job_in_box_rows(boxes, shade)
+	rows = _job_in_box_rows(boxes, shade, box_return=box_return, bobbin_return=bobbin_return)
 
 	prod = frappe.get_doc({
 		"doctype": "MM Production",
@@ -1667,6 +1720,9 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		"branch": jo.branch,
 		"location": jo.location,
 		"operator": operator or None,
+		# On a receipt this is who BROUGHT it back — the same box on the same voucher,
+		# read the other way round.
+		"delivery_by": (delivery_by or "").strip() or None,
 		"shift": shift or None,
 		"batch_no": batch_no or None,
 		"status": "Completed",
@@ -1689,15 +1745,37 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	prod.submit()
 
 	# …and the Job In that closes the Job Out, so the worker's balance moves with it.
+	#
+	# BUILT FROM WHAT CAME BACK, not from what went out. This used to re-list the Job Out's
+	# own roll lines, which made the Job In a photocopy of the Job Out: it carried the SENT
+	# weight, so every hisab computed its wastage as out − in = 0 — the one figure the
+	# settlement exists to argue about — and it carried none of the box detail the operator
+	# had just keyed. No barcode to scan, no box tare, no bobbin count, and no return ticks,
+	# so the printed challan's "Return No. of Box / No. of Bobbin" was 0 however the boxes
+	# were marked.
+	#
+	# The production's own box rows are the answer to all of it: they are what the worker
+	# handed over, they carry the barcodes MMProduction minted, and `_box_row` is the same
+	# mapping a dispatch challan uses — including r_box / r_bobbin, which is what the print
+	# counts the returnables off.
+	prod.reload()
 	job_in = create_job_challan(
 		challan_type="Job In",
 		party=jo.party,
 		challan_date=posting_date or frappe.utils.today(),
 		challan_no=challan_no or None,
-		rolls=json.dumps([
-			{"roll_inventory": it.roll_inventory, "weight": it.weight, "cut": it.cut}
-			for it in jo.items if it.roll_inventory
-		]),
+		location=jo.location,
+		branch=jo.branch,
+		delivery_by=delivery_by,
+		sales_order=prod.customer_order,
+		items=[
+			_box_row(
+				dict(b.as_dict(), cut=prod.cut),
+				production=prod.name,
+				order=prod.customer_order,
+			)
+			for b in (prod.boxes or [])
+		],
 		against_job_out=jo.name,
 	)
 	return {
@@ -1957,3 +2035,129 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 			"bobbin_difference": round(t_bo - t_bi, 3),
 		},
 	}
+
+
+@frappe.whitelist()
+def delivery_by_options(search=None, limit=20):
+	"""The names already used for "Delivery by", most recent first.
+
+	Free text with a memory rather than a master. Who takes the goods out is a driver, an
+	angadia or whoever is going that way — a list the office would have to maintain, and
+	would not. So the field accepts anything and offers back what has been typed before,
+	which gets the spelling consistent without anybody being made to curate it.
+
+	Read from BOTH documents that carry the field: a name first typed on a production
+	should be offered on the next challan, and the other way round.
+	"""
+	search = (search or "").strip()
+	limit = min(max(frappe.utils.cint(limit) or 20, 1), 50)
+	like = f"%{search}%"
+	rows = frappe.db.sql(
+		"""
+		select delivery_by, max(creation) as last_used from (
+			select delivery_by, creation from `tabMM Production`
+				where ifnull(delivery_by, '') != '' and (%(s)s = '' or delivery_by like %(l)s)
+			union all
+			select delivery_by, creation from `tabMM Sales Challan`
+				where ifnull(delivery_by, '') != '' and (%(s)s = '' or delivery_by like %(l)s)
+		) x
+		group by delivery_by
+		order by last_used desc
+		limit %(n)s
+		""",
+		{"s": search, "l": like, "n": limit},
+		as_dict=True,
+	)
+	return [r.delivery_by for r in rows]
+
+
+@frappe.whitelist()
+def job_out_orders(challan):
+	"""The customer orders a Job Out was given against — for the Job In order picker.
+
+	A Job Out is raised for a WORKER, and `party` on both it and the Job In that answers it
+	is that worker: `job_report` runs a per-party running balance over the pair, so material
+	only ever clears off the worker's books because both challans name them. The CUSTOMER is
+	therefore not on the challan at all — it is on the order the rolls went out against, and
+	that is what this resolves so the receipt can be attributed and the customer shown.
+
+	Two sources, in order of how much they actually know:
+
+	  1. The challan's own lines. `in_stock_rolls` carries each roll's `customer_order` and
+	     the Job Out screen sends it, so a challan raised since that existed says outright
+	     which order every roll belongs to.
+	  2. Failing that, the rolls themselves. An older Job Out has no order on its lines, so
+	     the answer is read back through the inward rows the roll came in on — matched on
+	     the inventory row's lot and colour, which is the only key those two share.
+
+	An empty list is a real answer: job work on the shop's own material belongs to no
+	customer order, and the screen must be able to say so rather than invent one.
+	"""
+	# Read straight from the tables rather than through get_doc: a submitted document is
+	# CACHED, so a challan whose lines were stamped with their order after somebody else
+	# had opened it would come back here without them — and silently fall through to the
+	# weaker roll lookup below.
+	head = frappe.db.get_value(
+		"MM Sales Challan", challan, ["challan_type", "sales_order"], as_dict=True
+	)
+	if not head:
+		frappe.throw(_("Challan {0} not found.").format(challan))
+	if head.challan_type != "Job Out":
+		frappe.throw(_("{0} is not a Job Out.").format(challan))
+	lines = frappe.get_all(
+		"MM Sales Challan Item",
+		filters={"parent": challan, "parenttype": "MM Sales Challan"},
+		fields=["sales_order", "roll_inventory"],
+		order_by="idx asc",
+	)
+
+	orders = [o for o in dict.fromkeys(
+		[(it.sales_order or "").strip() for it in lines] + [(head.sales_order or "").strip()]
+	) if o]
+
+	if not orders:
+		# Back through the rolls: the inward row that brought each one in knows the order.
+		inv = [it.roll_inventory for it in lines if it.roll_inventory]
+		if inv:
+			orders = [
+				r[0] for r in frappe.db.sql(
+					"""
+					select distinct ii.customer_order
+					from `tabMM Roll Inventory` ri
+					join `tabMM Inward` i on ifnull(i.location, '') = ifnull(ri.location, '')
+						and ifnull(i.branch, '') = ifnull(ri.branch, '')
+					join `tabMM Inward Item` ii on ii.parent = i.name
+						and ifnull(ii.lot_number, '') = ifnull(ri.lot_number, '')
+						and ifnull(ii.color_name, '') = ifnull(ri.color_name, '')
+					where ri.name in %(inv)s and i.docstatus = 1
+						and ifnull(ii.customer_order, '') != ''
+					""",
+					{"inv": tuple(inv)},
+				)
+			]
+
+	if not orders:
+		return []
+
+	rows = frappe.get_all(
+		"MM Sales Order",
+		filters={"name": ["in", orders]},
+		fields=["name", "party", "company_name", "transaction_date", "delivery_date",
+			"ordered_weight", "docstatus"],
+	)
+	names = {p.name: (p.party_name or p.name) for p in frappe.get_all(
+		"MM Party Master", filters={"name": ["in", [r.party for r in rows if r.party]] or [""]},
+		fields=["name", "party_name"],
+	)}
+	return [
+		{
+			"order": r.name,
+			# The CUSTOMER — who the order is for, not the worker the challan is addressed to.
+			"customer": r.party,
+			"customer_name": names.get(r.party, r.party),
+			"company_name": r.company_name,
+			"transaction_date": str(r.transaction_date or ""),
+			"ordered_weight": r.ordered_weight,
+		}
+		for r in rows
+	]

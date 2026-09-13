@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { Eye } from "lucide-react";
+import { fmtDateTime } from "@/utils/localDate";
 
 /**
  * The reason a lot stopped short, shown wherever that lot turns up.
@@ -136,9 +137,7 @@ export function useLotRemarks(keys: { lots?: (string | null | undefined)[]; lotI
 /** Frappe timestamps come as "YYYY-MM-DD HH:mm:ss"; Safari refuses that without the T. */
 function when(value?: string): string {
   if (!value) return "";
-  const d = new Date(value.replace(" ", "T"));
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return fmtDateTime(value) || value;
 }
 
 /** The person, not their login — "ravi@mahaveer.com" tells the floor nothing extra. */

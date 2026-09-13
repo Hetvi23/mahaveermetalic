@@ -5,7 +5,7 @@ import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe
 import { ArrowRight, Scissors, CheckCircle2, X, LayoutGrid, List, Plus, Search, PackageSearch } from "lucide-react";
 import { extractErrorMessage } from "@/utils/frappeError";
 import SearchSelect from "@/components/SearchSelect";
-import { todayISO } from "@/utils/localDate";
+import { todayISO, fmtDate } from "@/utils/localDate";
 import { isAdmin } from "@/utils/roles";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
@@ -200,7 +200,7 @@ export default function CuttingWorklist() {
                   <tbody>
                     {rolls.map((r) => (
                       <tr key={r.inward_item}>
-                        <td>{r.inward_date || "—"}</td>
+                        <td>{fmtDate(r.inward_date) || "—"}</td>
                         <td>{r.challan_number || "—"}</td>
                         <td title={r.customer_order}>{r.party_name || r.customer_order}</td>
                         {/* A roll that came in without a number is still a roll — it reads
@@ -695,7 +695,7 @@ function CuttingModal({ roll, onClose, onDone }: { roll: StockRoll; onClose: () 
                         <input type="radio" name="mm-cut-roll" checked={pickedItem === r.inward_item}
                           onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} />
                       </td>
-                      <td>{r.inward_date || "—"}</td>
+                      <td>{fmtDate(r.inward_date) || "—"}</td>
                       <td>{r.challan_number || "—"}</td>
                       <td>{r.roll_name || "—"}</td>
                       <td>{r.cut || "—"}</td>
@@ -795,7 +795,7 @@ function CuttingList() {
             <tbody>
               {rows.map((c) => (
                 <tr key={c.name}>
-                  <td>{c.posting_date || "—"}</td>
+                  <td>{fmtDate(c.posting_date) || "—"}</td>
                   <td>{c.customer_order || "—"}</td>
                   <td>{c.roll_no || "—"}</td>
                   <td>{c.cut || "—"}</td>
