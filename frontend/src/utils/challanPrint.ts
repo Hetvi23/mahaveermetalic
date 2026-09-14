@@ -169,7 +169,7 @@ function copy(d: ChallanPrintData, label: string): string {
   const type = (d.challan_type || "Sales").trim();
   const heading = /challan/i.test(type) ? type : `${type} Chalan`;
 
-  return `<section class="copy">
+  return `<section class="copy"><div class="fit">
     <table class="hd"><tr>
       <td class="brand">${d.new_lot ? `<span class="newlot">NEW LOT</span>` : ""}MAHAVIR METALIC</td>
       <td class="addr">${d.company_address ? esc(d.company_address).replace(/\n/g, "<br>") : ""}</td>
@@ -211,8 +211,36 @@ function copy(d: ChallanPrintData, label: string): string {
     ${valueLine}
     <ul class="terms">${terms.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
     <table class="sign"><tr><td>Receiver's Sign</td><td class="rt">Authorised Signature</td></tr></table>
-  </section>`;
+  </div></section>`;
 }
+
+/* Runs inside the print window. Each copy is a fixed half-sheet with its overflow hidden,
+   and what goes on it is not fixed — a bobbin list, a customer row, an address, a rate, a
+   challan past 60 boxes — so on a heavy one the signature row was simply cut off the
+   bottom. A copy that does not fit is scaled down until it does, and widened by the same
+   factor first so it still spans the sheet. A copy that fits is left at full size. */
+const FIT_SCRIPT = `(function () {
+  function fit() {
+    document.querySelectorAll(".copy > .fit").forEach(function (el) {
+      var box = el.parentElement, cs = getComputedStyle(box);
+      var availH = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      var availW = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      el.style.transform = ""; el.style.width = ""; el.style.height = "auto";
+      var natural = el.getBoundingClientRect().height;
+      if (natural <= availH) { el.style.height = ""; return; }
+      var r = availH / natural;
+      // Wider never wraps into MORE lines, so the height at this width fits at r.
+      el.style.width = availW / r + "px";
+      r = Math.min(r, availH / el.getBoundingClientRect().height) * 0.998;
+      el.style.width = availW / r + "px";
+      el.style.height = availH / r + "px";
+      el.style.transform = "scale(" + r + ")";
+    });
+  }
+  fit();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  window.addEventListener("beforeprint", fit);
+})();`;
 
 export function printChallan(d: ChallanPrintData) {
   const w = window.open("", "_blank", "width=900,height=1100");
@@ -226,10 +254,12 @@ export function printChallan(d: ChallanPrintData) {
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #000; }
-    /* Two copies on one A4: each gets exactly half the 297mm sheet. */
-    .copy { height: 148.5mm; padding: 5mm 7mm; display: flex; flex-direction: column;
-            border-bottom: 1px dashed #999; overflow: hidden; }
-    .copy:last-child { border-bottom: 0; }
+    /* Two copies on one A4: each gets exactly half the 297mm sheet. The width is the
+       sheet's too, so the window lays it out on screen exactly as it will print — the
+       fit below measures it there. */
+    .copy { width: 210mm; height: 148.5mm; padding: 4.5mm 7mm; border-bottom: 1px dashed #999; overflow: hidden; }
+    .copy:last-of-type { border-bottom: 0; }
+    .fit { display: flex; flex-direction: column; height: 100%; transform-origin: 0 0; }
     .hd td { vertical-align: top; }
     .brand { font-size: 13pt; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap; }
     /* Top left of both copies, and INLINE before the name on purpose: nothing on this
@@ -253,7 +283,7 @@ export function printChallan(d: ChallanPrintData) {
     .meta .sub { font-size: 7pt; font-weight: 400; }
     /* The grid IS the challan — it takes whatever height is left on the half-sheet. */
     .grid { font-size: 7.5pt; table-layout: fixed; }
-    .grid th, .grid td { border: 0.4pt solid #000; padding: 0.5mm 1.2mm; }
+    .grid th, .grid td { border: 0.4pt solid #000; padding: 0.35mm 1.2mm; }
     .grid th { background: #eee; font-size: 6.5pt; font-weight: 700; }
     .grid .n { width: 6.5%; text-align: center; }
     .grid .w, .grid .b { text-align: right; font-variant-numeric: tabular-nums; }
@@ -271,11 +301,12 @@ export function printChallan(d: ChallanPrintData) {
        paper rather than another column of the packing grid. */
     .val { margin-top: 0.6mm; font-size: 8pt; text-align: right; }
     .terms { margin: 1mm 0 0; padding-left: 4mm; font-size: 6.5pt; line-height: 1.35; }
-    .sign { margin-top: auto; font-size: 7.5pt; padding-top: 4mm; }
+    .sign { margin-top: auto; font-size: 7.5pt; padding-top: 2.5mm; }
     .sign .rt { text-align: right; }
   </style></head><body>
   ${copy(d, "Original")}
   ${copy(d, "Duplicate")}
+  <script>${FIT_SCRIPT}</script>
   </body></html>`);
   w.document.close();
   w.focus();
