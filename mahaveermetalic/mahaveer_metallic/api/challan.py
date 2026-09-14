@@ -1920,7 +1920,9 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		challan_type="Job In",
 		party=jo.party,
 		challan_date=posting_date or frappe.utils.today(),
-		challan_no=challan_no or None,
+		# Filed under the number of the Job Out it answers unless another was typed: every
+		# receipt against Job Out 125 is Job In 125.
+		challan_no=challan_no or jo.challan_no or None,
 		challan_id=challan_id,
 		challan_series=challan_series,
 		location=jo.location,

@@ -3333,6 +3333,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--mm-text-sec);
 }
+/* Receipts already booked against the Job Out, under what this one brings. */
+.mm-ji-stat-sub { display: block; font-size: 0.7rem; font-weight: 500; color: var(--mm-text-sec); margin-top: 0.1rem; }
 .mm-ji-stat-val {
   font-size: 1.2rem; font-weight: 800; line-height: 1.15; color: var(--mm-text);
   font-variant-numeric: tabular-nums;

@@ -104,6 +104,11 @@ class MMSalesChallan(Document):
 		self.challan_no = (self.challan_no or "").strip() or None
 		if not self.challan_no or not (self.is_new() or self.has_value_changed("challan_no")):
 			return
+		# A Job In carries the number of the Job Out it answers, and a Job Out is received in
+		# as many parts as the worker brings it back — so every one of them reads 125. Its
+		# own identity is the challan ID; the number is a reference, not a claim on the book.
+		if self.challan_type == "Job In" and self.get("against_job_out"):
+			return
 		d = frappe.utils.getdate(self.transaction_date or frappe.utils.today())
 		start = frappe.utils.getdate(f"{d.year if d.month >= 4 else d.year - 1}-04-01")
 		end = frappe.utils.add_days(frappe.utils.add_years(start, 1), -1)

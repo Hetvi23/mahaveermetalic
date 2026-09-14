@@ -740,9 +740,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   onClose: () => void;
 }) {
   const [vDate, setVDate] = useState(today());
+  // The JOB OUT's challan number, fetched when it is picked: a receipt is filed under the
+  // number of the challan it answers, so every Job In against 125 reads 125. Editable.
   const [cNo, setCNo] = useState("");
-  // True once the operator types over the suggested number — see the effect below.
-  const [cNoTyped, setCNoTyped] = useState(false);
   // Typed by hand, never suggested: the production's voucher number and the Job In
   // challan's own ID. Blank leaves each to its series.
   const [vNo, setVNo] = useState("");
@@ -780,13 +780,6 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const orderOpts = ordersCall.data?.message ?? [];
   const picked = orderOpts.find((o) => o.order === order);
 
-  // The next Job In number, so the operator is not asked for the one thing the books
-  // already know. Refetched per Job Out: another receipt may have been booked meanwhile.
-  const nextNo = useFrappeGetCall<{ message: string }>(
-    `${API}.next_job_challan_no`, { challan_type: "Job In" },
-    jobOut ? `next-job-in-${jobOut}` : null,
-  );
-
   const totals = useMemo(() => ({
     boxes: boxes.length,
     net: r3(boxes.reduce((s, b) => s + b.net, 0)),
@@ -795,8 +788,10 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const sent = Number(meta?.total_weight || 0);
 
   useEffect(() => {
-    setBoxes([]); setErr(null); setAdding(false); setCNoTyped(false); setVNo(""); setChallanId(""); setSeries(JOB_IN_SERIES.value);
+    setBoxes([]); setErr(null); setAdding(false); setVNo(""); setChallanId(""); setSeries(JOB_IN_SERIES.value);
   }, [jobOut]);
+
+  useEffect(() => { setCNo(meta?.challan_no || ""); }, [jobOut, meta?.challan_no]);
 
   // A fresh Job Out means a fresh receipt: the number comes from the series and the order
   // from the challan. Only ONE order is chosen automatically — where the Job Out covers
@@ -805,16 +800,6 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     if (!jobOut) return;
     setOrder(orderOpts.length === 1 ? orderOpts[0].order : "");
   }, [jobOut, orderOpts]);
-
-  useEffect(() => {
-    const n = nextNo.data?.message;
-    // Never overwrite a number already typed — the suggestion is a starting point, and
-    // the shop's own challan book sometimes runs ahead of ours. Until then it FOLLOWS the
-    // books: filling only an empty box took the cached number when a second receipt was
-    // opened on the same Job Out, and the fresh one arrived too late to replace it, so
-    // back-to-back receipts both went out as the same challan number.
-    if (n && !cNoTyped) setCNo(n);
-  }, [nextNo.data, cNoTyped]);
 
   async function submit() {
     setErr(null);
@@ -876,8 +861,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
           /* Labels are best-effort: the receipt is posted and must not be undone by them. */
         }
       }
-      setBoxes([]); setCNo(""); setCNoTyped(false); setBatchNo(""); setVNo(""); setChallanId("");
-      void nextNo.mutate();
+      setBoxes([]); setBatchNo(""); setVNo(""); setChallanId("");
       onDone();
     } catch (e) {
       const msg = extractErrorMessage(e);
@@ -891,8 +875,11 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
 
   // What came back against what went out — the one question a job receipt asks, so it
   // is answered at the top of the sheet rather than in a grey pill in the corner.
-  const balance = r3(sent - totals.net);
-  const pct = sent > 0 ? Math.min(100, (totals.net / sent) * 100) : 0;
+  // Receipts already booked against this Job Out count too: a second receipt on a 1,239.6 kg
+  // Job Out that has had 98.62 kg back is 1,140.98 kg short before its first box, not 1,239.6.
+  const earlier = r3(Number(meta?.received_weight || 0));
+  const balance = r3(sent - earlier - totals.net);
+  const pct = sent > 0 ? Math.min(100, ((earlier + totals.net) / sent) * 100) : 0;
   const over = balance < -0.0005;
   const settled = !over && Math.abs(balance) <= 0.0005 && totals.net > 0;
 
@@ -936,6 +923,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               <span className={`mm-ji-stat${totals.net > 0 ? " mm-ji-stat-live" : ""}`}>
                 <span className="mm-ji-stat-lab">Received here</span>
                 <span className="mm-ji-stat-val">{kg(totals.net)} <em>kg</em></span>
+                {earlier > 0 && <span className="mm-ji-stat-sub">+ {kg(earlier)} kg received earlier</span>}
               </span>
               <span className={`mm-ji-stat${over ? " mm-ji-stat-over" : settled ? " mm-ji-stat-ok" : ""}`}>
                 <span className="mm-ji-stat-lab">{over ? "Over by" : "Still due"}</span>
@@ -973,8 +961,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">C.No <b className="mm-req">*</b></span>
-                <input className="mm-input" value={cNo} placeholder="Next number, or type your own"
-                  onChange={(e) => { setCNo(e.target.value); setCNoTyped(true); }} />
+                <input className="mm-input" value={cNo} placeholder="Job Out's C.No"
+                  title={meta?.challan_no ? `Fetched from Job Out ${meta.challan_no}` : undefined}
+                  onChange={(e) => setCNo(e.target.value)} />
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Series</span>
