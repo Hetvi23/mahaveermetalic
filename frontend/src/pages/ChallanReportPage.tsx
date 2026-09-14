@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { FileText, Printer, RefreshCw, Search, X } from "lucide-react";
+import { Barcode, FileText, Printer, RefreshCw, Search, X } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import { fmtDate } from "@/utils/localDate";
+import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 
@@ -16,6 +17,9 @@ type Cover = {
   sales_order: string; ordered_weight: number; inwarded_weight: number;
   dispatched_weight: number; balance_weight: number;
 };
+/** Job work, the way the worker's book reads: sent, received back, still with them. On a
+ *  Job In it is the balance as it stood once that receipt was booked. */
+type Job = { job_out: string; sent: number; received: number; balance: number };
 type Row = {
   name: string; challan_type?: string; challan_no?: string; transaction_date?: string;
   party?: string; party_name?: string; sales_order?: string;
@@ -23,18 +27,20 @@ type Row = {
    *  the first would make two different dispatches to one party look identical. */
   colours?: string[];
   total_box?: number; total_weight?: number; docstatus?: number; line_count?: number;
-  job_work_flag?: number; cover?: Cover | null;
+  job_work_flag?: number; cover?: Cover | null; job?: Job | null;
 };
 type Line = {
   name: string; idx: number; barcode?: string; color_name?: string; cut?: string;
   qty_box?: number; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
   bobbin_pcs_weight?: number; total_bobbin_weight?: number; box_weight?: number;
   net_weight?: number; weight?: number; r_box?: number; r_bobbin?: number;
+  /** Off the box's production — what its original sticker carried. */
+  batch_no?: string | null; operator?: string | null; posting_date?: string | null;
 };
 type Detail = {
   challan: string; challan_no?: string; challan_type?: string; transaction_date?: string;
   party?: string; sales_order?: string; docstatus?: number;
-  total_box?: number; total_weight?: number; cover?: Cover | null; items: Line[];
+  total_box?: number; total_weight?: number; cover?: Cover | null; job?: Job | null; items: Line[];
 };
 
 const TYPES = ["Sales", "Job Challan", "Challan", "Delivery Challan", "Job Out", "Job In"];
@@ -137,9 +143,9 @@ export default function ChallanReportPage() {
                   <th className="mm-num">Box</th><th className="mm-num">Weight</th>
                   {/* The order's own arithmetic, so a correction can be judged before it
                       is made rather than by reading the error afterwards. */}
-                  <th className="mm-num" title="Inwarded on the order">In</th>
-                  <th className="mm-num" title="Already dispatched on the order">Out</th>
-                  <th className="mm-num" title="Still available to dispatch">Balance</th>
+                  <th className="mm-num" title="Order: inwarded on it · Job work: received back">In</th>
+                  <th className="mm-num" title="Order: already dispatched · Job work: sent to the worker">Out</th>
+                  <th className="mm-num" title="Order: still available to dispatch · Job work: still with the worker">Balance</th>
                   <th />
                 </tr>
               </thead>
@@ -158,17 +164,35 @@ export default function ChallanReportPage() {
                     <td>{r.sales_order || "—"}</td>
                     <td className="mm-num">{Number(r.total_box || 0).toLocaleString()}</td>
                     <td className="mm-num">{kg(r.total_weight)}</td>
-                    <td className="mm-num">{r.cover ? kg(r.cover.inwarded_weight) : "—"}</td>
-                    <td className="mm-num">{r.cover ? kg(r.cover.dispatched_weight) : "—"}</td>
+                    {/* A dispatch reads against its order; a Job Out / Job In against its own
+                        Job Out — sent, received back, and what is still with the worker. */}
+                    {r.job ? (
+                      <>
+                        <td className="mm-num" title={`Received back against ${r.job.job_out}`}>{kg(r.job.received)}</td>
+                        <td className="mm-num" title={`Sent on ${r.job.job_out}`}>{kg(r.job.sent)}</td>
+                        <td className="mm-num" title="Still with the worker">
+                          <span className={r.job.balance < 0 ? "mm-var-over" : undefined}>{kg(r.job.balance)}</span>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="mm-num">{r.cover ? kg(r.cover.inwarded_weight) : "—"}</td>
+                        <td className="mm-num">{r.cover ? kg(r.cover.dispatched_weight) : "—"}</td>
+                        <td className="mm-num">
+                          {r.cover
+                            ? <span className={r.cover.balance_weight < 0 ? "mm-var-over" : undefined}>{kg(r.cover.balance_weight)}</span>
+                            : "—"}
+                        </td>
+                      </>
+                    )}
+                    {/* The flex row sits INSIDE the cell. On the cell itself it stopped being a
+                        table cell and the print button slid over the Balance figure. */}
                     <td className="mm-num">
-                      {r.cover
-                        ? <span className={r.cover.balance_weight < 0 ? "mm-var-over" : undefined}>{kg(r.cover.balance_weight)}</span>
-                        : "—"}
-                    </td>
-                    <td className="mm-num mm-pv-rowacts">
-                      <button className="mm-mini" title="Print" onClick={(e) => { e.stopPropagation(); void print(r.name); }}>
-                        <Printer size={13} />
-                      </button>
+                      <div className="mm-pv-rowacts">
+                        <button className="mm-mini" title="Print" onClick={(e) => { e.stopPropagation(); void print(r.name); }}>
+                          <Printer size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -215,6 +239,20 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
   const cover = d?.cover ?? null;
   const available = cover ? cover.inwarded_weight - cover.dispatched_weight : null;
   const over = available !== null && cover!.inwarded_weight > 0 && total > available + 1e-6;
+
+  // Every box on the challan, labelled in one print job. Read off the SAVED lines: a label
+  // is stuck on a box and has to agree with the paper, so unsaved corrections hold it back.
+  const labels = d ? stickersFromChallan(d) : [];
+  const unsaved = Object.keys(edits).length > 0;
+  function printLabels() {
+    if (!labels.length || unsaved) return;
+    // Straight from the click, so the pop-up is allowed; if the browser blocks it anyway
+    // the same labels are saved as a file rather than lost.
+    if (!printBoxStickers(labels)) {
+      downloadBoxStickers(labels, `barcodes-${d?.challan_no || challan}`);
+      toast("The print pop-up was blocked — the barcodes have been saved as a file instead.");
+    }
+  }
 
   function setField(it: Line, f: keyof Line, v: number | boolean) {
     setEdits((p) => ({ ...p, [it.name]: { ...p[it.name], [f]: v as never } }));
@@ -268,6 +306,14 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                   <input className="mm-input" value={d.transaction_date || "—"} readOnly /></label>
               </div>
 
+              {/* A job challan answers to its Job Out, not to the order. */}
+              {d.job && (
+                <div className="mm-banner" style={{ marginBottom: "0.7rem" }}>
+                  Job Out {d.job.job_out}: sent <strong>{kg(d.job.sent)}</strong> kg ·
+                  {" "}received back <strong>{kg(d.job.received)}</strong> kg ·
+                  {" "}<strong className={d.job.balance < 0 ? "mm-var-over" : undefined}>{kg(d.job.balance)}</strong> kg still with the worker.
+                </div>
+              )}
               {/* The order's arithmetic, stated before anything is typed. */}
               {cover && (
                 <div className={`mm-banner ${over ? "mm-banner-warn" : ""}`} style={{ marginBottom: "0.7rem" }}>
@@ -334,6 +380,13 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
             {available !== null && <span>Available <strong>{kg(available)} kg</strong></span>}
           </div>
           <div className="mm-foot-actions">
+            <button className="mm-btn-secondary" disabled={!labels.length || unsaved} onClick={printLabels}
+              title={!labels.length
+                ? "No boxes with a barcode on this challan"
+                : unsaved ? "Save the weight changes first — the labels print what is saved"
+                : `Print the barcode label of all ${labels.length} box${labels.length === 1 ? "" : "es"}`}>
+              <Barcode size={15} /> Print barcodes{labels.length ? ` (${labels.length})` : ""}
+            </button>
             <button className="mm-btn-ghost" onClick={onClose}>Close</button>
             <button className="mm-btn-primary" disabled={loading || items.length === 0 || Object.keys(edits).length === 0}
               onClick={() => void submit()}>

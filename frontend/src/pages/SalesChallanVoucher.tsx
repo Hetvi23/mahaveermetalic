@@ -12,6 +12,7 @@ import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
 import { todayISO, fmtDate } from "@/utils/localDate";
 import DeliveryByInput from "@/components/DeliveryByInput";
+import { DISPATCH_SERIES, challanIdFor } from "@/utils/challanSeries";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -26,16 +27,10 @@ const today = todayISO;
  * the other four — Sales, Challan, Delivery Challan and Roll Challan — do.
  */
 // Display only — the series that actually numbers the document is chosen server-side from
-// the type (api.challan.SERIES), so the two cannot drift into disagreeing.
-const CHALLAN_TYPES = [
-  { value: "Sales", label: "Sales Chalan", series: "MMUSC-" },
-  { value: "Job Challan", label: "Job Challan", series: "MMUJC-" },
-  { value: "Challan", label: "Challan", series: "MMUCH-" },
-  { value: "Delivery Challan", label: "Delivery Challan", series: "MMUDC-" },
-  // Rolls going out to the customer against their order — a dispatch like the three
-  // above it, not a job movement: it takes stock out and counts toward the order.
-  { value: "Roll Challan", label: "Roll Challan", series: "MMURC-" },
-];
+// the type (api.challan.SERIES), so the two cannot drift into disagreeing. Shared with the
+// Job In voucher, which offers the same books. Roll Challan is a dispatch like the three
+// above it, not a job movement: it takes stock out and counts toward the order.
+const CHALLAN_TYPES = DISPATCH_SERIES;
 
 type BoxRow = {
   box: string; production: string; posting_date?: string; item?: string; cut?: string;
@@ -62,6 +57,8 @@ export default function SalesChallanVoucher() {
   const [order, setOrder] = useState("");
   const [challanType, setChallanType] = useState("Sales");
   const [challanNo, setChallanNo] = useState("");
+  // The challan's own ID, typed by hand. Blank leaves it to the type's series.
+  const [challanId, setChallanId] = useState("");
   const [date, setDate] = useState(today());
   const [remark, setRemark] = useState("");
   const [deliveryBy, setDeliveryBy] = useState("");
@@ -185,13 +182,14 @@ export default function SalesChallanVoucher() {
         delivery_by: deliveryBy || undefined,
         challan_type: challanType,
         job_work: jobWork ? 1 : 0, challan_no: challanNo || undefined,
+        challan_id: challanId.trim() || undefined,
         boxes: JSON.stringify(lines.filter((l) => l.kind === "box").map((l) => l.ref)),
         rolls: JSON.stringify(lines.filter((l) => l.kind === "roll").map((l) => l.ref)),
       });
       const name = (res as { message?: { challan?: string } })?.message?.challan;
       const typeLabel = CHALLAN_TYPES.find((t) => t.value === challanType)?.label ?? challanType;
       toast(`${typeLabel} ${name || ""} created`);
-      setLines([]); setChallanNo(""); setRemark("");
+      setLines([]); setChallanNo(""); setChallanId(""); setRemark("");
       if (name) {
         setLastChallan(name);
         await doPrint(name);
@@ -238,6 +236,18 @@ export default function SalesChallanVoucher() {
               onChange={setChallanType}
               options={CHALLAN_TYPES.map((t) => ({ value: t.value, label: t.label, meta: `series ${t.series}` }))}
             />
+          </label>
+          <label className="mm-field">
+            {/* The saved ID rides in the label, on a line of its own above the box — the row
+                is bottom-aligned, so a line under the box would lift this one field. */}
+            <span className="mm-field-label">
+              Challan ID
+              {challanId.trim() && (
+                <span className="mm-muted" style={{ display: "block", whiteSpace: "nowrap" }}>{challanIdFor(CHALLAN_TYPES.find((t) => t.value === challanType)?.series ?? "MMUSC-", challanId, date)}</span>
+              )}
+            </span>
+            <input className="mm-input" value={challanId} onChange={(e) => setChallanId(e.target.value)}
+              placeholder="e.g. 123" />
           </label>
           <label className="mm-field">
             <span className="mm-field-label">Manual Chalan No</span>

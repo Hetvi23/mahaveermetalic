@@ -3377,6 +3377,10 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-ji-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 0.6rem 0.8rem; }
 .mm-ji-fields .mm-input[readonly] { background: var(--mm-bg); color: var(--mm-text-sec); cursor: default; }
 .mm-req { color: var(--mm-danger); font-weight: 700; }
+/* What a typed ID will be saved as, under the box it is typed in. */
+.mm-field-hint { font-size: 0.72rem; color: var(--mm-text-sec); margin-top: 0.2rem; }
+.mm-field-hint { white-space: nowrap; }
+.mm-field-hint b { color: var(--mm-text); font-weight: 600; }
 
 /* The two switches every box inherits — chips, so their state carries across the sheet. */
 .mm-ji-returns {

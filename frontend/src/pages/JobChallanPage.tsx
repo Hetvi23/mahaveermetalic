@@ -12,6 +12,7 @@ import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 import { todayISO, fmtDate } from "@/utils/localDate";
 import DeliveryByInput from "@/components/DeliveryByInput";
+import { DISPATCH_SERIES, JOB_IN_SERIES, challanIdFor } from "@/utils/challanSeries";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -742,6 +743,13 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const [cNo, setCNo] = useState("");
   // True once the operator types over the suggested number — see the effect below.
   const [cNoTyped, setCNoTyped] = useState(false);
+  // Typed by hand, never suggested: the production's voucher number and the Job In
+  // challan's own ID. Blank leaves each to its series.
+  const [vNo, setVNo] = useState("");
+  const [challanId, setChallanId] = useState("");
+  // The book the Job In challan is written in: its own unless another series is picked.
+  // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
+  const [series, setSeries] = useState(JOB_IN_SERIES.value);
   const [batchNo, setBatchNo] = useState("");
   const [size, setSize] = useState("");
   const [order, setOrder] = useState("");
@@ -786,7 +794,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   }), [boxes]);
   const sent = Number(meta?.total_weight || 0);
 
-  useEffect(() => { setBoxes([]); setErr(null); setAdding(false); setCNoTyped(false); }, [jobOut]);
+  useEffect(() => {
+    setBoxes([]); setErr(null); setAdding(false); setCNoTyped(false); setVNo(""); setChallanId(""); setSeries(JOB_IN_SERIES.value);
+  }, [jobOut]);
 
   // A fresh Job Out means a fresh receipt: the number comes from the series and the order
   // from the challan. Only ONE order is chosen automatically — where the Job Out covers
@@ -817,6 +827,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
         party: party || undefined,
         posting_date: vDate,
         batch_no: batchNo || undefined,
+        voucher_no: vNo.trim() || undefined,
+        challan_id: challanId.trim() || undefined,
+        challan_series: series,
         cut: size || undefined,
         challan_no: cNo || undefined,
         delivery_by: deliveryBy || undefined,
@@ -850,7 +863,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
             // a blob and an anchor: nothing to block. The file is the same document the
             // print dialog would have shown, so opening it and pressing print gives exactly
             // the same labels.
-            downloadBoxStickers(labels, `barcodes-${m.job_in || m.production}`);
+            // A typed challan ID carries its year as 26/27 — no slash in a file name.
+            downloadBoxStickers(labels, `barcodes-${m.job_in || m.production}`.replace(/[\\/]/g, "-"));
             if (!printBoxStickers(labels)) {
               toast(
                 "Received. The print pop-up was blocked, but the barcodes have been saved — " +
@@ -862,7 +876,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
           /* Labels are best-effort: the receipt is posted and must not be undone by them. */
         }
       }
-      setBoxes([]); setCNo(""); setCNoTyped(false); setBatchNo("");
+      setBoxes([]); setCNo(""); setCNoTyped(false); setBatchNo(""); setVNo(""); setChallanId("");
       void nextNo.mutate();
       onDone();
     } catch (e) {
@@ -950,10 +964,35 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <span className="mm-field-label">V.Date <b className="mm-req">*</b></span>
                 <input className="mm-input" type="date" value={vDate} onChange={(e) => setVDate(e.target.value)} />
               </label>
+              {/* The two IDs are typed from the shop's own book; blank leaves each to its
+                  series (MMPROD- for the voucher, MMUJI- for the challan). */}
+              <label className="mm-field">
+                <span className="mm-field-label">V.No</span>
+                <input className="mm-input" value={vNo} placeholder="Voucher no"
+                  onChange={(e) => setVNo(e.target.value)} />
+              </label>
               <label className="mm-field">
                 <span className="mm-field-label">C.No <b className="mm-req">*</b></span>
                 <input className="mm-input" value={cNo} placeholder="Next number, or type your own"
                   onChange={(e) => { setCNo(e.target.value); setCNoTyped(true); }} />
+              </label>
+              <label className="mm-field">
+                <span className="mm-field-label">Series</span>
+                <SearchSelect noClear value={series} onChange={setSeries}
+                  options={[JOB_IN_SERIES, ...DISPATCH_SERIES].map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
+              </label>
+              <label className="mm-field">
+                <span className="mm-field-label">Challan ID</span>
+                <input className="mm-input" value={challanId} placeholder="e.g. 123"
+                  onChange={(e) => setChallanId(e.target.value)} />
+                {challanId.trim() && (
+                  <span className="mm-field-hint">
+                    Saved as <b>{challanIdFor(
+                      [JOB_IN_SERIES, ...DISPATCH_SERIES].find((t) => t.value === series)?.series ?? JOB_IN_SERIES.series,
+                      challanId, vDate,
+                    )}</b>
+                  </span>
+                )}
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">B.No</span>

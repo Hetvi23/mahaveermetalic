@@ -10,6 +10,7 @@ picking boxes (SELECT BOX) or rolls straight from inventory (SELECT ROLL).
 """
 
 import json
+import re
 
 import frappe
 from frappe import _
@@ -178,7 +179,7 @@ def available_boxes(party=None, sales_order=None, limit=200):
 @frappe.whitelist()
 def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None,
-	challan_type="Sales", delivery_by=None, **kwargs):
+	challan_type="Sales", delivery_by=None, challan_id=None, **kwargs):
 	"""Build a challan by hand from picked produced boxes and/or inventory rolls.
 
 	`challan_type` is the paper being issued — Sales, Job Challan, Challan or Delivery
@@ -286,6 +287,7 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 			"items": rows,
 		}
 	)
+	challan.flags.manual_id = _challan_id(challan_id, challan_type, challan.transaction_date)
 	challan.insert(ignore_permissions=True)
 	# Submit it. A hand-built challan used to be left as a DRAFT, so nothing ran: stock
 	# never moved, the order was never marked dispatched (it sat on "Material In" even
@@ -352,6 +354,75 @@ LEGACY_SERIES = (
 	"MM-JC-.YYYY.-", "MM-CH-.YYYY.-", "MM-DC-.YYYY.-",
 )
 _JOB_SERIES = SERIES  # kept for the job screens, which only ever index Job Out / Job In
+
+
+def _series_shape(series):
+	"""`MMPROD-.#####` → a pattern matching every name that series can ever produce."""
+	parts, has_number = [], False
+	for part in series.split("."):
+		if part and set(part) == {"#"}:
+			parts.append(r"\d+")
+			has_number = True
+		elif part in ("YYYY",):
+			parts.append(r"\d{4}")
+		elif part in ("YY", "MM", "DD"):
+			parts.append(r"\d{2}")
+		else:
+			parts.append(re.escape(part))
+	return re.compile("".join(parts) + ("" if has_number else r"\d+"), re.IGNORECASE)
+
+
+def _manual_id(doctype, value, series):
+	"""A voucher number typed by hand in place of the series — checked, or None.
+
+	Blank means the series numbers it as before. Refused before anything is created: an ID
+	another document already has, and one shaped like the series itself (`MMPROD-00099`),
+	which the series would reach later and fail on.
+	"""
+	value = (value or "").strip()
+	if not value:
+		return None
+	if _series_shape(series).fullmatch(value):
+		frappe.throw(
+			_("{0} looks like an automatic number. Type a different number, or leave it blank.")
+			.format(value)
+		)
+	if frappe.db.exists(doctype, value):
+		frappe.throw(_("{0} {1} already exists.").format(_(doctype), value))
+	return value
+
+
+def _series_key(series, fallback):
+	"""The challan series picked on the voucher — a SERIES key — or the type's own."""
+	key = (series or "").strip() or fallback
+	if key not in SERIES:
+		frappe.throw(_("Unknown challan series {0}.").format(key))
+	return key
+
+
+def _challan_id(value, series_key, on=None):
+	"""A typed challan number, filed as the shop's book writes it: MMUJI-123-26/27.
+
+	The series code, the number, and the financial year of the challan date — so the same
+	123 can run again in another series or another year, and the ID says which book and
+	which year it came from. Blank returns None and the series numbers it as before.
+	Typing the full ID (MMUJI-123-26/27) instead of the number is taken as that number.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot import financial_year
+
+	value = (value or "").strip()
+	if not value:
+		return None
+	code = SERIES[series_key].split("-")[0]
+	fy = financial_year(frappe.utils.getdate(on or frappe.utils.today())).replace("-", "/")
+	whole = re.fullmatch(rf"{code}-(.+)-\d{{2}}/\d{{2}}", value, re.IGNORECASE)
+	if whole:
+		value = whole.group(1).strip()
+	name = f"{code}-{value}-{fy}"
+	taken = frappe.db.get_value("MM Sales Challan", name, ["name", "challan_type"], as_dict=True)
+	if taken:
+		frappe.throw(_("Challan ID {0} is already used by a {1} challan.").format(taken.name, taken.challan_type))
+	return name
 
 
 @frappe.whitelist()
@@ -491,7 +562,7 @@ def next_job_challan_no(challan_type="Job Out"):
 @frappe.whitelist()
 def create_job_challan(challan_type="Job Out", party=None, challan_date=None, challan_no=None,
 	rolls=None, bobbins=None, remark=None, location=None, branch=None, against_job_out=None,
-	items=None, delivery_by=None, sales_order=None):
+	items=None, delivery_by=None, sales_order=None, challan_id=None, challan_series=None):
 	"""Create a Job Out / Job In challan from the picked rolls and bobbins.
 
 	Stock and the bobbin ledger both move on submit (see MMSalesChallan.on_submit), so
@@ -569,7 +640,8 @@ def create_job_challan(challan_type="Job Out", party=None, challan_date=None, ch
 
 	challan = frappe.get_doc({
 		"doctype": "MM Sales Challan",
-		"naming_series": _JOB_SERIES[challan_type],
+		# The book this challan is written in — its own type's unless the voucher picked another.
+		"naming_series": SERIES[_series_key(challan_series, challan_type)],
 		"challan_type": challan_type,
 		"transaction_date": challan_date or frappe.utils.today(),
 		"party": party,
@@ -591,6 +663,9 @@ def create_job_challan(challan_type="Job Out", party=None, challan_date=None, ch
 		"items": rows,
 		"bobbins": bobbin_rows,
 	})
+	challan.flags.manual_id = _challan_id(
+		challan_id, _series_key(challan_series, challan_type), challan.transaction_date
+	)
 	challan.insert(ignore_permissions=True)
 	challan.submit()
 	return {
@@ -1115,9 +1190,53 @@ def _order_cover(sales_order, exclude_challan=None):
 	}
 
 
+def _job_balances(rows):
+	"""Job work read the way the worker's book reads it: sent, received back, still with them.
+
+	Keyed by challan. A Job Out gets its whole story so far; a Job In gets the balance as it
+	stood once THAT receipt was booked (receipts against the same Job Out, by date and then
+	entry order), so a Job Out answered three times reads down the register like a ledger.
+	Every receipt counts whatever the report is filtered to — a balance is not a period
+	figure. A Job In from before `against_job_out` names no Job Out and gets nothing, the
+	same rule the Job In picker applies.
+	"""
+	job_outs = {r.name for r in rows if r.challan_type == "Job Out"}
+	job_outs |= {r.against_job_out for r in rows if r.challan_type == "Job In" and r.get("against_job_out")}
+	if not job_outs:
+		return {}
+	sent = dict(frappe.get_all(
+		"MM Sales Challan", filters={"name": ["in", list(job_outs)]}, fields=["name", "total_weight"], as_list=True,
+	))
+	receipts = frappe.get_all(
+		"MM Sales Challan",
+		filters={"challan_type": "Job In", "docstatus": 1, "against_job_out": ["in", list(job_outs)]},
+		fields=["name", "against_job_out", "total_weight"],
+		order_by="transaction_date asc, creation asc",
+	)
+	out, received = {}, {}
+	for ji in receipts:
+		received[ji.against_job_out] = round(received.get(ji.against_job_out, 0) + float(ji.total_weight or 0), 3)
+		out[ji.name] = (ji.against_job_out, received[ji.against_job_out])
+
+	def figures(job_out, got):
+		s = round(float(sent.get(job_out) or 0), 3)
+		return {"job_out": job_out, "sent": s, "received": got, "balance": round(s - got, 3)}
+
+	result = {}
+	for r in rows:
+		if r.challan_type == "Job Out":
+			result[r.name] = figures(r.name, received.get(r.name, 0))
+		elif r.challan_type == "Job In" and r.name in out:
+			result[r.name] = figures(*out[r.name])
+	return result
+
+
 @frappe.whitelist()
 def challan_report(from_date=None, to_date=None, party=None, challan_type=None, sales_order=None, limit=300):
-	"""Every challan issued, newest first, with its order's dispatch balance beside it."""
+	"""Every challan issued, newest first, with its order's dispatch balance beside it —
+	or, on a Job Out / Job In, the job's own balance (see _job_balances)."""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import is_dispatch
+
 	conds = ["c.docstatus < 2"]
 	vals = {}
 	if from_date:
@@ -1139,7 +1258,7 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 	rows = frappe.db.sql(
 		f"""
 		select c.name, c.challan_type, c.challan_no, c.transaction_date, c.party,
-			c.sales_order, c.total_box, c.total_weight, c.docstatus, c.job_work_flag,
+			c.sales_order, c.total_box, c.total_weight, c.docstatus, c.job_work_flag, c.against_job_out,
 			-- `lines` is reserved in MariaDB; naming it that failed the whole query.
 			(select count(*) from `tabMM Sales Challan Item` ci where ci.parent = c.name) as line_count
 		from `tabMM Sales Challan` c
@@ -1177,11 +1296,19 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 			"MM Party Master", filters={"name": ["in", list(names)]}, fields=["name", "party_name"]
 		):
 			party_names[p.name] = p.party_name or p.name
+	jobs = _job_balances(rows)
 	# One cover lookup per ORDER, not per row — a party's twenty challans share one order.
 	covers = {}
 	for r in rows:
 		r["party_name"] = party_names.get(r.party, r.party)
 		r["colours"] = colours.get(r.name) or []
+		r["job"] = jobs.get(r.name)
+		# The order's dispatch arithmetic belongs to DISPATCHES. A job challan named the
+		# order only to reach the customer, and showing its cover there read as the job's
+		# balance — a Job Out of 1,239.6 kg answered by 98.62 kg showed 1,239.6 still due.
+		if not is_dispatch(r.challan_type):
+			r["cover"] = None
+			continue
 		if r.sales_order and r.sales_order not in covers:
 			covers[r.sales_order] = _order_cover(r.sales_order)
 		r["cover"] = covers.get(r.sales_order)
@@ -1191,7 +1318,19 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 @frappe.whitelist()
 def challan_lines(challan):
 	"""The editable rows of one challan, plus the order cover its weights must fit."""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import is_dispatch
+
 	doc = frappe.get_doc("MM Sales Challan", challan)
+	# What the box's own sticker said when it was packed — batch, operator and date live on
+	# the PRODUCTION, not the challan line — so a label reprinted from here matches the one
+	# already on the box. One read for every production the challan draws on.
+	made = {
+		p.name: p for p in frappe.get_all(
+			"MM Production",
+			filters={"name": ["in", list({it.production for it in doc.items if it.get("production")}) or [""]]},
+			fields=["name", "batch_no", "operator", "posting_date"],
+		)
+	}
 	return {
 		"challan": doc.name,
 		"challan_no": doc.challan_no or doc.name,
@@ -1203,7 +1342,10 @@ def challan_lines(challan):
 		"total_box": doc.total_box,
 		"total_weight": doc.total_weight,
 		# Measured WITHOUT this challan, so its own rows don't count against themselves.
-		"cover": _order_cover(doc.sales_order, exclude_challan=doc.name),
+		# Dispatches only — a job challan never draws on the order (see challan_report).
+		"cover": _order_cover(doc.sales_order, exclude_challan=doc.name) if is_dispatch(doc.challan_type) else None,
+		"job": _job_balances([frappe._dict(name=doc.name, challan_type=doc.challan_type,
+			against_job_out=doc.get("against_job_out"))]).get(doc.name),
 		"items": [
 			{
 				"name": it.name,
@@ -1223,6 +1365,9 @@ def challan_lines(challan):
 				"r_box": it.r_box,
 				"r_bobbin": it.r_bobbin,
 				"sales_order": it.sales_order,
+				"batch_no": (made.get(it.get("production")) or {}).get("batch_no"),
+				"operator": (made.get(it.get("production")) or {}).get("operator"),
+				"posting_date": str((made.get(it.get("production")) or {}).get("posting_date") or "") or None,
 			}
 			for it in doc.items
 		],
@@ -1669,8 +1814,14 @@ def preview_job_in_box(gross_weight=None, net_weight=None, bobbin_pcs=0, bobbin_
 @frappe.whitelist()
 def create_job_in_production(against_job_out, boxes=None, customer_order=None, party=None,
 	posting_date=None, batch_no=None, cut=None, operator=None, shift=None, challan_no=None,
-	box_return=0, bobbin_return=0, delivery_by=None):
+	box_return=0, bobbin_return=0, delivery_by=None, voucher_no=None, challan_id=None,
+	challan_series=None):
 	"""Receive a Job Out back as a PRODUCTION voucher, and close the Job Out with a Job In.
+
+	`voucher_no` and `challan_id` are the two IDs the operator may type by hand — the
+	production's, as typed, and the Job In challan's, filed as series-number-year
+	(MMUJI-123-26/27) under `challan_series` (a SERIES key, Job In unless picked). Blank
+	leaves each to its series.
 
 	Two records, because they answer two questions the shop asks separately: the production
 	is what came back (boxes, barcodes, bobbins, finished-goods stock), and the Job In
@@ -1684,6 +1835,11 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		boxes = json.loads(boxes or "[]")
 	if not boxes:
 		frappe.throw(_("Add at least one box."))
+	# Both typed IDs are checked up front: the challan is raised after the production is
+	# submitted, and a taken challan ID found only then would throw the whole receipt away.
+	voucher_no = _manual_id("MM Production", voucher_no, frappe.get_meta("MM Production").autoname)
+	challan_series = _series_key(challan_series, "Job In")
+	_challan_id(challan_id, challan_series, posting_date)
 
 	jo = frappe.get_doc("MM Sales Challan", against_job_out)
 	if jo.challan_type != "Job Out":
@@ -1741,6 +1897,7 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	# Material arriving must not dispatch itself: the production carries the order for
 	# attribution, but the goods have just come IN.
 	prod.flags.skip_dispatch_challan = True
+	prod.flags.manual_id = voucher_no
 	prod.insert(ignore_permissions=True)
 	prod.submit()
 
@@ -1764,6 +1921,8 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		party=jo.party,
 		challan_date=posting_date or frappe.utils.today(),
 		challan_no=challan_no or None,
+		challan_id=challan_id,
+		challan_series=challan_series,
 		location=jo.location,
 		branch=jo.branch,
 		delivery_by=delivery_by,

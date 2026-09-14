@@ -39,6 +39,12 @@ def is_dispatch(challan_type) -> bool:
 
 
 class MMSalesChallan(Document):
+	def autoname(self):
+		# A challan ID typed by hand (checked in api.challan._manual_id). Left unset, the
+		# naming series names it as before.
+		if self.flags.manual_id:
+			self.name = self.flags.manual_id
+
 	def _guard_order_cover(self):
 		"""A dispatch cannot send out more than its order has taken in.
 

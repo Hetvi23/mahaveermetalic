@@ -8,6 +8,12 @@ from frappe.model.document import Document
 
 
 class MMProduction(Document):
+	def autoname(self):
+		# A voucher number typed by hand (checked in api.challan._manual_id). Left unset,
+		# the doctype's MMPROD- series names it as before.
+		if self.flags.manual_id:
+			self.name = self.flags.manual_id
+
 	def validate(self):
 		self._compute_weights()
 		self._enforce_tolerance()

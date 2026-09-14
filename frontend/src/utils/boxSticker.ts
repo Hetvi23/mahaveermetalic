@@ -134,6 +134,11 @@ export function stickersFromChallan(d: {
     net_weight?: number;
     weight?: number;
     bobbin_pcs?: number;
+    /** Off the box's own production, where the source knows it (a challan's lines can
+     *  come from several) — preferred over `extra`, which is one value for every box. */
+    batch_no?: string | null;
+    operator?: string | null;
+    posting_date?: string | null;
   }[];
 }, extra?: { batch?: string | null; operator?: string | null }): StickerBox[] {
   return (d.items ?? [])
@@ -149,8 +154,8 @@ export function stickersFromChallan(d: {
       bobbinWeight: it.total_bobbin_weight,
       net: it.net_weight ?? it.weight,
       no: it.bobbin_pcs,
-      batch: extra?.batch ?? null,
-      operator: extra?.operator ?? null,
-      date: fmtDate(d.transaction_date) || null,
+      batch: it.batch_no ?? extra?.batch ?? null,
+      operator: it.operator ?? extra?.operator ?? null,
+      date: fmtDate(it.posting_date || d.transaction_date) || null,
     }));
 }
