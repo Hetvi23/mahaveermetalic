@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
-import { Barcode, FileText, Printer, RefreshCw, Search, X } from "lucide-react";
+import { ArrowLeft, Barcode, FileText, Package, Printer, RefreshCw, Search } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
@@ -43,7 +44,8 @@ type Detail = {
   total_box?: number; total_weight?: number; cover?: Cover | null; job?: Job | null; items: Line[];
 };
 
-const TYPES = ["Sales", "Job Challan", "Challan", "Delivery Challan", "Job Out", "Job In"];
+/** No type picked shows the sales register — Sales and Job Challan (see api.challan_report). */
+const TYPES = ["Sales", "Job Challan", "Challan", "Delivery Challan", "Roll Challan", "Job Out", "Job In"];
 const kg = (n?: number) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
 /**
@@ -63,7 +65,25 @@ export default function ChallanReportPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
+  // The challan being corrected lives in the URL, so it opens as a page of its own: the
+  // browser's Back returns to the report, and a refresh or a shared link reopens it.
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const open = params.get("challan");
+  function openChallan(name: string) {
+    const next = new URLSearchParams(params);
+    next.set("challan", name);
+    setParams(next, { state: { fromReport: true } });
+  }
+  function closeChallan() {
+    // Opened from the list: step back, so Back and the button agree. Opened from a link:
+    // there is no list behind it, so swap the URL instead of leaving the app.
+    if ((location.state as { fromReport?: boolean } | null)?.fromReport) return navigate(-1);
+    const next = new URLSearchParams(params);
+    next.delete("challan");
+    setParams(next, { replace: true });
+  }
 
   const key = `chal-rep-${party}-${type}-${from}-${to}`;
   const { data, isLoading, mutate } = useFrappeGetCall<{ message: Row[] }>(
@@ -91,12 +111,18 @@ export default function ChallanReportPage() {
 
   const totalWt = shown.reduce((s, r) => s + Number(r.total_weight || 0), 0);
 
+  // The filters above stay in this component's state, so closing the challan comes back
+  // to the list exactly as it was left.
+  if (open) {
+    return <EditChallan challan={open} onClose={closeChallan} onSaved={() => { void mutate(); }} />;
+  }
+
   return (
     <div className="mm-screen mm-page-enter">
       <header className="mm-ws-toolbar">
         <div>
           <h1 className="mm-page-title">Sales Challan Voucher report</h1>
-          <p className="mm-page-sub">Every challan issued. Open one to correct its weights — the order&apos;s inward cover still applies.</p>
+          <p className="mm-page-sub">Sales and Job Challans — pick a Type to see the others. Open one to correct its weights; the order&apos;s inward cover still applies.</p>
         </div>
         <button type="button" className="mm-icon-btn" title="Refresh" onClick={() => void mutate()}><RefreshCw size={14} /></button>
       </header>
@@ -106,7 +132,7 @@ export default function ChallanReportPage() {
           <PartyPicker label="Party" value={party} onChange={setParty} />
           <label className="mm-field">
             <span className="mm-field-label">Type</span>
-            <SearchSelect value={type} placeholder="— all types —"
+            <SearchSelect value={type} placeholder="Sales + Job Challan"
               options={TYPES.map((t) => ({ value: t, label: t }))} onChange={setType} />
           </label>
           <label className="mm-field">
@@ -151,7 +177,7 @@ export default function ChallanReportPage() {
               </thead>
               <tbody>
                 {shown.map((r) => (
-                  <tr key={r.name} className="mm-ws-row" onClick={() => setOpen(r.name)}>
+                  <tr key={r.name} className="mm-ws-row" onClick={() => openChallan(r.name)}>
                     <td>{r.challan_no || r.name}</td>
                     <td>{fmtDate(r.transaction_date) || "—"}</td>
                     <td>{r.challan_type || "—"}</td>
@@ -210,8 +236,6 @@ export default function ChallanReportPage() {
           </div>
         )}
       </section>
-
-      {open && <EditChallan challan={open} onClose={() => setOpen(null)} onSaved={() => { void mutate(); }} />}
     </div>
   );
 }
@@ -284,117 +308,138 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
     }
   }
 
+  // The list was scrolled to wherever the row was clicked; the page starts at its top.
+  const top = useRef<HTMLDivElement>(null);
+  useEffect(() => { top.current?.scrollIntoView({ block: "start" }); }, [challan]);
+
   return (
-    <div className="mm-modal-scrim mm-scrim-right" onClick={onClose}>
-      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
-        <div className="mm-modal-head">
-          <span className="mm-modal-title">Update Sales Challan Voucher — {d?.challan_no || challan}</span>
-          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+    <div className="mm-screen mm-page-enter" ref={top}>
+      <header className="mm-ws-toolbar">
+        <div className="mm-cr-head">
+          <button type="button" className="mm-icon-btn" onClick={onClose}
+            title="Back to the report" aria-label="Back to the report">
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <h1 className="mm-page-title">Update Sales Challan Voucher — {d?.challan_no || challan}</h1>
+            <p className="mm-page-sub">Correct the weights on an issued challan. The order&apos;s inward cover still applies.</p>
+          </div>
         </div>
-        <div className="mm-modal-body">
-          {isLoading && <p className="mm-muted">Loading…</p>}
-          {d && (
-            <>
-              <div className="mm-pv-grid">
-                <label className="mm-field"><span className="mm-field-label">Sale Chalan</span>
-                  <input className="mm-input" value={d.challan_no || d.challan} readOnly /></label>
-                <label className="mm-field"><span className="mm-field-label">Customer</span>
-                  <input className="mm-input" value={d.party || "—"} readOnly /></label>
-                <label className="mm-field"><span className="mm-field-label">Order</span>
-                  <input className="mm-input" value={d.sales_order || "—"} readOnly /></label>
-                <label className="mm-field"><span className="mm-field-label">Chalan Date</span>
-                  <input className="mm-input" value={d.transaction_date || "—"} readOnly /></label>
+        <button type="button" className="mm-icon-btn" title="Refresh" onClick={() => void mutate()}><RefreshCw size={14} /></button>
+      </header>
+
+      {isLoading && <p className="mm-muted">Loading…</p>}
+      {d && (
+        <>
+          <section className="mm-card mm-card-pad">
+            <div className="mm-pv-grid">
+              <label className="mm-field"><span className="mm-field-label">Sale Chalan</span>
+                <input className="mm-input" value={d.challan_no || d.challan} readOnly /></label>
+              <label className="mm-field"><span className="mm-field-label">Customer</span>
+                <input className="mm-input" value={d.party || "—"} readOnly /></label>
+              <label className="mm-field"><span className="mm-field-label">Order</span>
+                <input className="mm-input" value={d.sales_order || "—"} readOnly /></label>
+              <label className="mm-field"><span className="mm-field-label">Chalan Date</span>
+                <input className="mm-input" value={d.transaction_date || "—"} readOnly /></label>
+            </div>
+
+            {/* A job challan answers to its Job Out, not to the order. */}
+            {d.job && (
+              <div className="mm-banner" style={{ marginBottom: "0.7rem" }}>
+                Job Out {d.job.job_out}: sent <strong>{kg(d.job.sent)}</strong> kg ·
+                {" "}received back <strong>{kg(d.job.received)}</strong> kg ·
+                {" "}<strong className={d.job.balance < 0 ? "mm-var-over" : undefined}>{kg(d.job.balance)}</strong> kg still with the worker.
               </div>
+            )}
+            {/* The order's arithmetic, stated before anything is typed. */}
+            {cover && (
+              <div className={`mm-banner ${over ? "mm-banner-warn" : ""}`} style={{ marginBottom: "0.7rem" }}>
+                Order {cover.sales_order}: took in <strong>{kg(cover.inwarded_weight)}</strong> kg ·
+                {" "}<strong>{kg(cover.dispatched_weight)}</strong> kg gone on other challans ·
+                {" "}<strong>{kg(available ?? 0)}</strong> kg available to this one.
+                {over ? " This challan is over that — reduce the weights." : ""}
+              </div>
+            )}
+          </section>
 
-              {/* A job challan answers to its Job Out, not to the order. */}
-              {d.job && (
-                <div className="mm-banner" style={{ marginBottom: "0.7rem" }}>
-                  Job Out {d.job.job_out}: sent <strong>{kg(d.job.sent)}</strong> kg ·
-                  {" "}received back <strong>{kg(d.job.received)}</strong> kg ·
-                  {" "}<strong className={d.job.balance < 0 ? "mm-var-over" : undefined}>{kg(d.job.balance)}</strong> kg still with the worker.
-                </div>
-              )}
-              {/* The order's arithmetic, stated before anything is typed. */}
-              {cover && (
-                <div className={`mm-banner ${over ? "mm-banner-warn" : ""}`} style={{ marginBottom: "0.7rem" }}>
-                  Order {cover.sales_order}: took in <strong>{kg(cover.inwarded_weight)}</strong> kg ·
-                  {" "}<strong>{kg(cover.dispatched_weight)}</strong> kg gone on other challans ·
-                  {" "}<strong>{kg(available ?? 0)}</strong> kg available to this one.
-                  {over ? " This challan is over that — reduce the weights." : ""}
-                </div>
-              )}
-
-              <div className="mm-table-scroll">
-                <table className="mm-table mm-table-dense">
-                  <thead>
-                    <tr>
-                      <th>Barcode</th><th>Item</th><th>Size</th>
-                      <th className="mm-num">Gr.Wt</th><th className="mm-num">Bobbin | Pcs</th>
-                      <th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th>
-                      <th className="mm-num">R.Box</th><th className="mm-num">R.Bobbin</th>
+          <section className="mm-card mm-card-pad" style={{ marginTop: "1rem" }}>
+            <div className="mm-iw-sec-head">
+              <h2 className="mm-panel-title"><Package size={16} /> Boxes</h2>
+              <span className="mm-pill mm-pill-muted">{items.length}</span>
+            </div>
+            <div className="mm-table-scroll">
+              <table className="mm-table mm-table-dense">
+                <thead>
+                  <tr>
+                    <th>Barcode</th><th>Item</th><th>Size</th>
+                    <th className="mm-num">Gr.Wt</th><th className="mm-num">Bobbin | Pcs</th>
+                    <th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th>
+                    <th className="mm-num">R.Box</th><th className="mm-num">R.Bobbin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it) => (
+                    <tr key={it.name}>
+                      <td title={it.barcode || ""}>{it.barcode || "—"}</td>
+                      <td>{it.color_name || "—"}</td>
+                      <td>{it.cut || "—"}</td>
+                      <td className="mm-num">
+                        <NumInput className="mm-input mm-input-compact mm-iw-num"
+                          value={String(valueOf(it, "gross_weight") ?? "")}
+                          onChange={(v) => setField(it, "gross_weight", Number(v))} />
+                      </td>
+                      <td className="mm-num">{it.bobbin || "—"} | {Number(it.bobbin_pcs || 0)}</td>
+                      <td className="mm-num">
+                        <NumInput className="mm-input mm-input-compact mm-iw-num"
+                          value={String(valueOf(it, "box_weight") ?? "")}
+                          onChange={(v) => setField(it, "box_weight", Number(v))} />
+                      </td>
+                      <td className="mm-num">
+                        <NumInput className="mm-input mm-input-compact mm-iw-num"
+                          value={String(netOf(it))}
+                          onChange={(v) => setField(it, "net_weight", Number(v))} />
+                      </td>
+                      <td className="mm-num">
+                        <input type="checkbox" checked={!!valueOf(it, "r_box")}
+                          onChange={(e) => setField(it, "r_box", e.target.checked)} />
+                      </td>
+                      <td className="mm-num">
+                        <input type="checkbox" checked={!!valueOf(it, "r_bobbin")}
+                          onChange={(e) => setField(it, "r_bobbin", e.target.checked)} />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((it) => (
-                      <tr key={it.name}>
-                        <td title={it.barcode || ""}>{it.barcode || "—"}</td>
-                        <td>{it.color_name || "—"}</td>
-                        <td>{it.cut || "—"}</td>
-                        <td className="mm-num">
-                          <NumInput className="mm-input mm-input-compact mm-iw-num"
-                            value={String(valueOf(it, "gross_weight") ?? "")}
-                            onChange={(v) => setField(it, "gross_weight", Number(v))} />
-                        </td>
-                        <td className="mm-num">{it.bobbin || "—"} | {Number(it.bobbin_pcs || 0)}</td>
-                        <td className="mm-num">
-                          <NumInput className="mm-input mm-input-compact mm-iw-num"
-                            value={String(valueOf(it, "box_weight") ?? "")}
-                            onChange={(v) => setField(it, "box_weight", Number(v))} />
-                        </td>
-                        <td className="mm-num">
-                          <NumInput className="mm-input mm-input-compact mm-iw-num"
-                            value={String(netOf(it))}
-                            onChange={(v) => setField(it, "net_weight", Number(v))} />
-                        </td>
-                        <td className="mm-num">
-                          <input type="checkbox" checked={!!valueOf(it, "r_box")}
-                            onChange={(e) => setField(it, "r_box", e.target.checked)} />
-                        </td>
-                        <td className="mm-num">
-                          <input type="checkbox" checked={!!valueOf(it, "r_bobbin")}
-                            onChange={(e) => setField(it, "r_bobbin", e.target.checked)} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
-            </>
-          )}
-        </div>
-        <div className="mm-modal-foot mm-foot-split">
-          <div className="mm-pv-totals">
-            <span>Rows <strong>{items.length}</strong></span>
-            <span>Total Net <strong className={over ? "mm-var-over" : undefined}>{kg(total)} kg</strong></span>
-            {available !== null && <span>Available <strong>{kg(available)} kg</strong></span>}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+          </section>
+
+          {/* Pinned to the bottom of the page: on a fifty-box challan the totals and the
+              save button stay in reach while the weights above are being corrected. */}
+          <div className="mm-job-foot">
+            <div className="mm-pv-totals">
+              <span>Rows <strong>{items.length}</strong></span>
+              <span>Total Net <strong className={over ? "mm-var-over" : undefined}>{kg(total)} kg</strong></span>
+              {available !== null && <span>Available <strong>{kg(available)} kg</strong></span>}
+            </div>
+            <div className="mm-foot-actions mm-cr-actions">
+              <button className="mm-btn-secondary" disabled={!labels.length || unsaved} onClick={printLabels}
+                title={!labels.length
+                  ? "No boxes with a barcode on this challan"
+                  : unsaved ? "Save the weight changes first — the labels print what is saved"
+                  : `Print the barcode label of all ${labels.length} box${labels.length === 1 ? "" : "es"}`}>
+                <Barcode size={15} /> Print barcodes{labels.length ? ` (${labels.length})` : ""}
+              </button>
+              <button className="mm-btn-ghost" onClick={onClose}>Back</button>
+              <button className="mm-btn-primary" disabled={loading || items.length === 0 || Object.keys(edits).length === 0}
+                onClick={() => void submit()}>
+                {loading ? "Saving…" : "Update weights"}
+              </button>
+            </div>
           </div>
-          <div className="mm-foot-actions">
-            <button className="mm-btn-secondary" disabled={!labels.length || unsaved} onClick={printLabels}
-              title={!labels.length
-                ? "No boxes with a barcode on this challan"
-                : unsaved ? "Save the weight changes first — the labels print what is saved"
-                : `Print the barcode label of all ${labels.length} box${labels.length === 1 ? "" : "es"}`}>
-              <Barcode size={15} /> Print barcodes{labels.length ? ` (${labels.length})` : ""}
-            </button>
-            <button className="mm-btn-ghost" onClick={onClose}>Close</button>
-            <button className="mm-btn-primary" disabled={loading || items.length === 0 || Object.keys(edits).length === 0}
-              onClick={() => void submit()}>
-              {loading ? "Saving…" : "Update weights"}
-            </button>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

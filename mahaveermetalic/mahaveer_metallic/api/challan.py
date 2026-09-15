@@ -968,16 +968,21 @@ def job_report(party=None, from_date=None, to_date=None, company=None):
 
 	Balance is per party — Job Out minus Job In — so an outstanding balance is material
 	the job worker still holds. Bobbins are tracked the same way alongside the weight.
+
+	The worker is read off the JOB OUT. A Job In received against an order is filed under
+	that order's customer, so its own party is not the worker — counted by it, the receipt
+	would never come off the worker's balance.
 	"""
 	if company and not party:
 		party = frappe.db.get_value(
 			"MM Party Company", {"company_name": company, "parenttype": "MM Party Master"}, "parent"
 		)
 
+	worker = "coalesce(jo.party, c.party)"
 	conds = ["c.docstatus = 1", "c.challan_type in ('Job Out', 'Job In')"]
 	vals = {}
 	if party:
-		conds.append("c.party = %(party)s")
+		conds.append(f"{worker} = %(party)s")
 		vals["party"] = party
 	if from_date:
 		conds.append("c.transaction_date >= %(fd)s")
@@ -989,11 +994,13 @@ def job_report(party=None, from_date=None, to_date=None, company=None):
 
 	rows = frappe.db.sql(
 		f"""
-		select c.name, c.challan_type, c.transaction_date, c.party, c.challan_no,
+		select c.name, c.challan_type, c.transaction_date, {worker} as party, c.challan_no,
 			c.total_box, c.total_weight,
 			(select coalesce(sum(b.qty), 0) from `tabMM Production Bobbin` b
 			 where b.parent = c.name and b.parenttype = 'MM Sales Challan') as bobbin_qty
 		from `tabMM Sales Challan` c
+		left join `tabMM Sales Challan` jo
+			on c.challan_type = 'Job In' and jo.name = c.against_job_out
 		where {where}
 		order by c.transaction_date asc, c.creation asc
 		""",
@@ -1234,11 +1241,18 @@ def _job_balances(rows):
 @frappe.whitelist()
 def challan_report(from_date=None, to_date=None, party=None, challan_type=None, sales_order=None, limit=300):
 	"""Every challan issued, newest first, with its order's dispatch balance beside it —
-	or, on a Job Out / Job In, the job's own balance (see _job_balances)."""
+	or, on a Job Out / Job In, the job's own balance (see _job_balances).
+
+	Unfiltered, it is the SALES CHALLAN register: Sales and Job Challan only, the two books
+	that go to the customer. Job Out / Job In, roll and delivery challans are their own
+	paperwork and show only when their type is picked.
+	"""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import is_dispatch
 
 	conds = ["c.docstatus < 2"]
 	vals = {}
+	if not challan_type:
+		conds.append("c.challan_type in ('Sales', 'Job Challan')")
 	if from_date:
 		conds.append("c.transaction_date >= %(fd)s")
 		vals["fd"] = from_date
@@ -1866,11 +1880,22 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		)
 	rows = _job_in_box_rows(boxes, shade, box_return=box_return, bobbin_return=bobbin_return)
 
+	# WHOSE ACCOUNT the receipt lands in: the customer of the order it was received against.
+	# The Job Out is addressed to the worker, and filing what came back under the worker put
+	# the customer's finished goods on the worker's account. The worker's side still closes —
+	# every job balance reads `against_job_out`, and job_report / the bobbin ledger follow the
+	# Job Out's party. With no order (the shop's own material) it stays on the Job Out's party.
+	order = customer_order or jo.sales_order or None
+	receipt_party = (
+		(frappe.db.get_value("MM Sales Order", order, "party") if order else None)
+		or party or jo.party
+	)
+
 	prod = frappe.get_doc({
 		"doctype": "MM Production",
 		"posting_date": posting_date or frappe.utils.today(),
-		"customer_order": customer_order or jo.sales_order or None,
-		"party": party or jo.party,
+		"customer_order": order,
+		"party": receipt_party,
 		"shade": shade,
 		"cut": cut or next((it.cut for it in jo.items if it.cut), None),
 		"branch": jo.branch,
@@ -1918,7 +1943,7 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	prod.reload()
 	job_in = create_job_challan(
 		challan_type="Job In",
-		party=jo.party,
+		party=receipt_party,
 		challan_date=posting_date or frappe.utils.today(),
 		# Filed under the number of the Job Out it answers unless another was typed: every
 		# receipt against Job Out 125 is Job In 125.
@@ -2105,6 +2130,21 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 		loose_in[jo] = loose_in.get(jo, 0.0) + frappe.utils.flt(e.in_qty)
 
 	in_names = [c.name for v in ins.values() for c in v]
+	# The production voucher each Job In was received on. The register names a receipt by
+	# its Sale Challan ID and V.No — C.No is the Job Out's own number, shared by every
+	# receipt against it, so it told the lines apart not at all.
+	vouchers = {}
+	if in_names:
+		for it in frappe.get_all(
+			"MM Sales Challan Item",
+			filters={"parent": ["in", in_names], "parenttype": "MM Sales Challan", "production": ["is", "set"]},
+			fields=["parent", "production"],
+			order_by="parent asc, idx asc",
+			limit_page_length=0,
+		):
+			v = vouchers.setdefault(it.parent, [])
+			if it.production not in v:
+				v.append(it.production)
 	bob_in = {}
 	if in_names:
 		for b in frappe.get_all(
@@ -2135,6 +2175,7 @@ def job_work_hisab(party=None, company=None, from_date=None, to_date=None, open_
 		in_rows = [{
 			"challan": c.name,
 			"challan_no": c.challan_no or c.name,
+			"voucher_no": ", ".join(vouchers.get(c.name, [])) or None,
 			"date": str(c.transaction_date) if c.transaction_date else None,
 			"weight": round(frappe.utils.flt(c.total_weight), 3),
 			"bobbin": round(bob_in.get(c.name, 0.0), 3),

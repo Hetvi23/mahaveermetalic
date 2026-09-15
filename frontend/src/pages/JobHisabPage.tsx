@@ -15,7 +15,11 @@ const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { minimumFractionD
 const qty = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 type Roll = { color_name?: string; cut?: string; weight?: number; roll_no?: string | null };
-type JobIn = { challan: string; challan_no: string; date?: string | null; weight: number; bobbin: number };
+/** `challan` is the Sale Challan ID; `voucher_no` the production voucher it was received on. */
+type JobIn = {
+  challan: string; challan_no: string; voucher_no?: string | null;
+  date?: string | null; weight: number; bobbin: number;
+};
 type Bob = { bobbin: string; qty: number; weight: number };
 export type HisabStatus = "Draft" | "Accountant Approved" | "Admin Approved" | "Billed" | "Completed";
 export type Hisab = {
@@ -86,9 +90,9 @@ export default function JobHisabPage() {
   const rows = useMemo(() => data?.message?.rows ?? [], [data]);
   const totals = data?.message?.totals;
 
-  /** CSV of exactly what is on screen, in the register's own eight columns. */
+  /** CSV of exactly what is on screen, in the register's own nine columns. */
   function exportCsv() {
-    const head = ["Date", "Color Name", "Bill No", "Weight", "In Date", "Challan No", "In Weight", "Bobbin"];
+    const head = ["Date", "Color Name", "Bill No", "Weight", "In Date", "Sale Challan ID", "Voucher No", "In Weight", "Bobbin"];
     const esc = (v: unknown) => {
       const t = String(v ?? "");
       return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
@@ -102,11 +106,11 @@ export default function JobHisabPage() {
         body.push([
           i === 0 ? r.date ?? "" : "", roll?.color_name ?? "", i === 0 ? r.bill_no : "",
           roll ? roll.weight ?? "" : "",
-          ji?.date ?? "", ji?.challan_no ?? "", ji?.weight ?? "", ji?.bobbin ?? "",
+          ji?.date ?? "", ji?.challan ?? "", ji?.voucher_no ?? "", ji?.weight ?? "", ji?.bobbin ?? "",
         ].map(esc).join(","));
       }
       body.push([`${r.bill_no} balance`, "", "", r.balance_weight, "bobbin sent", r.bobbin_out,
-        "back", r.bobbin_in].map(esc).join(","));
+        "", "back", r.bobbin_in].map(esc).join(","));
     }
     const csv = [head.join(","), ...body].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -201,11 +205,14 @@ export default function JobHisabPage() {
                 <thead>
                   <tr>
                     <th colSpan={4} className="mm-jh-side">Sent — Job Out</th>
-                    <th colSpan={4} className="mm-jh-side">Back — Job In</th>
+                    <th colSpan={5} className="mm-jh-side">Back — Job In</th>
                   </tr>
                   <tr>
                     <th>Date</th><th>Color Name</th><th>Bill No</th><th className="mm-num">Weight</th>
-                    <th>Date</th><th>Challan No</th><th className="mm-num">Weight</th><th className="mm-num">Bobbin</th>
+                    {/* A receipt is named by its own IDs. C.No is the Job Out's number, the
+                        same on every receipt against it, so it could not tell two apart. */}
+                    <th>Date</th><th>Sale Challan ID</th><th>Voucher No</th>
+                    <th className="mm-num">Weight</th><th className="mm-num">Bobbin</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -229,7 +236,8 @@ export default function JobHisabPage() {
                         <td>{i === 0 ? r.bill_no : ""}</td>
                         <td className="mm-num">{roll ? kg(roll.weight) : ""}</td>
                         <td className="mm-jh-date-cell mm-jh-in">{fmtDate(ji?.date) || (i === 0 && !ji ? "—" : "")}</td>
-                        <td className="mm-jh-in">{ji?.challan_no || ""}</td>
+                        <td className="mm-jh-in">{ji?.challan || ""}</td>
+                        <td className="mm-jh-in">{ji ? ji.voucher_no || "—" : ""}</td>
                         <td className="mm-num mm-jh-in">{ji ? kg(ji.weight) : ""}</td>
                         <td className="mm-num mm-jh-in">{ji ? qty(ji.bobbin) : ""}</td>
                       </tr>
@@ -240,7 +248,7 @@ export default function JobHisabPage() {
                   <tr>
                     <td colSpan={3}><strong>Total</strong></td>
                     <td className="mm-num"><strong>{kg(r.out_weight)}</strong></td>
-                    <td colSpan={2} />
+                    <td colSpan={3} />
                     <td className="mm-num"><strong>{kg(r.in_weight)}</strong></td>
                     <td className="mm-num"><strong>{qty(r.bobbin_in)}</strong></td>
                   </tr>

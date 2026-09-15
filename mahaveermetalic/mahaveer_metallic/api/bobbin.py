@@ -217,6 +217,11 @@ def post_job_challan(doc):
 	if (doc.challan_type or "") not in ("Job Out", "Job In"):
 		return
 	going_out = doc.challan_type == "Job Out"
+	# Bobbins coming back are the WORKER's to return, so they post to the Job Out's party —
+	# a Job In received against an order carries the customer as its own party.
+	party = doc.party
+	if not going_out and doc.get("against_job_out"):
+		party = frappe.db.get_value("MM Sales Challan", doc.against_job_out, "party") or doc.party
 	for row in doc.bobbins or []:
 		qty = float(row.qty or 0)
 		if qty <= 0:
@@ -225,7 +230,7 @@ def post_job_challan(doc):
 			posting_date=doc.transaction_date or frappe.utils.today(),
 			voucher_type=doc.challan_type,
 			voucher_no=doc.name,
-			party=doc.party,
+			party=party,
 			bobbin=row.bobbin,
 			note=doc.remarks,
 			# A Job Out / Job In IS job work — the ledger records it without being asked.

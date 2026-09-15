@@ -2522,6 +2522,11 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-scv-foot strong { color: var(--mm-text); font-variant-numeric: tabular-nums; }
 .mm-scv-foot .mm-btn-primary { margin-left: auto; }
 
+/* Update Sales Challan Voucher, as a full page off the challan report. */
+.mm-cr-head { display: flex; align-items: flex-start; gap: 0.7rem; }
+.mm-cr-head .mm-icon-btn { margin-top: 0.15rem; }
+.mm-cr-actions { margin-left: auto; flex-wrap: wrap; }
+
 /* Bobbin report: filter row, opening row, totals, and print-only header */
 .mm-brp-filters { display: flex; gap: 0.7rem; align-items: end; flex-wrap: wrap; }
 .mm-brp-filters .mm-field { min-width: 160px; }
@@ -3244,7 +3249,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 }
 /* The 5th column starts the Job In half — a rule there is what stops the reader's eye
    carrying a weight across from the wrong side. */
-.mm-jh-table th:nth-child(5), .mm-jh-table td:nth-child(5) { border-left: 2px solid var(--mm-border-dark); }
+.mm-jh-table thead tr:last-child th:nth-child(5), .mm-jh-table tbody td:nth-child(5),
+.mm-jh-table tfoot td:nth-child(3) { border-left: 2px solid var(--mm-border-dark); }
 .mm-jh-table thead tr:first-child th:nth-child(2) { border-left: 2px solid var(--mm-border-dark); }
 .mm-jh-in { background: var(--mm-bg); }
 .mm-jh-date-cell { white-space: nowrap; }

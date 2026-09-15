@@ -209,7 +209,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
         weight: Number(x.weight || 0),
       } as PickedRoll)));
       setAgainstJobOut(m.challan);
-      setJobOutMeta(r);
+      // The size the Job Out was sent at, off this roll or failing that any roll on it.
+      setJobOutMeta({ ...r, cut: r.cut || m.rows.find((x) => x.cut)?.cut || "" });
       if (m.party) setParty(m.party);
     } catch (e) {
       setError(extractErrorMessage(e));
@@ -424,10 +425,10 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                           <td>{r.party_label || r.party || "—"}</td>
                           {/* The ROLL, at its own weight. This column used to carry the
                               challan's comma-joined colours against the challan's total,
-                              so eleven rolls read as one line and named none of them. */}
+                              so eleven rolls read as one line and named none of them. The roll
+                              id stays in the hover only — on screen it was noise to the floor. */}
                           <td title={`${r.roll_no || ""}${r.cut ? ` · ${r.cut}` : ""}`}>
                             <span className="mm-colour-name">{r.color_name || "—"}</span>
-                            {r.roll_no ? <span className="mm-suggest-meta"> {r.roll_no}</span> : null}
                           </td>
                           {/* The roll's own weight, and nothing else. The challan-level
                               "x of y due" repeated the same two figures on every roll of a
@@ -792,6 +793,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   }, [jobOut]);
 
   useEffect(() => { setCNo(meta?.challan_no || ""); }, [jobOut, meta?.challan_no]);
+  // Size comes back as it went out — fetched from the Job Out, still editable.
+  useEffect(() => { setSize(meta?.cut || ""); }, [jobOut, meta?.cut]);
 
   // A fresh Job Out means a fresh receipt: the number comes from the series and the order
   // from the challan. Only ONE order is chosen automatically — where the Job Out covers
