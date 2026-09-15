@@ -1,15 +1,18 @@
 /**
- * Challan print — A4, two copies per sheet (Original / Duplicate).
+ * Challan print — A4 LANDSCAPE, two copies side by side (Original | Duplicate).
  *
  * Laid out to match the printed challan book the shop already uses: a three-up grid of
  * No / Net.Wt / Bobbins, numbered straight down each column group, a TOTAL row, what
- * comes back, the terms, and the two signatures. Nothing else.
+ * comes back, which bobbins went, the numbered terms, and the two signatures.
+ *
+ * Side by side, not stacked. Stacked, each copy was a half-sheet 148mm tall, so twenty
+ * rows got 4mm each and every figure had to be set at 7pt — it printed pale and small.
+ * Side by side, each copy is an A5 standing up: the same grid gets 210mm of height, the
+ * rows get room, and the type can be set at a size the floor reads from arm's length.
  *
  * The colour and cut are stated ONCE, on the Item line — a challan is one item packed
  * into many boxes, so repeating them on every row spent the width the weights need.
  */
-
-import { fmtDate } from "@/utils/localDate";
 
 export type ChallanItem = {
   idx?: number;
@@ -31,6 +34,7 @@ export type ChallanItem = {
   amount?: number;
 };
 
+/** `weight` is the weight of ALL `qty` bobbins, not of one. */
 export type ChallanBobbin = { bobbin?: string; qty?: number; quality?: string; weight?: number };
 
 export type ChallanPrintData = {
@@ -79,14 +83,35 @@ const int = (v: unknown) => String(Math.round(Number(v || 0)));
 /** Rupees, two places — the challan is Indian paper and the rate is a price, not a weight. */
 const money = (v: unknown) =>
   `\u20B9${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** The book writes the whole year — 14-09-2026, not 14-09-26. */
+const bookDate = (v?: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || "").trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : String(v || "");
+};
 
 /** The book's terms, used when MM Settings names none. Both languages, as printed. */
 const DEFAULT_TERMS = [
-  "NO GUARANTEE in Jari and Colour Change. Use Material Lot To Lot.",
-  "Please keep track of the bobbin — if a bobbin goes missing you will have to pay for it.",
+  "NO GUARANTEE in Jari And Colour Change. Use Material Lot To Lot.",
+  "Please keep track of the bobbin, if the bobbin goes missing you will have to pay for it.",
   "જરી અને કલર ચેન્જ ની કોઈપણ પ્રકારની ગેરંટી આપવામાં આવતી નથી. માલ લોટ ટુ લોટ વાપરવો.",
   "મહેરબાની કરીને બોબિનનો હિસાબ રાખજો, જો બોબિન ગુમ થશે તો તેના પૈસા ચૂકવવા પડશે.",
 ];
+
+/** Numbered the way the book numbers them: the English lines 1, 2… and the Gujarati lines
+ *  ૧, ૨… each counting on their own, so a term and its translation carry the same number. */
+const GU_DIGITS = "૦૧૨૩૪૫૬૭૮૯";
+function numberTerms(lines: string[]): string[] {
+  let en = 0, gu = 0;
+  return lines.map((t) => {
+    if (/^\s*[\d\u0AE6-\u0AEF]+[.)]/.test(t)) return t; // already numbered in MM Settings
+    if (/[\u0A80-\u0AFF]/.test(t)) {
+      gu += 1;
+      return `${String(gu).replace(/\d/g, (x) => GU_DIGITS[Number(x)])}. ${t}`;
+    }
+    en += 1;
+    return `${en}. ${t}`;
+  });
+}
 
 /** Three column groups, numbered straight down each — 1-20, 21-40, 41-60 in the book.
  *  A challan with more boxes than that grows the groups rather than dropping rows. */
@@ -99,7 +124,7 @@ function copy(d: ChallanPrintData, label: string): string {
   const perGroup = Math.max(BOOK_ROWS, Math.ceil(items.length / GROUPS));
 
   // The item line: the colour, and its cut in brackets, exactly like the book's
-  // "A COPPER SS (50/303)". Several colours on one challan are all named.
+  // "LG 104 BSM (SP CUT)". Several colours on one challan are all named.
   const colours = [...new Set(items.map((i) => (i.color_name || "").trim()).filter(Boolean))];
   const cuts = [...new Set(items.map((i) => (i.cut || "").trim()).filter(Boolean))];
   const itemLine = colours.join(", ") + (cuts.length ? ` (${cuts.join(", ")})` : "");
@@ -125,27 +150,23 @@ function copy(d: ChallanPrintData, label: string): string {
   const totalNet = items.reduce((s, i) => s + Number(i.net_weight ?? i.weight ?? 0), 0);
   const totalBob = d.total_bobbin ?? items.reduce((s, i) => s + Number(i.bobbin_pcs || 0), 0);
 
-  /* Which bobbins went, and how many of each.
-     The grid's Bobbins column counts pieces per BOX — it cannot say WHICH bobbin, and the
-     terms below make the customer liable for a missing one. Naming them is the whole point
-     of that liability, so the challan lists them when there are any and stays silent when
-     there are none rather than printing an empty heading. */
-  // Quality and quantity, and nothing else. The bobbin's own name and its weight were
-  // two more columns of width on a half-sheet that has none to spare, and neither is
-  // what the customer is being held to: the count is what has to come back.
-  //
-  // The row filter no longer demands a bobbin NAME either — with the name off the paper,
-  // an unnamed bobbin with a real quantity is still a quantity owed.
-  const bobbinRows = (d.bobbins || []).filter((b) => Number(b.qty || 0) > 0);
-  const bobbinBlock = bobbinRows.length
-    ? `<table class="bob">
-        <thead><tr><th>Quality</th><th class="rt">Qty</th></tr></thead>
-        <tbody>${bobbinRows
-          .map((b) => `<tr><td>${esc(b.quality || "")}</td>` +
-                      `<td class="rt">${int(b.qty)}</td></tr>`)
-          .join("")}</tbody>
-      </table>`
-    : "";
+  /* Which bobbins went, one line each, the way the book writes it:
+       MM 12000 0.059 SMALL : 400
+     bobbin, the weight of ONE, its quality, and how many. The grid's Bobbins column counts
+     pieces per box and cannot say which bobbin — and the terms make the customer liable
+     for a missing one, so the paper names them. Silent when there are none. */
+  const bobbinLines = (d.bobbins || [])
+    .filter((b) => Number(b.qty || 0) > 0)
+    .map((b) => {
+      const name = (b.bobbin || "").trim();
+      const qty = Number(b.qty || 0);
+      const each = qty > 0 && Number(b.weight || 0) > 0 ? num(Number(b.weight) / qty) : "";
+      // Bobbin masters are often named with their weight already ("QC635090 BOB 0.059");
+      // printing it a second time would read as two different figures.
+      const parts = [name, each && !name.includes(each) ? each : "", (b.quality || "").trim()].filter(Boolean);
+      return `<div class="bobline">${esc(parts.join(" "))} : <b>${int(qty)}</b></div>`;
+    })
+    .join("");
 
   // Money on the paper that leaves with the goods. Only when something is actually
   // priced — an unpriced delivery challan must not gain a row of zeroes, and job
@@ -160,9 +181,9 @@ function copy(d: ChallanPrintData, label: string): string {
       }Amount: <b>${money(amount)}</b></div>`
     : "";
 
-  const terms = (d.challan_terms || "").trim()
+  const terms = numberTerms((d.challan_terms || "").trim()
     ? (d.challan_terms as string).split(/\r?\n/).map((t) => t.trim()).filter(Boolean)
-    : DEFAULT_TERMS;
+    : DEFAULT_TERMS);
 
   // The type names the paper. Types that already say "Challan" must not have another one
   // appended — "Delivery Challan Challan" is what a blind `${type} Challan` printed.
@@ -170,11 +191,11 @@ function copy(d: ChallanPrintData, label: string): string {
   const heading = /challan/i.test(type) ? type : `${type} Chalan`;
 
   return `<section class="copy"><div class="fit">
-    <table class="hd"><tr>
-      <td class="brand">${d.new_lot ? `<span class="newlot">NEW LOT</span>` : ""}MAHAVIR METALIC</td>
-      <td class="addr">${d.company_address ? esc(d.company_address).replace(/\n/g, "<br>") : ""}</td>
-      <td class="orig">${esc(label)}</td>
-    </tr></table>
+    <div class="hd">
+      <div class="brand">${d.new_lot ? `<span class="newlot">NEW LOT</span>` : ""}MAHAVIR METALIC</div>
+      <div class="orig">${esc(label)}</div>
+    </div>
+    ${d.company_address ? `<div class="addr">${esc(d.company_address).replace(/\n/g, "<br>")}</div>` : ""}
     <div class="bannerwrap"><span class="banner">${esc(heading).toUpperCase()}</span></div>
     <table class="meta">
       <tr>
@@ -183,12 +204,13 @@ function copy(d: ChallanPrintData, label: string): string {
       </tr>
       <tr>
         <td class="k">Item</td><td class="c">:</td><td class="v">${esc(itemLine || "—")}</td>
-        <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(fmtDate(d.transaction_date))}</td>
+        <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(bookDate(d.transaction_date))}</td>
       </tr>
-      ${d.customer_name ? `<tr>
-        <td class="k">Customer</td><td class="c">:</td><td class="v"><b>${esc(d.customer_name)}</b>${
+      ${d.customer_name || d.sales_order ? `<tr>
+        <td class="k">${d.customer_name ? "Customer" : ""}</td><td class="c">${d.customer_name ? ":" : ""}</td>
+        <td class="v">${d.customer_name ? `<b>${esc(d.customer_name)}</b>${
           d.customer_mobile ? ` <span class="sub">${esc(d.customer_mobile)}</span>` : ""
-        }</td>
+        }` : ""}</td>
         <td class="k2">Order</td><td class="c">:</td><td class="v2">${esc(d.sales_order || "")}</td>
       </tr>` : ""}
     </table>
@@ -201,16 +223,16 @@ function copy(d: ChallanPrintData, label: string): string {
       <tbody>${grid}</tbody>
       <tfoot><tr>
         <td class="tot" colspan="${GROUPS * 3 - 3}">TOTAL</td>
-        <td class="n"><b>${int(count)}</b></td>
-        <td class="w"><b>${num(totalNet)}</b></td>
-        <td class="b"><b>${int(totalBob)}</b></td>
+        <td class="n">${int(count)}</td>
+        <td class="w">${num(totalNet)}</td>
+        <td class="b">${int(totalBob)}</td>
       </tr></tfoot>
     </table>
-    ${bobbinBlock}
-    <div class="ret">Return No. of Box: <b>${int(d.return_box)}</b> &nbsp; No. of Bobbin: <b>${int(d.return_bobbin)}</b></div>
+    <div class="ret">Return No. of Box: <b>${int(d.return_box)}</b> &nbsp;No. of Bobbin: <b>${int(d.return_bobbin)}</b></div>
+    ${bobbinLines}
     ${valueLine}
-    <ul class="terms">${terms.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
-    <table class="sign"><tr><td>Receiver's Sign</td><td class="rt">Authorised Signature</td></tr></table>
+    <div class="terms">${terms.map((t) => `<div>${esc(t)}</div>`).join("")}</div>
+    <div class="sign"><span>Receiver's Sign</span><span>Authorised Signature</span></div>
   </div></section>`;
 }
 
@@ -242,72 +264,81 @@ const FIT_SCRIPT = `(function () {
   window.addEventListener("beforeprint", fit);
 })();`;
 
-export function printChallan(d: ChallanPrintData) {
-  const w = window.open("", "_blank", "width=900,height=1100");
-  if (!w) {
-    window.alert("Allow pop-ups for this site to print the challan.");
-    return;
-  }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+/** The whole sheet as a document — separate from the window so it can be rendered and
+ *  checked on its own. */
+export function challanPrintHtml(d: ChallanPrintData): string {
+  return `<!doctype html><html><head><meta charset="utf-8">
   <title>${esc(d.challan_no || d.name)}</title>
   <style>
-    @page { size: A4 portrait; margin: 0; }
+    @page { size: A4 landscape; margin: 0; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #000; }
-    /* Two copies on one A4: each gets exactly half the 297mm sheet. The width is the
-       sheet's too, so the window lays it out on screen exactly as it will print — the
-       fit below measures it there. */
-    .copy { width: 210mm; height: 148.5mm; padding: 4.5mm 7mm; border-bottom: 1px dashed #999; overflow: hidden; }
-    .copy:last-of-type { border-bottom: 0; }
+    /* Backgrounds print. Without this the browser drops them by default, and the black
+       banner came out as white text on white paper — a ghost of the challan's own name. */
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Arial first: it is on every shop PC and holds its weight in print. The system UI
+       font this used to ask for is drawn hairline-thin at small sizes, which is most of why
+       the old sheet read grey. The Gujarati faces are what the terms fall back to. */
+    body { margin: 0; display: flex; color: #000;
+           font-family: Arial, Helvetica, "Nirmala UI", "Shruti", "Noto Sans Gujarati", "Gujarati Sangam MN", sans-serif; }
+    /* Each copy is exactly half the 297mm sheet, standing up — an A5. The window lays it
+       out at that size on screen, so the fit below measures what will print. */
+    .copy { width: 148.5mm; height: 210mm; padding: 6mm 7mm 5mm; overflow: hidden; flex: none; }
+    /* The fold between the two copies, where the book is torn. */
+    .copy:first-of-type { border-right: 0.3mm dashed #666; }
     .fit { display: flex; flex-direction: column; height: 100%; transform-origin: 0 0; }
-    .hd td { vertical-align: top; }
-    .brand { font-size: 13pt; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap; }
-    /* Top left of both copies, and INLINE before the name on purpose: nothing on this
-       sheet gives height back. .grid is a table at flex: 0 1 auto, so its automatic
-       minimum size stops it shrinking, and .sign's auto margin is already zero on a full
-       challan — so a block here came straight off the bottom and sliced the signature row
-       on a 61-box challan. Inline costs no row at all. */
-    .newlot { font-size: 9pt; font-weight: 900; letter-spacing: 1px; margin-right: 3mm; }
-    .addr { font-size: 6.5pt; line-height: 1.25; text-align: center; }
-    .orig { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; text-align: right; white-space: nowrap; }
-    .bannerwrap { text-align: center; margin: 1mm 0 1.5mm; }
-    .banner { display: inline-block; padding: 0.6mm 5mm; border-radius: 8mm;
-              background: #333; color: #fff; font-size: 8pt; font-weight: 700; letter-spacing: 0.5px; }
+
+    .hd { display: flex; justify-content: space-between; align-items: flex-start; }
+    .brand { font-size: 17pt; font-weight: 900; letter-spacing: 0.4px; white-space: nowrap; }
+    /* Inline before the name on purpose: a block here costs the grid a whole row. */
+    .newlot { font-size: 10pt; font-weight: 900; letter-spacing: 1px; margin-right: 3mm;
+              border: 0.4mm solid #000; padding: 0.3mm 1.5mm; vertical-align: middle; }
+    .orig { font-size: 11pt; font-weight: 700; text-transform: uppercase; text-decoration: underline;
+            text-underline-offset: 1mm; white-space: nowrap; padding-top: 1mm; }
+    .addr { font-size: 9pt; font-weight: 700; line-height: 1.3; text-align: center; margin-top: 1mm; }
+    .bannerwrap { text-align: center; margin: 1.8mm 0 2mm; }
+    .banner { display: inline-block; padding: 1.2mm 7mm; border-radius: 10mm;
+              background: #000; color: #fff; font-size: 11.5pt; font-weight: 700; letter-spacing: 0.6px; }
+
     table { width: 100%; border-collapse: collapse; }
-    .meta { font-size: 8pt; margin-bottom: 1.5mm; }
+    .meta { font-size: 10.5pt; margin-bottom: 2mm; }
     .meta td { padding: 0.4mm 0; vertical-align: top; }
-    .meta .k { width: 13mm; } .meta .k2 { width: 24mm; padding-left: 4mm; white-space: nowrap; }
-    .meta .c { width: 3mm; } .meta .v2 { width: 30mm; }
-    /* The customer's phone, set beside their name rather than on a row of its own —
-       the header block is tight and a whole row for one number costs the grid below. */
-    .meta .sub { font-size: 7pt; font-weight: 400; }
-    /* The grid IS the challan — it takes whatever height is left on the half-sheet. */
-    .grid { font-size: 7.5pt; table-layout: fixed; }
-    .grid th, .grid td { border: 0.4pt solid #000; padding: 0.35mm 1.2mm; }
-    .grid th { background: #eee; font-size: 6.5pt; font-weight: 700; }
-    .grid .n { width: 6.5%; text-align: center; }
-    .grid .w, .grid .b { text-align: right; font-variant-numeric: tabular-nums; }
-    .grid .w { width: 15%; } .grid .b { width: 11.8%; }
-    .grid tfoot .tot { text-align: right; font-weight: 700; border: 0; }
-    /* Bobbins, when the challan carries any. Sized to the terms beneath it rather than
-       the weight grid above — it is a short reference list, not a second table of record,
-       and two copies still have to fit one A4 sheet. */
-    .bob { width: 100%; border-collapse: collapse; margin-top: 1.2mm; font-size: 7pt; }
-    .bob th, .bob td { border: 0.2mm solid #000; padding: 0.5mm 1mm; }
-    .bob th { background: #eee; font-weight: 700; text-align: left; }
-    .bob .rt { text-align: right; }
-    .ret { margin-top: 1.2mm; font-size: 7.5pt; }
+    .meta .k { width: 18mm; } .meta .k2 { width: 25mm; padding-left: 3mm; white-space: nowrap; }
+    .meta .c { width: 3mm; } .meta .v2 { width: 25mm; }
+    .meta .sub { font-size: 9pt; font-weight: 400; }
+
+    /* The grid IS the challan. Plain black rules, no shading — the book's own look, and
+       nothing a tired toner cartridge can wash out. */
+    .grid { font-size: 10pt; table-layout: fixed; }
+    .grid th, .grid td { border: 0.25mm solid #000; padding: 0 1mm; text-align: center;
+                         font-variant-numeric: tabular-nums; }
+    .grid th { font-size: 9pt; font-weight: 700; height: 6mm; }
+    .grid tbody td { height: 5.3mm; }
+    .grid .n { width: 7.5%; } .grid .w { width: 14.5%; } .grid .b { width: 11.33%; }
+    .grid tfoot td { height: 6mm; font-weight: 700; font-size: 10.5pt; }
+    .grid tfoot .tot { text-align: right; padding-right: 3mm; border: 0; }
+
+    .ret { margin-top: 2mm; font-size: 10.5pt; }
+    .bobline { margin-top: 0.8mm; font-size: 10.5pt; }
     /* The value sits under the returns line, on its own, so it reads as the total of the
        paper rather than another column of the packing grid. */
-    .val { margin-top: 0.6mm; font-size: 8pt; text-align: right; }
-    .terms { margin: 1mm 0 0; padding-left: 4mm; font-size: 6.5pt; line-height: 1.35; }
-    .sign { margin-top: auto; font-size: 7.5pt; padding-top: 2.5mm; }
-    .sign .rt { text-align: right; }
+    .val { margin-top: 0.8mm; font-size: 10.5pt; text-align: right; }
+    .terms { margin-top: 2mm; font-size: 8.5pt; line-height: 1.4; }
+    .sign { margin-top: auto; padding-top: 6mm; display: flex; justify-content: space-between;
+            font-size: 11pt; font-weight: 700; }
   </style></head><body>
   ${copy(d, "Original")}
   ${copy(d, "Duplicate")}
   <script>${FIT_SCRIPT}</script>
-  </body></html>`);
+  </body></html>`;
+}
+
+export function printChallan(d: ChallanPrintData) {
+  const w = window.open("", "_blank", "width=1180,height=860");
+  if (!w) {
+    window.alert("Allow pop-ups for this site to print the challan.");
+    return;
+  }
+  w.document.write(challanPrintHtml(d));
   w.document.close();
   w.focus();
   // Closes itself once the dialog is done with it, or silent printing leaves an orphan
