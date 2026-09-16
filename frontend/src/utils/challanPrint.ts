@@ -148,7 +148,13 @@ function copy(d: ChallanPrintData, label: string): string {
 
   const count = items.length;
   const totalNet = items.reduce((s, i) => s + Number(i.net_weight ?? i.weight ?? 0), 0);
-  const totalBob = d.total_bobbin ?? items.reduce((s, i) => s + Number(i.bobbin_pcs || 0), 0);
+  // BOBBINS REACH THE GRID BY EITHER ROUTE. A production challan carries them per BOX, so
+  // the column fills and the total is its sum. A Job Out carries them on the challan's own
+  // bobbin table instead — nothing is on the rolls — and that total read 0 while the lines
+  // under the table plainly listed 400 of them. The table is what the total belongs to.
+  const perBox = items.reduce((s, i) => s + Number(i.bobbin_pcs || 0), 0);
+  const onChallan = (d.bobbins || []).reduce((s, b) => s + Number(b.qty || 0), 0);
+  const totalBob = Number(d.total_bobbin || 0) || perBox || onChallan;
 
   /* Which bobbins went, one line each, the way the book writes it:
        MM 12000 0.059 SMALL : 400
@@ -168,14 +174,17 @@ function copy(d: ChallanPrintData, label: string): string {
     })
     .join("");
 
-  // Money on the paper that leaves with the goods. Only when something is actually
-  // priced — an unpriced delivery challan must not gain a row of zeroes, and job
-  // challans carry no rate at all. One rate across every priced line is printed as that
-  // rate; a challan mixing rates just foots, because a single "rate" would be a lie.
+  /* Money — ON THE DUPLICATE ONLY, under the terms.
+     The Original travels with the goods and is handed over; the Duplicate is the copy the
+     shop keeps, and the rate is the shop's business. Printed only when something is
+     actually priced: an unpriced delivery challan must not gain a row of zeroes, and job
+     challans carry no rate at all. One rate across every priced line is printed as that
+     rate; a challan mixing rates just foots, because a single "rate" would be a lie. */
   const priced = (d.items ?? []).filter((it) => Number(it.rate || 0) > 0);
   const rates = [...new Set(priced.map((it) => Number(it.rate || 0)))];
   const amount = Number(d.total_amount || 0);
-  const valueLine = amount > 0
+  const isDuplicate = /duplicate/i.test(label);
+  const valueLine = amount > 0 && isDuplicate
     ? `<div class="val">${
         rates.length === 1 ? `Rate: <b>${money(rates[0])}</b> / kg &nbsp;&nbsp; ` : ""
       }Amount: <b>${money(amount)}</b></div>`
@@ -246,8 +255,8 @@ function copy(d: ChallanPrintData, label: string): string {
     </table>
     <div class="ret">Return No. of Box: <b>${int(d.return_box)}</b> &nbsp;No. of Bobbin: <b>${int(d.return_bobbin)}</b></div>
     ${bobbinLines}
-    ${valueLine}
     <div class="terms">${terms.map((t) => `<div>${esc(t)}</div>`).join("")}</div>
+    ${valueLine}
     <div class="sign"><span>Receiver's Sign</span><span>Authorised Signature</span></div>
   </div></section>`;
 }
@@ -259,20 +268,31 @@ function copy(d: ChallanPrintData, label: string): string {
    factor first so it still spans the sheet. A copy that fits is left at full size. */
 const FIT_SCRIPT = `(function () {
   function fit() {
-    document.querySelectorAll(".copy > .fit").forEach(function (el) {
+    var all = Array.prototype.slice.call(document.querySelectorAll(".copy > .fit"));
+    if (!all.length) return;
+    var copies = all.map(function (el) {
       var box = el.parentElement, cs = getComputedStyle(box);
-      var availH = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-      var availW = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      el.style.transform = ""; el.style.width = ""; el.style.height = "auto";
-      var natural = el.getBoundingClientRect().height;
-      if (natural <= availH) { el.style.height = ""; return; }
-      var r = availH / natural;
-      // Wider never wraps into MORE lines, so the height at this width fits at r.
-      el.style.width = availW / r + "px";
-      r = Math.min(r, availH / el.getBoundingClientRect().height) * 0.998;
-      el.style.width = availW / r + "px";
-      el.style.height = availH / r + "px";
-      el.style.transform = "scale(" + r + ")";
+      return {
+        el: el,
+        availH: box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+        availW: box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      };
+    });
+    copies.forEach(function (c) { c.el.style.transform = ""; c.el.style.width = ""; c.el.style.height = "auto"; });
+    // ONE factor for both copies, taken from whichever is fuller. They sit side by side on
+    // the same sheet, and the Duplicate carries a line the Original does not (the rate) —
+    // scaled apart, one copy's type came out visibly smaller than the other's.
+    var r = 1;
+    copies.forEach(function (c) { r = Math.min(r, c.availH / c.el.getBoundingClientRect().height); });
+    if (r >= 1) { copies.forEach(function (c) { c.el.style.height = ""; }); return; }
+    // Wider never wraps into MORE lines, so the height at this width fits at r.
+    copies.forEach(function (c) { c.el.style.width = c.availW / r + "px"; });
+    copies.forEach(function (c) { r = Math.min(r, c.availH / c.el.getBoundingClientRect().height); });
+    r = r * 0.998;
+    copies.forEach(function (c) {
+      c.el.style.width = c.availW / r + "px";
+      c.el.style.height = c.availH / r + "px";
+      c.el.style.transform = "scale(" + r + ")";
     });
   }
   fit();
