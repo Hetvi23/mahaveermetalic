@@ -182,7 +182,12 @@ class MMProduction(Document):
 		from mahaveermetalic.mahaveer_metallic.api.challan import create_challan_from_production
 
 		try:
-			name = create_challan_from_production(self.name)
+			# The book and the number typed on the voucher that is raising it.
+			name = create_challan_from_production(
+				self.name,
+				challan_series=self.flags.get("challan_series"),
+				challan_id=self.flags.get("challan_id"),
+			)
 			if name:
 				frappe.msgprint(_("Sales Challan {0} created from this production.").format(name), alert=True)
 		except Exception:

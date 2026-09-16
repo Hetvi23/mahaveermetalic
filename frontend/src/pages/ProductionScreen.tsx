@@ -10,6 +10,7 @@ import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
 import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
+import { DISPATCH_SERIES, challanIdFor } from "@/utils/challanSeries";
 import SearchSelect from "@/components/SearchSelect";
 import DeliveryByInput from "@/components/DeliveryByInput";
 import { todayISO } from "@/utils/localDate";
@@ -223,14 +224,19 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     const saved = typeof window !== "undefined" ? Number(window.localStorage.getItem("mm-scale-baud")) : 0;
     return BAUDS.includes(saved) ? saved : 9600;
   });
-  const { supported: scaleOk, connected: scaleOn, connecting: scaleBusy, autoConnect } = scale;
+  const { supported: scaleOk, granted: scaleGranted, connected: scaleOn, connecting: scaleBusy, autoConnect } = scale;
   const [scaleTries, setScaleTries] = useState(0);
+  // A port appearing — the operator picked the scale, or plugged the cable in — is a fresh
+  // reason to try, so the tries start over rather than staying spent.
+  useEffect(() => { setScaleTries(0); }, [scaleGranted]);
   useEffect(() => {
     // Chrome only needs a click to CHOOSE a port, never to reopen one already granted, so
     // the operator picks the scale once on this PC and never presses Connect again.
     // Retried a few times because the usual reasons it fails are temporary: the indicator
     // is still warming up, or the last handle has not been released yet.
-    if (!scaleOk || scaleOn || scaleBusy || scaleTries > 4) return;
+    // Nothing granted yet means there is nothing to reopen; the screen asks for the one
+    // click instead of retrying something that cannot succeed.
+    if (!scaleOk || scaleOn || scaleBusy || scaleTries > 4 || scaleGranted === 0) return;
     const t = setTimeout(() => {
       setScaleTries((n) => n + 1);
       void autoConnect(baud);
@@ -239,7 +245,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     // baud deliberately not a dependency: changing it must not re-fire the auto-connect
     // behind the operator while they are choosing one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scaleOk, scaleOn, scaleBusy, scaleTries, autoConnect]);
+  }, [scaleOk, scaleOn, scaleBusy, scaleTries, scaleGranted, autoConnect]);
 
   const [jobWorkTouched, setJobWorkTouched] = useState(false);
   const [operator, setOperator] = useState("");
@@ -247,6 +253,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [shift, setShift] = useState<string>(program.shift || "Day");
   const [jobWork, setJobWork] = useState<boolean>(!!program.job_work_flag);
   const [batchNo, setBatchNo] = useState("");
+  // Typed by hand, never suggested: the voucher's own number, and the book and number of
+  // the challan it raises. Blank leaves each to its series.
+  const [vNo, setVNo] = useState("");
+  const [challanSeries, setChallanSeries] = useState(DISPATCH_SERIES[0].value);
+  const [challanId, setChallanId] = useState("");
   const [vdate, setVdate] = useState<string>(today());
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
@@ -425,6 +436,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         bobbin_return: bobbinReturn ? 1 : 0,
         job_work: jobWork ? 1 : 0,
         pin: pin || undefined,
+        voucher_no: vNo.trim() || undefined,
+        challan_series: challanSeries,
+        challan_id: challanId.trim() || undefined,
       });
       // Auto print: only when the production actually raised a challan (i.e. it carried a
       // sales order). Without an order the goods went to inventory, so there is nothing to
@@ -506,9 +520,12 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
           {/* Voucher header — labelled fields in a grid, like the legacy form */}
           <div className="mm-pv-grid">
+            {/* Typed from the shop's own book, exactly as the Job In voucher takes them.
+                Blank leaves each to its series. */}
             <label className="mm-field">
               <span className="mm-field-label">V.No</span>
-              <input className="mm-input" value="Auto (MMPROD)" readOnly />
+              <input className="mm-input" value={vNo} placeholder="Auto (MMPROD)"
+                onChange={(e) => setVNo(e.target.value)} />
             </label>
             {/* Company is what gets saved; search by party, select the company. */}
             <label className="mm-field">
@@ -557,6 +574,30 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             <label className="mm-field">
               <span className="mm-field-label">V.Date</span>
               <input className="mm-input" type="date" value={vdate} onChange={(e) => setVdate(e.target.value)} />
+            </label>
+            {/* The challan this voucher raises: which book it is written in, and its number
+                in that book. Only an order-backed production raises one — without an order
+                the boxes go to stock — so both say so rather than going quiet. */}
+            <label className="mm-field">
+              <span className="mm-field-label">Challan Type</span>
+              <SearchSelect noClear value={challanSeries} onChange={setChallanSeries}
+                disabled={!order}
+                placeholder={order ? "Sales Chalan" : "No order — goes to stock"}
+                options={DISPATCH_SERIES.map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
+            </label>
+            <label className="mm-field">
+              <span className="mm-field-label">Challan ID</span>
+              <input className="mm-input" value={challanId} disabled={!order}
+                placeholder={order ? "e.g. 123" : "No order — goes to stock"}
+                onChange={(e) => setChallanId(e.target.value)} />
+              {order && challanId.trim() && (
+                <span className="mm-field-hint">
+                  Saved as <b>{challanIdFor(
+                    DISPATCH_SERIES.find((t) => t.value === challanSeries)?.series ?? "MMUSC-",
+                    challanId, vdate,
+                  )}</b>
+                </span>
+              )}
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Batch No</span>
@@ -1065,7 +1106,12 @@ function ScaleCapture({ scale, baud, onBaud, onCapture }: {
   baud: number; onBaud: (b: number) => void;
   onCapture: (weight: number) => void;
 }) {
-  const { supported, connected, connecting, error, note, portLabel, reading, connect, disconnect } = scale;
+  const { supported, granted, connected, connecting, error, note, portLabel, reading, connect, disconnect } = scale;
+  // Chrome hands a page a serial port on a click and never otherwise, and the grant does
+  // not travel between sites or PCs. So on a machine that has never been asked, there is
+  // nothing to reopen and no amount of trying will connect: say that, ask for the one
+  // click, and every voucher after this one connects on its own.
+  const unlinked = granted === 0;
 
   if (!supported) {
     return (
@@ -1090,14 +1136,20 @@ function ScaleCapture({ scale, baud, onBaud, onCapture }: {
           >
             {BAUDS.map((b) => <option key={b} value={b}>{b} baud</option>)}
           </select>
-          <button type="button" className="mm-mini" disabled={connecting} onClick={() => void connect(baud)}>
-            <Scale size={13} /> {connecting ? "Connecting…" : "Connect scale"}
+          <button type="button" className={`mm-mini${unlinked ? " mm-mini-ok" : ""}`} disabled={connecting}
+            title={unlinked
+              ? "Chrome asks which COM port the scale is on. It only asks once on this PC."
+              : "Reopen the scale this PC was linked to"}
+            onClick={() => void connect(baud, unlinked ? { pick: true } : undefined)}>
+            <Scale size={13} /> {connecting ? "Connecting…" : unlinked ? "Choose the scale (once)" : "Connect scale"}
           </button>
           {/* The remembered port is the wrong one on any PC where the TSC printer also
               shows up as a COM port, so keep a way back to the picker. */}
-          <button type="button" className="mm-mini" disabled={connecting} title="Pick the COM port again" onClick={() => void connect(baud, { pick: true })}>
-            Choose port
-          </button>
+          {!unlinked && (
+            <button type="button" className="mm-mini" disabled={connecting} title="Pick the COM port again" onClick={() => void connect(baud, { pick: true })}>
+              Choose port
+            </button>
+          )}
         </div>
       ) : (
         <div className="mm-scale-row">
@@ -1111,6 +1163,11 @@ function ScaleCapture({ scale, baud, onBaud, onCapture }: {
         </div>
       )}
       {connected && reading && <div className="mm-scale-raw" title="Raw frame from the scale — share this to lock the parser">{reading.raw}</div>}
+      {!connected && unlinked && (
+        <p className="mm-muted mm-scale-hint">
+          <Scale size={12} /> This PC has not been shown the scale yet. Pick its COM port once — every voucher after that connects by itself.
+        </p>
+      )}
       {note && <p className="mm-muted mm-scale-hint">{note}</p>}
       {error && <p className="mm-error mm-scale-hint">{error}</p>}
     </div>

@@ -35,6 +35,8 @@ type SerialPortLike = {
 type SerialLike = {
   requestPort: () => Promise<SerialPortLike>;
   getPorts?: () => Promise<SerialPortLike[]>;
+  addEventListener?: (type: string, fn: () => void) => void;
+  removeEventListener?: (type: string, fn: () => void) => void;
 };
 
 export type ScaleReading = { weight: number | null; stable: boolean; raw: string };
@@ -359,8 +361,32 @@ export function useSerialScale() {
     [clearSilence, release, serial],
   );
 
+  /* HAS THIS BROWSER BEEN GIVEN A PORT AT ALL?
+     Auto-connect can only reopen a port the operator has already chosen on this PC for
+     this site: Chrome hands one over on a click and never otherwise, and a grant does not
+     travel between sites or profiles. Knowing there is none is what lets the screen ask
+     for that one click instead of showing a Connect button that can only fail. It counts
+     again when a cable is plugged in or pulled out, so picking the scale — or plugging it
+     in — sets the voucher trying immediately. */
+  const [granted, setGranted] = useState<number | null>(null);
+  useEffect(() => {
+    if (!serial?.getPorts) { setGranted(null); return; }
+    let alive = true;
+    const refresh = () => {
+      serial.getPorts!().then((ps) => { if (alive) setGranted(ps.length); }).catch(() => { /* ignore */ });
+    };
+    refresh();
+    serial.addEventListener?.("connect", refresh);
+    serial.addEventListener?.("disconnect", refresh);
+    return () => {
+      alive = false;
+      serial.removeEventListener?.("connect", refresh);
+      serial.removeEventListener?.("disconnect", refresh);
+    };
+  }, [serial, connected]);
+
   // Clean up the port on unmount.
   useEffect(() => () => { void disconnect(); }, [disconnect]);
 
-  return { supported, connected, connecting, error, note, portLabel, reading, connect, autoConnect, disconnect };
+  return { supported, granted, connected, connecting, error, note, portLabel, reading, connect, autoConnect, disconnect };
 }

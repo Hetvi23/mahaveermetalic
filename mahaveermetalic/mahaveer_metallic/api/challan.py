@@ -50,11 +50,15 @@ def _box_row(b, production=None, order=None):
 	}
 
 
-def create_challan_from_production(production):
+def create_challan_from_production(production, challan_series=None, challan_id=None):
 	"""Raise the dispatch challan for a production voucher (draft).
 
 	Only when the production is tied to a Sales Order — otherwise the boxes stay in hand
 	and a challan can be raised later from this screen.
+
+	`challan_series` is the book it is written in (Sales unless the voucher picked another)
+	and `challan_id` the number typed into that book, filed as series-number-year. Both come
+	off the production voucher, which is where the operator has the challan in front of them.
 	"""
 	prod = frappe.get_doc("MM Production", production)
 	if not prod.customer_order:
@@ -85,14 +89,15 @@ def create_challan_from_production(production):
 	if not rows:
 		return None
 
+	series_key = _series_key(challan_series, "Sales")
 	challan = frappe.get_doc(
 		{
 			"doctype": "MM Sales Challan",
 			# Stated, not inherited: this used to be left blank and take whichever series
 			# happened to be first in the Select, which is a numbering scheme held together
 			# by the order of a list.
-			"challan_type": "Sales",
-			"naming_series": SERIES["Sales"],
+			"challan_type": series_key,
+			"naming_series": SERIES[series_key],
 			"transaction_date": prod.posting_date or frappe.utils.today(),
 			"party": prod.party,
 			"sales_order": prod.customer_order,
@@ -116,6 +121,7 @@ def create_challan_from_production(production):
 			],
 		}
 	)
+	challan.flags.manual_id = _challan_id(challan_id, series_key, challan.transaction_date)
 	challan.insert(ignore_permissions=True)
 	challan.submit()   # dispatched straight away
 	return challan.name

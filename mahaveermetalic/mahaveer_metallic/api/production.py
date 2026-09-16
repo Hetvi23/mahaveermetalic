@@ -598,6 +598,9 @@ def create_production(
 	job_work=0,
 	pin=None,
 	delivery_by=None,
+	voucher_no=None,
+	challan_series=None,
+	challan_id=None,
 ):
 	"""Submit handler: wind a program's threads into a completed MM Production voucher.
 
@@ -608,6 +611,15 @@ def create_production(
 	"""
 	if not source_program:
 		frappe.throw(_("Select a program to produce."))
+	# The two IDs the operator may type in place of a series — the voucher's own, and the
+	# number of the challan it will raise. Both are checked HERE, before anything is
+	# created: a taken challan number found after the production is submitted would leave
+	# the voucher standing with no paperwork against it.
+	from mahaveermetalic.mahaveer_metallic.api.challan import _challan_id, _manual_id, _series_key
+
+	voucher_no = _manual_id("MM Production", voucher_no, frappe.get_meta("MM Production").autoname)
+	challan_key = _series_key(challan_series, "Sales")
+	_challan_id(challan_id, challan_key, posting_date)
 	prog = frappe.db.get_value(
 		"MM Program",
 		source_program,
@@ -773,6 +785,11 @@ def create_production(
 			],
 		}
 	)
+	prod.flags.manual_id = voucher_no
+	# Read back by _raise_sales_challan on submit — the challan is raised from inside the
+	# production, so the book and number it is written in have to travel with the document.
+	prod.flags.challan_series = challan_key
+	prod.flags.challan_id = (challan_id or "").strip() or None
 	prod.insert(ignore_permissions=True)
 	prod.submit()
 
