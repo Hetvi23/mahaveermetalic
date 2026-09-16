@@ -335,9 +335,21 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
 
       {error && <p className="mm-error">{error}</p>}
 
-      <div className="mm-job-grid">
+      <div className={`mm-job-grid${outward ? "" : " mm-job-grid-single"}`}>
         {/* ── LEFT: pick bobbins and in-stock rolls ── */}
         <div className="mm-job-col">
+          {/* Job In's standing instruction. It used to head the right-hand column, which
+              cost the picker half the page for three lines that never change. */}
+          {!outward && (
+            <section className="mm-card mm-card-pad">
+              <h2 className="mm-panel-title">Job in voucher (production)</h2>
+              <p className="mm-page-sub" style={{ marginTop: "0.5rem" }}>
+                Pick a Job Out below. What comes back is entered as boxes — the same
+                voucher production uses, with the box weight worked out from the net
+                instead of the other way round.
+              </p>
+            </section>
+          )}
           <section className="mm-card mm-card-pad">
             <div className="mm-iw-sec-head">
               <h2 className="mm-panel-title"><Disc3 size={15} /> Add bobbin</h2>
@@ -421,7 +433,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                         <tr key={r.line || `${r.name}-${i}`}
                           className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
                           <td className="mm-job-date">{fmtDate(r.transaction_date) || "—"}</td>
-                          <td>{r.challan_no || r.name}</td>
+                          <td title={r.challan_no || r.name}>{r.challan_no || r.name}</td>
                           <td>{r.party_label || r.party || "—"}</td>
                           {/* The ROLL, at its own weight. This column used to carry the
                               challan's comma-joined colours against the challan's total,
@@ -478,7 +490,7 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
             </div>
 
             <div className="mm-table-scroll">
-              <table className="mm-table mm-table-dense mm-table-hover">
+              <table className="mm-table mm-table-dense mm-table-hover mm-job-stock">
                 <thead>
                   <tr>
                     {/* Order can be filled now the list is roll-wise: a roll knows the
@@ -552,16 +564,8 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
         <div className="mm-job-col mm-job-col-sticky">
           {!outward ? (
             <>
-              {/* The voucher itself is a full sheet, like Production's — the right column
-                  keeps the standing instruction so the page is never blank. */}
-              <section className="mm-card mm-card-pad">
-                <h2 className="mm-panel-title">Job in voucher (production)</h2>
-                <p className="mm-page-sub" style={{ marginTop: "0.5rem" }}>
-                  Pick a Job Out on the left. What comes back is entered as boxes — the same
-                  voucher production uses, with the box weight worked out from the net
-                  instead of the other way round.
-                </p>
-              </section>
+              {/* The voucher itself is a full sheet portalled over the page, so this column
+                  renders nothing on Job In — the instruction now heads the picker. */}
               <JobInVoucher
                 jobOut={againstJobOut}
                 meta={jobOutMeta}

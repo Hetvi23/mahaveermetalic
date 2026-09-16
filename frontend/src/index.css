@@ -1586,6 +1586,13 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 /* ── Job Out / Job In: pick on the left, build the challan on the right ── */
 .mm-job-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 @media (max-width: 1180px) { .mm-job-grid { grid-template-columns: 1fr; } }
+/* Job In has nothing to put in a second column — its voucher opens as a full sheet over
+   the page — so the picker takes the whole width instead of being squeezed into half of
+   it beside a standing instruction. */
+.mm-job-grid-single { grid-template-columns: minmax(0, 1fr); }
+/* The voucher column is left in the markup to host the portal; with nothing in it, it must
+   not take a row's worth of gap under the picker. */
+.mm-job-grid-single > .mm-job-col:empty { display: none; }
 .mm-job-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 /* The stock list is long; keep the challan in view while it is scrolled. */
 .mm-job-col-sticky { position: sticky; top: 0.75rem; }
@@ -1614,6 +1621,50 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-job-filterrow th { padding: 0.25rem 0.4rem 0.45rem; background: var(--mm-bg); }
 .mm-job-filterrow .mm-input { width: 100%; min-width: 0; }
 .mm-job-outs td { vertical-align: middle; }
+
+/* THE PICKER FITS ITS PANE. Everywhere else a table keeps its rows on one line and
+   .mm-table-scroll scrolls (see "Table column sizing" above), but this one is the list the
+   floor works the shop from: it has a filter under every column, so its min-content was the
+   sum of four INPUTS — 858px against a 553px pane — and the Weight column and the receive
+   button sat off the right edge until somebody scrolled sideways to find them. Fixed
+   layout gives each column a share of the pane instead, and the two text columns wrap
+   rather than widen: a party name on two lines still reads, a button nobody can see does
+   not. Dates and figures stay on one line — a wrapped weight is unreadable. */
+.mm-job-outs { table-layout: fixed; width: 100%; }
+.mm-table-scroll .mm-job-outs th, .mm-table-scroll .mm-job-outs td { white-space: normal; overflow-wrap: break-word; }
+/* Matched at the same strength as the rule above — one class lighter and a date wrapped
+   into "13-09- / 26", which is the kind of thing that only shows up on the floor's screen. */
+.mm-table-scroll .mm-job-outs td.mm-job-date,
+.mm-table-scroll .mm-job-outs td.mm-num { white-space: nowrap; }
+/* Column labels wrap between words and never inside one: "WEIGHT (KG)" over two lines
+   reads; "ORDE / R" does not. */
+.mm-table-scroll .mm-job-outs th { overflow-wrap: normal; }
+/* A challan number is one word with no sensible break in it — wrapped, "JO-152416" reads
+   as "JO-15241 6". It keeps its line and truncates; the cell's title has it in full. */
+.mm-job-outs tbody td:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Job Out's stock list, for the same reason: beside the challan it is building it had
+   33px more table than pane, and the 33px it lost were the Add button — which read "Ad". */
+.mm-job-stock { table-layout: fixed; width: 100%; }
+.mm-table-scroll .mm-job-stock th, .mm-table-scroll .mm-job-stock td { white-space: normal; overflow-wrap: break-word; }
+.mm-table-scroll .mm-job-stock td.mm-job-date,
+.mm-table-scroll .mm-job-stock td.mm-job-order,
+.mm-table-scroll .mm-job-stock td.mm-num { white-space: nowrap; }
+.mm-table-scroll .mm-job-stock th { overflow-wrap: normal; }
+.mm-job-stock thead th:nth-child(1) { width: 16%; }
+.mm-job-stock thead th:nth-child(2) { width: 14%; }
+.mm-job-stock thead th:nth-child(3) { width: 36%; }
+.mm-job-stock thead th:nth-child(4) { width: 17%; }
+.mm-job-stock thead th:nth-child(5) { width: 17%; }
+.mm-job-outs thead tr:first-child th:nth-child(1) { width: 18%; }
+.mm-job-outs thead tr:first-child th:nth-child(2) { width: 10%; }
+.mm-job-outs thead tr:first-child th:nth-child(3) { width: 27%; }
+.mm-job-outs thead tr:first-child th:nth-child(4) { width: 24%; }
+.mm-job-outs thead tr:first-child th:nth-child(5) { width: 16%; }
+.mm-job-outs thead tr:first-child th:nth-child(6) { width: 46px; }
+/* The date filter is the widest control on the row and the column it filters is the
+   narrowest — at the floor's screen width it needs to be a size the cell can hold. */
+.mm-job-filterrow input[type="date"] { font-size: 0.7rem; padding-left: 0.3rem; padding-right: 0.15rem; }
 .mm-job-pager { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; font-size: 0.8rem; }
 .mm-job-pagesize { width: 68px; }
 .mm-job-pages { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }

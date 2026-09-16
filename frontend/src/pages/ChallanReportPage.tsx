@@ -44,8 +44,11 @@ type Detail = {
   total_box?: number; total_weight?: number; cover?: Cover | null; job?: Job | null; items: Line[];
 };
 
-/** No type picked shows the sales register — Sales and Job Challan (see api.challan_report). */
-const TYPES = ["Sales", "Job Challan", "Challan", "Delivery Challan", "Roll Challan", "Job Out", "Job In"];
+/** No type picked shows the sales register — Sales and Job Challan (see api.challan_report).
+ *  Job Out / Job In are next in the list rather than last: they are the two types the
+ *  default deliberately leaves out, so they are the two most likely to be picked, and the
+ *  menu is only 200px tall — at the bottom they were below the fold and read as missing. */
+const TYPES = ["Sales", "Job Challan", "Job Out", "Job In", "Challan", "Delivery Challan", "Roll Challan"];
 const kg = (n?: number) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
 /**

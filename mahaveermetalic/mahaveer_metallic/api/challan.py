@@ -1252,7 +1252,10 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 	conds = ["c.docstatus < 2"]
 	vals = {}
 	if not challan_type:
-		conds.append("c.challan_type in ('Sales', 'Job Challan')")
+		# ifnull, like every other challan_type test in the app: a challan saved before the
+		# field existed carries NULL and IS a sales challan — matched plainly it would drop
+		# out of its own register.
+		conds.append("ifnull(c.challan_type, 'Sales') in ('Sales', 'Job Challan')")
 	if from_date:
 		conds.append("c.transaction_date >= %(fd)s")
 		vals["fd"] = from_date
