@@ -807,6 +807,16 @@ def _customer_block(doc):
 	the party IS the customer and repeating them would print the same name twice.
 	"""
 	order = doc.sales_order or next((it.sales_order for it in doc.items if it.sales_order), None)
+	if not order and (doc.challan_type or "") == "Job In" and doc.get("against_job_out"):
+		# A receipt is usually raised without an order of its own — it answers a Job Out,
+		# and THAT is what knows which customer's material went out, either on its lines or
+		# read back through the inward rows the rolls came in on. The Job In print is named
+		# for the customer, so without this it falls back to naming the worker.
+		try:
+			found = job_out_orders(doc.against_job_out)
+		except Exception:
+			found = []
+		order = found[0]["order"] if found else None
 	if not order:
 		return {}
 	customer = frappe.db.get_value("MM Sales Order", order, "party")

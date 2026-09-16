@@ -187,8 +187,24 @@ function copy(d: ChallanPrintData, label: string): string {
 
   // The type names the paper. Types that already say "Challan" must not have another one
   // appended — "Delivery Challan Challan" is what a blind `${type} Challan` printed.
+  //
+  // Job work prints as ONE book. Job Out and Job In are how the system tells the two
+  // directions apart; on paper both are the job challan, and the challan number says which
+  // is which. "JOB IN CHALAN" was a screen's word on a document the floor hands over.
   const type = (d.challan_type || "Sales").trim();
-  const heading = /challan/i.test(type) ? type : `${type} Chalan`;
+  const isJobIn = /^job\s*in$/i.test(type);
+  const heading = /^job\s*(in|out)$/i.test(type)
+    ? "Job Challan"
+    : /challan/i.test(type) ? type : `${type} Chalan`;
+
+  // WHOSE NAME THE PAPER CARRIES. A Job In is the customer's material coming back, so it
+  // is named for the customer — the worker it came from is named on the Job Out that sent
+  // it, and on a receipt they are only the address it travelled from. Everything else,
+  // Job Out included, is addressed to the party it is handed to, with the customer stated
+  // underneath where the two differ.
+  const nameLine = (isJobIn ? d.customer_name : "") || d.party_name || d.party || "";
+  // …and where the customer IS the name above, the row below must not say it twice.
+  const showCustomer = !isJobIn && !!d.customer_name;
 
   return `<section class="copy"><div class="fit">
     <div class="hd">
@@ -199,16 +215,16 @@ function copy(d: ChallanPrintData, label: string): string {
     <div class="bannerwrap"><span class="banner">${esc(heading).toUpperCase()}</span></div>
     <table class="meta">
       <tr>
-        <td class="k">Name</td><td class="c">:</td><td class="v"><b>${esc(d.party_name || d.party || "")}</b></td>
+        <td class="k">Name</td><td class="c">:</td><td class="v"><b>${esc(nameLine)}</b></td>
         <td class="k2">Chalan No</td><td class="c">:</td><td class="v2"><b>${esc(d.challan_no || d.name)}</b></td>
       </tr>
       <tr>
         <td class="k">Item</td><td class="c">:</td><td class="v">${esc(itemLine || "—")}</td>
         <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(bookDate(d.transaction_date))}</td>
       </tr>
-      ${d.customer_name || d.sales_order ? `<tr>
-        <td class="k">${d.customer_name ? "Customer" : ""}</td><td class="c">${d.customer_name ? ":" : ""}</td>
-        <td class="v">${d.customer_name ? `<b>${esc(d.customer_name)}</b>${
+      ${showCustomer || d.sales_order ? `<tr>
+        <td class="k">${showCustomer ? "Customer" : ""}</td><td class="c">${showCustomer ? ":" : ""}</td>
+        <td class="v">${showCustomer ? `<b>${esc(d.customer_name)}</b>${
           d.customer_mobile ? ` <span class="sub">${esc(d.customer_mobile)}</span>` : ""
         }` : ""}</td>
         <td class="k2">Order</td><td class="c">:</td><td class="v2">${esc(d.sales_order || "")}</td>
