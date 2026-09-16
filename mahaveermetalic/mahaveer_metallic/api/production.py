@@ -759,6 +759,10 @@ def create_production(
 			"boxes": [
 				{
 					"item": b.get("item") or prog.shade,
+					# The code the screen fixed when the box was added, and printed on its
+					# sticker. MMProduction._assign_box_barcodes keeps it only if it is this
+					# voucher's own; anything else is renumbered.
+					"barcode": (b.get("barcode") or "").strip() or None,
 					"gross_weight": float(b.get("gross_weight") or 0),
 					"qty": float(b.get("qty") or 0),
 					"bobbin": b.get("bobbin") or None,

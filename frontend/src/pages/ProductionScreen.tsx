@@ -165,6 +165,9 @@ type BoxRow = {
   /** Returns are per BOX: one voucher can mix boxes whose packaging comes back with ones
    *  whose doesn't. The header pair seeds each new row and toggles them all. */
   boxReturn: boolean; bobbinReturn: boolean;
+  /** The code fixed when the box was added — what its sticker says. Not re-derived from
+   *  the row's position, so deleting an earlier box cannot shift it onto another box. */
+  code?: string;
 };
 /** `tolerance_kg` is an absolute leeway UNDERNEATH the percentage: a shortfall only
  *  needs the override once it breaks BOTH, so a kilo missing off a 20 kg program is
@@ -257,6 +260,18 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // the challan it raises. Blank leaves each to its series.
   const [vNo, setVNo] = useState("");
   const [challanSeries, setChallanSeries] = useState(DISPATCH_SERIES[0].value);
+  // Whether the operator picked the Challan Type by hand — until they do, it follows the
+  // job-work tick below.
+  const [seriesTouched, setSeriesTouched] = useState(false);
+  // JOB WORK IS WRITTEN IN THE JOB CHALLAN BOOK. Hetvi: "is job work is clicked, so by
+  // default it will be considered as job challan?" — it was not: the challan went into
+  // whatever book was showing, which is Sales until someone changed it. The tick can come
+  // from the program, the order or the checkbox, so the book follows the tick itself
+  // rather than any one of them; a type picked by hand still stands.
+  useEffect(() => {
+    if (seriesTouched) return;
+    setChallanSeries(jobWork ? "Job Challan" : DISPATCH_SERIES[0].value);
+  }, [jobWork, seriesTouched]);
   const [challanId, setChallanId] = useState("");
   const [vdate, setVdate] = useState<string>(today());
   const [boxReturn, setBoxReturn] = useState(false);
@@ -375,15 +390,32 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const overProduced = inputWeight > 0 && totalNet > inputWeight;
   const shortBy = calc ? calc.short_by : r3(inputWeight - totalNet);
 
-  /** The box's own id: the voucher number and its place on it — 267.1, 267.2 … The server
-   *  builds the same code from the voucher's name, so a V.No typed above is the real code
-   *  and the label printed now is the one that stays on the box. Left to the series, the
-   *  number is not known until the voucher is saved, and a PREVIEW code stands in. */
-  const boxCode = (i: number) => (vNo.trim() ? `${vNo.trim()}.${i + 1}` : `PREVIEW-${i + 1}`);
+  /** The box's own id: the voucher number and a running number on it — 267.1, 267.2 …
+   *  Left to the series, the voucher number is not known until it is saved, and a PREVIEW
+   *  code stands in.
+   *
+   *  MINTED ONCE, WHEN THE BOX IS ADDED, and after the highest code already on the voucher
+   *  — not from the row's position. The sticker prints the moment a box is added, so the
+   *  code is on a box before the voucher is saved; by position, deleting box 2 turned the
+   *  labelled "267.3" into 267.2 on save and handed .3 to the next box too. The server
+   *  keeps the code it is sent (MMProduction._assign_box_barcodes). */
+  const nextCode = () => {
+    const v = vNo.trim();
+    if (!v) return `PREVIEW-${boxes.length + 1}`;
+    const top = boxes.reduce((m, b) => {
+      const n = b.code?.startsWith(`${v}.`) ? Number(b.code.slice(v.length + 1)) : 0;
+      return Number.isInteger(n) && n > m ? n : m;
+    }, 0);
+    return `${v}.${top + 1}`;
+  };
+  /** A real code, as opposed to a PREVIEW stand-in: only these are sent to be kept. */
+  const isRealCode = (c?: string) => !!c && !c.startsWith("PREVIEW-");
+  // Once a sticker carries the V.No, the V.No cannot change under it.
+  const vNoLocked = boxes.some((b) => isRealCode(b.code));
 
   /** One box as a sticker — otherwise exactly the label that gets stuck on. */
   const stickerFor = (b: BoxRow, i: number) => ({
-    barcode: boxCode(i),
+    barcode: b.code || `PREVIEW-${i + 1}`,
     item: b.item || program.shade,
     size: size || program.cut,
     gross: b.gross,
@@ -423,6 +455,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         boxes: JSON.stringify(
           boxes.map((b) => ({
             item: b.item, gross_weight: b.gross, qty: b.qty, bobbin: b.bobbin || undefined,
+            barcode: isRealCode(b.code) ? b.code : undefined,
             bobbin_pcs: b.bobbinPcs, bobbin_pcs_weight: b.perPcsWeight,
             total_bobbin_weight: b.totalBobbin, box_weight: b.boxWeight,
             box_return: b.boxReturn ? 1 : 0, bobbin_return: b.bobbinReturn ? 1 : 0,
@@ -529,7 +562,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 Blank leaves each to its series. */}
             <label className="mm-field">
               <span className="mm-field-label">V.No</span>
-              <input className="mm-input" value={vNo} placeholder="Auto (MMPROD)"
+              <input className="mm-input" value={vNo} placeholder="Auto (MMPROD)" readOnly={vNoLocked}
+                title={vNoLocked ? "Boxes are already labelled with this V.No — delete them to change it" : undefined}
                 onChange={(e) => setVNo(e.target.value)} />
             </label>
             {/* Company is what gets saved; search by party, select the company. */}
@@ -585,7 +619,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 the boxes go to stock — so both say so rather than going quiet. */}
             <label className="mm-field">
               <span className="mm-field-label">Challan Type</span>
-              <SearchSelect noClear value={challanSeries} onChange={setChallanSeries}
+              <SearchSelect noClear value={challanSeries} onChange={(v) => { setChallanSeries(v); setSeriesTouched(true); }}
                 disabled={!order}
                 placeholder={order ? "Sales Chalan" : "No order — goes to stock"}
                 options={DISPATCH_SERIES.map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
@@ -700,7 +734,22 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 onClose={() => { setAdding(false); setEditing(null); }}
                 onAdd={(bx) => {
                   const wasEdit = editing != null;
-                  setBoxes((p) => (wasEdit ? p.map((x, j) => (j === editing ? bx : x)) : [...p, bx]));
+                  // THE STICKER PRINTS AS THE BOX IS ADDED (Hetvi: "on box add, barcode should
+                  // start printing"). Called here, inside the Enter or click that added it,
+                  // because that is the user action Chrome lets a print pop-up ride on — from
+                  // an effect after the re-render it would be blocked. It prints whatever
+                  // code the box has now: the real 267.3 once V.No is typed, PREVIEW-3 while
+                  // it is blank (Hetvi chose to print either way). An edit reprints nothing:
+                  // that box already has its label.
+                  //
+                  // Which printer: Chrome's. A web page cannot choose a printer by name, so the
+                  // Sticker printer box is a note for the operator; Chrome remembers the last
+                  // destination, and with kiosk printing it goes to the default printer silently.
+                  const row = wasEdit ? { ...bx, code: boxes[editing!].code } : { ...bx, code: nextCode() };
+                  if (!wasEdit && !printBoxStickers([stickerFor(row, boxes.length)])) {
+                    toast("Box added, but the pop-up blocker stopped its sticker — allow pop-ups for this site.", "error");
+                  }
+                  setBoxes((p) => (wasEdit ? p.map((x, j) => (j === editing ? row : x)) : [...p, row]));
                   setEditing(null);
                   // Packing runs box after box, so adding one opens the next straight away.
                   // Editing does not — that was a correction, not a new box.
@@ -756,8 +805,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                   <tbody>
                     {boxes.map((b, i) => (
                       <tr key={i}>
-                        <td title={vNo.trim() ? undefined : "Type a V.No above and the boxes take their real codes"}>
-                          {boxCode(i)}
+                        <td title={isRealCode(b.code) ? undefined : "Added before a V.No was typed — its code is given on save"}>
+                          {b.code || `PREVIEW-${i + 1}`}
                         </td>
                         <td className="mm-num">{b.gross.toLocaleString()}</td>
                         <td className="mm-num">{b.qty || "—"}</td>
@@ -916,15 +965,27 @@ function BoxDialog({
      itself in again; and it never overwrites a weight the operator typed by hand. */
   const [grossTyped, setGrossTyped] = useState(false);
   const armed = useRef(false);
+  // Whether this panel has already taken a reading. Once it has, only an empty platform
+  // re-arms it — the box it took is still sitting there.
+  const taken = useRef(false);
   const reading = scale.reading;
   useEffect(() => {
     const w = reading?.weight ?? null;
     if (w == null) return;
     if (w <= 0.05) { armed.current = true; return; }
+    // OPENED WITH A BOX ALREADY ON THE SCALE, the panel takes its weight straight away.
+    // Waiting for an empty platform first meant the first box of every voucher sat there
+    // reading "18.19 kg stable" until somebody clicked Use weight (Hetvi: "use weight by
+    // default"). The one reading still held back is the box just added: it reads exactly
+    // that box's gross, so it waits for the platform to clear like before.
+    if (!armed.current && !taken.current && !(prev && Math.abs(w - prev.gross) < 0.005)) {
+      armed.current = true;
+    }
     if (!armed.current || !reading?.stable || grossTyped || edit) return;
     armed.current = false;
+    taken.current = true;
     setGross(Number(w.toFixed(3)));
-  }, [reading, grossTyped, edit]);
+  }, [reading, grossTyped, edit, prev]);
 
   /* Enter walks the three fields that are actually keyed and the third one files the box:
      total weight → box weight → pcs → added. It used to add from whichever field the
@@ -990,6 +1051,23 @@ function BoxDialog({
         if (el.closest(".mm-link-wrap") && document.querySelector("[data-mm-menu]")) return;
         e.preventDefault();
         const here = (el as HTMLInputElement).dataset.bx;
+        // ENTER ON THE TOTAL TAKES THE SCALE'S WEIGHT, and the cursor goes on to the box
+        // tare — never to the Use weight button (Hetvi: "on enter it should not move to use
+        // weight, directly consider that weight"). A figure typed by hand is kept, and an
+        // edit keeps the weight it was recorded at: that box is not on the scale.
+        if (here === "gross" && scale.connected && !grossTyped && !edit) {
+          const w = reading?.weight ?? null;
+          if (w != null && w > 0.05) {
+            if (!reading?.stable) {
+              setErr("The scale is still settling — press Enter again once it reads stable.");
+              return;
+            }
+            setErr(null);
+            taken.current = true;
+            armed.current = false;
+            setGross(Number(w.toFixed(3)));
+          }
+        }
         const next = here ? FLOW[FLOW.indexOf(here) + 1] : undefined;
         const el2 = next ? panelRef.current?.querySelector<HTMLInputElement>(`[data-bx="${next}"]`) : null;
         if (el2) { el2.focus(); el2.select(); return; }
@@ -1164,7 +1242,9 @@ function ScaleCapture({ scale, baud, onBaud, onCapture }: {
           <span className={`mm-scale-reading ${stable ? "is-stable" : "is-moving"}`} title={portLabel ?? undefined}>
             {w != null ? `${w.toLocaleString()} kg` : "—"} <em>{reading ? (stable ? "stable" : "moving") : ""}</em>
           </span>
-          <button type="button" className="mm-mini mm-mini-ok" disabled={w == null || !stable} onClick={() => w != null && onCapture(w)}>
+          {/* Mouse-only: out of the keyboard's path, because Enter on the total already
+              takes this weight and Tab landing here was one more stop per box. */}
+          <button type="button" className="mm-mini mm-mini-ok" tabIndex={-1} disabled={w == null || !stable} onClick={() => w != null && onCapture(w)}>
             Use weight
           </button>
           <button type="button" className="mm-mini" onClick={() => void disconnect()}>Disconnect</button>

@@ -36,6 +36,20 @@ class MMProduction(Document):
 		cannot hand out a code a surviving box is already wearing.
 		"""
 		prefix = f"{self.name}."
+		# A NEW voucher arrives with the codes its screen already printed: each box is
+		# labelled the moment it is added, so its code is fixed then and cannot shift when
+		# an earlier box is deleted. Kept only when it is this voucher's own number and not
+		# repeated — a code for another voucher, or a PREVIEW stand-in, is renumbered.
+		if self.is_new():
+			seen = set()
+			for b in self.boxes or []:
+				code = (b.barcode or "").strip()
+				ours = code.startswith(prefix) and code[len(prefix):].isdigit()
+				if ours and code not in seen:
+					b.barcode = code
+					seen.add(code)
+				else:
+					b.barcode = None
 		used = {(b.barcode or "").strip() for b in (self.boxes or []) if b.barcode}
 		highest = 0
 		for code in used:
