@@ -21,12 +21,34 @@ class MMProduction(Document):
 
 	def _assign_box_barcodes(self):
 		"""Every produced box gets its own barcode — printed on the sticker and used by
-		Scan Box on the challan. Format: MM + yymmdd + a running number."""
-		stamp = frappe.utils.getdate(self.posting_date or frappe.utils.nowdate()).strftime("%y%m%d")
+		Scan Box on the challan.
+
+		Format: THE VOUCHER'S OWN NUMBER AND THE BOX'S PLACE ON IT — voucher 267 carries
+		267.1, 267.2 … and 268 starts again at .1. The code used to be MM + yymmdd + a
+		running number out of a per-day counter, which said nothing about which voucher a
+		box belonged to and could not be known until the voucher was saved. This one can:
+		the operator types the voucher number, so the label printed while the boxes are
+		still being weighed already carries the code it will keep.
+
+		A box that already has a code keeps it — stickers are stuck on boxes, and re-saving
+		a voucher must not renumber them. New rows continue past the highest number already
+		on the voucher rather than from their position, so deleting box 1 and adding another
+		cannot hand out a code a surviving box is already wearing.
+		"""
+		prefix = f"{self.name}."
+		used = {(b.barcode or "").strip() for b in (self.boxes or []) if b.barcode}
+		highest = 0
+		for code in used:
+			if code.startswith(prefix) and code[len(prefix):].isdigit():
+				highest = max(highest, int(code[len(prefix):]))
 		for b in self.boxes or []:
 			if b.barcode:
 				continue
-			b.barcode = frappe.model.naming.make_autoname(f"MM{stamp}.######")
+			highest += 1
+			while f"{prefix}{highest}" in used:
+				highest += 1
+			b.barcode = f"{prefix}{highest}"
+			used.add(b.barcode)
 
 	def _compute_weights(self):
 		"""SRS 5.7: Net = Gross − Bobbin − Box, per box and rolled up to the voucher.

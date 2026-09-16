@@ -839,6 +839,38 @@ def _customer_block(doc):
 	}
 
 
+def _job_print_rates(doc) -> dict:
+	"""A job challan's lines valued at the customer order's rate — for the print only.
+
+	Empty for anything already priced (a sale foots itself) and for a challan with no order
+	behind it, which has no rate to find. Nothing here is written to the document.
+	"""
+	if (doc.challan_type or "Sales") not in ("Job Out", "Job In"):
+		return {}
+	if frappe.utils.flt(doc.get("total_amount")):
+		return {}
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import (
+		order_rates,
+		rate_for,
+	)
+
+	rates_by_order = order_rates(doc)
+	if not rates_by_order:
+		return {}
+	rates, amounts, total = {}, {}, 0.0
+	for it in doc.items:
+		rate = frappe.utils.flt(it.get("rate")) or rate_for(
+			rates_by_order, it.sales_order or doc.sales_order, it.color_name, it.cut
+		)
+		if not rate:
+			continue
+		amount = round(rate * frappe.utils.flt(it.weight or 0), 2)
+		rates[it.name] = rate
+		amounts[it.name] = amount
+		total += amount
+	return {"rates": rates, "amounts": amounts, "total": round(total, 2)}
+
+
 @frappe.whitelist()
 def challan_for_print(challan):
 	"""Everything one challan needs to print, in one call.
@@ -858,6 +890,15 @@ def challan_for_print(challan):
 	# Whether the material on this paper is a lot the customer has not had before — the
 	# warning the printed terms already imply ("use material lot to lot") but never raised.
 	new_lots = new_lots_for_party(doc)
+	# WHAT THE MATERIAL IS WORTH, ON A JOB CHALLAN, FOR THE SHOP'S COPY ONLY.
+	#
+	# A Job Out / Job In is never priced on the document: the order's rate is what the
+	# CUSTOMER pays for finished goods, and stamping it on the challan would foot a worker's
+	# movement in rupees nobody is charging (see MMSalesChallan._apply_rates). So the paper
+	# had no rate to show at all. Read here, at print time, and printed on the DUPLICATE
+	# alone — the copy the shop keeps — nothing is stored and nothing the worker is handed
+	# carries a price.
+	priced = _job_print_rates(doc)
 	return {
 		"name": doc.name,
 		"challan_type": doc.challan_type or "Sales",
@@ -892,7 +933,7 @@ def challan_for_print(challan):
 		# Money on the paper that goes out with the goods — nil when nothing is priced,
 		# which the print uses to leave the rate columns off entirely rather than ruling
 		# two empty ones down a delivery challan.
-		"total_amount": doc.get("total_amount") or 0,
+		"total_amount": doc.get("total_amount") or priced.get("total") or 0,
 		"docstatus": doc.docstatus,
 		"items": [
 			{
@@ -908,8 +949,8 @@ def challan_for_print(challan):
 				"box_weight": it.box_weight,
 				"net_weight": it.net_weight,
 				"weight": it.weight,
-				"rate": it.get("rate") or 0,
-				"amount": it.get("amount") or 0,
+				"rate": it.get("rate") or priced.get("rates", {}).get(it.name) or 0,
+				"amount": it.get("amount") or priced.get("amounts", {}).get(it.name) or 0,
 				"r_box": it.r_box,
 				"r_bobbin": it.r_bobbin,
 			}

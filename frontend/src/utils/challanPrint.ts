@@ -129,14 +129,24 @@ function copy(d: ChallanPrintData, label: string): string {
   const cuts = [...new Set(items.map((i) => (i.cut || "").trim()).filter(Boolean))];
   const itemLine = colours.join(", ") + (cuts.length ? ` (${cuts.join(", ")})` : "");
 
+  // BOBBINS REACH THE GRID BY EITHER ROUTE. A production challan carries them per BOX, so
+  // each line states its own. A Job Out carries them on the challan's own bobbin table
+  // instead — they went with the material, not with any one roll — and those lines had
+  // nothing in the column at all. They go on the FIRST line, where the eye lands, so the
+  // column and the TOTAL underneath say the same 1,500.
+  const perBox = items.reduce((s, i) => s + Number(i.bobbin_pcs || 0), 0);
+  const onChallan = (d.bobbins || []).reduce((s, b) => s + Number(b.qty || 0), 0);
+  const firstLineBobbins = perBox > 0 ? 0 : onChallan;
+
   const cell = (n: number) => {
     const it = items[n];
     // A slot past the end of the list prints blank — the grid keeps its shape, the way
     // the pre-printed book does.
     if (!it) return `<td class="n">${n + 1}</td><td class="w"></td><td class="b"></td>`;
+    const bob = it.bobbin_pcs ? int(it.bobbin_pcs) : (n === 0 && firstLineBobbins ? int(firstLineBobbins) : "");
     return `<td class="n">${n + 1}</td>
       <td class="w">${num(it.net_weight ?? it.weight)}</td>
-      <td class="b">${it.bobbin_pcs ? int(it.bobbin_pcs) : ""}</td>`;
+      <td class="b">${bob}</td>`;
   };
 
   let grid = "";
@@ -148,12 +158,6 @@ function copy(d: ChallanPrintData, label: string): string {
 
   const count = items.length;
   const totalNet = items.reduce((s, i) => s + Number(i.net_weight ?? i.weight ?? 0), 0);
-  // BOBBINS REACH THE GRID BY EITHER ROUTE. A production challan carries them per BOX, so
-  // the column fills and the total is its sum. A Job Out carries them on the challan's own
-  // bobbin table instead — nothing is on the rolls — and that total read 0 while the lines
-  // under the table plainly listed 400 of them. The table is what the total belongs to.
-  const perBox = items.reduce((s, i) => s + Number(i.bobbin_pcs || 0), 0);
-  const onChallan = (d.bobbins || []).reduce((s, b) => s + Number(b.qty || 0), 0);
   const totalBob = Number(d.total_bobbin || 0) || perBox || onChallan;
 
   /* Which bobbins went, one line each, the way the book writes it:

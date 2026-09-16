@@ -38,6 +38,35 @@ def is_dispatch(challan_type) -> bool:
 	return (challan_type or "Sales") not in NON_DISPATCH_TYPES
 
 
+def order_rates(doc) -> dict:
+	"""The agreed selling rate of every colour on the orders this challan's lines name.
+
+	Keyed by colour AND cut, plus a colour-only fallback: the challan does not always
+	record a cut, and an order that prices one colour at one rate should still price it.
+	"""
+	rates: dict = {}
+	orders = {(it.sales_order or doc.sales_order) for it in (doc.items or [])}
+	for order in filter(None, orders):
+		for r in frappe.get_all(
+			"MM Sales Order Item",
+			filters={"parent": order, "parenttype": "MM Sales Order"},
+			fields=["color_name", "cut", "sale_rate"],
+		):
+			if float(r.sale_rate or 0) <= 0:
+				continue
+			rates.setdefault((order, _key(r.color_name), (r.cut or "").strip()), float(r.sale_rate))
+			rates.setdefault((order, _key(r.color_name), None), float(r.sale_rate))
+	return rates
+
+
+def rate_for(rates: dict, order, colour, cut) -> float:
+	"""One line's rate out of `order_rates`, cut first and colour alone as the fallback."""
+	if not order:
+		return 0.0
+	ckey = _key(colour)
+	return rates.get((order, ckey, (cut or "").strip())) or rates.get((order, ckey, None)) or 0.0
+
+
 class MMSalesChallan(Document):
 	def autoname(self):
 		# A challan ID typed by hand (checked in api.challan._manual_id). Left unset, the
@@ -162,27 +191,12 @@ class MMSalesChallan(Document):
 			self.total_amount = round(sum(float(it.amount or 0) for it in self.items), 2)
 			return
 
-		rates = {}
-		orders = {(it.sales_order or self.sales_order) for it in self.items}
-		for order in filter(None, orders):
-			for r in frappe.get_all(
-				"MM Sales Order Item",
-				filters={"parent": order, "parenttype": "MM Sales Order"},
-				fields=["color_name", "cut", "sale_rate"],
-			):
-				if float(r.sale_rate or 0) <= 0:
-					continue
-				# Keyed by colour AND cut, plus a colour-only fallback: the challan does not
-				# always record a cut, and an order that prices one colour at one rate should
-				# still price it then.
-				rates.setdefault((order, _key(r.color_name), (r.cut or "").strip()), float(r.sale_rate))
-				rates.setdefault((order, _key(r.color_name), None), float(r.sale_rate))
+		rates = order_rates(self)
 		total = 0.0
 		for it in self.items:
 			order = it.sales_order or self.sales_order
 			if not float(it.rate or 0) and order:
-				ckey, cut = _key(it.color_name), (it.cut or "").strip()
-				it.rate = rates.get((order, ckey, cut)) or rates.get((order, ckey, None)) or 0
+				it.rate = rate_for(rates, order, it.color_name, it.cut)
 			# Per KG — weight is the quantity this trade prices on, and it is the figure
 			# the line already carries as its own total.
 			it.amount = round(float(it.rate or 0) * float(it.weight or 0), 2)

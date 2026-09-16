@@ -375,10 +375,15 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const overProduced = inputWeight > 0 && totalNet > inputWeight;
   const shortBy = calc ? calc.short_by : r3(inputWeight - totalNet);
 
-  /** One box as a sticker. Barcodes only exist once the voucher is submitted, so before
-   *  that a PREVIEW code stands in — the label is otherwise the one that gets stuck on. */
+  /** The box's own id: the voucher number and its place on it — 267.1, 267.2 … The server
+   *  builds the same code from the voucher's name, so a V.No typed above is the real code
+   *  and the label printed now is the one that stays on the box. Left to the series, the
+   *  number is not known until the voucher is saved, and a PREVIEW code stands in. */
+  const boxCode = (i: number) => (vNo.trim() ? `${vNo.trim()}.${i + 1}` : `PREVIEW-${i + 1}`);
+
+  /** One box as a sticker — otherwise exactly the label that gets stuck on. */
   const stickerFor = (b: BoxRow, i: number) => ({
-    barcode: `PREVIEW-${i + 1}`,
+    barcode: boxCode(i),
     item: b.item || program.shade,
     size: size || program.cut,
     gross: b.gross,
@@ -739,7 +744,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 <table className="mm-table mm-table-dense">
                   <thead>
                     <tr>
-                      <th>#</th><th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
+                      <th title="The box's own id — the voucher number and its place on it">Box id</th>
+                      <th className="mm-num">Gr.Wt</th><th className="mm-num">Qty</th>
                       <th>Bobbin</th><th className="mm-num">Pcs</th><th className="mm-num">B/Pcs</th>
                       <th className="mm-num">Bobbin Wt</th><th className="mm-num">Box Wt</th><th className="mm-num">Net Wt</th>
                       <th className="mm-pv-check" title="This box's packaging comes back">R.Box</th>
@@ -750,7 +756,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                   <tbody>
                     {boxes.map((b, i) => (
                       <tr key={i}>
-                        <td>{i + 1}</td>
+                        <td title={vNo.trim() ? undefined : "Type a V.No above and the boxes take their real codes"}>
+                          {boxCode(i)}
+                        </td>
                         <td className="mm-num">{b.gross.toLocaleString()}</td>
                         <td className="mm-num">{b.qty || "—"}</td>
                         <td>{b.bobbin || "—"}</td>
