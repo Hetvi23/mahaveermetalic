@@ -128,9 +128,15 @@ export function describePort(port: SerialPortLike): string {
 async function rememberedPort(serial: SerialLike): Promise<SerialPortLike | null> {
   let want: string | null = null;
   try { want = window.localStorage.getItem(PORT_KEY); } catch { /* ignore */ }
-  if (!want || !serial.getPorts) return null;
+  if (!serial.getPorts) return null;
   let granted: SerialPortLike[] = [];
   try { granted = await serial.getPorts(); } catch { return null; }
+  if (!granted.length) return null;
+  // Nothing remembered, but this browser has been given exactly ONE port: that is the
+  // scale, and making the operator press Connect to re-learn what Chrome already knows is
+  // the "it used to connect by itself" complaint. Storage is cleared, the key was written
+  // by a later version than the grant, a different profile — all end up here.
+  if (!want) return granted.length === 1 ? granted[0] : null;
   const hits = granted.filter((p) => portKey(p) === want);
   // Two ports of the same kind are indistinguishable here, so ask rather than open the
   // TSC printer's virtual COM and sit there waiting for a weight that never comes.
@@ -292,6 +298,9 @@ export function useSerialScale() {
       try {
         await openPort(port, baudRate);
         portRef.current = port;
+        // Remember what opened itself, so the next auto-connect knows it by name rather
+        // than by "there is only one".
+        try { window.localStorage.setItem(PORT_KEY, portKey(port)); } catch { /* ignore */ }
         setPortLabel(describePort(port));
         setConnected(true);
         setConnecting(false);

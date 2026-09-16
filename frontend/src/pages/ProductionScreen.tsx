@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAlert, Scale, Package, Download } from "lucide-react";
@@ -213,6 +213,34 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // Choosing a job-work party ticks "Is Job Work?" for you — it was being missed by hand.
   // Only ever ticks it on: an operator who deliberately unticks it isn't overridden until
   // they pick a different party.
+  // THE SCALE BELONGS TO THE VOUCHER, not to the box form. The form remounts after every
+  // box (see boxSeq), and with the port opened inside it that meant closing and reopening
+  // the serial port twenty times a voucher — a reopen the OS often refuses while the old
+  // handle is still going down, which is how an operator ends up looking at Connect scale
+  // half way through a run. Opened once here, it stays open until the voucher closes.
+  const scale = useSerialScale();
+  const [baud, setBaud] = useState<number>(() => {
+    const saved = typeof window !== "undefined" ? Number(window.localStorage.getItem("mm-scale-baud")) : 0;
+    return BAUDS.includes(saved) ? saved : 9600;
+  });
+  const { supported: scaleOk, connected: scaleOn, connecting: scaleBusy, autoConnect } = scale;
+  const [scaleTries, setScaleTries] = useState(0);
+  useEffect(() => {
+    // Chrome only needs a click to CHOOSE a port, never to reopen one already granted, so
+    // the operator picks the scale once on this PC and never presses Connect again.
+    // Retried a few times because the usual reasons it fails are temporary: the indicator
+    // is still warming up, or the last handle has not been released yet.
+    if (!scaleOk || scaleOn || scaleBusy || scaleTries > 4) return;
+    const t = setTimeout(() => {
+      setScaleTries((n) => n + 1);
+      void autoConnect(baud);
+    }, scaleTries === 0 ? 0 : 4000);
+    return () => clearTimeout(t);
+    // baud deliberately not a dependency: changing it must not re-fire the auto-connect
+    // behind the operator while they are choosing one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scaleOk, scaleOn, scaleBusy, scaleTries, autoConnect]);
+
   const [jobWorkTouched, setJobWorkTouched] = useState(false);
   const [operator, setOperator] = useState("");
   const [deliveryBy, setDeliveryBy] = useState("");
@@ -620,6 +648,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 // weight is asked for again — it is the only thing that really changes.
                 prev={editing == null ? boxes[boxes.length - 1] : undefined}
                 defaultReturns={{ box: boxReturn, bobbin: bobbinReturn }}
+                scale={scale}
+                baud={baud}
+                onBaud={(b) => { setBaud(b); window.localStorage.setItem("mm-scale-baud", String(b)); }}
                 onClose={() => { setAdding(false); setEditing(null); }}
                 onAdd={(bx) => {
                   const wasEdit = editing != null;
@@ -787,13 +818,16 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
 /* ── Box Details popup: the per-box calculator (Net = Gross − Bobbin − Box) ── */
 function BoxDialog({
-  bobbinMasters, availableNet, defaultItem, edit, prev, defaultReturns, onClose, onAdd,
+  bobbinMasters, availableNet, defaultItem, edit, prev, defaultReturns, scale, baud, onBaud, onClose, onAdd,
 }: {
   bobbinMasters: BobbinMaster[]; availableNet: number; defaultItem: string;
   edit?: BoxRow;
   /** The last box keyed, when adding a new one — its packing carries over. */
   prev?: BoxRow;
   defaultReturns: { box: boolean; bobbin: boolean };
+  /** Opened by the voucher, so it survives this form remounting after every box. */
+  scale: ReturnType<typeof useSerialScale>;
+  baud: number; onBaud: (b: number) => void;
   onClose: () => void; onAdd: (b: BoxRow) => void;
 }) {
   const [extraBobbins, setExtraBobbins] = useState<BobbinMaster[]>([]);
@@ -825,6 +859,30 @@ function BoxDialog({
   useEffect(() => {
     if (bobbin && perPcs === "" && tareMap[bobbin]) setPerPcs(tareMap[bobbin]);
   }, [bobbin, perPcs, tareMap]);
+
+  /* THE SCALE WRITES THE TOTAL WEIGHT ITSELF.
+     Box on, reading settles, the weight is in the box — so the whole entry is Enter,
+     Enter, Enter and nothing is typed or clicked. It waits for the platform to be EMPTY
+     first (armed below) so the box just added, still sitting on the scale, cannot key
+     itself in again; and it never overwrites a weight the operator typed by hand. */
+  const [grossTyped, setGrossTyped] = useState(false);
+  const armed = useRef(false);
+  const reading = scale.reading;
+  useEffect(() => {
+    const w = reading?.weight ?? null;
+    if (w == null) return;
+    if (w <= 0.05) { armed.current = true; return; }
+    if (!armed.current || !reading?.stable || grossTyped || edit) return;
+    armed.current = false;
+    setGross(Number(w.toFixed(3)));
+  }, [reading, grossTyped, edit]);
+
+  /* Enter walks the three fields that are actually keyed and the third one files the box:
+     total weight → box weight → pcs → added. It used to add from whichever field the
+     cursor happened to be in, so Enter after the weight filed a box with no box tare and
+     no bobbin count on it. Enter anywhere else still adds. */
+  const panelRef = useRef<HTMLElement>(null);
+  const FLOW = ["gross", "boxWeight", "pcs"];
 
   const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
   const net = r3((Number(gross) || 0) - totalBobbin - (Number(boxWeight) || 0));
@@ -870,10 +928,10 @@ function BoxDialog({
        full-width box table, so nothing it needs to be read against — the input weight
        and available net on the left, the boxes already weighed below — is covered by
        it, and opening it takes no width off the table. */
-    <section className="mm-bx-panel" aria-label={edit ? "Edit box" : "New box"}
-      // ENTER ADDS THE BOX. A voucher is twenty boxes and each one was three keystrokes
-      // and then a trip to the mouse; this is the trip removed. Escape closes, so a hand
-      // that never leaves the keys can weigh, add, weigh, add.
+    <section className="mm-bx-panel" aria-label={edit ? "Edit box" : "New box"} ref={panelRef}
+      // ENTER CARRIES THE WHOLE BOX. A voucher is twenty boxes and each one was a trip to
+      // the mouse; this is the trip removed. Escape closes, so a hand that never leaves
+      // the keys can weigh, Enter, Enter, Enter, weigh, Enter…
       onKeyDown={(e) => {
         if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
         if (e.key !== "Enter") return;
@@ -882,6 +940,10 @@ function BoxDialog({
         // Enter inside an open picker is choosing an option, not finishing the box.
         if (el.closest(".mm-link-wrap") && document.querySelector("[data-mm-menu]")) return;
         e.preventDefault();
+        const here = (el as HTMLInputElement).dataset.bx;
+        const next = here ? FLOW[FLOW.indexOf(here) + 1] : undefined;
+        const el2 = next ? panelRef.current?.querySelector<HTMLInputElement>(`[data-bx="${next}"]`) : null;
+        if (el2) { el2.focus(); el2.select(); return; }
         add();
       }}>
       <div className="mm-bx-panel-head">
@@ -907,14 +969,15 @@ function BoxDialog({
           <div className="mm-bx-gross">
             {/* The panel opens on this: it is the first of the three fields that are
                 actually keyed, and the scale writes into it too. */}
-            <NumInput className="mm-input" value={gross} placeholder="0.000" autoFocus
-              onChange={(v) => setGross(v === "" ? "" : Number(v))} />
-            <ScaleCapture onCapture={(w) => setGross(Number(w.toFixed(3)))} />
+            <NumInput className="mm-input" value={gross} placeholder="0.000" autoFocus data-bx="gross"
+              onChange={(v) => { setGrossTyped(true); setGross(v === "" ? "" : Number(v)); }} />
+            <ScaleCapture scale={scale} baud={baud} onBaud={onBaud}
+              onCapture={(w) => { setGrossTyped(false); setGross(Number(w.toFixed(3))); }} />
           </div>
         </div>
         <div className="mm-bx-row">
           <span className="mm-bx-label">Box Weight</span>
-          <NumInput className="mm-input" value={boxWeight}
+          <NumInput className="mm-input" value={boxWeight} data-bx="boxWeight"
             onChange={(v) => setBoxWeight(v === "" ? "" : Number(v))} />
         </div>
         <div className="mm-bx-row">
@@ -931,7 +994,8 @@ function BoxDialog({
           <span className="mm-bx-label">Bobbin Weight</span>
           <div className="mm-bx-pcs">
             <span className="seg">Pcs</span>
-            <input type="number" value={pcs} onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
+            <input type="number" data-bx="pcs" value={pcs}
+              onChange={(e) => setPcs(e.target.value === "" ? "" : Number(e.target.value))} />
             <span className="seg">×</span>
             <NumInput value={perPcs} placeholder={bobbin && tareMap[bobbin] ? String(tareMap[bobbin]) : "0.000"}
               onChange={(v) => setPerPcs(v === "" ? "" : Number(v))} />
@@ -969,7 +1033,7 @@ function BoxDialog({
         {/* Said out loud. A shortcut nobody is told about is a shortcut nobody uses, and
             these operators will not go looking for one. */}
         <span className="mm-keys">
-          <kbd>Enter</kbd> {edit ? "save" : "add box"} · <kbd>Esc</kbd> close
+          <kbd>Enter</kbd> next field, third {edit ? "saves" : "adds the box"} · <kbd>Esc</kbd> close
         </span>
         <button className="mm-btn-ghost mm-btn-compact" onClick={onClose}>Cancel</button>
         <button className="mm-btn-primary mm-btn-compact" onClick={add}>{edit ? "Save box" : "Add box"}</button>
@@ -994,25 +1058,14 @@ function BoxDialog({
 /* ── Weighing-scale capture (Web Serial) for the gross weight ── */
 const BAUDS = [9600, 2400, 4800, 19200, 38400, 1200];
 
-function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
-  const { supported, connected, connecting, error, note, portLabel, reading, connect, autoConnect, disconnect } = useSerialScale();
-  const [baud, setBaud] = useState<number>(() => {
-    const saved = typeof window !== "undefined" ? Number(window.localStorage.getItem("mm-scale-baud")) : 0;
-    return BAUDS.includes(saved) ? saved : 9600;
-  });
-  // The scale connects ITSELF as soon as the box form opens. Chrome only requires a click
-  // to CHOOSE a port, never to reopen one already granted — so the operator picks the
-  // scale once on this PC and never presses Connect again. The button stays for the first
-  // time, and for the day the port has to be changed.
-  const [tried, setTried] = useState(false);
-  useEffect(() => {
-    if (!supported || connected || connecting || tried) return;
-    setTried(true);
-    void autoConnect(baud);
-    // baud deliberately not a dependency: changing it must not re-fire the auto-connect
-    // behind the operator while they are choosing one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supported, connected, connecting, tried, autoConnect]);
+/** The scale's controls and its live reading. The connection itself belongs to the
+ *  voucher above — this only drives it, so moving between boxes never drops the port. */
+function ScaleCapture({ scale, baud, onBaud, onCapture }: {
+  scale: ReturnType<typeof useSerialScale>;
+  baud: number; onBaud: (b: number) => void;
+  onCapture: (weight: number) => void;
+}) {
+  const { supported, connected, connecting, error, note, portLabel, reading, connect, disconnect } = scale;
 
   if (!supported) {
     return (
@@ -1033,12 +1086,12 @@ function ScaleCapture({ onCapture }: { onCapture: (weight: number) => void }) {
             className="mm-input mm-input-compact mm-scale-baud"
             value={baud}
             title="Scale baud rate (try 9600, switch to 2400 if you see garbage)"
-            onChange={(e) => { const b = Number(e.target.value); setBaud(b); window.localStorage.setItem("mm-scale-baud", String(b)); }}
+            onChange={(e) => onBaud(Number(e.target.value))}
           >
             {BAUDS.map((b) => <option key={b} value={b}>{b} baud</option>)}
           </select>
           <button type="button" className="mm-mini" disabled={connecting} onClick={() => void connect(baud)}>
-            <Scale size={13} /> {connecting ? "Connecting…" : tried ? "Connect scale" : "Connecting…"}
+            <Scale size={13} /> {connecting ? "Connecting…" : "Connect scale"}
           </button>
           {/* The remembered port is the wrong one on any PC where the TSC printer also
               shows up as a COM port, so keep a way back to the picker. */}
