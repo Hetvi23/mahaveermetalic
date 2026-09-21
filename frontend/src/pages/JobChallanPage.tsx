@@ -63,6 +63,8 @@ type JobOutOrder = {
 type JobOutRow = {
   name: string; line?: string; challan_no?: string; transaction_date?: string;
   party?: string; party_label?: string;
+  /** The party and its company separately — `party_label` is the two run together. */
+  party_name?: string; company_name?: string | null;
   color_name?: string; cut?: string; roll_no?: string | null;
   /** This roll's weight. `total_weight` is the whole challan's. */
   weight?: number; qty_box?: number;
@@ -910,6 +912,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               {picked?.customer_name && (
                 <><i /><span title="The customer whose order this material belongs to">
                   for <strong>{picked.customer_name}</strong>
+                  {picked.company_name ? <> · {picked.company_name}</> : null}
                 </span></>
               )}
               {meta?.color_name && <><i /><span className="mm-colour-name">{meta.color_name}</span></>}
@@ -1015,6 +1018,24 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                   placeholder={ordersCall.isLoading ? "Loading…" : "No order"}
                   emptyText="This Job Out names no customer order."
                 />
+              </label>
+              {/* WHOSE ACCOUNT THIS RECEIPT LANDS IN, stated before it is submitted (Hetvi:
+                  "should see company and party name as well"). Read off the order, because
+                  that is where the server files it — the order's party, or the Job Out's
+                  when there is no order (create_job_in_production). Not editable: the order
+                  decides it, and a second picker could only disagree with it. */}
+              <label className="mm-field">
+                <span className="mm-field-label">Party</span>
+                <input className="mm-input" readOnly tabIndex={-1}
+                  value={picked?.customer_name || picked?.customer || meta?.party_name || meta?.party_label || party || ""}
+                  placeholder="—"
+                  title={picked ? "The customer on the order" : "No order picked — it stays on the Job Out's party"} />
+              </label>
+              <label className="mm-field">
+                <span className="mm-field-label">Company</span>
+                <input className="mm-input" readOnly tabIndex={-1}
+                  value={(picked ? picked.company_name : meta?.company_name) || ""}
+                  placeholder="—" />
               </label>
               {/* Who brought it back — the same question a dispatch asks, read the other
                   way round, so it is the same box with the same suggestions. */}

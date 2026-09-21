@@ -1745,23 +1745,30 @@ def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=
 	page = roll_rows[start:start + page_length]
 
 	parties = {r["party"] for r in page if r.get("party")}
-	labels = {}
+	names, companies = {}, {}
 	if parties:
 		for p in frappe.get_all(
 			"MM Party Master", filters={"name": ["in", list(parties)]}, fields=["name", "party_name"]
 		):
-			labels[p.name] = p.party_name or p.name
+			names[p.name] = p.party_name or p.name
 		for pc in frappe.get_all(
 			"MM Party Company",
 			filters={"parent": ["in", list(parties)], "parenttype": "MM Party Master"},
 			fields=["parent", "company_name"],
+			order_by="parent asc, idx asc",
 		):
-			# The reference reads "PARTY (COMPANY)" — the worker and the firm they trade as.
-			base = labels.get(pc.parent, pc.parent)
-			if pc.company_name and pc.company_name != base:
-				labels[pc.parent] = f"{base} ({pc.company_name})"
+			# The party's FIRST company — the firm they trade as. One per party: this used to
+			# append every company in turn, so a party with two read "NAME (CO1) (CO2)", in
+			# whatever order the rows happened to come back.
+			companies.setdefault(pc.parent, pc.company_name)
 	for r in page:
-		r["party_label"] = labels.get(r["party"], r["party"])
+		name = names.get(r["party"], r["party"])
+		company = companies.get(r["party"])
+		# Stated separately too, so the Job In voucher can show Party and Company as fields.
+		r["party_name"] = name
+		r["company_name"] = company
+		# The reference reads "PARTY (COMPANY)" — the worker and the firm they trade as.
+		r["party_label"] = f"{name} ({company})" if company and company != name else name
 	return {"rows": page, "total": total}
 
 
@@ -1885,6 +1892,18 @@ def preview_job_in_box(gross_weight=None, net_weight=None, bobbin_pcs=0, bobbin_
 	}
 
 
+def _receipt_company(so, party):
+	"""The company a Job In is filed under — the order's, or with no order, the first
+	company of the party it falls back to. The same company the Job In picker labels that
+	party with, so the voucher saves what it showed."""
+	if so:
+		return so.company_name or None
+	return frappe.db.get_value(
+		"MM Party Company", {"parent": party, "parenttype": "MM Party Master"},
+		"company_name", order_by="idx asc",
+	) or None
+
+
 @frappe.whitelist()
 def create_job_in_production(against_job_out, boxes=None, customer_order=None, party=None,
 	posting_date=None, batch_no=None, cut=None, operator=None, shift=None, challan_no=None,
@@ -1946,16 +1965,20 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	# every job balance reads `against_job_out`, and job_report / the bobbin ledger follow the
 	# Job Out's party. With no order (the shop's own material) it stays on the Job Out's party.
 	order = customer_order or jo.sales_order or None
-	receipt_party = (
-		(frappe.db.get_value("MM Sales Order", order, "party") if order else None)
-		or party or jo.party
-	)
+	so = frappe.db.get_value(
+		"MM Sales Order", order, ["party", "company_name"], as_dict=True
+	) if order else None
+	receipt_party = (so and so.party) or party or jo.party
 
 	prod = frappe.get_doc({
 		"doctype": "MM Production",
 		"posting_date": posting_date or frappe.utils.today(),
 		"customer_order": order,
 		"party": receipt_party,
+		# …and the company of it, which the voucher shows before submit. A Production
+		# voucher records its company; a Job In left it blank, so every report grouping by
+		# company lost the job-work receipts.
+		"company_name": _receipt_company(so, receipt_party),
 		"shade": shade,
 		"cut": cut or next((it.cut for it in jo.items if it.cut), None),
 		"branch": jo.branch,
