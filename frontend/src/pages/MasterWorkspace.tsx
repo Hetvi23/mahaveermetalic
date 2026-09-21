@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useFrappeCreateDoc,
   useFrappeDeleteDoc,
+  useFrappeGetCall,
   useFrappeGetDoc,
   useFrappeGetDocList,
   useFrappeUpdateDoc,
@@ -50,12 +51,22 @@ export default function MasterWorkspace({ meta }: { meta: DocRegistryEntry }) {
     return [[meta.searchField, "like", `%${q.trim()}%`]] as unknown as undefined;
   }, [q, meta.searchField]);
 
-  const { data: rows, isLoading, mutate } = useFrappeGetDocList<Record<string, unknown>>(meta.doctype, {
-    fields: listFields,
-    filters,
-    limit: 200,
-    orderBy: { field: "modified", order: "desc" },
-  });
+  // Two ways to fill the list, exactly one of them live (a null SWR key switches a hook off):
+  // the doctype's own get_list, or — where search must reach a child table — the master's
+  // own listMethod, which is handed the typed text and returns the rows ready to show.
+  const docList = useFrappeGetDocList<Record<string, unknown>>(
+    meta.doctype,
+    { fields: listFields, filters, limit: 200, orderBy: { field: "modified", order: "desc" } },
+    meta.listMethod ? null : undefined,
+  );
+  const methodList = useFrappeGetCall<{ message: Record<string, unknown>[] }>(
+    meta.listMethod ?? "",
+    { q: q.trim() },
+    meta.listMethod ? `master-list-${meta.slug}-${q.trim()}` : null,
+  );
+  const rows = meta.listMethod ? methodList.data?.message : docList.data;
+  const isLoading = meta.listMethod ? methodList.isLoading : docList.isLoading;
+  const mutate = meta.listMethod ? methodList.mutate : docList.mutate;
 
   const { data: doc } = useFrappeGetDoc<Record<string, unknown>>(meta.doctype, selected || undefined);
   const { createDoc, loading: creating } = useFrappeCreateDoc();
@@ -189,7 +200,7 @@ export default function MasterWorkspace({ meta }: { meta: DocRegistryEntry }) {
                 <Search size={15} className="mm-search-icon" aria-hidden />
                 <input
                   className="mm-input mm-search-pill"
-                  placeholder={`Search ${meta.searchField.replace(/_/g, " ")}…`}
+                  placeholder={meta.searchPlaceholder ?? `Search ${meta.searchField.replace(/_/g, " ")}…`}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                 />

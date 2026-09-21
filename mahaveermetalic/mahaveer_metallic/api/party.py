@@ -107,6 +107,55 @@ def party_flags(party: str = "", company: str = ""):
 
 
 @frappe.whitelist()
+def party_master_list(q: str = "", limit: int = 200):
+	"""The Customers master list — searchable by the party AND by the companies under it.
+
+	Hetvi: "in the customer master give option to search by company as well". A customer
+	is often known on the floor by the firm they trade as, not by their own name, and the
+	list only matched the party name — so searching "LALCHAND JARI" found nothing, though
+	LALABHAI is filed right there with that company under him. One box now matches the
+	name, the id, the mobile number or any of the party's companies, and every row carries
+	its companies so it is plain which one matched.
+
+	Goes through get_list, so the list is still exactly what the user may read.
+	"""
+	q = (q or "").strip()
+	or_filters = None
+	if q:
+		like = f"%{q}%"
+		or_filters = [
+			["MM Party Master", "party_name", "like", like],
+			["MM Party Master", "name", "like", like],
+			["MM Party Master", "mobile_number", "like", like],
+			["MM Party Company", "company_name", "like", like],
+		]
+	rows = frappe.get_list(
+		"MM Party Master",
+		fields=["name", "party_name", "mobile_number", "modified"],
+		or_filters=or_filters,
+		order_by="modified desc",
+		limit_page_length=frappe.utils.cint(limit) or 200,
+		# The company match is a join on the child table: a party with two matching
+		# companies would otherwise come back twice.
+		distinct=True,
+	)
+	names = [r.name for r in rows]
+	companies = {}
+	if names:
+		for c in frappe.get_all(
+			"MM Party Company",
+			filters={"parent": ["in", names], "parenttype": "MM Party Master"},
+			fields=["parent", "company_name"],
+			order_by="parent asc, idx asc",
+		):
+			if c.company_name:
+				companies.setdefault(c.parent, []).append(c.company_name)
+	for r in rows:
+		r["companies"] = ", ".join(companies.get(r.name, []))
+	return rows
+
+
+@frappe.whitelist()
 def all_companies(txt: str = "", limit: int = 500):
 	"""Every company with the party it belongs to.
 

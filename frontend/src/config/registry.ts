@@ -65,6 +65,12 @@ export type DocRegistryEntry = {
 	listTagline?: string;
 	listColumns: { fieldname: string; label: string }[];
 	searchField?: string;
+	/** A whitelisted method that returns the list rows itself, given `q` — for a list whose
+	 *  search has to reach past the doctype's own fields (a child table, say). Rows carry
+	 *  `name` and every listColumns fieldname. */
+	listMethod?: string;
+	/** Search box text, when "Search <searchField>…" would undersell what it matches. */
+	searchPlaceholder?: string;
 	fields: FieldSchema[];
 	childTables?: ChildTableSchema[];
 	/** Draft → submitted */
@@ -125,10 +131,15 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 		],
 		listColumns: [
 			{ fieldname: "party_name", label: "Name" },
+			// The firms the customer trades as — shown so a search by company says which matched.
+			{ fieldname: "companies", label: "Companies" },
 			{ fieldname: "mobile_number", label: "Mobile" },
 			{ fieldname: "modified", label: "Updated" },
 		],
 		searchField: "party_name",
+		// Searches the companies under each party too (Hetvi: "search by company as well").
+		listMethod: "mahaveermetalic.mahaveer_metallic.api.party.party_master_list",
+		searchPlaceholder: "Search name, company or mobile…",
 		fields: [
 			{ fieldname: "party_name", label: "Name", fieldtype: "Data", reqd: true },
 			{ fieldname: "mobile_number", label: "Mobile Number", fieldtype: "Data", reqd: true },

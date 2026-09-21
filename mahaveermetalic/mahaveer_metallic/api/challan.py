@@ -1295,6 +1295,48 @@ def _job_balances(rows):
 	return result
 
 
+def _challan_companies(rows):
+	"""The COMPANY each challan went to — what the register names instead of the party
+	(Hetvi: "instead of party company name will come").
+
+	A challan carries a party and no company. The company is on its ORDER — the header's,
+	or failing that the first order on its lines (a job challan names it there) — and a
+	challan with no order at all falls back to the party's first company, the one every
+	picker already labels that party with. Batched: two lookups for the whole register.
+	"""
+	if not rows:
+		return {}
+	line_orders = {}
+	for it in frappe.get_all(
+		"MM Sales Challan Item",
+		filters={"parent": ["in", [r.name for r in rows]], "parenttype": "MM Sales Challan",
+			"sales_order": ["is", "set"]},
+		fields=["parent", "sales_order"],
+		order_by="parent asc, idx asc",
+	):
+		line_orders.setdefault(it.parent, it.sales_order)
+	order_of = {r.name: (r.sales_order or line_orders.get(r.name)) for r in rows}
+	orders = {o for o in order_of.values() if o}
+	order_company = dict(frappe.get_all(
+		"MM Sales Order", filters={"name": ["in", list(orders)]}, fields=["name", "company_name"],
+		as_list=True,
+	)) if orders else {}
+	parties = {r.party for r in rows if r.party}
+	party_company = {}
+	for pc in frappe.get_all(
+		"MM Party Company",
+		filters={"parent": ["in", list(parties)], "parenttype": "MM Party Master"} if parties else {"name": ""},
+		fields=["parent", "company_name"],
+		order_by="parent asc, idx asc",
+	):
+		if pc.company_name:
+			party_company.setdefault(pc.parent, pc.company_name)
+	return {
+		r.name: order_company.get(order_of[r.name]) or party_company.get(r.party)
+		for r in rows
+	}
+
+
 @frappe.whitelist()
 def challan_report(from_date=None, to_date=None, party=None, challan_type=None, sales_order=None, limit=300):
 	"""Every challan issued, newest first, with its order's dispatch balance beside it —
@@ -1334,7 +1376,13 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 		select c.name, c.challan_type, c.challan_no, c.transaction_date, c.party,
 			c.sales_order, c.total_box, c.total_weight, c.docstatus, c.job_work_flag, c.against_job_out,
 			-- `lines` is reserved in MariaDB; naming it that failed the whole query.
-			(select count(*) from `tabMM Sales Challan Item` ci where ci.parent = c.name) as line_count
+			(select count(*) from `tabMM Sales Challan Item` ci where ci.parent = c.name) as line_count,
+			-- What comes BACK on the challan, counted exactly as its print counts it
+			-- (challan_for_print): boxes ticked R.Box, and the bobbins on rows ticked R.Bobbin.
+			(select count(*) from `tabMM Sales Challan Item` ci
+			 where ci.parent = c.name and ifnull(ci.r_box, 0) = 1) as return_box,
+			(select coalesce(sum(ci.bobbin_pcs), 0) from `tabMM Sales Challan Item` ci
+			 where ci.parent = c.name and ifnull(ci.r_bobbin, 0) = 1) as return_bobbin
 		from `tabMM Sales Challan` c
 		where {" and ".join(conds)}
 		order by c.transaction_date desc, c.creation desc
@@ -1370,11 +1418,13 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 			"MM Party Master", filters={"name": ["in", list(names)]}, fields=["name", "party_name"]
 		):
 			party_names[p.name] = p.party_name or p.name
+	companies = _challan_companies(rows)
 	jobs = _job_balances(rows)
 	# One cover lookup per ORDER, not per row — a party's twenty challans share one order.
 	covers = {}
 	for r in rows:
 		r["party_name"] = party_names.get(r.party, r.party)
+		r["company"] = companies.get(r.name)
 		r["colours"] = colours.get(r.name) or []
 		r["job"] = jobs.get(r.name)
 		# The order's dispatch arithmetic belongs to DISPATCHES. A job challan named the

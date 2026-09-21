@@ -29,6 +29,10 @@ type Row = {
   colours?: string[];
   total_box?: number; total_weight?: number; docstatus?: number; line_count?: number;
   job_work_flag?: number; cover?: Cover | null; job?: Job | null;
+  /** The company the challan went to — its order's, else the party's first company. */
+  company?: string | null;
+  /** Boxes ticked R.Box, and the bobbins on rows ticked R.Bobbin — as the print counts them. */
+  return_box?: number; return_bobbin?: number;
 };
 type Line = {
   name: string; idx: number; barcode?: string; color_name?: string; cut?: string;
@@ -99,7 +103,7 @@ export default function ChallanReportPage() {
     const t = q.trim().toLowerCase();
     if (!t) return rows;
     return rows.filter((r) =>
-      [r.name, r.challan_no, r.party_name, r.party, r.sales_order, r.challan_type, (r.colours ?? []).join(" ")]
+      [r.name, r.challan_no, r.company, r.party_name, r.party, r.sales_order, r.challan_type, (r.colours ?? []).join(" ")]
         .filter(Boolean).join(" ").toLowerCase().includes(t),
     );
   }, [rows, q]);
@@ -113,6 +117,8 @@ export default function ChallanReportPage() {
   }
 
   const totalWt = shown.reduce((s, r) => s + Number(r.total_weight || 0), 0);
+  const totalRetBox = shown.reduce((s, r) => s + Number(r.return_box || 0), 0);
+  const totalRetBobbin = shown.reduce((s, r) => s + Number(r.return_bobbin || 0), 0);
 
   // The filters above stay in this component's state, so closing the challan comes back
   // to the list exactly as it was left.
@@ -150,7 +156,7 @@ export default function ChallanReportPage() {
         <div className="mm-search-wrap" style={{ marginTop: "0.6rem" }}>
           <Search size={15} className="mm-search-icon" aria-hidden />
           <input className="mm-input mm-search-pill" value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search challan no / party / order…" />
+            placeholder="Search challan no / company / party / order…" />
         </div>
       </section>
 
@@ -168,12 +174,14 @@ export default function ChallanReportPage() {
             <table className="mm-table mm-table-dense mm-table-hover">
               <thead>
                 <tr>
-                  <th>Challan</th><th>Date</th><th>Type</th><th>Party</th><th>Item</th><th>Order</th>
+                  {/* COMPANY, not party (Hetvi: "instead of party company name will come") — the
+                      firm the paper went to. The party is still on the cell's hover. */}
+                  <th>Challan</th><th>Date</th><th>Type</th><th>Company</th><th>Item</th><th>Order</th>
                   <th className="mm-num">Box</th><th className="mm-num">Weight</th>
-                  {/* The order's own arithmetic, so a correction can be judged before it
-                      is made rather than by reading the error afterwards. */}
-                  <th className="mm-num" title="Order: inwarded on it · Job work: received back">In</th>
-                  <th className="mm-num" title="Order: already dispatched · Job work: sent to the worker">Out</th>
+                  {/* What comes BACK on it, in place of the order's In / Out figures (Hetvi:
+                      "remove in and out data, add returnable bobbin and return box"). */}
+                  <th className="mm-num" title="Boxes to come back — rows ticked R.Box">R.Box</th>
+                  <th className="mm-num" title="Returnable bobbins — the bobbins on rows ticked R.Bobbin">R.Bobbin</th>
                   <th className="mm-num" title="Order: still available to dispatch · Job work: still with the worker">Balance</th>
                   <th />
                 </tr>
@@ -184,7 +192,9 @@ export default function ChallanReportPage() {
                     <td>{r.challan_no || r.name}</td>
                     <td>{fmtDate(r.transaction_date) || "—"}</td>
                     <td>{r.challan_type || "—"}</td>
-                    <td title={r.party || ""}>{r.party_name || r.party || "—"}</td>
+                    <td title={r.party_name || r.party ? `Party: ${r.party_name || r.party}` : undefined}>
+                      {r.company || r.party_name || r.party || "—"}
+                    </td>
                     <td>
                       {(r.colours ?? []).length
                         ? <span className="mm-colour-name">{(r.colours ?? []).join(", ")}</span>
@@ -193,26 +203,20 @@ export default function ChallanReportPage() {
                     <td>{r.sales_order || "—"}</td>
                     <td className="mm-num">{Number(r.total_box || 0).toLocaleString()}</td>
                     <td className="mm-num">{kg(r.total_weight)}</td>
+                    <td className="mm-num">{Number(r.return_box || 0) ? Number(r.return_box).toLocaleString() : "—"}</td>
+                    <td className="mm-num">{Number(r.return_bobbin || 0) ? Number(r.return_bobbin).toLocaleString() : "—"}</td>
                     {/* A dispatch reads against its order; a Job Out / Job In against its own
-                        Job Out — sent, received back, and what is still with the worker. */}
+                        Job Out — what is still with the worker. */}
                     {r.job ? (
-                      <>
-                        <td className="mm-num" title={`Received back against ${r.job.job_out}`}>{kg(r.job.received)}</td>
-                        <td className="mm-num" title={`Sent on ${r.job.job_out}`}>{kg(r.job.sent)}</td>
-                        <td className="mm-num" title="Still with the worker">
-                          <span className={r.job.balance < 0 ? "mm-var-over" : undefined}>{kg(r.job.balance)}</span>
-                        </td>
-                      </>
+                      <td className="mm-num" title={`Still with the worker — sent ${kg(r.job.sent)}, back ${kg(r.job.received)} on ${r.job.job_out}`}>
+                        <span className={r.job.balance < 0 ? "mm-var-over" : undefined}>{kg(r.job.balance)}</span>
+                      </td>
                     ) : (
-                      <>
-                        <td className="mm-num">{r.cover ? kg(r.cover.inwarded_weight) : "—"}</td>
-                        <td className="mm-num">{r.cover ? kg(r.cover.dispatched_weight) : "—"}</td>
-                        <td className="mm-num">
-                          {r.cover
-                            ? <span className={r.cover.balance_weight < 0 ? "mm-var-over" : undefined}>{kg(r.cover.balance_weight)}</span>
-                            : "—"}
-                        </td>
-                      </>
+                      <td className="mm-num">
+                        {r.cover
+                          ? <span className={r.cover.balance_weight < 0 ? "mm-var-over" : undefined}>{kg(r.cover.balance_weight)}</span>
+                          : "—"}
+                      </td>
                     )}
                     {/* The flex row sits INSIDE the cell. On the cell itself it stopped being a
                         table cell and the print button slid over the Balance figure. */}
@@ -228,11 +232,13 @@ export default function ChallanReportPage() {
               </tbody>
               <tfoot>
                 <tr>
-                  {/* Challan · Date · Type · Party · Item · Order · Box — the Weight total
-                      below has to stay under the Weight column. */}
+                  {/* Challan · Date · Type · Company · Item · Order · Box — the totals below
+                      have to stay under Weight, R.Box and R.Bobbin. */}
                   <td colSpan={7}><strong>{shown.length} challan{shown.length === 1 ? "" : "s"}</strong></td>
                   <td className="mm-num"><strong>{kg(totalWt)}</strong></td>
-                  <td colSpan={4} />
+                  <td className="mm-num"><strong>{totalRetBox.toLocaleString()}</strong></td>
+                  <td className="mm-num"><strong>{totalRetBobbin.toLocaleString()}</strong></td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>
