@@ -825,7 +825,8 @@ def _customer_block(doc):
 		order = found[0]["order"] if found else None
 	if not order:
 		return {}
-	customer = frappe.db.get_value("MM Sales Order", order, "party")
+	so = frappe.db.get_value("MM Sales Order", order, ["party", "company_name"], as_dict=True) or {}
+	customer = so.get("party")
 	if not customer or customer == doc.party:
 		return {}
 	row = frappe.db.get_value(
@@ -834,6 +835,11 @@ def _customer_block(doc):
 	return {
 		"customer": customer,
 		"customer_name": row.get("party_name") or customer,
+		# The firm the customer trades as — what the paper names in place of the person.
+		"customer_company": so.get("company_name") or frappe.db.get_value(
+			"MM Party Company", {"parent": customer, "parenttype": "MM Party Master"},
+			"company_name", order_by="idx asc",
+		),
 		"customer_address": row.get("address"),
 		"customer_mobile": row.get("mobile_number"),
 	}
@@ -918,6 +924,12 @@ def challan_for_print(challan):
 		"transaction_date": str(doc.transaction_date or ""),
 		"party": doc.party,
 		"party_name": party.get("party_name") or doc.party,
+		# The paper names the COMPANY, not the party (Hetvi: "on the left instead of party
+		# show company name") — by the same rule as the register's Company column.
+		"company_name": _challan_companies([doc]).get(doc.name),
+		# The number written in the book, on its own: `challan_no` above falls back to the
+		# document id, and the print now shows that id separately (as Order Type + ID).
+		"book_no": doc.challan_no or None,
 		"address": party.get("address"),
 		"mobile_no": party.get("mobile_number"),
 		"sales_order": doc.sales_order,
@@ -1300,9 +1312,12 @@ def _challan_companies(rows):
 	(Hetvi: "instead of party company name will come").
 
 	A challan carries a party and no company. The company is on its ORDER — the header's,
-	or failing that the first order on its lines (a job challan names it there) — and a
-	challan with no order at all falls back to the party's first company, the one every
-	picker already labels that party with. Batched: two lookups for the whole register.
+	or failing that the first order on its lines (a job challan names it there) — but only
+	when that order is the SAME party's: a Job Out is addressed to the worker and names the
+	customer's order, and the order's company there is the customer's, not the worker's.
+	Otherwise, and with no order at all, it is the party's first company, the one every
+	picker already labels that party with. Batched: three lookups for the whole register;
+	the print passes its one challan through the same rule.
 	"""
 	if not rows:
 		return {}
@@ -1317,10 +1332,12 @@ def _challan_companies(rows):
 		line_orders.setdefault(it.parent, it.sales_order)
 	order_of = {r.name: (r.sales_order or line_orders.get(r.name)) for r in rows}
 	orders = {o for o in order_of.values() if o}
-	order_company = dict(frappe.get_all(
-		"MM Sales Order", filters={"name": ["in", list(orders)]}, fields=["name", "company_name"],
-		as_list=True,
-	)) if orders else {}
+	order_info = {
+		o.name: o for o in frappe.get_all(
+			"MM Sales Order", filters={"name": ["in", list(orders)]},
+			fields=["name", "party", "company_name"],
+		)
+	} if orders else {}
 	parties = {r.party for r in rows if r.party}
 	party_company = {}
 	for pc in frappe.get_all(
@@ -1331,10 +1348,13 @@ def _challan_companies(rows):
 	):
 		if pc.company_name:
 			party_company.setdefault(pc.parent, pc.company_name)
-	return {
-		r.name: order_company.get(order_of[r.name]) or party_company.get(r.party)
-		for r in rows
-	}
+	def company(r):
+		o = order_info.get(order_of[r.name])
+		if o and o.party == r.party and o.company_name:
+			return o.company_name
+		return party_company.get(r.party)
+
+	return {r.name: company(r) for r in rows}
 
 
 @frappe.whitelist()

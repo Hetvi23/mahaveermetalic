@@ -55,6 +55,12 @@ export type ChallanPrintData = {
   customer_name?: string;
   customer_address?: string;
   customer_mobile?: string;
+  /** The companies the paper names in place of the people — the party's, and the
+   *  customer's on a job challan. Blank when the party has none on file. */
+  company_name?: string | null;
+  customer_company?: string | null;
+  /** The number written in the challan book, on its own (`challan_no` falls back to the id). */
+  book_no?: string | null;
   remarks?: string;
   total_box?: number;
   total_weight?: number;
@@ -215,9 +221,26 @@ function copy(d: ChallanPrintData, label: string): string {
   // it, and on a receipt they are only the address it travelled from. Everything else,
   // Job Out included, is addressed to the party it is handed to, with the customer stated
   // underneath where the two differ.
-  const nameLine = (isJobIn ? d.customer_name : "") || d.party_name || d.party || "";
+  //
+  // And it names the COMPANY, not the person (Hetvi: "on the left instead of party show
+  // company name"): the firm the paper is made out to. The person stands in only where no
+  // company is on file.
+  const nameLine = (isJobIn ? (d.customer_company || d.customer_name) : "")
+    || d.company_name || d.party_name || d.party || "";
   // …and where the customer IS the name above, the row below must not say it twice.
   const showCustomer = !isJobIn && !!d.customer_name;
+  const customerLine = d.customer_company || d.customer_name || "";
+
+  // THE ID, SPLIT THE WAY THE BOOK READS IT. MMUSC-2088-26/27 is the book (MMUSC) and the
+  // number in it with its year (2088-26/27) — printed as Order Type and Challan ID. Split
+  // at the first hyphen, so an auto-numbered MMUJO-2026-00026 reads MMUJO / 2026-00026.
+  const id = d.name || "";
+  const cut = id.indexOf("-");
+  const idPrefix = cut > 0 ? id.slice(0, cut) : "";
+  const idRest = cut > 0 ? id.slice(cut + 1) : id;
+  // The book's own serial (C.No), kept beside the id. Blank when none was written: the
+  // payload's challan_no falls back to the id, which is already printed above it.
+  const bookNo = d.book_no ?? (d.challan_no && d.challan_no !== d.name ? d.challan_no : "");
 
   return `<section class="copy"><div class="fit">
     <div class="hd">
@@ -226,22 +249,28 @@ function copy(d: ChallanPrintData, label: string): string {
     </div>
     ${d.company_address ? `<div class="addr">${esc(d.company_address).replace(/\n/g, "<br>")}</div>` : ""}
     <div class="bannerwrap"><span class="banner">${esc(heading).toUpperCase()}</span></div>
+    <!-- Left: who, what, against which order. Right: when, then the id — its book, its
+         number, and the book's serial (Hetvi's layout, 2026-09-21). -->
     <table class="meta">
       <tr>
         <td class="k">Name</td><td class="c">:</td><td class="v"><b>${esc(nameLine)}</b></td>
-        <td class="k2">Chalan No</td><td class="c">:</td><td class="v2"><b>${esc(d.challan_no || d.name)}</b></td>
+        <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(bookDate(d.transaction_date))}</td>
       </tr>
       <tr>
         <td class="k">Item</td><td class="c">:</td><td class="v">${esc(itemLine || "—")}</td>
-        <td class="k2">Chalan Date</td><td class="c">:</td><td class="v2">${esc(bookDate(d.transaction_date))}</td>
+        <td class="k2">Order Type</td><td class="c">:</td><td class="v2">${esc(idPrefix)}</td>
       </tr>
-      ${showCustomer || d.sales_order ? `<tr>
+      <tr>
+        <td class="k">Order</td><td class="c">:</td><td class="v">${esc(d.sales_order || "")}</td>
+        <td class="k2">Challan ID</td><td class="c">:</td><td class="v2"><b>${esc(idRest)}</b></td>
+      </tr>
+      <tr>
         <td class="k">${showCustomer ? "Customer" : ""}</td><td class="c">${showCustomer ? ":" : ""}</td>
-        <td class="v">${showCustomer ? `<b>${esc(d.customer_name)}</b>${
+        <td class="v">${showCustomer ? `<b>${esc(customerLine)}</b>${
           d.customer_mobile ? ` <span class="sub">${esc(d.customer_mobile)}</span>` : ""
         }` : ""}</td>
-        <td class="k2">Order</td><td class="c">:</td><td class="v2">${esc(d.sales_order || "")}</td>
-      </tr>` : ""}
+        <td class="k2">Chalan No</td><td class="c">:</td><td class="v2"><b>${esc(bookNo)}</b></td>
+      </tr>
     </table>
     <table class="grid">
       <thead><tr>
