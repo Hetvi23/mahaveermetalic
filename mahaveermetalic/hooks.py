@@ -1,5 +1,5 @@
 app_name = "mahaveermetalic"
-app_title = "Mahaveer Metalic LLP"
+app_title = "Mahaveer Metallic"
 app_publisher = "Mahaveer"
 app_description = "Metal manufacturing ERP"
 app_email = "admin@example.com"
