@@ -221,7 +221,7 @@ function copy(d: ChallanPrintData, label: string): string {
 
   return `<section class="copy"><div class="fit">
     <div class="hd">
-      <div class="brand">${d.new_lot ? `<span class="newlot">NEW LOT</span>` : ""}MAHAVIR METALIC</div>
+      <div class="brand">${d.new_lot ? `<span class="newlot">NEW LOT</span>` : ""}MAHAVEER METALIC LLP</div>
       <div class="orig">${esc(label)}</div>
     </div>
     ${d.company_address ? `<div class="addr">${esc(d.company_address).replace(/\n/g, "<br>")}</div>` : ""}

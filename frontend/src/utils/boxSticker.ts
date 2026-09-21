@@ -23,7 +23,7 @@ function stickerHtml(b: StickerBox): string {
   return `
   <div class="sticker">
     <table class="hdr"><tr>
-      <td class="brand">MAHAVIR METALIC</td>
+      <td class="brand">MAHAVEER METALIC LLP</td>
       <td class="size">Size: ${b.size ?? ""}</td>
     </tr></table>
     <div class="item">${b.item ?? ""}</div>

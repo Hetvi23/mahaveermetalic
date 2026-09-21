@@ -45,7 +45,7 @@ export default function Login() {
 	return (
 		<div className="mm-login-wrap">
 			<div className="mm-login-card">
-				<h2>Mahaveer Metallic</h2>
+				<h2>Mahaveer Metalic LLP</h2>
 				<p className="mm-muted">Sign in with your Frappe user.</p>
 				<form onSubmit={onSubmit}>
 					<label className="mm-field">

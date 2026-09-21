@@ -262,8 +262,8 @@ export default function AppNav() {
         <div className="mm-rail-brand">
           <div className="mm-rail-logo"><Factory size={20} strokeWidth={2.2} /></div>
           <div className="mm-rail-brand-text">
-            <span className="mm-rail-name">Mahavir</span>
-            <span className="mm-rail-sub">Metalic</span>
+            <span className="mm-rail-name">Mahaveer</span>
+            <span className="mm-rail-sub">Metalic LLP</span>
           </div>
           <button
             type="button"
