@@ -241,6 +241,11 @@ function copy(d: ChallanPrintData, label: string): string {
   // The book's own serial (C.No), kept beside the id. Blank when none was written: the
   // payload's challan_no falls back to the id, which is already printed above it.
   const bookNo = d.book_no ?? (d.challan_no && d.challan_no !== d.name ? d.challan_no : "");
+  // …on JOB paper only (Hetvi: "challan no not needed in sales challan"). A sales-side
+  // challan is identified by its Challan ID above, and the C.No line sat there blank. On a
+  // Job Out / Job In the C.No is the worker's book number — every receipt against a Job Out
+  // is filed under it — so there it stays, when one was written.
+  const showBookNo = /^job\s*(in|out)$/i.test(type) && !!bookNo;
 
   return `<section class="copy"><div class="fit">
     <div class="hd">
@@ -264,13 +269,15 @@ function copy(d: ChallanPrintData, label: string): string {
         <td class="k">Order</td><td class="c">:</td><td class="v">${esc(d.sales_order || "")}</td>
         <td class="k2">Challan ID</td><td class="c">:</td><td class="v2"><b>${esc(idRest)}</b></td>
       </tr>
-      <tr>
+      ${showCustomer || showBookNo ? `<tr>
         <td class="k">${showCustomer ? "Customer" : ""}</td><td class="c">${showCustomer ? ":" : ""}</td>
         <td class="v">${showCustomer ? `<b>${esc(customerLine)}</b>${
           d.customer_mobile ? ` <span class="sub">${esc(d.customer_mobile)}</span>` : ""
         }` : ""}</td>
-        <td class="k2">Chalan No</td><td class="c">:</td><td class="v2"><b>${esc(bookNo)}</b></td>
-      </tr>
+        ${showBookNo
+          ? `<td class="k2">Chalan No</td><td class="c">:</td><td class="v2"><b>${esc(bookNo)}</b></td>`
+          : `<td class="k2"></td><td class="c"></td><td class="v2"></td>`}
+      </tr>` : ""}
     </table>
     <table class="grid">
       <thead><tr>
