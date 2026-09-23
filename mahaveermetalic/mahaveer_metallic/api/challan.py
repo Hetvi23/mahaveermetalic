@@ -51,18 +51,23 @@ def _box_row(b, production=None, order=None):
 
 
 def create_challan_from_production(production, challan_series=None, challan_id=None):
-	"""Raise the dispatch challan for a production voucher (draft).
+	"""Raise the dispatch challan for a production voucher.
 
-	Only when the production is tied to a Sales Order — otherwise the boxes stay in hand
-	and a challan can be raised later from this screen.
+	Raised for the PARTY the voucher names, with or without an order behind it. It used to
+	need a Sales Order, so most of this shop's production — made for a party without an
+	order on file — raised no paper at all and never reached the challan register (Hetvi:
+	"on save production without order not shown in report"). An order, when there is one, is
+	carried onto the challan and counts against it as before.
+
+	A voucher naming no party at all still raises nothing: there is nobody to address it to.
 
 	`challan_series` is the book it is written in (Sales unless the voucher picked another)
 	and `challan_id` the number typed into that book, filed as series-number-year. Both come
 	off the production voucher, which is where the operator has the challan in front of them.
 	"""
 	prod = frappe.get_doc("MM Production", production)
-	if not prod.customer_order:
-		return None  # no order → goes to stock, not dispatched
+	if not prod.party:
+		return None  # nobody to address it to → the boxes stay in hand
 	if frappe.db.exists("MM Sales Challan", {"source_production": prod.name, "docstatus": ["<", 2]}):
 		return None  # already raised
 

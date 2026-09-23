@@ -223,8 +223,11 @@ class MMProduction(Document):
 
 	def _raise_sales_challan(self):
 		"""Production is where boxes/bobbins are entered — the dispatch challan is raised
-		from it. With a Sales Order the challan is raised and submitted; without one the boxes simply stay in hand for a later challan."""
-		if not self.customer_order:
+		from it, for the party the voucher names. An order is carried onto it when there is
+		one; without an order the challan is still raised, so the work reaches the challan
+		register instead of disappearing into stock. A voucher naming no party raises
+		nothing — there is nobody to address it to."""
+		if not self.party:
 			return
 		# A JOB IN production is material coming BACK from a worker, not going out to the
 		# customer. It carries the order so the receipt is attributed correctly, but raising
