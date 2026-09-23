@@ -754,13 +754,19 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   // The JOB OUT's challan number, fetched when it is picked: a receipt is filed under the
   // number of the challan it answers, so every Job In against 125 reads 125. Editable.
   const [cNo, setCNo] = useState("");
-  // Typed by hand, never suggested: the production's voucher number and the Job In
-  // challan's own ID. Blank leaves each to its series.
+  // The production's voucher number is typed by hand; the Job In challan's ID follows its
+  // book's own count until somebody types one, because the box stickers are built from it.
   const [vNo, setVNo] = useState("");
   const [challanId, setChallanId] = useState("");
+  const [challanIdTyped, setChallanIdTyped] = useState(false);
   // The book the Job In challan is written in: its own unless another series is picked.
   // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
   const [series, setSeries] = useState(JOB_IN_SERIES.value);
+  /* The book's own next number, suggested — the boxes coming back are labelled from this
+     ID, so leaving it blank left them reading PREVIEW. Restarts every financial year. */
+  const nextIdCall = useFrappeGetCall<{ message: string }>(
+    `${API}.next_challan_id`, { series, on: vDate }, `next-cid-${series}-${vDate}`,
+  );
   const [batchNo, setBatchNo] = useState("");
   const [size, setSize] = useState("");
   const [order, setOrder] = useState("");
@@ -799,8 +805,14 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const sent = Number(meta?.total_weight || 0);
 
   useEffect(() => {
-    setBoxes([]); setErr(null); setAdding(false); setVNo(""); setChallanId(""); setSeries(JOB_IN_SERIES.value);
+    setBoxes([]); setErr(null); setAdding(false); setVNo(""); setChallanId(""); setChallanIdTyped(false);
+    setSeries(JOB_IN_SERIES.value);
   }, [jobOut]);
+  useEffect(() => {
+    if (challanIdTyped) return;
+    const n = nextIdCall.data?.message;
+    if (n) setChallanId(String(n));
+  }, [nextIdCall.data, challanIdTyped]);
 
   useEffect(() => { setCNo(meta?.challan_no || ""); }, [jobOut, meta?.challan_no]);
   // Size comes back as it went out — fetched from the Job Out, still editable.
@@ -987,6 +999,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               <label className="mm-field">
                 <span className="mm-field-label">Challan ID</span>
                 <input className="mm-input" value={challanId} placeholder="e.g. 123"
+                  onChangeCapture={() => setChallanIdTyped(true)}
                   onChange={(e) => setChallanId(e.target.value)} />
                 {challanId.trim() && (
                   <span className="mm-field-hint">

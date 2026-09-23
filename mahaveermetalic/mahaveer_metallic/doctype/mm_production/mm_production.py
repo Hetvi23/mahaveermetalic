@@ -19,23 +19,39 @@ class MMProduction(Document):
 		self._enforce_tolerance()
 		self._assign_box_barcodes()
 
+	def _box_prefix(self):
+		"""What a box's code is built on: the challan ID this voucher is filed under, or the
+		voucher's own name when it raises no challan. The ID travels on flags — the challan
+		itself is raised after the boxes are numbered."""
+		cid = (self.flags.get("challan_id") or "").strip()
+		if not cid:
+			return self.name
+		from mahaveermetalic.mahaveer_metallic.api.challan import challan_id_name
+
+		return challan_id_name(
+			cid, self.flags.get("challan_series") or "Sales", self.posting_date
+		) or self.name
+
 	def _assign_box_barcodes(self):
 		"""Every produced box gets its own barcode — printed on the sticker and used by
 		Scan Box on the challan.
 
-		Format: THE VOUCHER'S OWN NUMBER AND THE BOX'S PLACE ON IT — voucher 267 carries
-		267.1, 267.2 … and 268 starts again at .1. The code used to be MM + yymmdd + a
-		running number out of a per-day counter, which said nothing about which voucher a
-		box belonged to and could not be known until the voucher was saved. This one can:
-		the operator types the voucher number, so the label printed while the boxes are
-		still being weighed already carries the code it will keep.
+		Format: THE CHALLAN THIS BOX GOES OUT ON, AND ITS PLACE ON IT —
+		MMUSC-2040-26/27.1, .2 … (Hetvi: "make it based on challan id"). The challan ID
+		names the book, the number in it and the year, so a 5 in the sales book and a 5 in
+		the job-in book can never scan as the same box. A voucher raising no challan — one
+		that goes to stock — falls back to its own number, as it did before.
+
+		Either way the code is known while the boxes are still being weighed: the ID is
+		typed (or suggested) on the voucher, so the label printed at the scale already
+		carries the code the box will keep.
 
 		A box that already has a code keeps it — stickers are stuck on boxes, and re-saving
 		a voucher must not renumber them. New rows continue past the highest number already
 		on the voucher rather than from their position, so deleting box 1 and adding another
 		cannot hand out a code a surviving box is already wearing.
 		"""
-		prefix = f"{self.name}."
+		prefix = f"{self._box_prefix()}."
 		# A NEW voucher arrives with the codes its screen already printed: each box is
 		# labelled the moment it is added, so its code is fixed then and cannot shift when
 		# an earlier box is deleted. Kept only when it is this voucher's own number and not

@@ -273,7 +273,23 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     setChallanSeries(jobWork ? "Job Challan" : DISPATCH_SERIES[0].value);
   }, [jobWork, seriesTouched]);
   const [challanId, setChallanId] = useState("");
+  /** Typed by hand? Until it is, the ID follows the book's own count. */
+  const [challanIdTyped, setChallanIdTyped] = useState(false);
   const [vdate, setVdate] = useState<string>(today());
+  /* THE BOOK'S OWN NEXT NUMBER, suggested. The box stickers are built from this ID, and a
+     blank one used to leave them reading PREVIEW-1 until somebody typed a number — a label
+     nobody can scan, stuck on a real box (Hetvi: "sticker issue with preview ... plan for
+     auto generation"). Each book counts on its own and restarts every financial year. */
+  const nextIdCall = useFrappeGetCall<{ message: string }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.next_challan_id",
+    { series: challanSeries, on: vdate },
+    `next-cid-${challanSeries}-${vdate}`,
+  );
+  useEffect(() => {
+    if (challanIdTyped) return;
+    const n = nextIdCall.data?.message;
+    if (n) setChallanId(String(n));
+  }, [nextIdCall.data, challanIdTyped]);
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
   const [boxes, setBoxes] = useState<BoxRow[]>([]);
@@ -390,28 +406,34 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const overProduced = inputWeight > 0 && totalNet > inputWeight;
   const shortBy = calc ? calc.short_by : r3(inputWeight - totalNet);
 
-  /** The box's own id: the voucher number and a running number on it — 267.1, 267.2 …
-   *  Left to the series, the voucher number is not known until it is saved, and a PREVIEW
-   *  code stands in.
-   *
-   *  MINTED ONCE, WHEN THE BOX IS ADDED, and after the highest code already on the voucher
+  /** WHAT A BOX'S CODE IS BUILT ON: the challan ID this voucher is filed under —
+   *  MMUSC-2040-26/27 — so a 5 in the sales book and a 5 in the job-in book can never scan
+   *  as the same box (Hetvi: "make it based on challan id"). A voucher that raises no
+   *  challan goes to stock and falls back to its own number. The server builds the same
+   *  prefix (MMProduction._box_prefix), so what is printed is what is saved. */
+  const seriesCode = DISPATCH_SERIES.find((t) => t.value === challanSeries)?.series ?? "MMUSC-";
+  // …but only when a challan is actually raised. Without an order the boxes go to stock,
+  // there is no challan to name them after, and the voucher's own number stands in.
+  const boxPrefix = order && challanId.trim()
+    ? challanIdFor(seriesCode, challanId, vdate)
+    : vNo.trim();
+
+  /** MINTED ONCE, WHEN THE BOX IS ADDED, and after the highest code already on the voucher
    *  — not from the row's position. The sticker prints the moment a box is added, so the
    *  code is on a box before the voucher is saved; by position, deleting box 2 turned the
-   *  labelled "267.3" into 267.2 on save and handed .3 to the next box too. The server
-   *  keeps the code it is sent (MMProduction._assign_box_barcodes). */
+   *  labelled ".3" into ".2" on save and handed .3 to the next box too. */
   const nextCode = () => {
-    const v = vNo.trim();
-    if (!v) return `PREVIEW-${boxes.length + 1}`;
+    if (!boxPrefix) return `PREVIEW-${boxes.length + 1}`;
     const top = boxes.reduce((m, b) => {
-      const n = b.code?.startsWith(`${v}.`) ? Number(b.code.slice(v.length + 1)) : 0;
+      const n = b.code?.startsWith(`${boxPrefix}.`) ? Number(b.code.slice(boxPrefix.length + 1)) : 0;
       return Number.isInteger(n) && n > m ? n : m;
     }, 0);
-    return `${v}.${top + 1}`;
+    return `${boxPrefix}.${top + 1}`;
   };
   /** A real code, as opposed to a PREVIEW stand-in: only these are sent to be kept. */
   const isRealCode = (c?: string) => !!c && !c.startsWith("PREVIEW-");
-  // Once a sticker carries the V.No, the V.No cannot change under it.
-  const vNoLocked = boxes.some((b) => isRealCode(b.code));
+  // Once a sticker carries the ID, what the code is built from cannot change under it.
+  const codesPrinted = boxes.some((b) => isRealCode(b.code));
 
   /** One box as a sticker — otherwise exactly the label that gets stuck on. */
   const stickerFor = (b: BoxRow, i: number) => ({
@@ -476,7 +498,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         pin: pin || undefined,
         voucher_no: vNo.trim() || undefined,
         challan_series: challanSeries,
-        challan_id: challanId.trim() || undefined,
+        challan_id: (order && challanId.trim()) || undefined,
       });
       // Auto print: only when the production actually raised a challan (i.e. it carried a
       // sales order). Without an order the goods went to inventory, so there is nothing to
@@ -562,8 +584,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 Blank leaves each to its series. */}
             <label className="mm-field">
               <span className="mm-field-label">V.No</span>
-              <input className="mm-input" value={vNo} placeholder="Auto (MMPROD)" readOnly={vNoLocked}
-                title={vNoLocked ? "Boxes are already labelled with this V.No — delete them to change it" : undefined}
+              <input className="mm-input" value={vNo} placeholder="Auto (MMPROD)"
+                readOnly={codesPrinted && !order}
+                title={codesPrinted && !order
+                  ? "Boxes are already labelled with this V.No — delete them to change it" : undefined}
                 onChange={(e) => setVNo(e.target.value)} />
             </label>
             {/* Company is what gets saved; search by party, select the company. */}
@@ -626,9 +650,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Challan ID</span>
+              {/* Suggested from the book's own count, and read-only once a box wears it:
+                  the stickers are printed from this. */}
               <input className="mm-input" value={challanId} disabled={!order}
+                readOnly={codesPrinted && !!order}
+                title={codesPrinted ? "Boxes are already labelled with this ID — delete them to change it" : undefined}
                 placeholder={order ? "e.g. 123" : "No order — goes to stock"}
-                onChange={(e) => setChallanId(e.target.value)} />
+                onChange={(e) => { setChallanId(e.target.value); setChallanIdTyped(true); }} />
               {order && challanId.trim() && (
                 <span className="mm-field-hint">
                   Saved as <b>{challanIdFor(
@@ -805,7 +833,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                   <tbody>
                     {boxes.map((b, i) => (
                       <tr key={i}>
-                        <td title={isRealCode(b.code) ? undefined : "Added before a V.No was typed — its code is given on save"}>
+                        <td title={isRealCode(b.code) ? undefined : "Added before the challan ID was known — its code is given on save"}>
                           {b.code || `PREVIEW-${i + 1}`}
                         </td>
                         <td className="mm-num">{b.gross.toLocaleString()}</td>

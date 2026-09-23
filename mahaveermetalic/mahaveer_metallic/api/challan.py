@@ -406,14 +406,10 @@ def _series_key(series, fallback):
 	return key
 
 
-def _challan_id(value, series_key, on=None):
-	"""A typed challan number, filed as the shop's book writes it: MMUJI-123-26/27.
-
-	The series code, the number, and the financial year of the challan date — so the same
-	123 can run again in another series or another year, and the ID says which book and
-	which year it came from. Blank returns None and the series numbers it as before.
-	Typing the full ID (MMUJI-123-26/27) instead of the number is taken as that number.
-	"""
+def challan_id_name(value, series_key, on=None):
+	"""The name a typed challan number is filed under — MMUJI-123-26/27 — without asking
+	whether it is free. A box sticker is printed from this long before the challan is
+	raised, so the naming and the availability check are separate things."""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot import financial_year
 
 	value = (value or "").strip()
@@ -424,11 +420,57 @@ def _challan_id(value, series_key, on=None):
 	whole = re.fullmatch(rf"{code}-(.+)-\d{{2}}/\d{{2}}", value, re.IGNORECASE)
 	if whole:
 		value = whole.group(1).strip()
-	name = f"{code}-{value}-{fy}"
+	return f"{code}-{value}-{fy}"
+
+
+def _challan_id(value, series_key, on=None):
+	"""A typed challan number, filed as the shop's book writes it: MMUJI-123-26/27.
+
+	The series code, the number, and the financial year of the challan date — so the same
+	123 can run again in another series or another year, and the ID says which book and
+	which year it came from. Blank returns None and the series numbers it as before.
+	Typing the full ID (MMUJI-123-26/27) instead of the number is taken as that number.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot import financial_year
+
+	name = challan_id_name(value, series_key, on)
+	if not name:
+		return None
 	taken = frappe.db.get_value("MM Sales Challan", name, ["name", "challan_type"], as_dict=True)
 	if taken:
 		frappe.throw(_("Challan ID {0} is already used by a {1} challan.").format(taken.name, taken.challan_type))
 	return name
+
+
+# Where each book starts its numbering. The shop's sales challan book is already past its
+# first two leaves (Hetvi: "challan id will come auto from 1 except for sales challan will
+# start from 3"), so its count begins at 3; every other book begins at 1.
+CHALLAN_ID_START = {"Sales": 3}
+
+
+@frappe.whitelist()
+def next_challan_id(series=None, on=None):
+	"""The next number in a book, for the financial year of `on`.
+
+	Each book counts on its own and RESTARTS EVERY YEAR — the ID carries the year
+	(MMUSC-2040-26/27), so last year's 5 and this year's 5 are different papers. Only the
+	IDs actually filed in that book and that year are counted; a number typed out of order
+	simply moves the count past it.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_lot.mm_lot import financial_year
+
+	key = _series_key(series, "Sales")
+	code = SERIES[key].split("-")[0]
+	fy = financial_year(frappe.utils.getdate(on or frappe.utils.today())).replace("-", "/")
+	highest = 0
+	for (name,) in frappe.db.sql(
+		"""select name from `tabMM Sales Challan` where name like %s""",
+		(f"{code}-%-{fy}",),
+	):
+		middle = name[len(code) + 1 : -len(fy) - 1]
+		if middle.isdigit():
+			highest = max(highest, int(middle))
+	return str(max(highest + 1, CHALLAN_ID_START.get(key, 1)))
 
 
 @frappe.whitelist()
@@ -2084,6 +2126,10 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	# attribution, but the goods have just come IN.
 	prod.flags.skip_dispatch_challan = True
 	prod.flags.manual_id = voucher_no
+	# The boxes are numbered off the Job In challan they come back on, which is raised
+	# below — the ID is already decided, so it travels with the production.
+	prod.flags.challan_series = challan_series
+	prod.flags.challan_id = (challan_id or "").strip() or None
 	prod.insert(ignore_permissions=True)
 	prod.submit()
 

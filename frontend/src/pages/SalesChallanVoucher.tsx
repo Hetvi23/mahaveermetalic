@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { X, Search, PackageSearch, Boxes, Printer } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
@@ -59,7 +59,19 @@ export default function SalesChallanVoucher() {
   const [challanNo, setChallanNo] = useState("");
   // The challan's own ID, typed by hand. Blank leaves it to the type's series.
   const [challanId, setChallanId] = useState("");
+  const [challanIdTyped, setChallanIdTyped] = useState(false);
   const [date, setDate] = useState(today());
+  /* The book's own next number, suggested (Hetvi: "challan id will come auto from 1 except
+     for sales challan will start from 3"). Each book counts on its own and restarts every
+     financial year; typing over it stops the suggestion. */
+  const nextIdCall = useFrappeGetCall<{ message: string }>(
+    `${API}.next_challan_id`, { series: challanType, on: date }, `next-cid-${challanType}-${date}`,
+  );
+  useEffect(() => {
+    if (challanIdTyped) return;
+    const n = nextIdCall.data?.message;
+    if (n) setChallanId(String(n));
+  }, [nextIdCall.data, challanIdTyped]);
   const [remark, setRemark] = useState("");
   const [deliveryBy, setDeliveryBy] = useState("");
   const [jobWork, setJobWork] = useState(false);
@@ -246,7 +258,8 @@ export default function SalesChallanVoucher() {
                 <span className="mm-muted" style={{ display: "block", whiteSpace: "nowrap" }}>{challanIdFor(CHALLAN_TYPES.find((t) => t.value === challanType)?.series ?? "MMUSC-", challanId, date)}</span>
               )}
             </span>
-            <input className="mm-input" value={challanId} onChange={(e) => setChallanId(e.target.value)}
+            <input className="mm-input" value={challanId}
+              onChange={(e) => { setChallanId(e.target.value); setChallanIdTyped(true); }}
               placeholder="e.g. 123" />
           </label>
           <label className="mm-field">
