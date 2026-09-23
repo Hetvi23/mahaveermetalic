@@ -434,7 +434,9 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                         <tr><td colSpan={6} className="mm-empty">Nothing is out with a worker.</td></tr>
                       )}
                       {jobOutRows.map((r) => (
-                        <tr key={r.name}
+                        // `line` only comes from the old roll-wise payload — kept so the
+                        // page stays sane against a server that has not restarted yet.
+                        <tr key={r.line || r.name}
                           className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
                           <td className="mm-job-date">{fmtDate(r.transaction_date) || "—"}</td>
                           <td title={r.challan_no || r.name}>{r.challan_no || r.name}</td>
