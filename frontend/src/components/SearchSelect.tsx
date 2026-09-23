@@ -103,8 +103,16 @@ export default function SearchSelect({
 		[options, q],
 	);
 	// Typing re-filters, so the highlight has to come back to the top or it points at
-	// whatever now happens to sit at that index.
-	useEffect(() => { setActive(0); }, [q, open]);
+	// whatever now happens to sit at that index. OPENING is different: the highlight starts
+	// on the value already chosen. It used to start at 0, so Enter — the key the box panel
+	// teaches for "next field", and the key that merely moves on — replaced the operator's
+	// bobbin with the first name in the list (Hetvi: "bobbin selection deselect thai jai
+	// che"). Enter on the chosen row now re-picks the same value, which changes nothing.
+	useEffect(() => {
+		if (!open || q) { setActive(0); return; }
+		const i = shown.findIndex((o) => o.value === value);
+		setActive(i > 0 ? i : 0);
+	}, [q, open, shown, value]);
 
 	function pick(v: string) {
 		onChange(v);
@@ -156,8 +164,10 @@ export default function SearchSelect({
 				}}
 				autoComplete="off"
 			/>
+			{/* The clear X is mouse-only: in the tab order it sat right after the input, so Tab
+			    then Enter or Space — an ordinary way through a form — wiped the value. */}
 			{value && !disabled && !noClear && (
-				<button type="button" className="mm-link-clear" title="Clear" aria-label="Clear"
+				<button type="button" className="mm-link-clear" tabIndex={-1} title="Clear" aria-label="Clear"
 					onMouseDown={(e) => e.preventDefault()} onClick={() => pick("")}>
 					<X size={14} />
 				</button>
@@ -216,7 +226,10 @@ export default function SearchSelect({
 					seed={dirty ? text.trim() : ""}
 					onClose={() => setQuickCreate(false)}
 					onCreated={(name) => {
-						if (onCreated) onCreated(name);
+						// The caller sets the value itself, but the box still has to come out of
+						// its search: without this it kept showing what was typed to find the
+						// master, which reads as "the new one did not take".
+						if (onCreated) { onCreated(name); setText(""); setDirty(false); setOpen(false); }
 						else pick(name);
 						setQuickCreate(false);
 					}}

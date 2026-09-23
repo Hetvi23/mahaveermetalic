@@ -397,7 +397,9 @@ export function challanPrintHtml(d: ChallanPrintData): string {
     .bobline { margin-top: 0.8mm; font-size: 10.5pt; }
     /* The value sits under the returns line, on its own, so it reads as the total of the
        paper rather than another column of the packing grid. */
-    .val { margin-top: 0.8mm; font-size: 10.5pt; text-align: right; }
+    /* Centred, not tucked against the right edge: on the Duplicate this line is what the
+       shop reads the copy for (Hetvi: "rates and amount should be in middle"). */
+    .val { margin-top: 0.8mm; font-size: 10.5pt; text-align: center; }
     .terms { margin-top: 2mm; font-size: 8.5pt; line-height: 1.4; }
     .sign { margin-top: auto; padding-top: 6mm; display: flex; justify-content: space-between;
             font-size: 11pt; font-weight: 700; }

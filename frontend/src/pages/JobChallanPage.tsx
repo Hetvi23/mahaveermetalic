@@ -62,6 +62,8 @@ type JobOutOrder = {
 
 type JobOutRow = {
   name: string; line?: string; challan_no?: string; transaction_date?: string;
+  /** The colours on the challan, and how many rolls carry them — the row is one CHALLAN. */
+  rolls?: string; roll_count?: number;
   party?: string; party_label?: string;
   /** The party and its company separately — `party_label` is the two run together. */
   party_name?: string; company_name?: string | null;
@@ -431,25 +433,25 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                       {!jobOutsCall.isLoading && jobOutRows.length === 0 && (
                         <tr><td colSpan={6} className="mm-empty">Nothing is out with a worker.</td></tr>
                       )}
-                      {jobOutRows.map((r, i) => (
-                        <tr key={r.line || `${r.name}-${i}`}
+                      {jobOutRows.map((r) => (
+                        <tr key={r.name}
                           className={againstJobOut === r.name ? "mm-job-row-picked" : ""}>
                           <td className="mm-job-date">{fmtDate(r.transaction_date) || "—"}</td>
                           <td title={r.challan_no || r.name}>{r.challan_no || r.name}</td>
                           <td>{r.party_label || r.party || "—"}</td>
-                          {/* The ROLL, at its own weight. This column used to carry the
-                              challan's comma-joined colours against the challan's total,
-                              so eleven rolls read as one line and named none of them. The roll
-                              id stays in the hover only — on screen it was noise to the floor. */}
-                          <td title={`${r.roll_no || ""}${r.cut ? ` · ${r.cut}` : ""}`}>
-                            <span className="mm-colour-name">{r.color_name || "—"}</span>
+                          {/* WHAT IS ON THE CHALLAN: its colours, and how many rolls carry
+                              them. A row is one Job Out — receiving has always answered the
+                              whole challan — so listing it once per roll only repeated the
+                              same challan and invited a second receipt against it. */}
+                          <td title={`${r.roll_count || 0} roll${r.roll_count === 1 ? "" : "s"}${r.cut ? ` · ${r.cut}` : ""}`}>
+                            <span className="mm-colour-name">{r.rolls || r.color_name || "—"}</span>
+                            {r.roll_count ? <span className="mm-suggest-meta"> {r.roll_count} roll{r.roll_count === 1 ? "" : "s"}</span> : null}
                           </td>
-                          {/* The roll's own weight, and nothing else. The challan-level
-                              "x of y due" repeated the same two figures on every roll of a
-                              challan and said nothing about the roll the line is for. */}
+                          {/* What is still with the worker on this challan — the figure the
+                              receipt is measured against, not one roll's share of it. */}
                           <td className="mm-num"
-                            title={`Challan ${r.challan_no || r.name}: ${kg(Number(r.outstanding_weight || 0))} of ${kg(Number(r.total_weight || 0))} kg still due`}>
-                            {kg(Number(r.weight || 0))}
+                            title={`Sent ${kg(Number(r.total_weight || 0))} kg · received ${kg(Number(r.received_weight || 0))} kg`}>
+                            {kg(Number(r.outstanding_weight ?? r.total_weight ?? 0))}
                           </td>
                           <td className="mm-num">
                             <button type="button"
@@ -1047,11 +1049,16 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
             <div className="mm-ji-returns">
               <span className="mm-ji-returns-lab">Applies to every box</span>
               <label className={`mm-ji-chip${boxReturn ? " mm-ji-chip-on" : ""}`}>
-                <input type="checkbox" checked={boxReturn} onChange={(e) => setBoxReturn(e.target.checked)} />
+                {/* Retro-applies, like Production's: these say "applies to every box", and
+                    a box keyed before the tick had no other way to be corrected — this
+                    sheet's box table carries no per-row R.Box / R.Bobbin. */}
+                <input type="checkbox" checked={boxReturn}
+                  onChange={(e) => { setBoxReturn(e.target.checked); setBoxes((p) => p.map((b) => ({ ...b, boxReturn: e.target.checked }))); }} />
                 <Package size={13} /> Box return
               </label>
               <label className={`mm-ji-chip${bobbinReturn ? " mm-ji-chip-on" : ""}`}>
-                <input type="checkbox" checked={bobbinReturn} onChange={(e) => setBobbinReturn(e.target.checked)} />
+                <input type="checkbox" checked={bobbinReturn}
+                  onChange={(e) => { setBobbinReturn(e.target.checked); setBoxes((p) => p.map((b) => ({ ...b, bobbinReturn: e.target.checked }))); }} />
                 <Disc3 size={13} /> Bobbin return
               </label>
             </div>

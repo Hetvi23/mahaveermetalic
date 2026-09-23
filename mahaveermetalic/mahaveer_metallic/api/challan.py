@@ -1078,11 +1078,21 @@ def job_report(party=None, from_date=None, to_date=None, company=None):
 	)
 
 	out = []
+	# THE BALANCE RUNS PER PARTY. It used to be one running total down the whole report, so
+	# with no party picked — the way the register is usually opened — the figure beside a
+	# worker's line had every other worker's movements folded into it. The same name on a
+	# dozen lines with a balance that belonged to nobody is what made the report unreadable
+	# (Hetvi: "Shreeji party are multiple reason dont know"). Each party now carries its own
+	# running weight and bobbin count; the totals below are unchanged, being sums.
+	bal = {}
 	bal_w = bal_b = 0.0
 	for r in rows:
 		sent = r.challan_type == "Job Out"
 		w = float(r.total_weight or 0)
 		b = float(r.bobbin_qty or 0)
+		mine = bal.setdefault(r.party, {"w": 0.0, "b": 0.0})
+		mine["w"] += w if sent else -w
+		mine["b"] += b if sent else -b
 		bal_w += w if sent else -w
 		bal_b += b if sent else -b
 		out.append({
@@ -1096,8 +1106,8 @@ def job_report(party=None, from_date=None, to_date=None, company=None):
 			"in_weight": 0.0 if sent else w,
 			"out_bobbin": b if sent else 0.0,
 			"in_bobbin": 0.0 if sent else b,
-			"balance_weight": round(bal_w, 3),
-			"balance_bobbin": round(bal_b, 3),
+			"balance_weight": round(mine["w"], 3),
+			"balance_bobbin": round(mine["b"], 3),
 		})
 
 	return {
@@ -1738,8 +1748,6 @@ def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=
 	rows = frappe.db.sql(
 		f"""
 		select c.name, c.challan_no, c.transaction_date, c.party, c.total_weight, c.total_box,
-			(select group_concat(distinct ci.color_name order by ci.color_name separator ', ')
-				from `tabMM Sales Challan Item` ci where ci.parent = c.name) as rolls,
 			coalesce((
 				select sum(ji.weight) from `tabMM Sales Challan Item` ji
 				join `tabMM Sales Challan` jc on jc.name = ji.parent
@@ -1762,21 +1770,31 @@ def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=
 		r["outstanding_weight"] = out
 		open_rows.append(r)
 
-	# …then expand each open challan into the rolls that went out on it.
-	by_challan = {r["name"]: r for r in open_rows}
-	roll_rows = []
-	if by_challan:
+	# ONE ROW PER CHALLAN (Hetvi: "job in should be challan wise not roll wise").
+	#
+	# This used to expand each open Job Out into one row per roll. Receiving was always
+	# challan-wise underneath — the arrow passes the CHALLAN to job_out_rolls and the receipt
+	# answers the whole Job Out — so the extra rows did nothing but repeat the same challan
+	# with the same party and the same C.No, light up together when one was picked, and
+	# invite the floor to receive the same Job Out once per roll. One Job Out on this site
+	# had collected eighteen separate Job Ins that way. The rolls are summarised on the row
+	# instead: their colours, and how many.
+	total = len(open_rows)
+	start = int(start or 0)
+	page_length = max(1, int(page_length or 10))
+	page = open_rows[start:start + page_length]
+
+	if page:
 		items = frappe.get_all(
 			"MM Sales Challan Item",
-			filters={"parent": ["in", list(by_challan)], "parenttype": "MM Sales Challan"},
-			fields=["name", "parent", "color_name", "cut", "weight", "qty_box", "roll_inventory"],
+			filters={"parent": ["in", [r["name"] for r in page]], "parenttype": "MM Sales Challan"},
+			fields=["parent", "color_name", "cut", "roll_inventory"],
 			order_by="parent asc, idx asc",
 			limit_page_length=0,
 		)
-		# One lookup for every roll on the page rather than one per line. The COLOUR comes
-		# from here too, not only the roll number: the challan line's `color_name` is a Link
-		# and `_valid_colour` leaves it blank for any shade not in MM Item Master, so the
-		# picker showed "—" for exactly the colours nobody had set up as an item.
+		# The COLOUR comes from the roll as well as the line: the line's `color_name` is a
+		# Link and `_valid_colour` leaves it blank for any shade not in MM Item Master, so
+		# the picker showed "—" for exactly the colours nobody had set up as an item.
 		inv_names = {i.roll_inventory for i in items if i.roll_inventory}
 		inv = {}
 		if inv_names:
@@ -1784,35 +1802,25 @@ def in_progress_job_outs(challan_date=None, challan_no=None, company=None, item=
 				x.name: x
 				for x in frappe.get_all(
 					"MM Roll Inventory", filters={"name": ["in", list(inv_names)]},
-					fields=["name", "roll_no", "color_name"],
+					fields=["name", "color_name"],
 				)
 			}
+		colours, cuts, counts = {}, {}, {}
 		for i in items:
-			c = by_challan[i.parent]
-			roll_rows.append({
-				# The Job Out is still the identity for receiving — a Job In answers the
-				# challan, not one roll of it — but the LINE is what the operator reads.
-				"name": c["name"],
-				"line": i.name,
-				"challan_no": c["challan_no"],
-				"transaction_date": c["transaction_date"],
-				"party": c["party"],
-				"total_weight": c["total_weight"],
-				"total_box": c["total_box"],
-				"received_weight": c["received_weight"],
-				"outstanding_weight": c["outstanding_weight"],
-				"color_name": i.color_name or (inv.get(i.roll_inventory) or {}).get("color_name"),
-				"cut": i.cut,
-				"roll_no": (inv.get(i.roll_inventory) or {}).get("roll_no"),
-				# This roll's own weight, which is what "roll wise" means.
-				"weight": round(frappe.utils.flt(i.weight), 3),
-				"qty_box": frappe.utils.flt(i.qty_box),
-			})
-
-	total = len(roll_rows)
-	start = int(start or 0)
-	page_length = max(1, int(page_length or 10))
-	page = roll_rows[start:start + page_length]
+			shade = i.color_name or (inv.get(i.roll_inventory) or {}).get("color_name")
+			seen = colours.setdefault(i.parent, [])
+			if shade and shade not in seen:
+				seen.append(shade)
+			if i.cut and not cuts.get(i.parent):
+				cuts[i.parent] = i.cut
+			counts[i.parent] = counts.get(i.parent, 0) + 1
+		for r in page:
+			shades = colours.get(r["name"], [])
+			r["rolls"] = ", ".join(shades)
+			# Kept for the voucher header, which names the colour being received.
+			r["color_name"] = shades[0] if shades else None
+			r["cut"] = cuts.get(r["name"])
+			r["roll_count"] = counts.get(r["name"], 0)
 
 	parties = {r["party"] for r in page if r.get("party")}
 	names, companies = {}, {}

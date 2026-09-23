@@ -283,6 +283,11 @@ export default function ProgramScreen() {
           {p.unfinished ? <span className="mm-state mm-state-unfinished">To cut</span> : <span className={stateClass(p.status)}>{p.status}</span>}
         </div>
         <div className="mm-prog-card-meta">
+          {/* The LOT it draws from, beside the cut and the weight (Hetvi: "program ma roll
+              ma item and lot and total weight"). The item is the colour named above; the
+              lot was the one thing the card never said, and two cards of the same colour
+              are told apart by nothing else. */}
+          {p.lot_id ? <>{p.lot_id} · </> : null}
           {p.cut || "—"} · {p.completed_batches ?? 0}/{p.total_batches ?? 0} batches ·{" "}
           {p.unfinished ? (
             "roll not yet picked"
@@ -818,8 +823,8 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
          // blind between them is picking blind between two lots.
          s.lotId || "no lot",
          s.perPatty > 0
-           ? `${s.batches} patty free · ${kg(s.perPatty)} kg each`
-           : `${s.batches} patty free · ${kg(s.weight)} kg`]
+           ? `${s.batches} patty free · ${kg(s.perPatty)} kg each · ${kg(s.weight)} kg total`
+           : `${s.batches} patty free · ${kg(s.weight)} kg`].filter(Boolean)
     ).join(" · ");
 
   return (

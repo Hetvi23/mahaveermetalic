@@ -953,6 +953,19 @@ function BoxDialog({
   const [quick, setQuick] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  /* "APPLIES TO EVERY BOX" HAS TO REACH THE BOX BEING KEYED. The seeds above run once, when
+     the panel mounts, so ticking Bobbin Return (all) with the panel already open changed
+     every row in the table and not the one in hand — which then carried its `false` to the
+     next box through `prev`, and to the one after that. That is the "returnable bobbin comes
+     zero, you do it three times and then it appears" (Hetvi). The header now writes through
+     to the open panel, and only when the header itself changes: a tick cleared here by hand
+     stays cleared. */
+  useEffect(() => {
+    if (edit) return;
+    setBoxReturn(defaultReturns.box);
+    setBobbinReturn(defaultReturns.bobbin);
+  }, [defaultReturns.box, defaultReturns.bobbin, edit]);
+
   // Selecting a bobbin fills the per-pcs weight from its master tare (editable after).
   useEffect(() => {
     if (bobbin && perPcs === "" && tareMap[bobbin]) setPerPcs(tareMap[bobbin]);
