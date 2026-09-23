@@ -21,7 +21,12 @@ const kg = (v?: number) => (v ?? 0).toLocaleString(undefined, { maximumFractionD
 const SHIFTS = ["Night", "Day"] as const;
 type ShiftView = "Day" | "Night" | "Combined";
 
-type Machine = { name: string; machine_no: string; machine_name?: string; cut?: string; closed?: number; active_programs?: number };
+type Machine = {
+  name: string; machine_no: string; machine_name?: string; cut?: string; active_programs?: number;
+  /** Closed is PER SHIFT — a machine shut for the night still runs the day. `closed` means
+   *  both, and is what a machine closed before this change carries. */
+  closed?: number; closed_day?: number; closed_night?: number;
+};
 type Program = {
   name: string; program_date?: string; customer_order?: string; roll_no?: string; shade?: string;
   machine_no?: string; shift?: string; cut?: string; status?: string; is_running?: number; closed?: number;
@@ -118,7 +123,10 @@ export default function ProgramScreen() {
    *  nobody's question — 9 patty of a colour is 6 this machine can run and 3 it cannot — so
    *  refreshing from a machine scopes the shelf to that machine's cut. */
   const [pattyScope, setPattyScope] = useState<{ machine: string; machineNo: string; cut: string } | null>(null);
-  const [closing, setClosing] = useState<Machine | null>(null);
+  const [closing, setClosing] = useState<{ machine: Machine; shift: string } | null>(null);
+  /** Closed for the shift whose column this is — not for the machine as a whole. */
+  const shutFor = (m: Machine, s: string) =>
+    !!(m.closed || (s === "Night" ? m.closed_night : m.closed_day));
   const [completing, setCompleting] = useState<Program | null>(null);
 
   const nav = useNavigate();
@@ -421,42 +429,49 @@ export default function ProgramScreen() {
                     <td className="mm-prog-mcell">
                       <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
                       <MachineCutInput machine={m.name} value={m.cut} onSaved={refresh} />
-                      {m.closed ? (
-                        <>
-                          <span className="mm-state mm-state-open">Not working</span>
-                          <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                            <button className="mm-mini mm-mini-ok" onClick={guard(() => reopen({ machine: m.name }))}><Power size={13} /> Reopen</button>
-                            <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run`}
-                              aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
-                              onClick={() => refreshPattyFor(m)}>
-                              <Search size={13} /> Patty
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                          {/* Narrows the shelf to THIS machine's cut. The shelf keeps itself
-                              current on its own — this is a filter, not a refresh. */}
-                          <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run${m.cut ? ` (cut ${m.cut})` : ""}`}
-                            aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
-                            onClick={() => refreshPattyFor(m)}>
-                            <Search size={13} /> Patty
-                          </button>
-                          <button className="mm-mini mm-mini-danger" onClick={() => setClosing(m)}><Power size={13} /> Close</button>
-                          {Object.values(byMachineShift[m.name] || {}).flat().length === 0 && (
-                            <button className="mm-mini" title="Remove this machine" onClick={guard(() => removeMachine({ machine: m.name }))}><Trash2 size={13} /></button>
-                          )}
-                        </div>
-                      )}
+                      {/* CLOSING BELONGS TO A SHIFT, so its button is in the shift's own
+                          column below. What stays here is the machine's own: its cut, the
+                          patty filter, and removing it. */}
+                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                        {/* Narrows the shelf to THIS machine's cut. The shelf keeps itself
+                            current on its own — this is a filter, not a refresh. */}
+                        <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run${m.cut ? ` (cut ${m.cut})` : ""}`}
+                          aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
+                          onClick={() => refreshPattyFor(m)}>
+                          <Search size={13} /> Patty
+                        </button>
+                        {Object.values(byMachineShift[m.name] || {}).flat().length === 0 && (
+                          <button className="mm-mini" title="Remove this machine" onClick={guard(() => removeMachine({ machine: m.name }))}><Trash2 size={13} /></button>
+                        )}
+                      </div>
                     </td>
                     {shiftCols.map((s) => {
                       const list = byMachineShift[m.name]?.[s] ?? [];
+                      const shut = shutFor(m, s);
                       return (
                         <td key={s} className="mm-prog-col">
                           <div className="mm-prog-shiftcell">
                             {list.map((p) => <ProgCard key={p.name} p={p} />)}
-                            {!m.closed && (
-                              <button className="mm-mini mm-prog-add" onClick={() => openAdd({ machine: m.name, shift: s })}><Plus size={13} /> Add program</button>
+                            {shut ? (
+                              <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
+                                <span className="mm-state mm-state-open">Not working</span>
+                                <button className="mm-mini mm-mini-ok"
+                                  title={`Reopen the ${s.toLowerCase()} shift on Machine ${m.machine_no}`}
+                                  onClick={guard(() => reopen({ machine: m.name, shift: s }))}>
+                                  <Power size={13} /> Reopen {s.toLowerCase()}
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button className="mm-mini mm-prog-add" onClick={() => openAdd({ machine: m.name, shift: s })}><Plus size={13} /> Add program</button>
+                                {/* This shift, not the machine: the night can stop while the
+                                    day keeps running. */}
+                                <button className="mm-mini mm-mini-danger"
+                                  title={`Close the ${s.toLowerCase()} shift on Machine ${m.machine_no} — the other shift keeps running`}
+                                  onClick={() => setClosing({ machine: m, shift: s })}>
+                                  <Power size={13} /> Close {s.toLowerCase()}
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -486,7 +501,10 @@ export default function ProgramScreen() {
           onAdded={refresh}
         />
       )}
-      {closing && <CloseMachineModal machine={closing} onClose={() => setClosing(null)} onDone={() => { setClosing(null); refresh(); }} />}
+      {closing && (
+        <CloseMachineModal machine={closing.machine} shift={closing.shift}
+          onClose={() => setClosing(null)} onDone={() => { setClosing(null); refresh(); }} />
+      )}
       {completing && (
         <ProgramCompleteDialog
           program={completing.name}
@@ -1008,8 +1026,14 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
 }
 
 /* ── Close machine (faulty) — revert by batches per program ─ */
-function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onClose: () => void; onDone: () => void }) {
-  const onMach = useFrappeGetCall<{ message: OnMachine[] }>(`${API}.programs_on_machine`, { machine: machine.name }, `pg-onmach-${machine.name}`);
+function CloseMachineModal({ machine, shift, onClose, onDone }: {
+  machine: Machine; shift: string; onClose: () => void; onDone: () => void;
+}) {
+  // Only this shift's programs: closing the night is not an occasion to hand back the
+  // day's batches, and the dialog used to list both.
+  const onMach = useFrappeGetCall<{ message: OnMachine[] }>(
+    `${API}.programs_on_machine`, { machine: machine.name, shift }, `pg-onmach-${machine.name}-${shift}`,
+  );
   const { call: close, loading } = useFrappePostCall(`${API}.close_machine`);
   const rows = onMach.data?.message ?? [];
   const [reverts, setReverts] = useState<Record<string, number>>({});
@@ -1025,6 +1049,7 @@ function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onC
     try {
       await close({
         machine: machine.name,
+        shift,
         reason: reason.trim() || undefined,
         reverts: rows.filter((r) => (reverts[r.name] || 0) > 0).map((r) => ({ program: r.name, batches: reverts[r.name] })),
       });
@@ -1036,14 +1061,14 @@ function CloseMachineModal({ machine, onClose, onDone }: { machine: Machine; onC
     <div className="mm-modal-scrim" onClick={onClose}>
       <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
-          <span className="mm-modal-title">Close Machine {machine.machine_no} (not working)</span>
+          <span className="mm-modal-title">Close Machine {machine.machine_no} · {shift} shift</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mm-modal-body">
           {onMach.isLoading ? (
             <p className="mm-muted">Loading…</p>
           ) : rows.length === 0 ? (
-            <p className="mm-empty">No programs on this machine — it will just be marked closed.</p>
+            <p className="mm-empty">Nothing running on this machine for the {shift.toLowerCase()} shift — it will just be marked closed for {shift.toLowerCase()}.</p>
           ) : (
             <>
               <p className="mm-page-sub" style={{ marginTop: 0 }}>For each program, how many batches to revert?</p>

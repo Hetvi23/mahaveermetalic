@@ -532,6 +532,31 @@ def _ensure_default_machines():
 		frappe.db.commit()
 
 
+SHIFTS = ("Day", "Night")
+
+
+def _shift_field(shift):
+	"""The field that closes ONE shift. A blank shift means the whole machine, which is
+	what the legacy `closed` flag says."""
+	s = (shift or "").strip().title()
+	return f"closed_{s.lower()}" if s in SHIFTS else None
+
+
+def machine_closed(machine, shift=None):
+	"""Is this machine closed for this shift? `closed` is the legacy whole-machine flag and
+	still closes both; each shift then has its own."""
+	row = frappe.db.get_value(
+		"MM Machine", machine, ["closed", "closed_day", "closed_night"], as_dict=True
+	) or {}
+	if frappe.utils.cint(row.get("closed")):
+		return True
+	f = _shift_field(shift)
+	if not f:
+		# No shift named: closed only if every shift is.
+		return all(frappe.utils.cint(row.get(f"closed_{x.lower()}")) for x in SHIFTS)
+	return bool(frappe.utils.cint(row.get(f)))
+
+
 @frappe.whitelist()
 def list_machines(branch=None):
 	"""Machines for the grid, each with its closed state and how many active programs
@@ -541,13 +566,18 @@ def list_machines(branch=None):
 	if branch:
 		filters["branch"] = branch
 	machines = frappe.get_all(
-		"MM Machine", filters=filters, fields=["name", "machine_no", "machine_name", "cut", "closed"],
+		"MM Machine", filters=filters,
+		fields=["name", "machine_no", "machine_name", "cut", "closed", "closed_day", "closed_night"],
 		order_by="cast(machine_no as unsigned) asc, machine_no asc",
 	)
 	for m in machines:
 		m["active_programs"] = frappe.db.count(
 			"MM Program", {"machine_no": m["name"], "docstatus": 1, "released": 0}
 		)
+		# A machine closed before this was per-shift reads as closed on both.
+		if frappe.utils.cint(m.get("closed")):
+			m["closed_day"] = m["closed_night"] = 1
+		m["closed"] = 1 if (frappe.utils.cint(m.get("closed_day")) and frappe.utils.cint(m.get("closed_night"))) else 0
 	return machines
 
 
@@ -592,12 +622,18 @@ def set_machine_cut(machine, cut=None):
 
 
 @frappe.whitelist()
-def programs_on_machine(machine):
+def programs_on_machine(machine, shift=None):
 	"""The active (not freed) programs currently sitting on a machine, with their batch
-	progress — so the Close dialog can ask, per program, how many batches to revert."""
+	progress — so the Close dialog can ask, per program, how many batches to revert.
+
+	Narrowed to ONE SHIFT when the caller names one: closing the night is not an occasion to
+	give back the day's batches."""
+	filters = {"machine_no": machine, "docstatus": 1, "released": 0}
+	if (shift or "").strip().title() in SHIFTS:
+		filters["shift"] = (shift or "").strip().title()
 	return frappe.get_all(
 		"MM Program",
-		filters={"machine_no": machine, "docstatus": 1, "released": 0},
+		filters=filters,
 		fields=["name", "roll_no", "shade", "cut", "shift", "status",
 			"total_batches", "completed_batches"],
 		order_by="shift asc, modified desc",
@@ -605,7 +641,7 @@ def programs_on_machine(machine):
 
 
 @frappe.whitelist()
-def close_machine(machine, reverts=None, reason=None):
+def close_machine(machine, reverts=None, reason=None, shift=None):
 	"""Mark a machine faulty / not-working. The Close dialog asks, for each program on
 	the machine, how many batches to revert; `reverts` carries those answers as
 	[{"program": name, "batches": n}, ...]. Reverting reduces a program's completed
@@ -619,6 +655,11 @@ def close_machine(machine, reverts=None, reason=None):
 	nothing is being reverted: closing an idle machine takes material from no one."""
 	if not frappe.db.exists("MM Machine", machine):
 		frappe.throw(_("Machine {0} not found.").format(machine))
+	# CLOSING IS PER SHIFT (Hetvi: "program ma night closed kariye tho day pan close thai jai
+	# che"). `closed` is one flag on the machine with no shift on it, so closing the night
+	# shut the day's column too — its programs greyed out and nothing could be planned on it.
+	# A shift closes on its own; the machine is closed when both are.
+	field = _shift_field(shift)
 	reverts = json.loads(reverts) if isinstance(reverts, str) else (reverts or [])
 	applied = []
 	for r in reverts:
@@ -636,17 +677,35 @@ def close_machine(machine, reverts=None, reason=None):
 		# `n` = batches to give back → new completed count = done − n. The program
 		# stays on the (closed) machine, unlike a picker revert.
 		applied.append(_save_batches(prog, max(0, int(row.completed_batches or 0) - int(n)), is_running=False))
-	frappe.db.set_value("MM Machine", machine, "closed", 1)
-	return {"machine": machine, "closed": True, "reverted": applied}
+	if field:
+		frappe.db.set_value("MM Machine", machine, field, 1)
+		both = all(
+			frappe.utils.cint(frappe.db.get_value("MM Machine", machine, f"closed_{x.lower()}"))
+			for x in SHIFTS
+		)
+		frappe.db.set_value("MM Machine", machine, "closed", 1 if both else 0)
+	else:
+		# No shift named — the whole machine, as before.
+		frappe.db.set_value("MM Machine", machine, {"closed": 1, "closed_day": 1, "closed_night": 1})
+	return {"machine": machine, "shift": (shift or "").strip().title() or None,
+		"closed": True, "reverted": applied}
 
 
 @frappe.whitelist()
-def reopen_machine(machine):
-	"""Reopen a machine so programs can be planned on it again."""
+def reopen_machine(machine, shift=None):
+	"""Reopen a machine — one shift, or the whole machine when no shift is named."""
 	if not frappe.db.exists("MM Machine", machine):
 		frappe.throw(_("Machine {0} not found.").format(machine))
-	frappe.db.set_value("MM Machine", machine, "closed", 0)
-	return {"machine": machine, "closed": False}
+	field = _shift_field(shift)
+	if field:
+		# The legacy flag closed both, so reopening one shift has to leave the other closed
+		# rather than silently reopening it.
+		if frappe.utils.cint(frappe.db.get_value("MM Machine", machine, "closed")):
+			frappe.db.set_value("MM Machine", machine, {"closed_day": 1, "closed_night": 1})
+		frappe.db.set_value("MM Machine", machine, {field: 0, "closed": 0})
+	else:
+		frappe.db.set_value("MM Machine", machine, {"closed": 0, "closed_day": 0, "closed_night": 0})
+	return {"machine": machine, "shift": (shift or "").strip().title() or None, "closed": False}
 
 
 @frappe.whitelist()
@@ -848,8 +907,13 @@ def create_program(
 	"""
 	if not source_cutting and not source_inward_item and not source_cuttings:
 		frappe.throw(_("Select a patty or an inventory roll to program."))
-	if machine_no and frappe.db.get_value("MM Machine", machine_no, "closed"):
-		frappe.throw(_("Machine {0} is closed. Reopen it before planning a program on it.").format(machine_no))
+	# Closed FOR THIS SHIFT: a machine shut for the night can still be planned for the day.
+	if machine_no and machine_closed(machine_no, shift):
+		frappe.throw(
+			_("Machine {0} is closed{1}. Reopen it before planning a program on it.").format(
+				machine_no, _(" for the {0} shift").format(shift) if shift else ""
+			)
+		)
 
 	# The machine's Cut (if set) is the authoritative cut for everything run on it.
 	machine_cut = frappe.db.get_value("MM Machine", machine_no, "cut") if machine_no else None
@@ -1055,8 +1119,13 @@ def create_unfinished_program(
 	"""
 	if not color and not roll_inventory:
 		frappe.throw(_("Enter a colour (or pick an inventory roll) to plan."))
-	if machine_no and frappe.db.get_value("MM Machine", machine_no, "closed"):
-		frappe.throw(_("Machine {0} is closed. Reopen it before planning a program on it.").format(machine_no))
+	# Closed FOR THIS SHIFT: a machine shut for the night can still be planned for the day.
+	if machine_no and machine_closed(machine_no, shift):
+		frappe.throw(
+			_("Machine {0} is closed{1}. Reopen it before planning a program on it.").format(
+				machine_no, _(" for the {0} shift").format(shift) if shift else ""
+			)
+		)
 
 	machine_cut = frappe.db.get_value("MM Machine", machine_no, "cut") if machine_no else None
 
