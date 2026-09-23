@@ -68,10 +68,12 @@ type Source = {
   /** Patty is split by LOT as well as cut — two lots of a colour are two materials, and
    *  the shelf now offers them separately, so the picker has to be able to honour that. */
   lotId: string; challan: string;
-  /** For an INVENTORY form: the ONE roll it is. A roll is a physical object with its own
-   *  weight, so it gets its own row and its own number rather than being summed into a
-   *  colour — see the grouping below. */
+  /** For an INVENTORY form: the rolls of that colour AND lot, counted together. Each is a
+   *  physical object with its own number, but the floor plans off the lot — four rows
+   *  reading "1038/1 … 1038/4" are one lot of four rolls (Hetvi: "5 rolls L9 + 9 rolls L9
+   *  should show 14 rolls L9"). `rollNo` is the first of them, for the hover. */
   rollNo: string;
+  rollNos: string[];
   rows: Roll[]; weight: number; perPatty: number; batches: number;
 };
 type Colour = {
@@ -586,29 +588,33 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
         // pick that quietly drew from a different lot of the same colour would make that
         // offer a lie. An inventory roll carries its lot too — it is the lot it came in on.
         const lotId = (r.lot_id || r.lot_number || "").trim();
-        // A roll is one physical object and is never folded into another: its own record
-        // is the key, so two rolls of the same colour, lot and weight stay two rows.
+        // Rolls fold together BY LOT. They used to be keyed on the inventory record, so a
+        // lot delivered as four rolls filled the picker with four near-identical lines that
+        // differed only in a roll number nobody plans by.
         const rollNo = kind === "inventory" ? (r.roll_no || "").trim() : "";
         const key = kind === "inventory"
-          ? `${c.colour}|roll|${r.roll_inventory}`
+          ? `${c.colour}|roll|${lotId}`
           : `${c.colour}|${r.state}|${cut}|${lotId}`;
         let s = forms.get(key);
         if (!s) {
           s = {
-            key, colour: c.colour, kind, cut, state: r.state, lotId, rollNo,
+            key, colour: c.colour, kind, cut, state: r.state, lotId, rollNo, rollNos: [],
             challan: (r.lot_challan || "").trim(),
             rows: [], weight: 0, perPatty: 0, batches: 0,
           };
           forms.set(key, s);
         }
         s.rows.push(r);
+        if (rollNo && !s.rollNos.includes(rollNo)) s.rollNos.push(rollNo);
         s.weight += Number(r.weight || 0);
         s.batches += Number(r.batches || 0);
         // Per-patty is a rate, not a total — carry the largest, the way the server does.
         s.perPatty = Math.max(s.perPatty, Number(r.per_patty || 0));
       }
       out.push(...[...forms.values()].sort(
-        (a, b) => rank(a.state) - rank(b.state) || a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }),
+        (a, b) => rank(a.state) - rank(b.state)
+          || a.lotId.localeCompare(b.lotId, undefined, { numeric: true })
+          || a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }),
       ));
     }
     return out;
@@ -831,9 +837,10 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
     (s.kind === "inventory"
       // Its number and its lot, because the rows are split by roll: three rows of the same
       // colour differ only in which roll they are, and a row that will not say which is a
-      // row that cannot be chosen between.
-      ? ["roll · any cut", s.rollNo || "no roll no",
-         s.lotId && s.lotId !== s.rollNo ? s.lotId : "",
+      // row that cannot be chosen between. Counted, not named: the lot is what is picked,
+      // and its roll numbers are on the hover.
+      ? [`${s.batches || s.rows.length} roll${(s.batches || s.rows.length) === 1 ? "" : "s"} · any cut`,
+         s.lotId || ((s.batches || s.rows.length) === 1 && s.rollNo ? `roll ${s.rollNo}` : "no lot"),
          `${kg(s.weight)} kg`].filter(Boolean)
       : [`${stateWord(s.state)} · ${s.cut ? `cut ${s.cut}` : "no cut recorded"}`,
          // The lot, because the rows are split by it: two otherwise identical lines of the
@@ -922,7 +929,12 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
                         shown at the moment of choosing rather than after. */}
                     <LotRemarkBadge remarks={pickRemarks(s)} label={s.colour} />
                   </span>
-                  <span className="mm-prog-card-meta">{formLabel(s)}</span>
+                  <span className="mm-prog-card-meta"
+                    title={s.kind === "inventory" && s.rollNos.length
+                      ? `Rolls: ${s.rollNos.join(", ")}`
+                      : undefined}>
+                    {formLabel(s)}
+                  </span>
                 </div>
               ))}
             </div>

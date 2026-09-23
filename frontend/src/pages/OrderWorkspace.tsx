@@ -678,12 +678,14 @@ export default function OrderWorkspace() {
     // re-saving an order that already has one shouldn't offer to raise it again. Edits to
     // an existing PO happen in the purchase table on the form.
     if (shorts.some((s, i) => s > 0 && !poForItem(prepared[i], prepared))) {
-      // Seed the dialog with the shortfall as the default purchase weight, plus whatever
-      // supplier/rate the line already carries.
+      // BLANK, with the shortfall shown beside it as what is missing (Hetvi: "purchase
+      // qty: put it blank"). Seeded with the shortfall, the box quietly bought exactly the
+      // shortage every time — and a typed 200 against a 90 short came back as 90, because
+      // the server clamps unless told the figure is deliberate.
       setPoDraft(
         Object.fromEntries(
           prepared.map((it, i) => [i, {
-            weight: shorts[i] > 0 ? shorts[i] : ("" as number | ""),
+            weight: "" as number | "",
             rate: poByIndex[i]?.rate ?? it.purchase_rate ?? "",
             vendor: poByIndex[i]?.vendor || it.purchase_party || "",
           }]),
@@ -730,14 +732,18 @@ export default function OrderWorkspace() {
           const short = shortageOf(item);
           if (short <= 0) return null;
           const po = poDraft[builderIndex] ?? {};
-          const wt = po.weight === undefined || po.weight === "" ? short : Number(po.weight) || 0;
+          // Blank means "not buying this now" — it used to mean "buy the shortfall", so a
+          // line left alone raised a PO nobody asked for.
+          const wt = po.weight === undefined || po.weight === "" ? 0 : Number(po.weight) || 0;
           if (wt <= 0) return null;
           return { idx, qty_kg: wt, rate: Number(po.rate) || 0, supplier: po.vendor || undefined };
         })
         .filter(Boolean);
       if (lines.length === 0) return;
       try {
-        await syncShortagePos({ sales_order: soName, lines: JSON.stringify(lines) });
+        // clamp_to_shortage=0, as the order's own purchase table already sends: 200 typed
+        // against a 90 shortfall is a deliberate 200, not a mis-keyed 90.
+        await syncShortagePos({ sales_order: soName, lines: JSON.stringify(lines), clamp_to_shortage: 0 });
       } catch { /* PO creation is non-fatal to the order save */ }
     }
 
@@ -1351,7 +1357,7 @@ export default function OrderWorkspace() {
                       // Covered lines are handled by the purchase table on the form.
                       if (short <= 0 || poForItem(it, poSheet)) return null;
                       const po = poDraft[i] ?? {};
-                      const wt = po.weight === undefined || po.weight === "" ? short : po.weight;
+                      const wt = po.weight ?? "";
                       const setPo = (patch: Partial<{ weight: number | ""; rate: number | ""; vendor: string }>) =>
                         setPoDraft((p) => ({ ...p, [i]: { weight: wt, rate: po.rate ?? "", vendor: po.vendor ?? "", ...patch } }));
                       return (
@@ -1360,6 +1366,7 @@ export default function OrderWorkspace() {
                           <td className="mm-num"><span className="mm-var-over">{short.toLocaleString()}</span></td>
                           <td className="mm-num">
                             <NumInput className="mm-input mm-input-compact mm-iw-num" value={wt} autoFocus={i === 0}
+                              placeholder={String(short)} title={`Short by ${short} kg — buy as much or as little as you like`}
                               onChange={(v) => setPo({ weight: v === "" ? "" : Number(v) })} />
                           </td>
                           <td className="mm-num">
