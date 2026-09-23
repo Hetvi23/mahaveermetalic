@@ -57,7 +57,14 @@ type ChallanVerify = {
  *  order, but it does not fulfil the sales order. 900 kg sold against 1,200 kg bought
  *  settles the sale at 910 and still leaves 290 kg to arrive — that 290 is ticked Stock
  *  and would otherwise be refused as an over-receipt on a 900 kg order. */
-type RollLine = { roll: string; qty: number | ""; weight: number | ""; stock?: boolean };
+type RollLine = {
+  roll: string; qty: number | ""; weight: number | ""; stock?: boolean;
+  /** Set by hand? Then the automatic surplus tick leaves this roll alone. */
+  stockTouched?: boolean;
+  /** A roll given to ANOTHER order than the row's — the surplus the shop hands to the
+   *  next customer waiting for this colour. It is not stock; it fulfils that order. */
+  order?: string;
+};
 
 /**
  * One line of the entry grid = one LOT.
@@ -570,6 +577,52 @@ export default function InwardWorkspace() {
     };
   }, [cartRow, rows, soByName]);
 
+  /* SURPLUS TICKS ITSELF. Whole rolls, in the order they were weighed: they fill the
+     order's outstanding need, and the first roll that would take it past that — and every
+     roll after it — is stock (Hetvi: "the rest 110 kgs automatically gets ticked as in
+     stock"). A roll handed to another order is neither. Only rolls nobody has touched are
+     moved: tick or untick one by hand and it stays as it was left, because the person
+     unloading can see things this arithmetic cannot. */
+  useEffect(() => {
+    if (cartRow === null || !cartBalance) return;
+    let room = cartBalance.order;
+    let changed = false;
+    const next = cartLines.map((l) => {
+      if (l.order) return l;                       // promised to another order
+      const w = Number(l.weight) || 0;
+      if (!w) return l;
+      const fits = w <= room + 0.0005;
+      if (fits) room -= w;
+      if (l.stockTouched) return l;
+      const want = !fits;
+      if (!!l.stock === want) return l;
+      changed = true;
+      return { ...l, stock: want };
+    });
+    if (changed) setCartLines(next);
+  }, [cartLines, cartBalance, cartRow]);
+
+  /** Rolls that ended up as surplus — the ones an order still waiting for this colour
+   *  could be given instead of sending them to stock. */
+  const cartSurplus = useMemo(
+    () => cartLines.filter((l) => l.stock && !l.order && (Number(l.weight) || 0) > 0),
+    [cartLines],
+  );
+
+  /** Hand the surplus to another order, whole rolls, until its own need is filled. The
+   *  rest stay surplus and are offered to the next order — "it can be done for multiple
+   *  orders as well until the qty is over consumed" (Hetvi). */
+  function assignSurplusTo(order: string, room: number) {
+    let left = room;
+    setCartLines((p) => p.map((l) => {
+      if (l.order || !l.stock) return l;
+      const w = Number(l.weight) || 0;
+      if (!w || w > left + 0.0005) return l;
+      left -= w;
+      return { ...l, order, stock: false, stockTouched: true };
+    }));
+  }
+
   /** The cart IS the row's roll list — saving replaces it, so reopening shows what is
    *  there and corrections are made in place rather than by adding duplicates. */
   function applyCart() {
@@ -580,6 +633,8 @@ export default function InwardWorkspace() {
       qty: l.qty === "" ? (Number(l.weight) > 0 ? 1 : "") : l.qty,
       weight: l.weight,
       stock: !!l.stock,
+      stockTouched: !!l.stockTouched,
+      order: l.order,
     }));
     setRow(cartRow, { lines: kept.length ? kept : [blankLine()] });
     setCartRow(null);
@@ -705,7 +760,8 @@ export default function InwardWorkspace() {
           cut: r.cut,
           qty_box: Number(l.qty) || 0,
           weight: Number(l.weight) || 0,
-          customer_order: r.customer_order || null,
+          // A roll handed to another order goes in on THAT order; the rest follow the row.
+          customer_order: l.order || r.customer_order || null,
           challan_number: r.challan_no.trim(),
         })),
       )
@@ -1201,6 +1257,38 @@ export default function InwardWorkspace() {
                   )}
                 </div>
               )}
+              {/* THE SURPLUS, AND WHO ELSE IS WAITING FOR IT. Once the row's order has what
+                  it asked for, the rolls past it tick Stock by themselves; any order still
+                  waiting for this colour can be given whole rolls out of that surplus,
+                  one order after another, until there is nothing left over. */}
+              {cartRow !== null && cartSurplus.length > 0 && (() => {
+                const surplusKg = cartSurplus.reduce((n, l) => n + (Number(l.weight) || 0), 0);
+                const mine = rows[cartRow].customer_order;
+                const waiting = pendingFor(rows[cartRow].color).filter((o) => o.sales_order !== mine);
+                return (
+                  <div className="mm-iw-cart-surplus">
+                    <span>
+                      <strong>{surplusKg.toLocaleString()} kg</strong> over what {mine || "this row"} is
+                      waiting for — {cartSurplus.length} roll{cartSurplus.length > 1 ? "s" : ""} ticked Stock.
+                    </span>
+                    {waiting.length > 0 && (
+                      <span className="mm-iw-cart-surplus-ask">
+                        Give it to an order instead?
+                        {waiting.map((o) => {
+                          const room = Number(o.required_weight || 0);
+                          return (
+                            <button type="button" key={o.sales_order} className="mm-mini"
+                              title={`Fill order ${o.sales_order} (${o.party_name || o.party || "—"}) with whole rolls, up to ${room} kg`}
+                              onClick={() => assignSurplusTo(o.sales_order, room)}>
+                              {o.sales_order} · {room.toLocaleString()} kg
+                            </button>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
               {cartLines.map((l, i) => (
                 <div className="mm-iw-cart-line" key={i}>
                   <span className="mm-iw-cart-no">{i + 1}</span>
@@ -1227,9 +1315,16 @@ export default function InwardWorkspace() {
                     title="Stock only — into inventory against the purchase order, not against the customer order">
                     <input type="checkbox" checked={!!l.stock}
                       aria-label={`Stock only, line ${i + 1}`}
-                      onChange={(e) => setCartLines((p) => p.map((x, j) => (j === i ? { ...x, stock: e.target.checked } : x)))} />
+                      onChange={(e) => setCartLines((p) => p.map((x, j) => (
+                        j === i ? { ...x, stock: e.target.checked, stockTouched: true, order: undefined } : x
+                      )))} />
                     Stock
                   </label>
+                  {l.order && (
+                    <span className="mm-pill mm-pill-ok" title={`This roll goes in on order ${l.order}`}>
+                      {l.order}
+                    </span>
+                  )}
                   {cartLines.length > 1 ? (
                     <button type="button" className="mm-icon-btn" title="Remove roll" aria-label={`Remove roll line ${i + 1}`}
                       onClick={() => setCartLines((p) => p.filter((_, j) => j !== i))}>
