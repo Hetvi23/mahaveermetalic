@@ -131,11 +131,19 @@ export default function ProgramScreen() {
     !!(m.closed || (s === "Night" ? m.closed_night : m.closed_day));
   const [completing, setCompleting] = useState<Program | null>(null);
 
+  /* NOTHING REFRESHES UNDER AN OPEN DIALOG. The board and the patty shelf re-read
+     themselves every 20 seconds, and while a dialog is up that re-render reaches into it:
+     around 300 attribute writes across its own inputs each time, which the floor sees as
+     the screen flickering (Hetvi: "when i select the finished patty the screen flickers").
+     Worse than the flash, the list it is picking from can move under the finger. The polls
+     resume the moment the dialog closes, and the dialog's own data is read when it opens. */
+  const dialogOpen = !!adding || !!closing || !!completing;
+
   const nav = useNavigate();
   const machinesCall = useFrappeGetCall<{ message: Machine[] }>(`${API}.list_machines`, undefined, "pg-machines");
   const progCall = useFrappeGetCall<{ message: Program[] }>(
     `${API}.threads_processing`, undefined, "pg-threads",
-    { refreshInterval: 20000, revalidateOnFocus: true, keepPreviousData: true },
+    { refreshInterval: dialogOpen ? 0 : 20000, revalidateOnFocus: !dialogOpen, keepPreviousData: true },
   );
   // Finished patty loads WITH the screen and keeps itself current. It used to wait for
   // Add-program to be pressed, which meant the one number the shelf exists to show was
@@ -146,7 +154,7 @@ export default function ProgramScreen() {
   // screen while it refetches, so nothing blinks.
   const pattyCall = useFrappeGetCall<{ message: Roll[] }>(
     `${API}.available_rolls`, { finished_only: 1 }, "pg-patties",
-    { refreshInterval: 20000, revalidateOnFocus: true, keepPreviousData: true },
+    { refreshInterval: dialogOpen ? 0 : 20000, revalidateOnFocus: !dialogOpen, keepPreviousData: true },
   );
 
   const { call: addMachine } = useFrappePostCall(`${API}.add_machine`);
