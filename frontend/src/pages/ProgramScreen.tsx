@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
@@ -10,6 +10,7 @@ import { toast } from "@/components/Toaster";
 import ProgramCompleteDialog from "@/components/ProgramCompleteDialog";
 import SearchSelect from "@/components/SearchSelect";
 import PattyTile from "@/components/PattyTile";
+import BoardInput from "@/components/BoardInput";
 import { filterPatties, groupPatties } from "@/utils/finishedPatty";
 import { todayISO, tomorrowISO, fmtDate } from "@/utils/localDate";
 
@@ -197,7 +198,21 @@ export default function ProgramScreen() {
     return out;
   };
 
-  const refresh = () => { void machinesCall.mutate(); void progCall.mutate(); void pattyCall.mutate(); };
+  /* ONE function whose identity never changes. It is handed to the memoised cut boxes
+     below, and a fresh arrow every render would defeat their memo and put the flicker
+     straight back — so the three calls are reached through a ref instead of captured. */
+  const callsRef = useRef({ machinesCall, progCall, pattyCall });
+  callsRef.current = { machinesCall, progCall, pattyCall };
+  const refresh = useCallback(() => {
+    const c = callsRef.current;
+    void c.machinesCall.mutate();
+    void c.progCall.mutate();
+    void c.pattyCall.mutate();
+  }, []);
+  /* Stable handlers for the three memoised inputs above the board — see BoardInput. */
+  const onNightDate = useCallback((e: ChangeEvent<HTMLInputElement>) => setNightDate(e.target.value), []);
+  const onDayDate = useCallback((e: ChangeEvent<HTMLInputElement>) => setDayDate(e.target.value), []);
+  const onPattyFilter = useCallback((e: ChangeEvent<HTMLInputElement>) => setPattyColourFilter(e.target.value), []);
   const openAdd = (preset: { machine?: string; shift?: string; colour?: string; lotId?: string }) => setAdding(preset);
   /** "What can THIS machine run, right now." Scopes the shelf to the machine's cut and
    *  re-pulls — the patty count moves as programs take patti. */
@@ -346,9 +361,9 @@ export default function ProgramScreen() {
         </div>
         <div className="mm-ws-toolbar-right">
           <label className="mm-field-inline"><span className="mm-field-label-inline">🌙 Night</span>
-            <input className="mm-input mm-input-compact" type="date" value={nightDate} onChange={(e) => setNightDate(e.target.value)} /></label>
+            <BoardInput className="mm-input mm-input-compact" type="date" value={nightDate} onChange={onNightDate} /></label>
           <label className="mm-field-inline"><span className="mm-field-label-inline">☀ Day</span>
-            <input className="mm-input mm-input-compact" type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} /></label>
+            <BoardInput className="mm-input mm-input-compact" type="date" value={dayDate} onChange={onDayDate} /></label>
           <div className="mm-seg">
             {(["Combined", "Night", "Day"] as ShiftView[]).map((s) => (
               <button key={s} className={`mm-seg-btn ${shiftView === s ? "mm-seg-btn-active" : ""}`} onClick={() => setShiftView(s)}>{s}</button>
@@ -384,8 +399,8 @@ export default function ProgramScreen() {
                   </button>
                 </span>
               )}
-              <input className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour or lot…"
-                value={pattyColourFilter} onChange={(e) => setPattyColourFilter(e.target.value)} />
+              <BoardInput className="mm-input mm-input-compact mm-patty-filter" placeholder="Filter colour or lot…"
+                value={pattyColourFilter} onChange={onPattyFilter} />
               {/* The rail shows what fits across; this is the same shelf with room for all
                   of it. The filter and the machine scope travel in the URL, so the page
                   opens on exactly what the shelf was showing. */}
@@ -533,7 +548,9 @@ export default function ProgramScreen() {
       ran go back to the patty shelf on their own. ── */
 
 /* ── Per-machine Cut (editable; every program on the machine inherits it) ── */
-function MachineCutInput({ machine, value, onSaved }: { machine: string; value?: string; onSaved: () => void }) {
+const MachineCutInput = memo(function MachineCutInput(
+  { machine, value, onSaved }: { machine: string; value?: string; onSaved: () => void },
+) {
   const [v, setV] = useState(value ?? "");
   const { call } = useFrappePostCall(`${API}.set_machine_cut`);
   const saved = value ?? "";
@@ -547,7 +564,7 @@ function MachineCutInput({ machine, value, onSaved }: { machine: string; value?:
       value={v} onChange={(e) => setV(e.target.value)} onBlur={() => void save()}
       onKeyDown={(e) => e.key === "Enter" && void save()} />
   );
-}
+});
 
 /* ── Add program — colour-first picker ──────────────────────────── */
 function AddProgramModal({ machines, presetMachine, presetShift, presetColour, presetLotId, dayDate, nightDate, onClose, onAdded }: {

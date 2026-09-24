@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ChangeEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { ArrowLeft, CheckCheck, RefreshCw, X } from "lucide-react";
 import PattyTile from "@/components/PattyTile";
+import BoardInput from "@/components/BoardInput";
 import { useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { filterPatties, groupPatties, type PattySource, type PattyTile as Tile } from "@/utils/finishedPatty";
 
@@ -32,6 +33,9 @@ export default function FinishedPattyPage() {
   const scopeCut = params.get("cut") || "";
   const scopeMachine = params.get("machine") || "";
   const [q, setQ] = useState(params.get("q") || "");
+  /* Stable, so the memoised filter box is not re-rendered by the 20-second re-read — see
+     BoardInput for what an identical re-render costs an input. */
+  const onFilter = useCallback((e: ChangeEvent<HTMLInputElement>) => setQ(e.target.value), []);
 
   const pattyCall = useFrappeGetCall<{ message: PattySource[] }>(
     `${API}.available_rolls`, { finished_only: 1 }, "fp-patties",
@@ -112,8 +116,8 @@ export default function FinishedPattyPage() {
             </button>
           </span>
         ) : null}
-        <input className="mm-input mm-input-compact mm-fp-filter" placeholder="Filter colour, lot or challan…"
-          value={q} onChange={(e) => setQ(e.target.value)} />
+        <BoardInput className="mm-input mm-input-compact mm-fp-filter" placeholder="Filter colour, lot or challan…"
+          value={q} onChange={onFilter} />
       </div>
 
       {pattyCall.isLoading && shown.length === 0 ? (
