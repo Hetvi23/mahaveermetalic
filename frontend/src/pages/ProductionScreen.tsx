@@ -273,23 +273,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     setChallanSeries(jobWork ? "Job Challan" : DISPATCH_SERIES[0].value);
   }, [jobWork, seriesTouched]);
   const [challanId, setChallanId] = useState("");
-  /** Typed by hand? Until it is, the ID follows the book's own count. */
-  const [challanIdTyped, setChallanIdTyped] = useState(false);
   const [vdate, setVdate] = useState<string>(today());
-  /* THE BOOK'S OWN NEXT NUMBER, suggested. The box stickers are built from this ID, and a
-     blank one used to leave them reading PREVIEW-1 until somebody typed a number — a label
-     nobody can scan, stuck on a real box (Hetvi: "sticker issue with preview ... plan for
-     auto generation"). Each book counts on its own and restarts every financial year. */
-  const nextIdCall = useFrappeGetCall<{ message: string }>(
-    "mahaveermetalic.mahaveer_metallic.api.challan.next_challan_id",
-    { series: challanSeries, on: vdate },
-    `next-cid-${challanSeries}-${vdate}`,
-  );
-  useEffect(() => {
-    if (challanIdTyped) return;
-    const n = nextIdCall.data?.message;
-    if (n) setChallanId(String(n));
-  }, [nextIdCall.data, challanIdTyped]);
+  /* THE CHALLAN ID IS TYPED, NOT SUGGESTED (Hetvi: "make challan id manual for now"). The
+     book's next number is still available server-side — api.challan.next_challan_id, which
+     counts each book on its own and restarts every financial year — so this can be filled
+     in again by reading it here. Note what a blank ID means: the box stickers are built
+     from it, so with nothing typed they fall back to the voucher number, and to PREVIEW
+     when that is blank too. */
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
   const [boxes, setBoxes] = useState<BoxRow[]>([]);
@@ -656,7 +646,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 readOnly={codesPrinted && !!order}
                 title={codesPrinted ? "Boxes are already labelled with this ID — delete them to change it" : undefined}
                 placeholder={order ? "e.g. 123" : "No order — goes to stock"}
-                onChange={(e) => { setChallanId(e.target.value); setChallanIdTyped(true); }} />
+                onChange={(e) => setChallanId(e.target.value)} />
               {order && challanId.trim() && (
                 <span className="mm-field-hint">
                   Saved as <b>{challanIdFor(

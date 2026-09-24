@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { X, Search, PackageSearch, Boxes, Printer } from "lucide-react";
 import PartyPicker from "@/components/PartyPicker";
@@ -59,19 +59,9 @@ export default function SalesChallanVoucher() {
   const [challanNo, setChallanNo] = useState("");
   // The challan's own ID, typed by hand. Blank leaves it to the type's series.
   const [challanId, setChallanId] = useState("");
-  const [challanIdTyped, setChallanIdTyped] = useState(false);
   const [date, setDate] = useState(today());
-  /* The book's own next number, suggested (Hetvi: "challan id will come auto from 1 except
-     for sales challan will start from 3"). Each book counts on its own and restarts every
-     financial year; typing over it stops the suggestion. */
-  const nextIdCall = useFrappeGetCall<{ message: string }>(
-    `${API}.next_challan_id`, { series: challanType, on: date }, `next-cid-${challanType}-${date}`,
-  );
-  useEffect(() => {
-    if (challanIdTyped) return;
-    const n = nextIdCall.data?.message;
-    if (n) setChallanId(String(n));
-  }, [nextIdCall.data, challanIdTyped]);
+  /* Typed, not suggested (Hetvi: "make challan id manual for now"). The book's next number
+     is still available as api.challan.next_challan_id if this is switched back on. */
   const [remark, setRemark] = useState("");
   const [deliveryBy, setDeliveryBy] = useState("");
   const [jobWork, setJobWork] = useState(false);
@@ -259,7 +249,7 @@ export default function SalesChallanVoucher() {
               )}
             </span>
             <input className="mm-input" value={challanId}
-              onChange={(e) => { setChallanId(e.target.value); setChallanIdTyped(true); }}
+              onChange={(e) => setChallanId(e.target.value)}
               placeholder="e.g. 123" />
           </label>
           <label className="mm-field">
