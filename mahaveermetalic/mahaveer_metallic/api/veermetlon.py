@@ -15,6 +15,8 @@ import frappe
 import requests
 from frappe import _
 
+from mahaveermetalic.mahaveer_metallic.doctype.mm_item_master.mm_item_master import colour_key
+
 
 def _settings():
 	s = frappe.get_single("MM Veermetlon Settings")
@@ -199,7 +201,9 @@ def _ensure_colours(names):
 		name = (name or "").strip()
 		if not name:
 			continue
-		key = "".join(name.lower().split())
+		# The one definition of "same colour" lives on the master, which now refuses a
+		# duplicate on insert as well — this pre-check just keeps the fetch quiet.
+		key = colour_key(name)
 		existing = frappe.db.sql(
 			"select name from `tabMM Item Master` where replace(lower(item_name), ' ', '') = %s limit 1",
 			(key,),
