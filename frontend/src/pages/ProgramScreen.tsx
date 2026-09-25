@@ -943,7 +943,11 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
             <div style={{ maxHeight: "230px", overflow: "auto", marginBottom: "1rem" }}>
               {shown.map((s) => (
                 <div key={s.key} className={`mm-pick-row ${sel?.key === s.key ? "mm-pick-row-active" : ""}`}
-                  onClick={() => { setSel(s); setOrder(""); }}>
+                  /* Picking CLOSES the list: the search box is what opens it, so emptying it
+                     puts the dialog back to showing just the row that was chosen (Hetvi:
+                     "once i select the roll/patty the suggestion list auto closes"). Nothing
+                     is lost — typing again, or clicking the chosen row, searches afresh. */
+                  onClick={() => { setSel(s); setOrder(""); setSearch(""); }}>
                   {/* Every row names its colour. It used to be printed once per group and
                       blanked on the rows beneath — which reads fine from the top, and not
                       at all once the list is scrolled, searched or you land mid-group:
