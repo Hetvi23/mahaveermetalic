@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Download, PackageCheck, Plus, ShoppingCart, X } from "lucide-react";
@@ -561,6 +561,42 @@ export default function InwardWorkspace() {
     [cartLines],
   );
 
+  /* WHAT THIS INWARD HAS ALREADY PROMISED AN ORDER.
+     `required_weight` comes off the server and counts only inwards already POSTED, so it
+     does not know about the rows being typed right now. Without that, handing surplus to
+     an order twice gave it twice its room: order 204, waiting for 500 kg, was handed two
+     500 kg rolls because the chip still read "500 kg" after the first (Hetvi: "if i
+     select that give to order 2 also then only 500 should be allocated there"). The
+     server totals the whole inward per order and would refuse it on Submit — but only
+     after the floor had entered the lot. */
+
+  /** Promised by every row EXCEPT the one open in the cart. A roll counts against the
+   *  order it was given to, or the row's own if it was given to nobody; stock fulfils
+   *  nothing and so counts against neither. */
+  const promisedElsewhere = useCallback(
+    (order: string) => {
+      if (!order) return 0;
+      return rows.reduce((sum, r, i) => {
+        if (i === cartRow) return sum;
+        return sum + (r.lines || []).reduce(
+          (s, l) => (!l.stock && (l.order || r.customer_order) === order ? s + (Number(l.weight) || 0) : s),
+          0,
+        );
+      }, 0);
+    },
+    [rows, cartRow],
+  );
+
+  /** Promised by the cart itself, to an order OTHER than the row's — the rolls handed
+   *  over by an earlier click on that order's chip. */
+  const promisedInCart = useCallback(
+    (order: string) =>
+      order
+        ? cartLines.reduce((s, l) => (l.order === order ? s + (Number(l.weight) || 0) : s), 0)
+        : 0,
+    [cartLines],
+  );
+
   /** What the row's order and its purchase order are still waiting for, so the operator
    *  ticking Stock can see WHY — the sale is settled, the purchase is not. */
   const cartBalance = useMemo(() => {
@@ -570,12 +606,14 @@ export default function InwardWorkspace() {
     if (!opt) return null;
     const po = poFor(opt, r.color);
     return {
-      order: Number(opt.required_weight ?? 0),
+      // Less whatever the inward's OTHER rows already promised this order. The cart's own
+      // rolls are not subtracted: the surplus tick below walks them itself.
+      order: Math.max(0, Number(opt.required_weight ?? 0) - promisedElsewhere(r.customer_order)),
       purchase: po ? Number(po.remaining_kg ?? 0) : Number(opt.purchase_remaining ?? 0),
       hasPO: !!po || (opt.purchase?.length ?? 0) > 0,
       settled: !!opt.stock_only,
     };
-  }, [cartRow, rows, soByName]);
+  }, [cartRow, rows, soByName, promisedElsewhere]);
 
   /* SURPLUS TICKS ITSELF. Whole rolls, in the order they were weighed: they fill the
      order's outstanding need, and the first roll that would take it past that — and every
@@ -1264,7 +1302,21 @@ export default function InwardWorkspace() {
               {cartRow !== null && cartSurplus.length > 0 && (() => {
                 const surplusKg = cartSurplus.reduce((n, l) => n + (Number(l.weight) || 0), 0);
                 const mine = rows[cartRow].customer_order;
-                const waiting = pendingFor(rows[cartRow].color).filter((o) => o.sales_order !== mine);
+                /* Each order's REMAINING room, not what the server last saw: an order
+                   already handed rolls in this inward has that much less to give to, and
+                   one that has been filled up drops off the offer entirely. */
+                const waiting = pendingFor(rows[cartRow].color)
+                  .filter((o) => o.sales_order !== mine)
+                  .map((o) => ({
+                    o,
+                    room: Math.max(
+                      0,
+                      Number(o.required_weight || 0)
+                        - promisedElsewhere(o.sales_order)
+                        - promisedInCart(o.sales_order),
+                    ),
+                  }))
+                  .filter((x) => x.room > 0);
                 return (
                   <div className="mm-iw-cart-surplus">
                     <span>
@@ -1274,16 +1326,13 @@ export default function InwardWorkspace() {
                     {waiting.length > 0 && (
                       <span className="mm-iw-cart-surplus-ask">
                         Give it to an order instead?
-                        {waiting.map((o) => {
-                          const room = Number(o.required_weight || 0);
-                          return (
-                            <button type="button" key={o.sales_order} className="mm-mini"
-                              title={`Fill order ${o.sales_order} (${o.party_name || o.party || "—"}) with whole rolls, up to ${room} kg`}
-                              onClick={() => assignSurplusTo(o.sales_order, room)}>
-                              {o.sales_order} · {room.toLocaleString()} kg
-                            </button>
-                          );
-                        })}
+                        {waiting.map(({ o, room }) => (
+                          <button type="button" key={o.sales_order} className="mm-mini"
+                            title={`Fill order ${o.sales_order} (${o.party_name || o.party || "—"}) with whole rolls, up to ${room} kg`}
+                            onClick={() => assignSurplusTo(o.sales_order, room)}>
+                            {o.sales_order} · {room.toLocaleString()} kg
+                          </button>
+                        ))}
                       </span>
                     )}
                   </div>
