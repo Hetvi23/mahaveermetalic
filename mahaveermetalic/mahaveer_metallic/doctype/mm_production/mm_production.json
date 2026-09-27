@@ -23,6 +23,7 @@
   "batch_no",
   "status",
   "job_work_flag",
+  "to_inventory",
   "box_return",
   "bobbin_return",
   "section_bobbins",
@@ -139,6 +140,13 @@
    "label": "Job Work"
   },
   {
+   "fieldname": "to_inventory",
+   "fieldtype": "Check",
+   "label": "Stock Only (No Dispatch Challan)",
+   "default": "0",
+   "description": "Keep this production in finished-goods stock instead of dispatching it. No sales challan is raised; the boxes stay in inventory and go out later on a Sales Challan Voucher that picks them."
+  },
+  {
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "label": "Batch No"
@@ -163,7 +171,7 @@
    "fieldtype": "Table",
    "label": "Boxes",
    "options": "MM Production Box",
-   "description": "One row per produced box: gross, bobbin (pcs \u00d7 per-pcs wt), box tare and net."
+   "description": "One row per produced box: gross, bobbin (pcs × per-pcs wt), box tare and net."
   },
   {
    "fieldname": "bobbins",
@@ -197,7 +205,7 @@
    "label": "Input Weight (Kg)",
    "precision": 3,
    "read_only": 1,
-   "description": "Thread/patty weight sent in from Program \u2014 the baseline for variance."
+   "description": "Thread/patty weight sent in from Program — the baseline for variance."
   },
   {
    "fieldname": "gross_weight",
@@ -224,7 +232,7 @@
    "label": "Net Weight (Kg)",
    "precision": 3,
    "read_only": 1,
-   "description": "Auto: Gross \u2212 Bobbin \u2212 Box (sum of boxes)."
+   "description": "Auto: Gross − Bobbin − Box (sum of boxes)."
   },
   {
    "fieldname": "section_variance",
@@ -237,7 +245,7 @@
    "label": "Variance (%)",
    "precision": 2,
    "read_only": 1,
-   "description": "Auto: (Net \u2212 Input) \u00f7 Input \u00d7 100."
+   "description": "Auto: (Net − Input) ÷ Input × 100."
   },
   {
    "fieldname": "pin_override",
@@ -268,7 +276,7 @@
    "label": "Closed",
    "read_only": 1,
    "default": "0",
-   "description": "Leftover closed out \u2014 no further material is added to this record."
+   "description": "Leftover closed out — no further material is added to this record."
   },
   {
    "fieldname": "close_mode",
@@ -297,7 +305,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-12 17:18:18.864989",
+ "modified": "2026-09-27 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Production",

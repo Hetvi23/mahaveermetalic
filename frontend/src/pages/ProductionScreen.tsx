@@ -210,6 +210,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const { call: fetchChallan } = useFrappePostCall<{ message: ChallanPrintData | null }>(
     "mahaveermetalic.mahaveer_metallic.api.challan.challan_for_production",
   );
+  // A stock-only production raises no challan, so its labels come off its own boxes. Same
+  // shape as challan_for_print, so the sticker builder takes it unchanged.
+  const { call: fetchBoxLabels } = useFrappePostCall<{ message: ChallanPrintData | null }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.production_box_labels",
+  );
   const { call: partyFlags } = useFrappePostCall<{ message: { party: string | null; is_job_work: number } }>(
     "mahaveermetalic.mahaveer_metallic.api.party.party_flags",
   );
@@ -255,6 +260,12 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const [deliveryBy, setDeliveryBy] = useState("");
   const [shift, setShift] = useState<string>(program.shift || "Day");
   const [jobWork, setJobWork] = useState<boolean>(!!program.job_work_flag);
+  /** PRODUCED INTO STOCK, NOT OUT THE DOOR. Submitting a production already puts the boxes
+   *  into finished-goods stock; naming a party then raised a challan and SUBMITTED it, which
+   *  took them straight back out — so everything made was dispatched the moment it was made.
+   *  Ticked, no challan is raised and the boxes wait in inventory for a Sales Challan
+   *  Voucher to pick them (Hetvi: "there should be an option of adding it in stock"). */
+  const [toStock, setToStock] = useState(false);
   const [batchNo, setBatchNo] = useState("");
   // Typed by hand, never suggested: the voucher's own number, and the book and number of
   // the challan it raises. Blank leaves each to its series.
@@ -401,10 +412,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
    *  as the same box (Hetvi: "make it based on challan id"). A voucher that raises no
    *  challan goes to stock and falls back to its own number. The server builds the same
    *  prefix (MMProduction._box_prefix), so what is printed is what is saved. */
+  /** Is this voucher raising a dispatch challan? Only then is there a book, a challan ID,
+   *  or a challan for the boxes to be named after. */
+  const challanActive = !!order && !toStock;
   const seriesCode = DISPATCH_SERIES.find((t) => t.value === challanSeries)?.series ?? "MMUSC-";
   // …but only when a challan is actually raised. Without an order the boxes go to stock,
   // there is no challan to name them after, and the voucher's own number stands in.
-  const boxPrefix = order && challanId.trim()
+  const boxPrefix = challanActive && challanId.trim()
     ? challanIdFor(seriesCode, challanId, vdate)
     : vNo.trim();
 
@@ -488,7 +502,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         pin: pin || undefined,
         voucher_no: vNo.trim() || undefined,
         challan_series: challanSeries,
-        challan_id: (order && challanId.trim()) || undefined,
+        challan_id: (challanActive && challanId.trim()) || undefined,
+        to_inventory: toStock ? 1 : 0,
       });
       // Auto print: only when the production actually raised a challan (i.e. it carried a
       // sales order). Without an order the goods went to inventory, so there is nothing to
@@ -499,7 +514,22 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
       // above read PREVIEW-1, PREVIEW-2 …: the code is minted on submit, so a label
       // printed before this point cannot be scanned off a box.
       const prod = (res as { message?: { production?: string } })?.message?.production;
-      if (prod) {
+      if (prod && toStock) {
+        // Nothing was dispatched, so there is no challan to print — but the boxes are real
+        // and are sitting in stock, and a box that reaches the rack without its barcode
+        // cannot be picked onto a challan later. So the labels still print, read off the
+        // production's own boxes where the codes were just minted.
+        try {
+          const c = await fetchBoxLabels({ production: prod });
+          const labels = c?.message ? stickersFromChallan(c.message, { batch: batchNo, operator }) : [];
+          if (labels.length && !printBoxStickers(labels)) {
+            downloadBoxStickers(labels, `barcodes-${prod}`);
+            toast("Added to stock. The print pop-up was blocked — the barcodes were saved as a file instead.");
+          }
+        } catch (e) {
+          toast(`Added to stock, but printing the barcodes failed — ${extractErrorMessage(e)}`, "error");
+        }
+      } else if (prod) {
         try {
           const c = await fetchChallan({ production: prod });
           if (c?.message) {
@@ -565,6 +595,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field mm-field-inline">
               <input type="checkbox" checked={jobWork} onChange={(e) => { setJobWork(e.target.checked); setJobWorkTouched(true); }} /> <span className="mm-field-label">Is Job Work?</span>
+            </label>
+            <label className="mm-field mm-field-inline"
+              title="Keep this production in stock instead of dispatching it — no challan is raised, and the boxes go out later on a Sales Challan Voucher">
+              <input type="checkbox" checked={toStock} onChange={(e) => setToStock(e.target.checked)} />
+              <span className="mm-field-label">Add to stock</span>
             </label>
           </div>
 
@@ -634,20 +669,20 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             <label className="mm-field">
               <span className="mm-field-label">Challan Type</span>
               <SearchSelect noClear value={challanSeries} onChange={(v) => { setChallanSeries(v); setSeriesTouched(true); }}
-                disabled={!order}
-                placeholder={order ? "Sales Chalan" : "No order — goes to stock"}
+                disabled={!challanActive}
+                placeholder={challanActive ? "Sales Chalan" : toStock ? "Added to stock" : "No order — goes to stock"}
                 options={DISPATCH_SERIES.map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Challan ID</span>
               {/* Suggested from the book's own count, and read-only once a box wears it:
                   the stickers are printed from this. */}
-              <input className="mm-input" value={challanId} disabled={!order}
-                readOnly={codesPrinted && !!order}
+              <input className="mm-input" value={challanId} disabled={!challanActive}
+                readOnly={codesPrinted && challanActive}
                 title={codesPrinted ? "Boxes are already labelled with this ID — delete them to change it" : undefined}
-                placeholder={order ? "e.g. 123" : "No order — goes to stock"}
+                placeholder={challanActive ? "e.g. 123" : toStock ? "Added to stock" : "No order — goes to stock"}
                 onChange={(e) => setChallanId(e.target.value)} />
-              {order && challanId.trim() && (
+              {challanActive && challanId.trim() && (
                 <span className="mm-field-hint">
                   Saved as <b>{challanIdFor(
                     DISPATCH_SERIES.find((t) => t.value === challanSeries)?.series ?? "MMUSC-",

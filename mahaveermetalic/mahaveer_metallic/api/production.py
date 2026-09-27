@@ -601,6 +601,7 @@ def create_production(
 	voucher_no=None,
 	challan_series=None,
 	challan_id=None,
+	to_inventory=0,
 ):
 	"""Submit handler: wind a program's threads into a completed MM Production voucher.
 
@@ -794,6 +795,9 @@ def create_production(
 	# production, so the book and number it is written in have to travel with the document.
 	prod.flags.challan_series = challan_key
 	prod.flags.challan_id = (challan_id or "").strip() or None
+	# Produced into stock rather than dispatched: no challan is raised on submit, and the
+	# boxes wait in inventory to be picked onto one later.
+	prod.to_inventory = 1 if int(to_inventory or 0) else 0
 	prod.insert(ignore_permissions=True)
 	prod.submit()
 

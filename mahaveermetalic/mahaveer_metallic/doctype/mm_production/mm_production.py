@@ -23,7 +23,10 @@ class MMProduction(Document):
 		"""What a box's code is built on: the challan ID this voucher is filed under, or the
 		voucher's own name when it raises no challan. The ID travels on flags — the challan
 		itself is raised after the boxes are numbered."""
-		cid = (self.flags.get("challan_id") or "").strip()
+		# A stock-only voucher raises no challan, so there is no challan ID for its boxes to
+		# be named after — they carry the voucher's own number, exactly as an order-less
+		# production always has.
+		cid = "" if self.to_inventory else (self.flags.get("challan_id") or "").strip()
 		if not cid:
 			return self.name
 		from mahaveermetalic.mahaveer_metallic.api.challan import challan_id_name
@@ -228,6 +231,14 @@ class MMProduction(Document):
 		register instead of disappearing into stock. A voucher naming no party raises
 		nothing — there is nobody to address it to."""
 		if not self.party:
+			return
+		# STOCK ONLY: produced now, dispatched later. _add_to_inventory has already put the
+		# boxes into finished-goods stock; raising the challan here would submit it and take
+		# them straight back out again, which is what "goes out the moment it is made" meant
+		# before this tick existed (Hetvi: "in the production there should be an option of
+		# adding it in stock"). The boxes wait in inventory for a Sales Challan Voucher to
+		# pick them — that is what api.challan.available_boxes offers.
+		if self.to_inventory:
 			return
 		# A JOB IN production is material coming BACK from a worker, not going out to the
 		# customer. It carries the order so the receipt is attributed correctly, but raising
