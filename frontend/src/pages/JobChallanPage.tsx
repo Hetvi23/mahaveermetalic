@@ -780,6 +780,15 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     for (const c of jiCompanies) if (c.party && !seen.has(c.party)) seen.set(c.party, c.party_name || c.party);
     return [...seen].map(([value, label]) => ({ value, label }));
   }, [jiCompanies]);
+  /** THE COMPANIES OF THE CHOSEN PARTY, and every company until one is chosen. A company
+   *  belongs to exactly one party (MM Party Company sits under MM Party Master), so once
+   *  the party is named the rest are not choices — they are other firms' companies, and
+   *  picking one files the receipt against a company its party does not own (Hetvi: "on
+   *  party selection company should be filtered"). */
+  const jiCompanyOpts = useMemo(
+    () => (jiParty ? jiCompanies.filter((c) => c.party === jiParty) : jiCompanies),
+    [jiCompanies, jiParty],
+  );
   // The book the Job In challan is written in: its own unless another series is picked.
   // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
   const [series, setSeries] = useState(JOB_IN_SERIES.value);
@@ -1058,7 +1067,14 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <span className="mm-field-label">Party</span>
                 <SearchSelect
                   value={jiParty}
-                  onChange={setJiParty}
+                  onChange={(v) => {
+                    setJiParty(v);
+                    // A company already picked under the previous party is not this one's.
+                    // Left standing it would submit a mismatched pair, and the box would
+                    // still be showing a name that no longer belongs to anything.
+                    setJiCompany((c) =>
+                      c && !jiCompanies.some((x) => x.company_name === c && x.party === v) ? "" : c);
+                  }}
                   options={jiParties.map((p) => ({ value: p.value, label: p.label }))}
                   placeholder={
                     picked?.customer_name || picked?.customer || meta?.party_name
@@ -1071,7 +1087,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <SearchSelect
                   value={jiCompany}
                   onChange={setJiCompany}
-                  options={jiCompanies.map((c) => ({
+                  options={jiCompanyOpts.map((c) => ({
                     value: c.company_name,
                     label: c.company_name,
                     // Which party owns this company — two firms can run companies that read
@@ -1079,7 +1095,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                     meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
                   }))}
                   placeholder={(picked ? picked.company_name : meta?.company_name) || "Company"}
-                  emptyText="No company matches." />
+                  emptyText={jiParty ? "That party has no other company on file." : "No company matches."} />
               </label>
               {/* Who brought it back — the same question a dispatch asks, read the other
                   way round, so it is the same box with the same suggestions. */}
