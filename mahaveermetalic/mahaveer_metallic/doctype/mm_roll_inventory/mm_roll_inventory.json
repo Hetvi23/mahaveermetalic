@@ -1,133 +1,205 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "hash",
-  "creation": "2026-05-03 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "field_order": [
-    "roll_no",
-    "lot_number",
-    "branch",
-    "location",
-    "supplier",
-    "color_name",
-    "item_type",
-    "stock_weight",
-    "stock_box",
-    "reserved_weight",
-    "issued_weight",
-    "available_weight",
-    "reorder_weight"
-  ],
-  "fields": [
-    {
-      "fieldname": "roll_no",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Roll No"
-    },
-    {
-      "fieldname": "lot_number",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Lot Number"
-    },
-    {
-      "fieldname": "location",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Location",
-      "options": "MM Location Master",
-      "reqd": 1
-    },
-    {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "in_list_view": 1,
-      "label": "Branch",
-      "options": "MM Branch"
-    },
-    {
-      "fieldname": "supplier",
-      "fieldtype": "Link",
-      "label": "Supplier",
-      "options": "MM Vendor Master"
-    },
-    {
-      "fieldname": "color_name",
-      "fieldtype": "Data",
-      "in_list_view": 1,
-      "label": "Color",
-      "reqd": 1
-    },
-    {
-      "fieldname": "item_type",
-      "fieldtype": "Link",
-      "label": "Item Type",
-      "options": "MM Item Master"
-    },
-    {
-      "fieldname": "stock_weight",
-      "fieldtype": "Float",
-      "in_list_view": 1,
-      "label": "Stock (Weight)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "stock_box",
-      "fieldtype": "Float",
-      "label": "Stock (Box)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "reserved_weight",
-      "fieldtype": "Float",
-      "label": "Reserved Stock (Weight)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "issued_weight",
-      "fieldtype": "Float",
-      "label": "Issued Stock (Weight)",
-      "precision": 3,
-      "default": "0"
-    },
-    {
-      "fieldname": "available_weight",
-      "fieldtype": "Float",
-      "label": "Available Stock (Weight)",
-      "precision": 3,
-      "read_only": 1
-    },
-    {
-      "fieldname": "reorder_weight",
-      "fieldtype": "Float",
-      "label": "Reorder Level (Weight)",
-      "precision": 3,
-      "default": "0",
-      "description": "Flag as low stock on the dashboard when available falls below this. 0 = no alert."
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "links": [],
-  "modified": "2026-05-03 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Mahaveer Metallic",
-  "name": "MM Roll Inventory",
-  "owner": "Administrator",
-  "permissions": [
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "print": 1, "email": 1, "report": 1, "share": 1},
-    {"role": "MM Inventory Manager", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Operations", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Production", "read": 1, "export": 1, "print": 1, "report": 1},
-    {"role": "MM Sales Team", "read": 1, "export": 1, "print": 1, "report": 1}
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-05-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "roll_no",
+  "lot_number",
+  "branch",
+  "location",
+  "supplier",
+  "color_name",
+  "item_type",
+  "stock_weight",
+  "stock_box",
+  "reserved_weight",
+  "issued_weight",
+  "available_weight",
+  "reorder_weight",
+  "section_mapping",
+  "mapped_inward",
+  "mapped_weight"
+ ],
+ "fields": [
+  {
+   "fieldname": "roll_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Roll No"
+  },
+  {
+   "fieldname": "lot_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Lot Number"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Location",
+   "options": "MM Location Master",
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Branch",
+   "options": "MM Branch"
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "MM Vendor Master"
+  },
+  {
+   "fieldname": "color_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Color",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_type",
+   "fieldtype": "Link",
+   "label": "Item Type",
+   "options": "MM Item Master"
+  },
+  {
+   "fieldname": "stock_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Stock (Weight)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "stock_box",
+   "fieldtype": "Float",
+   "label": "Stock (Box)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "reserved_weight",
+   "fieldtype": "Float",
+   "label": "Reserved Stock (Weight)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "issued_weight",
+   "fieldtype": "Float",
+   "label": "Issued Stock (Weight)",
+   "precision": 3,
+   "default": "0"
+  },
+  {
+   "fieldname": "available_weight",
+   "fieldtype": "Float",
+   "label": "Available Stock (Weight)",
+   "precision": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reorder_weight",
+   "fieldtype": "Float",
+   "label": "Reorder Level (Weight)",
+   "precision": 3,
+   "default": "0",
+   "description": "Flag as low stock on the dashboard when available falls below this. 0 = no alert."
+  },
+  {
+   "fieldname": "section_mapping",
+   "fieldtype": "Section Break",
+   "label": "Receipt Mapping"
+  },
+  {
+   "fieldname": "mapped_inward",
+   "fieldtype": "Link",
+   "options": "MM Inward",
+   "label": "Mapped to Inward",
+   "read_only": 1,
+   "description": "The receipt this roll is credited to. Set from the Roll Mapping page, not by hand — the inward's Partial/Complete status is counted from it."
+  },
+  {
+   "fieldname": "mapped_weight",
+   "fieldtype": "Float",
+   "label": "Credited to Inward (Kg)",
+   "read_only": 1,
+   "description": "The weight credited when this roll was mapped. A SNAPSHOT: stock_weight falls as the roll is cut and issued, and counting a receipt from a figure that shrinks would drag a Complete inward back to Partial."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-27 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mahaveer Metallic",
+ "name": "MM Roll Inventory",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "MM Inventory Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Operations",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Production",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  },
+  {
+   "role": "MM Sales Team",
+   "read": 1,
+   "export": 1,
+   "print": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

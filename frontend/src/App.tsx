@@ -22,6 +22,7 @@ import ChallanReportPage from "./pages/ChallanReportPage";
 import MasterWorkspace from "./pages/MasterWorkspace";
 import OrderWorkspace from "./pages/OrderWorkspace";
 import InwardWorkspace from "./pages/InwardWorkspace";
+import RollMappingPage from "@/pages/RollMappingPage";
 import InventoryScreen from "./pages/InventoryScreen";
 import StockLedgerScreen from "./pages/StockLedgerScreen";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
@@ -112,6 +113,7 @@ export default function App() {
             <Route path="/challan-report" element={<ChallanReportPage />} />
             <Route path="/sales-order" element={<OrderWorkspace />} />
             <Route path="/inward" element={<InwardWorkspace />} />
+            <Route path="/roll-mapping" element={<RollMappingPage />} />
             <Route path="/inventory" element={<InventoryScreen />} />
             <Route path="/stock-ledger" element={<StockLedgerScreen />} />
             {DOC_REGISTRY.filter((meta) => !["/cutting", "/sales-order", "/inward"].includes(meta.routeBase)).map((meta) => (

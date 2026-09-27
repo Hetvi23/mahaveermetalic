@@ -3680,3 +3680,53 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-bx-panel .mm-bx-sum-op { opacity: 0.5; }
 .mm-bx-panel .mm-bx-sum-net { margin-left: auto; font-size: 0.86rem; }
 .mm-bx-panel .mm-bx-sum-net b { font-size: 1.05rem; font-weight: 800; }
+
+/* ── Roll Mapping ──────────────────────────────────────────────────────────
+   Two panes side by side: the receipts waiting to be settled, and the rolls in
+   stock that can settle them. It stacks below 1100px — a mapping decision reads
+   perfectly well one list after the other, and side-by-side columns narrow enough
+   to wrap their own headings read worse than stacked ones. */
+.mm-map-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+@media (max-width: 1100px) { .mm-map-split { grid-template-columns: minmax(0, 1fr); } }
+
+.mm-map-pane { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.9rem; min-width: 0; }
+/* .mm-search-box is `flex: 1 1 260px`, written for a toolbar ROW. Dropped into a column
+   pane that makes it grow downwards, which drew the search as a tall empty box with the
+   field floating in the middle of it. */
+.mm-map-pane .mm-search-box { flex: none; }
+.mm-map-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.mm-map-head h2 { margin: 0; font-size: 0.95rem; letter-spacing: 0.02em; }
+
+/* A fixed, scrolling body so the two panes stay the same height whatever they hold
+   and the actions below never walk off the bottom of a long list. */
+.mm-map-list { max-height: 60vh; overflow: auto; min-width: 0; }
+
+.mm-map-row {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 0.55rem 0.6rem; border-radius: 10px;
+  border: 1px solid var(--mm-border); background: transparent; color: inherit;
+  margin-bottom: 0.4rem;
+}
+.mm-map-row:hover { border-color: var(--mm-accent); }
+.mm-map-row-active { border-color: var(--mm-accent); background: var(--mm-accent-bg); }
+.mm-map-row-top { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.mm-map-row-meta { font-size: 0.78rem; color: var(--mm-text-sec); margin-top: 0.15rem; }
+
+/* How far this receipt has been settled. Decorative only — the kilos are written
+   out underneath, because a bar cannot be read to the gram. */
+.mm-map-bar { height: 4px; border-radius: 3px; background: var(--mm-border); margin: 0.35rem 0 0.1rem; overflow: hidden; }
+.mm-map-bar > span { display: block; height: 100%; background: var(--mm-accent); }
+
+.mm-map-table { width: 100%; }
+.mm-map-tr-on { background: var(--mm-accent-bg); }
+
+.mm-map-actions {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  border-top: 1px solid var(--mm-border); padding-top: 0.6rem;
+}
+.mm-map-actions > .mm-muted { margin-right: auto; font-size: 0.8rem; }

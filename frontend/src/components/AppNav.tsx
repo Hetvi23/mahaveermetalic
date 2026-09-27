@@ -3,6 +3,7 @@ import { useFrappeAuth } from "frappe-react-sdk";
 import { useCallback, useEffect, useState } from "react";
 import {
   Home,
+  Link2,
   PanelLeftClose,
   PanelLeftOpen,
   ChevronDown,
@@ -102,6 +103,7 @@ const SECTIONS: Section[] = [
       { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
       { label: "Purchase Orders", icon: ClipboardList, to: "/purchase-order" },
       { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
+      { label: "Roll Mapping", icon: Link2, to: "/roll-mapping" },
       { label: "Cutting", icon: Scissors, to: "/cutting" },
       { label: "Program", icon: Monitor, to: "/program" },
       { label: "Program View", icon: Monitor, to: "/production-view" },

@@ -135,7 +135,8 @@
    "options": "Complete\nPartial",
    "default": "Complete",
    "read_only": 1,
-   "description": "Complete = challan fully received (closed to more inwards). Partial = more rolls expected on this challan."
+   "description": "Complete = challan fully received (closed to more inwards). Partial = more rolls expected on this challan.",
+   "allow_on_submit": 1
   },
   {
    "fieldname": "is_partial",
@@ -237,7 +238,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-17 14:00:00.000000",
+ "modified": "2026-09-27 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Inward",
