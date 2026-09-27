@@ -758,6 +758,28 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   // book's own count until somebody types one, because the box stickers are built from it.
   const [vNo, setVNo] = useState("");
   const [challanId, setChallanId] = useState("");
+  /* WHOSE ACCOUNT THIS RECEIPT LANDS IN — the operator's choice, not the order's.
+     These two were read-only and read off the picked order, which meant a receipt could
+     only ever be filed under whoever that order named. They are pickers now, and they
+     start EMPTY: nothing is filled in from the order behind the operator's back (Hetvi:
+     "should be editable and not read only, and should not be fetched automatically").
+     Left blank they fall back on the server exactly as before — the order's party, then
+     the Job Out's — so a receipt taken without choosing anything still files itself. */
+  const [jiParty, setJiParty] = useState("");
+  const [jiCompany, setJiCompany] = useState("");
+  const jiCompaniesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.all_companies",
+    undefined,
+    "mm-all-companies",
+  );
+  const jiCompanies = jiCompaniesCall.data?.message ?? [];
+  /** One row per party, for the Party box — the company list repeats a party once per
+   *  company it owns. */
+  const jiParties = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const c of jiCompanies) if (c.party && !seen.has(c.party)) seen.set(c.party, c.party_name || c.party);
+    return [...seen].map(([value, label]) => ({ value, label }));
+  }, [jiCompanies]);
   // The book the Job In challan is written in: its own unless another series is picked.
   // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
   const [series, setSeries] = useState(JOB_IN_SERIES.value);
@@ -825,7 +847,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
       const res = await create({
         against_job_out: jobOut,
         customer_order: order || undefined,
-        party: party || undefined,
+        party: jiParty || party || undefined,
+        company_name: jiCompany || undefined,
         posting_date: vDate,
         batch_no: batchNo || undefined,
         voucher_no: vNo.trim() || undefined,
@@ -1026,23 +1049,37 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                   emptyText="This Job Out names no customer order."
                 />
               </label>
-              {/* WHOSE ACCOUNT THIS RECEIPT LANDS IN, stated before it is submitted (Hetvi:
-                  "should see company and party name as well"). Read off the order, because
-                  that is where the server files it — the order's party, or the Job Out's
-                  when there is no order (create_job_in_production). Not editable: the order
-                  decides it, and a second picker could only disagree with it. */}
+              {/* WHOSE ACCOUNT THIS RECEIPT LANDS IN — chosen here, and what is chosen wins
+                  on the server. Blank is not a gap: it falls back to the order's party and
+                  then the Job Out's, which is what a receipt always did. The placeholder
+                  says which one that would be, so leaving it empty is an informed choice
+                  rather than a blind one. */}
               <label className="mm-field">
                 <span className="mm-field-label">Party</span>
-                <input className="mm-input" readOnly tabIndex={-1}
-                  value={picked?.customer_name || picked?.customer || meta?.party_name || meta?.party_label || party || ""}
-                  placeholder="—"
-                  title={picked ? "The customer on the order" : "No order picked — it stays on the Job Out's party"} />
+                <SearchSelect
+                  value={jiParty}
+                  onChange={setJiParty}
+                  options={jiParties.map((p) => ({ value: p.value, label: p.label }))}
+                  placeholder={
+                    picked?.customer_name || picked?.customer || meta?.party_name
+                      || meta?.party_label || party || "Party"
+                  }
+                  emptyText="No party matches." />
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Company</span>
-                <input className="mm-input" readOnly tabIndex={-1}
-                  value={(picked ? picked.company_name : meta?.company_name) || ""}
-                  placeholder="—" />
+                <SearchSelect
+                  value={jiCompany}
+                  onChange={setJiCompany}
+                  options={jiCompanies.map((c) => ({
+                    value: c.company_name,
+                    label: c.company_name,
+                    // Which party owns this company — two firms can run companies that read
+                    // alike, and filing under the wrong one is the whole risk here.
+                    meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
+                  }))}
+                  placeholder={(picked ? picked.company_name : meta?.company_name) || "Company"}
+                  emptyText="No company matches." />
               </label>
               {/* Who brought it back — the same question a dispatch asks, read the other
                   way round, so it is the same box with the same suggestions. */}

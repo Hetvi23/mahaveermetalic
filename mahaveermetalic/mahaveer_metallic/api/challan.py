@@ -2033,7 +2033,7 @@ def _receipt_company(so, party):
 def create_job_in_production(against_job_out, boxes=None, customer_order=None, party=None,
 	posting_date=None, batch_no=None, cut=None, operator=None, shift=None, challan_no=None,
 	box_return=0, bobbin_return=0, delivery_by=None, voucher_no=None, challan_id=None,
-	challan_series=None):
+	challan_series=None, company_name=None):
 	"""Receive a Job Out back as a PRODUCTION voucher, and close the Job Out with a Job In.
 
 	`voucher_no` and `challan_id` are the two IDs the operator may type by hand — the
@@ -2093,7 +2093,14 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	so = frappe.db.get_value(
 		"MM Sales Order", order, ["party", "company_name"], as_dict=True
 	) if order else None
-	receipt_party = (so and so.party) or party or jo.party
+	# WHAT THE VOUCHER SAYS WINS. The order's party used to override the one the operator
+	# chose, which made the two boxes on the sheet unable to mean anything — so they were
+	# read-only. They are pickers now and this is the other half of that: a Job In can name
+	# its own party and company, and can be received with no order at all (Hetvi: "the party
+	# name and company name should be editable... can be issued without selecting order").
+	# Nothing typed still falls back the way it always did: the order's party, then the Job
+	# Out's.
+	receipt_party = party or (so and so.party) or jo.party
 
 	prod = frappe.get_doc({
 		"doctype": "MM Production",
@@ -2103,7 +2110,7 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		# …and the company of it, which the voucher shows before submit. A Production
 		# voucher records its company; a Job In left it blank, so every report grouping by
 		# company lost the job-work receipts.
-		"company_name": _receipt_company(so, receipt_party),
+		"company_name": (company_name or "").strip() or _receipt_company(so, receipt_party),
 		"shade": shade,
 		"cut": cut or next((it.cut for it in jo.items if it.cut), None),
 		"branch": jo.branch,
