@@ -167,6 +167,27 @@ def inwards(search=None, only_open=1, limit=100):
 	)
 	for r in rows:
 		r["challan_number"] = r.get("challan_number") or _challan_of(r["name"])
+		# THE ORDER THIS RECEIPT IS AGAINST, and who it is for. The board showed only the
+		# challan, which reads as an order id to anyone who does not already know the
+		# difference (Hetvi: "MM587... is the order id?"). Orders here are bare numbers —
+		# 1, 45, 46 — so nothing about the challan's own format says which is which.
+		# Taken off the LINES, because that is where a receipt records its order, and one
+		# receipt can answer several.
+		orders = [
+			o[0] for o in frappe.db.sql(
+				"""select distinct customer_order from `tabMM Inward Item`
+				where parent = %s and ifnull(customer_order, '') != '' order by customer_order""",
+				(r["name"],),
+			)
+		]
+		if not orders and r.get("sales_order"):
+			orders = [r["sales_order"]]
+		r["orders"] = orders
+		if not r.get("party") and orders:
+			r["party"] = frappe.db.get_value("MM Sales Order", orders[0], "party")
+			r["company_name"] = r.get("company_name") or frappe.db.get_value(
+				"MM Sales Order", orders[0], "company_name"
+			)
 		r["expected_weight"] = expected_weight_of(r["name"])
 		r["mapped_weight"] = mapped_weight_of(r["name"])
 		r["still_due"] = round(max(0.0, r["expected_weight"] - r["mapped_weight"]), 3)

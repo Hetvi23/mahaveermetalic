@@ -9,6 +9,7 @@ const API = "mahaveermetalic.mahaveer_metallic.api.mapping";
 type Inward = {
   name: string; posting_date: string; party?: string; company_name?: string;
   challan_number?: string; lot_number?: string; receipt_status: string;
+  orders?: string[];
   expected_weight: number; mapped_weight: number; still_due: number;
   mapped_rolls: number; locked: boolean; sales_order?: string;
 };
@@ -131,8 +132,18 @@ export default function RollMappingPage() {
                   <button type="button" key={i.name}
                     className={`mm-map-row${sel === i.name ? " mm-map-row-active" : ""}`}
                     onClick={() => { setSel(i.name); setChecked({}); }}>
+                    {/* SAY WHICH NUMBER IS WHICH. Orders here are bare numbers — 1, 45, 46 —
+                        and a challan like MM587/26-27 sits in the same place on the card, so
+                        the heading alone was being read as the order. Both are labelled. */}
                     <div className="mm-map-row-top">
+                      <span className="mm-muted">Challan</span>
                       <strong>{i.challan_number || i.name}</strong>
+                      {i.orders && i.orders.length > 0 && (
+                        <>
+                          <span className="mm-muted">· Order</span>
+                          <strong>{i.orders.join(", ")}</strong>
+                        </>
+                      )}
                       <span className={i.receipt_status === "Complete" ? "mm-state mm-state-done" : "mm-state mm-state-open"}>
                         {i.receipt_status}
                       </span>
@@ -143,7 +154,7 @@ export default function RollMappingPage() {
                       )}
                     </div>
                     <div className="mm-map-row-meta">
-                      {i.posting_date} · {i.party || "—"}
+                      {i.posting_date} · {i.party || i.company_name || "no party"}
                       {i.lot_number ? ` · lot ${i.lot_number}` : ""}
                     </div>
                     <div className="mm-map-bar" aria-hidden><span style={{ width: `${pct}%` }} /></div>
