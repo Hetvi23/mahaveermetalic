@@ -76,7 +76,8 @@ def post_production(doc):
 
 
 @frappe.whitelist()
-def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=None, company=None):
+def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=None, company=None,
+	bill_wise=1):
 	"""Party-wise bobbin ledger: opening before from_date, then the period's movements
 	with a running balance, plus totals.
 
@@ -85,6 +86,17 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 
 	`owner` narrows to whose bobbins these are: "MM", "Party", or blank/"Both". The owner
 	lives on MM Bobbin Master, so it resolves to the set of bobbins first.
+
+	`bill_wise` (default ON) gives ONE LINE PER VOUCHER instead of one per movement
+	(Hetvi: "bobbin report bill wise"). A production that consumed twenty bobbins wrote
+	twenty ledger rows, all reading "MMPROD-00001 · Production · −100", and the statement
+	ran to 925 lines of the same voucher repeating — nobody can read a balance off that.
+	Grouped, it is one line: MMPROD-00001, −2,000, 20 movements.
+
+	Grouped by voucher AND bobbin, not by voucher alone: one voucher can move two kinds of
+	bobbin, and adding those together would state a quantity of nothing in particular.
+	Pass bill_wise=0 for the movement-by-movement ledger, which is still the truth behind
+	each line.
 	"""
 	# A company is one of a party's MM Party Company rows — resolve it to its party.
 	if company and not party:
@@ -152,6 +164,31 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 		limit_page_length=1000,
 	)
 
+	# ONE LINE PER BILL, before the running balance is struck — the balance has to be the
+	# balance after the whole voucher, not after an arbitrary row inside it.
+	if frappe.utils.cint(bill_wise):
+		grouped = {}
+		for r in rows:
+			key = (r.voucher_type, r.voucher_no, r.bobbin)
+			g = grouped.get(key)
+			if g is None:
+				g = grouped[key] = frappe._dict({
+					"posting_date": r.posting_date, "voucher_type": r.voucher_type,
+					"voucher_no": r.voucher_no, "bobbin": r.bobbin, "note": r.note,
+					"party": r.party, "in_qty": 0.0, "out_qty": 0.0,
+					"box_in": 0.0, "box_out": 0.0, "movements": 0,
+				})
+			g.in_qty += float(r.in_qty or 0)
+			g.out_qty += float(r.out_qty or 0)
+			g.box_in += float(r.box_in or 0)
+			g.box_out += float(r.box_out or 0)
+			g.movements += 1
+			# The voucher is dated once; keep the earliest row's date and drop the note,
+			# which repeated the voucher number on every line anyway.
+			if r.posting_date and (not g.posting_date or r.posting_date < g.posting_date):
+				g.posting_date = r.posting_date
+		rows = sorted(grouped.values(), key=lambda g: (g.posting_date or "", g.voucher_no or ""))
+
 	bal_qty, bal_box = opening_qty, opening_box
 	out = []
 	for r in rows:
@@ -170,6 +207,8 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 				"box": round(float(r.box_in or 0) - float(r.box_out or 0), 3),
 				"balance_qty": round(bal_qty, 3),
 				"balance_box": round(bal_box, 3),
+				# How many ledger rows this line stands for; 1 unless it is a grouped bill.
+				"movements": int(r.get("movements") or 1),
 			}
 		)
 
@@ -181,6 +220,7 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 		"closing_box": round(bal_box, 3),
 		"party": party,
 		"owner": owner or "Both",
+		"bill_wise": bool(frappe.utils.cint(bill_wise)),
 	}
 
 

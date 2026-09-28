@@ -17,6 +17,8 @@ const monthAgo = () => {
 type Row = {
   date?: string | null; voucher_type?: string; voucher_no?: string; bobbin?: string;
   note?: string | null; in_qty: number; out_qty: number; qty: number; box: number;
+  /** How many ledger movements this line stands for — >1 when the bill is grouped. */
+  movements?: number;
   balance_qty: number; balance_box: number;
 };
 type Report = {
@@ -45,6 +47,11 @@ export default function BobbinReportPage() {
     fields: ["name", "company_name", "parent"], limit: 0, orderBy: { field: "company_name", order: "asc" },
   });
 
+  /* ONE LINE PER BILL by default (Hetvi: "bobbin report bill wise"). A production that
+     used twenty bobbins wrote twenty identical-looking ledger rows, and the statement ran
+     to 925 lines of the same voucher repeating. The movement-by-movement view is still
+     one click away — it is the detail behind each line, not a different truth. */
+  const [billWise, setBillWise] = useState(true);
   const { data, isLoading } = useFrappeGetCall<{ message: Report }>(
     `${API}.bobbin_report`,
     {
@@ -53,8 +60,9 @@ export default function BobbinReportPage() {
       owner: applied.owner || undefined,
       from_date: applied.from,
       to_date: applied.to,
+      bill_wise: billWise ? 1 : 0,
     },
-    `bobbin-report-${applied.party}-${applied.company}-${applied.owner}-${applied.from}-${applied.to}`,
+    `bobbin-report-${applied.party}-${applied.company}-${applied.owner}-${applied.from}-${applied.to}-${billWise}`,
   );
   const r = data?.message;
 
@@ -95,6 +103,15 @@ export default function BobbinReportPage() {
             <input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
           <button className="mm-btn-primary" onClick={() => setApplied({ party, company, owner, from, to })}>Filter</button>
+          {/* Bill-wise or movement-by-movement. Not a filter — it does not change WHICH
+              movements are counted, only whether a bill is shown as one line or as the
+              rows behind it, so it applies at once rather than waiting for Filter. */}
+          <div className="mm-seg" role="group" aria-label="How to group the ledger">
+            <button type="button" className={`mm-seg-btn${billWise ? " mm-seg-btn-active" : ""}`}
+              title="One line per bill" onClick={() => setBillWise(true)}>Bill-wise</button>
+            <button type="button" className={`mm-seg-btn${!billWise ? " mm-seg-btn-active" : ""}`}
+              title="Every movement, as it was posted" onClick={() => setBillWise(false)}>Every movement</button>
+          </div>
           <button className="mm-btn-secondary" onClick={() => window.print()}><Printer size={15} /> Print</button>
         </div>
       </section>
@@ -134,7 +151,11 @@ export default function BobbinReportPage() {
                     <td>{row.voucher_type || "—"}</td>
                     <td>{row.bobbin || "—"}</td>
                     {/* Free text — let it wrap rather than stretch the register sideways. */}
-                    <td className="mm-cell-wrap">{row.note || "—"}</td>
+                    <td className="mm-cell-wrap">
+                      {billWise && (row.movements ?? 1) > 1
+                        ? `${row.movements} movements on this bill`
+                        : row.note || "—"}
+                    </td>
                     <td className={`mm-num ${row.qty < 0 ? "mm-var-over" : ""}`}>{row.qty > 0 ? `+${row.qty}` : row.qty}</td>
                     <td className="mm-num">{row.box || "—"}</td>
                     <td className="mm-num">{row.balance_qty.toLocaleString()}</td>
