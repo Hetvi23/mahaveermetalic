@@ -36,6 +36,8 @@ type BoxRow = {
   box: string; production: string; posting_date?: string; item?: string; cut?: string;
   customer_order?: string; barcode?: string; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
   bobbin_pcs_weight?: number; total_bobbin_weight?: number; box_weight?: number; net_weight?: number;
+  /** Ticked on the production voucher: this box's packaging / bobbins come back. */
+  box_return?: number; bobbin_return?: number;
 };
 type RollRow = {
   name: string; roll_no?: string; lot_number?: string; location?: string;
@@ -154,7 +156,11 @@ export default function SalesChallanVoucher() {
           gross: Number(r.gross_weight || 0), qty: 1, bobbin: r.bobbin,
           bobbinPcs: Number(r.bobbin_pcs || 0), perPcs: Number(r.bobbin_pcs_weight || 0),
           totalBobbin: Number(r.total_bobbin_weight || 0), boxWeight: Number(r.box_weight || 0),
-          net: Number(r.net_weight || 0), rBox: false, rBobbin: false,
+          net: Number(r.net_weight || 0),
+          // Carried from the box, not reset. These were hard-coded false, so a box ticked
+          // returnable in production came onto the challan unticked and the printed
+          // "Return No. of Box / No. of Bobbin" read 0.
+          rBox: !!r.box_return, rBobbin: !!r.bobbin_return,
         })),
     ]);
     setPicker(null);

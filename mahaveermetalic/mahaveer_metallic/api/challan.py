@@ -147,7 +147,13 @@ def available_boxes(party=None, sales_order=None, limit=200):
 		f"""
 		select b.name as box, b.barcode, p.name as production, p.posting_date, p.shade as item, p.cut,
 			p.customer_order, b.gross_weight, b.bobbin, b.bobbin_pcs, b.bobbin_pcs_weight,
-			b.total_bobbin_weight, b.box_weight, b.net_weight
+			b.total_bobbin_weight, b.box_weight, b.net_weight,
+			-- THE RETURN TICKS TRAVEL WITH THE BOX. They were not selected, so a box ticked
+			-- "packaging comes back" in production arrived here without them and Select Box
+			-- put it on the challan unticked — every time, on the one line that tells the
+			-- customer what they are holding on to. The challan a production raises for
+			-- itself carried them (_box_row), which is why this only bit the fetch path.
+			ifnull(b.box_return, 0) as box_return, ifnull(b.bobbin_return, 0) as bobbin_return
 		from `tabMM Production Box` b
 		join `tabMM Production` p on p.name = b.parent
 		where {" and ".join(conds)}
