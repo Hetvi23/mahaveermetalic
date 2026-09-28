@@ -190,11 +190,13 @@ function copy(d: ChallanPrintData, label: string): string {
      actually priced: an unpriced delivery challan must not gain a row of zeroes, and job
      challans carry no rate at all. One rate across every priced line is printed as that
      rate; a challan mixing rates just foots, because a single "rate" would be a lie. */
+  const jobOutPaper = /^job\s*out$/i.test((d.challan_type || "Sales").trim());
   const priced = (d.items ?? []).filter((it) => Number(it.rate || 0) > 0);
   const rates = [...new Set(priced.map((it) => Number(it.rate || 0)))];
   const amount = Number(d.total_amount || 0);
   const isDuplicate = /duplicate/i.test(label);
-  const valueLine = amount > 0 && isDuplicate
+  // …and never on a Job Out, whichever copy: the worker's paper carries no value.
+  const valueLine = amount > 0 && isDuplicate && !jobOutPaper
     ? `<div class="val">${
         rates.length === 1 ? `Rate: <b>${money(rates[0])}</b> / kg &nbsp;&nbsp; ` : ""
       }Amount: <b>${money(amount)}</b></div>`
@@ -212,6 +214,13 @@ function copy(d: ChallanPrintData, label: string): string {
   // is which. "JOB IN CHALAN" was a screen's word on a document the floor hands over.
   const type = (d.challan_type || "Sales").trim();
   const isJobIn = /^job\s*in$/i.test(type);
+  /* A JOB OUT IS HANDED TO THE SUBCONTRACTOR, so it tells them nothing about the customer
+     or the money. It names the worker it goes to and what they are holding; whose goods
+     these are, and what they are worth, is between the shop and its customer (Hetvi:
+     "during job out challan the customer name should not come in pdf and rate and amount
+     in duplicate also wont come, only for job out challan"). Job In and every dispatch
+     type are untouched. */
+  const isJobOut = /^job\s*out$/i.test(type);
   const heading = /^job\s*(in|out)$/i.test(type)
     ? "Job Challan"
     : /challan/i.test(type) ? type : `${type} Chalan`;
@@ -228,7 +237,7 @@ function copy(d: ChallanPrintData, label: string): string {
   const nameLine = (isJobIn ? (d.customer_company || d.customer_name) : "")
     || d.company_name || d.party_name || d.party || "";
   // …and where the customer IS the name above, the row below must not say it twice.
-  const showCustomer = !isJobIn && !!d.customer_name;
+  const showCustomer = !isJobIn && !isJobOut && !!d.customer_name;
   const customerLine = d.customer_company || d.customer_name || "";
 
   // THE ID, SPLIT THE WAY THE BOOK READS IT. MMUSC-2088-26/27 is the book (MMUSC) and the
