@@ -137,11 +137,18 @@ def available_boxes(party=None, sales_order=None, limit=200):
 	"""SELECT BOX: produced boxes not yet on a challan."""
 	conds = ["p.docstatus = 1"]
 	vals = {}
+	# STOCK IS AVAILABLE TO EVERYONE. A production ticked "Add to stock" — or one that
+	# named no party at all — belongs to nobody in particular: that is the whole point of
+	# putting it in stock rather than dispatching it. Filtering strictly by the party
+	# meant those boxes were reachable by NO filter, so the boxes the floor had just
+	# stocked could never be picked onto a challan (Hetvi: "in production i made boxes and
+	# added them in stock, i should see that").
+	STOCK = "(ifnull(p.to_inventory, 0) = 1 or ifnull(p.party, '') = '')"
 	if sales_order:
-		conds.append("p.customer_order = %(so)s")
+		conds.append(f"(p.customer_order = %(so)s or {STOCK})")
 		vals["so"] = sales_order
 	elif party:
-		conds.append("p.party = %(party)s")
+		conds.append(f"(p.party = %(party)s or {STOCK})")
 		vals["party"] = party
 	rows = frappe.db.sql(
 		f"""
@@ -153,7 +160,11 @@ def available_boxes(party=None, sales_order=None, limit=200):
 			-- put it on the challan unticked — every time, on the one line that tells the
 			-- customer what they are holding on to. The challan a production raises for
 			-- itself carried them (_box_row), which is why this only bit the fetch path.
-			ifnull(b.box_return, 0) as box_return, ifnull(b.bobbin_return, 0) as bobbin_return
+			ifnull(b.box_return, 0) as box_return, ifnull(b.bobbin_return, 0) as bobbin_return,
+			-- So the picker can say where a box came from: this party's own production,
+			-- or the stock shelf that anyone may draw on.
+			case when ifnull(p.to_inventory, 0) = 1 or ifnull(p.party, '') = ''
+				then 1 else 0 end as from_stock
 		from `tabMM Production Box` b
 		join `tabMM Production` p on p.name = b.parent
 		where {" and ".join(conds)}
