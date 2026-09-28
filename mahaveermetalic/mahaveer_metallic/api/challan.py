@@ -1437,7 +1437,10 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 		# ifnull, like every other challan_type test in the app: a challan saved before the
 		# field existed carries NULL and IS a sales challan — matched plainly it would drop
 		# out of its own register.
-		conds.append("ifnull(c.challan_type, 'Sales') in ('Sales', 'Job Challan')")
+		# Job In is included so a receipt is findable here too (Hetvi: "show the job in
+		# data too that is fine"). It is NOT a sale and never counts as one — it is listed
+		# so the paperwork can be found in one place, and its Type column says what it is.
+		conds.append("ifnull(c.challan_type, 'Sales') in ('Sales', 'Job Challan', 'Job In')")
 	if from_date:
 		conds.append("c.transaction_date >= %(fd)s")
 		vals["fd"] = from_date

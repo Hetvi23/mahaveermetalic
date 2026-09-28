@@ -1016,8 +1016,21 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Series</span>
+                {/* THIS PICKS THE BOOK, NOT THE DOCUMENT. A Job In is always a Job In —
+                    material coming BACK from a worker — whichever book it is numbered in.
+                    Picking "Sales" here writes it in the sales book (MMUSC-…); it does not
+                    turn a receipt into a dispatch, and it cannot: a Sales challan moves the
+                    goods OUT and closes the order, so a receipt typed that way would erase
+                    the arrival it is recording (Hetvi: "if you select Sales type then should
+                    it not go in Sales type?"). To send this material on to the customer,
+                    raise a Sales Challan Voucher and pick its boxes. */}
                 <SearchSelect noClear value={series} onChange={setSeries}
                   options={[JOB_IN_SERIES, ...DISPATCH_SERIES].map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
+                {series !== JOB_IN_SERIES.value && (
+                  <span className="mm-field-hint">
+                    Numbered in the {series} book — still a Job In receipt, not a dispatch.
+                  </span>
+                )}
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Challan ID</span>
