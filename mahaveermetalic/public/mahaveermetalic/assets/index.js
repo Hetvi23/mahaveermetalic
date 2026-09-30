@@ -532,7 +532,7 @@ Why? Optional — if you type something it stays on the lot, so whoever picks it
       </tr>
       <tr>
         <td class="k">Item</td><td class="c">:</td><td class="v">${on(u||"—")}</td>
-        <td class="k2">Order Type</td><td class="c">:</td><td class="v2">${on(F)}</td>
+        <td class="k2">Challan Type</td><td class="c">:</td><td class="v2">${on(F)}</td>
       </tr>
       <tr>
         <td class="k">Order</td><td class="c">:</td><td class="v">${on(l.sales_order||"")}</td>

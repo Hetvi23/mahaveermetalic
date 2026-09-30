@@ -257,7 +257,7 @@ function copy(d: ChallanPrintData, label: string): string {
   const customerLine = d.customer_company || d.customer_name || "";
 
   // THE ID, SPLIT THE WAY THE BOOK READS IT. MMUSC-2088-26/27 is the book (MMUSC) and the
-  // number in it with its year (2088-26/27) — printed as Order Type and Challan ID. Split
+  // number in it with its year (2088-26/27) — printed as Challan Type and Challan ID. Split
   // at the first hyphen, so an auto-numbered MMUJO-2026-00026 reads MMUJO / 2026-00026.
   const id = d.name || "";
   const cut = id.indexOf("-");
@@ -288,7 +288,7 @@ function copy(d: ChallanPrintData, label: string): string {
       </tr>
       <tr>
         <td class="k">Item</td><td class="c">:</td><td class="v">${esc(itemLine || "—")}</td>
-        <td class="k2">Order Type</td><td class="c">:</td><td class="v2">${esc(idPrefix)}</td>
+        <td class="k2">Challan Type</td><td class="c">:</td><td class="v2">${esc(idPrefix)}</td>
       </tr>
       <tr>
         <td class="k">Order</td><td class="c">:</td><td class="v">${esc(d.sales_order || "")}</td>
