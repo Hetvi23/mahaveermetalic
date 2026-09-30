@@ -190,13 +190,23 @@ function copy(d: ChallanPrintData, label: string): string {
      actually priced: an unpriced delivery challan must not gain a row of zeroes, and job
      challans carry no rate at all. One rate across every priced line is printed as that
      rate; a challan mixing rates just foots, because a single "rate" would be a lie. */
-  const jobOutPaper = /^job\s*out$/i.test((d.challan_type || "Sales").trim());
+  /* THE BOOK DECIDES WHAT THE PAPER IS, not the document's own type.
+     A Job In written in the sales book (MMUSC-…) is sales paper: it says Sales Chalan and
+     carries the rate on the duplicate. Written in a job book (MMUJI / MMUJO / MMUJC) it is
+     job paper: Job Challan, and no money on it at all (Hetvi: "when i print jobin ->
+     challan type Sales then Sales challan should be visible and in that case rate in
+     duplicate thing should also come, when type is job then no rate details and job
+     challan label").
+     Read off the id, which is how the shop reads it too — MMUSC-78-26/27 is the sales book
+     and MMUJI-2026-00011 the job-in book. */
+  const bookPrefix = (d.name || "").split("-")[0].toUpperCase();
+  const jobPaper = /^MMUJ/.test(bookPrefix);
   const priced = (d.items ?? []).filter((it) => Number(it.rate || 0) > 0);
   const rates = [...new Set(priced.map((it) => Number(it.rate || 0)))];
   const amount = Number(d.total_amount || 0);
   const isDuplicate = /duplicate/i.test(label);
   // …and never on a Job Out, whichever copy: the worker's paper carries no value.
-  const valueLine = amount > 0 && isDuplicate && !jobOutPaper
+  const valueLine = amount > 0 && isDuplicate && !jobPaper
     ? `<div class="val">${
         rates.length === 1 ? `Rate: <b>${money(rates[0])}</b> / kg &nbsp;&nbsp; ` : ""
       }Amount: <b>${money(amount)}</b></div>`
@@ -215,15 +225,19 @@ function copy(d: ChallanPrintData, label: string): string {
   const type = (d.challan_type || "Sales").trim();
   const isJobIn = /^job\s*in$/i.test(type);
   /* A JOB OUT IS HANDED TO THE SUBCONTRACTOR, so it tells them nothing about the customer
-     or the money. It names the worker it goes to and what they are holding; whose goods
-     these are, and what they are worth, is between the shop and its customer (Hetvi:
-     "during job out challan the customer name should not come in pdf and rate and amount
-     in duplicate also wont come, only for job out challan"). Job In and every dispatch
-     type are untouched. */
-  const isJobOut = /^job\s*out$/i.test(type);
-  const heading = /^job\s*(in|out)$/i.test(type)
-    ? "Job Challan"
-    : /challan/i.test(type) ? type : `${type} Chalan`;
+     or the money (Hetvi: "during job out challan the customer name should not come in pdf
+     and rate and amount in duplicate also wont come"). That rule now falls out of jobPaper
+     above — a Job Out is always written in the MMUJO book — so it needs no test of its own.
+     Sales paper still shows both. */
+  // Named for the book it is written in, falling back to the type for anything unnumbered.
+  const BOOK_PAPER: Record<string, string> = {
+    MMUSC: "Sales Chalan", MMUJI: "Job Challan", MMUJO: "Job Challan",
+    MMUJC: "Job Challan", MMUCH: "Challan", MMUDC: "Delivery Challan",
+    MMURC: "Roll Challan",
+  };
+  const heading = BOOK_PAPER[bookPrefix]
+    || (/^job\s*(in|out)$/i.test(type) ? "Job Challan"
+      : /challan/i.test(type) ? type : `${type} Chalan`);
 
   // WHOSE NAME THE PAPER CARRIES. A Job In is the customer's material coming back, so it
   // is named for the customer — the worker it came from is named on the Job Out that sent
@@ -237,7 +251,9 @@ function copy(d: ChallanPrintData, label: string): string {
   const nameLine = (isJobIn ? (d.customer_company || d.customer_name) : "")
     || d.company_name || d.party_name || d.party || "";
   // …and where the customer IS the name above, the row below must not say it twice.
-  const showCustomer = !isJobIn && !isJobOut && !!d.customer_name;
+  // Sales paper names its customer; job paper does not — a Job Out must tell the worker
+  // nothing about them, and a Job In already carries the name at the top.
+  const showCustomer = !jobPaper && !!d.customer_name;
   const customerLine = d.customer_company || d.customer_name || "";
 
   // THE ID, SPLIT THE WAY THE BOOK READS IT. MMUSC-2088-26/27 is the book (MMUSC) and the
@@ -254,7 +270,7 @@ function copy(d: ChallanPrintData, label: string): string {
   // challan is identified by its Challan ID above, and the C.No line sat there blank. On a
   // Job Out / Job In the C.No is the worker's book number — every receipt against a Job Out
   // is filed under it — so there it stays, when one was written.
-  const showBookNo = /^job\s*(in|out)$/i.test(type) && !!bookNo;
+  const showBookNo = jobPaper && !!bookNo;
 
   return `<section class="copy"><div class="fit">
     <div class="hd">
