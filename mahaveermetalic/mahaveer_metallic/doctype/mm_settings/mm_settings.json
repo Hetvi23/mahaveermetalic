@@ -12,6 +12,7 @@
   "inward_over_tolerance_percent",
   "auto_close_leftover",
   "leftover_tolerance_kg",
+  "wastage_threshold_kg",
   "section_program_view",
   "program_view_notes",
   "section_print",
@@ -20,7 +21,7 @@
   "section_job_work",
   "job_markup_percent",
   "job_wastage_limit_percent",
-    "purchase_qty_multiple"
+  "purchase_qty_multiple"
  ],
  "fields": [
   {
@@ -48,7 +49,7 @@
    "label": "Production Tolerance (Kg)",
    "precision": 3,
    "default": "2",
-   "description": "Absolute leeway UNDER the percentage above. An Admin Override PIN is required only when the shortfall breaks BOTH \u2014 so a 1 kg rounding on a 20 kg program is accepted, while 40 kg missing off a 1,000 kg one is not."
+   "description": "Absolute leeway UNDER the percentage above. An Admin Override PIN is required only when the shortfall breaks BOTH — so a 1 kg rounding on a 20 kg program is accepted, while 40 kg missing off a 1,000 kg one is not."
   },
   {
    "fieldname": "inward_match_tolerance_percent",
@@ -82,6 +83,13 @@
    "precision": 3
   },
   {
+   "fieldname": "wastage_threshold_kg",
+   "fieldtype": "Float",
+   "label": "Wastage Threshold (Kg)",
+   "default": "15",
+   "description": "After a dispatch, a remainder of the same colour and lot smaller than this is written off to wastage — but only when no inward of that same lot and colour is still waiting to be cut. If more of the lot is coming, the remainder waits for it instead."
+  },
+  {
    "fieldname": "section_program_view",
    "fieldtype": "Section Break",
    "label": "Program View"
@@ -90,7 +98,7 @@
    "fieldname": "program_view_notes",
    "fieldtype": "Small Text",
    "label": "Program View Notes",
-   "description": "The general notes box on the Program View screen \u2014 a shared scratchpad for the floor, not tied to any one machine or program."
+   "description": "The general notes box on the Program View screen — a shared scratchpad for the floor, not tied to any one machine or program."
   },
   {
    "fieldname": "section_print",
@@ -101,7 +109,7 @@
    "fieldname": "company_address",
    "fieldtype": "Small Text",
    "label": "Company Address",
-   "description": "Printed under the brand on the challan. Left blank, the challan simply omits it \u2014 nothing is invented."
+   "description": "Printed under the brand on the challan. Left blank, the challan simply omits it — nothing is invented."
   },
   {
    "fieldname": "challan_terms",
@@ -130,19 +138,19 @@
    "precision": "2",
    "description": "A hisab wasting more than this is flagged for the admin to look at twice."
   },
-    {
-      "default": "600",
-      "description": "Material bought in fixed lots \u2014 the size of one lot, in kg. Applied only to orders ticked \"Purchase in fixed lots\".",
-      "fieldname": "purchase_qty_multiple",
-      "fieldtype": "Float",
-      "label": "Purchase Lot Size (Kg)",
-      "precision": "3"
-    }
+  {
+   "default": "600",
+   "description": "Material bought in fixed lots — the size of one lot, in kg. Applied only to orders ticked \"Purchase in fixed lots\".",
+   "fieldname": "purchase_qty_multiple",
+   "fieldtype": "Float",
+   "label": "Purchase Lot Size (Kg)",
+   "precision": "3"
+  }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-29 00:00:00.000000",
+ "modified": "2026-10-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Settings",

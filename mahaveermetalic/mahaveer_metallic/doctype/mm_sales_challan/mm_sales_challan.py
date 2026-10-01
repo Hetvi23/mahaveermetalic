@@ -203,6 +203,42 @@ class MMSalesChallan(Document):
 			total += float(it.amount or 0)
 		self.total_amount = round(total, 2)
 
+	def _sweep_wastage(self):
+		"""After the goods leave, look at what each colour+lot has left behind.
+
+		A dispatch is the moment the question arises: 390 kg went out, 10 kg is standing
+		there, is that a quantity or a tail? The rule and the reason both live in
+		mahaveer_metallic.wastage — this only asks it, once per colour+lot the challan
+		touched, and says out loud what it decided.
+
+		A job challan is not a dispatch and never asks: material at a worker is coming back.
+
+		Never fatal. The goods have gone and the challan is posted; a problem deciding about
+		a 10 kg tail must not undo that.
+		"""
+		if (self.challan_type or "Sales") in NON_DISPATCH_TYPES:
+			return
+		from mahaveermetalic.mahaveer_metallic import wastage
+
+		seen = set()
+		for it in self.items:
+			key = (it.color_name, it.get("lot_number") or "")
+			if not it.color_name or key in seen:
+				continue
+			seen.add(key)
+			try:
+				res = wastage.consider(
+					it.color_name, key[1], branch=self.branch, location=self.location,
+					voucher=self.name,
+				)
+			except Exception:
+				frappe.log_error(title=f"wastage sweep failed on {self.name}")
+				continue
+			if res.get("action") == "wastage":
+				frappe.msgprint(_(res["reason"]), alert=True, indicator="orange")
+			elif res.get("action") == "wait":
+				frappe.msgprint(_(res["reason"]), alert=True, indicator="blue")
+
 	def on_submit(self):
 		"""Dispatching finally moves stock.
 
@@ -213,6 +249,7 @@ class MMSalesChallan(Document):
 		self._move_stock(reverse=False)
 		self._post_bobbins()
 		self._mark_orders_dispatched()
+		self._sweep_wastage()
 
 	def on_cancel(self):
 		self._move_stock(reverse=True)

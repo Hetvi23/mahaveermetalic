@@ -83,6 +83,15 @@ def auto_close_enabled() -> bool:
 	return True
 
 
+def get_wastage_threshold_kg() -> float:
+	"""Below this, a leftover of one colour+lot is written off rather than carried.
+
+	The shop's own figure, in kilos, not a percentage: a 10 kg tail on a 400 kg lot and a
+	10 kg tail on a 40 kg one are the same inconvenience on the floor. Defaults to 15.
+	"""
+	return _mm_setting_float("wastage_threshold_kg", 15.0)
+
+
 def get_inward_match_tolerance() -> float:
 	"""How far SHORT a receipt may fall and still count as complete (%).
 
