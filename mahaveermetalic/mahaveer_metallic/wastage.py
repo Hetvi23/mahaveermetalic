@@ -34,11 +34,21 @@ from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 def inward_still_coming(colour: str, lot_number: str) -> str | None:
 	"""An inward of this colour+lot that has not been cut yet — the reason to wait.
 
-	`cut_status` is the inward line's own word for it: "In Stock" is material still to be
-	cut, "In Cutting" is material already on its way through. Either way it has not reached
-	finished goods yet, so it is still coming.
+	UNCUT IS THE TEST, and it is the app's own: `api.cutting` lists a row as available "until
+	it's linked to a cutting", keyed on `cutting is null` and deliberately NOT on cut_status.
+
+	cut_status is no use here. It only ever goes In Stock -> In Cutting and never gains a
+	"consumed" state, so a lot whose inward was cut, programmed and produced months ago
+	still reads "In Cutting" for ever. Testing on it meant every lot looked like it had more
+	coming and NOTHING would ever have reached wastage — the rule would have been dead on
+	arrival, quietly.
+
+	So: an inward row of this colour+lot that has not been taken into a cutting yet. That is
+	the 330 kg of Lot1 still sitting there that stops its 5 kg tail being written off, and
+	its absence on Lot2 is what lets Lot2's tail go.
 
 	Scoped to SUBMITTED inwards. A draft is not a delivery, and a cancelled one never was.
+	A Stock Only row is still material that will be cut, so it counts.
 	"""
 	if not colour:
 		return None
@@ -51,7 +61,7 @@ def inward_still_coming(colour: str, lot_number: str) -> str | None:
 		  and ifnull(i.is_gr, 0) = 0
 		  and ii.color_name = %(colour)s
 		  and ifnull(ii.lot_number, '') = ifnull(%(lot)s, '')
-		  and ifnull(ii.cut_status, 'In Stock') in ('In Stock', 'In Cutting')
+		  and ii.cutting is null
 		limit 1
 		""",
 		{"colour": colour, "lot": lot_number or ""},
