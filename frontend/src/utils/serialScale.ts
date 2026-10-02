@@ -153,9 +153,21 @@ function isBusy(e: unknown): boolean {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-const FRAME = { dataBits: 8, stopBits: 1, parity: "none", flowControl: "none", bufferSize: 4096 } as const;
+/** The wire framing. 8N1 is the common default, but a good number of Indian indicators
+ *  (National, Essae and others) ship as 7E1 — and with the wrong framing the port opens
+ *  perfectly and then either stays silent or delivers nothing parseable, which is exactly
+ *  what "the indicator hasn't sent anything" looks like from here. */
+export const FRAMES = {
+  "8N1": { dataBits: 8, parity: "none" },
+  "7E1": { dataBits: 7, parity: "even" },
+  "7O1": { dataBits: 7, parity: "odd" },
+} as const;
+export type FrameName = keyof typeof FRAMES;
 
-async function openPort(port: SerialPortLike, baudRate: number): Promise<void> {
+const FRAME_BASE = { stopBits: 1, flowControl: "none", bufferSize: 4096 } as const;
+
+async function openPort(port: SerialPortLike, baudRate: number, frame: FrameName = "8N1"): Promise<void> {
+  const FRAME = { ...FRAME_BASE, ...(FRAMES[frame] ?? FRAMES["8N1"]) };
   try {
     await port.open({ baudRate, ...FRAME });
     return;
@@ -288,7 +300,7 @@ export function useSerialScale() {
   }, [clearSilence]);
 
   const autoConnect = useCallback(
-    async (baudRate = 9600) => {
+    async (baudRate = 9600, frame: FrameName = "8N1") => {
       if (!serial || connected || connecting) return false;
       const port = await rememberedPort(serial);
       if (!port) return false;
@@ -298,7 +310,7 @@ export function useSerialScale() {
       stopRef.current = false;
       await release();
       try {
-        await openPort(port, baudRate);
+        await openPort(port, baudRate, frame);
         portRef.current = port;
         // Remember what opened itself, so the next auto-connect knows it by name rather
         // than by "there is only one".
@@ -322,7 +334,7 @@ export function useSerialScale() {
   );
 
   const connect = useCallback(
-    async (baudRate = 9600, opts?: { pick?: boolean }) => {
+    async (baudRate = 9600, opts?: { pick?: boolean; frame?: FrameName }) => {
       if (!serial) { setError("Web Serial is not available in this browser / context."); return; }
       setError(null);
       setNote(null);
@@ -336,7 +348,7 @@ export function useSerialScale() {
       let port: SerialPortLike | null = null;
       try {
         port = (opts?.pick ? null : await rememberedPort(serial)) ?? (await serial.requestPort());
-        await openPort(port, baudRate);
+        await openPort(port, baudRate, opts?.frame ?? "8N1");
         portRef.current = port;
         try { window.localStorage.setItem(PORT_KEY, portKey(port)); } catch { /* ignore */ }
         setPortLabel(describePort(port));

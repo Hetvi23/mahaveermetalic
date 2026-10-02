@@ -5,7 +5,7 @@ import { Factory, Pencil, Plus, Printer, Search, Trash2, X, ArrowRight, ShieldAl
 import { LotRemarkBadge, useLotRemarks, type LotRemark } from "@/components/LotRemarkBadge";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { toast } from "@/components/Toaster";
-import { useSerialScale } from "@/utils/serialScale";
+import { useSerialScale, FRAMES, type FrameName } from "@/utils/serialScale";
 import QuickCreateMaster from "@/components/QuickCreateMaster";
 import { getMasterByDoctype } from "@/config/registry";
 import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
@@ -232,6 +232,15 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     const saved = typeof window !== "undefined" ? Number(window.localStorage.getItem("mm-scale-baud")) : 0;
     return BAUDS.includes(saved) ? saved : 9600;
   });
+  /* THE WIRE FRAMING, remembered per PC like the baud rate. 8N1 is the usual default but
+     a good number of Indian indicators ship as 7E1, and with the wrong framing the port
+     opens perfectly and then nothing readable ever arrives — which on screen is
+     indistinguishable from a scale that is switched off (Hetvi: "scale not picking
+     anything"). */
+  const [frame, setFrame] = useState<FrameName>(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("mm-scale-frame") : null;
+    return (saved && saved in FRAMES ? saved : "8N1") as FrameName;
+  });
   const { supported: scaleOk, granted: scaleGranted, connected: scaleOn, connecting: scaleBusy, autoConnect } = scale;
   const [scaleTries, setScaleTries] = useState(0);
   // A port appearing — the operator picked the scale, or plugged the cable in — is a fresh
@@ -247,7 +256,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     if (!scaleOk || scaleOn || scaleBusy || scaleTries > 4 || scaleGranted === 0) return;
     const t = setTimeout(() => {
       setScaleTries((n) => n + 1);
-      void autoConnect(baud);
+      void autoConnect(baud, frame);
     }, scaleTries === 0 ? 0 : 4000);
     return () => clearTimeout(t);
     // baud deliberately not a dependency: changing it must not re-fire the auto-connect
@@ -784,6 +793,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 scale={scale}
                 baud={baud}
                 onBaud={(b) => { setBaud(b); window.localStorage.setItem("mm-scale-baud", String(b)); }}
+                frame={frame}
+                onFrame={(f) => { setFrame(f); window.localStorage.setItem("mm-scale-frame", f); }}
                 onClose={() => { setAdding(false); setEditing(null); }}
                 onAdd={(bx) => {
                   const wasEdit = editing != null;
@@ -969,7 +980,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
 /* ── Box Details popup: the per-box calculator (Net = Gross − Bobbin − Box) ── */
 function BoxDialog({
-  bobbinMasters, availableNet, defaultItem, edit, prev, defaultReturns, scale, baud, onBaud, onClose, onAdd,
+  bobbinMasters, availableNet, defaultItem, edit, prev, defaultReturns, scale, baud, onBaud, frame, onFrame, onClose, onAdd,
 }: {
   bobbinMasters: BobbinMaster[]; availableNet: number; defaultItem: string;
   edit?: BoxRow;
@@ -979,6 +990,7 @@ function BoxDialog({
   /** Opened by the voucher, so it survives this form remounting after every box. */
   scale: ReturnType<typeof useSerialScale>;
   baud: number; onBaud: (b: number) => void;
+  frame: FrameName; onFrame: (f: FrameName) => void;
   onClose: () => void; onAdd: (b: BoxRow) => void;
 }) {
   const [extraBobbins, setExtraBobbins] = useState<BobbinMaster[]>([]);
@@ -1164,7 +1176,7 @@ function BoxDialog({
                 actually keyed, and the scale writes into it too. */}
             <NumInput className="mm-input" value={gross} placeholder="0.000" autoFocus data-bx="gross"
               onChange={(v) => { setGrossTyped(true); setGross(v === "" ? "" : Number(v)); }} />
-            <ScaleCapture scale={scale} baud={baud} onBaud={onBaud}
+            <ScaleCapture scale={scale} baud={baud} onBaud={onBaud} frame={frame} onFrame={onFrame}
               onCapture={(w) => { setGrossTyped(false); setGross(Number(w.toFixed(3))); }} />
           </div>
         </div>
@@ -1253,9 +1265,10 @@ const BAUDS = [9600, 2400, 4800, 19200, 38400, 1200];
 
 /** The scale's controls and its live reading. The connection itself belongs to the
  *  voucher above — this only drives it, so moving between boxes never drops the port. */
-function ScaleCapture({ scale, baud, onBaud, onCapture }: {
+function ScaleCapture({ scale, baud, onBaud, frame, onFrame, onCapture }: {
   scale: ReturnType<typeof useSerialScale>;
   baud: number; onBaud: (b: number) => void;
+  frame: FrameName; onFrame: (f: FrameName) => void;
   onCapture: (weight: number) => void;
 }) {
   const { supported, granted, connected, connecting, error, note, portLabel, reading, connect, disconnect } = scale;
@@ -1288,17 +1301,25 @@ function ScaleCapture({ scale, baud, onBaud, onCapture }: {
           >
             {BAUDS.map((b) => <option key={b} value={b}>{b} baud</option>)}
           </select>
+          {/* 8N1 or 7E1 — the other half of "why is nothing arriving". */}
+          <select
+            className="mm-input mm-input-compact mm-scale-baud"
+            value={frame}
+            title="Data bits / parity. Most indicators are 8N1; many Indian ones are 7E1 — try the other if nothing arrives"
+            onChange={(e) => onFrame(e.target.value as FrameName)}>
+            {(Object.keys(FRAMES) as FrameName[]).map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
           <button type="button" className={`mm-mini${unlinked ? " mm-mini-ok" : ""}`} disabled={connecting}
             title={unlinked
               ? "Chrome asks which COM port the scale is on. It only asks once on this PC."
               : "Reopen the scale this PC was linked to"}
-            onClick={() => void connect(baud, unlinked ? { pick: true } : undefined)}>
+            onClick={() => void connect(baud, { pick: unlinked, frame })}>
             <Scale size={13} /> {connecting ? "Connecting…" : unlinked ? "Choose the scale (once)" : "Connect scale"}
           </button>
           {/* The remembered port is the wrong one on any PC where the TSC printer also
               shows up as a COM port, so keep a way back to the picker. */}
           {!unlinked && (
-            <button type="button" className="mm-mini" disabled={connecting} title="Pick the COM port again" onClick={() => void connect(baud, { pick: true })}>
+            <button type="button" className="mm-mini" disabled={connecting} title="Pick the COM port again" onClick={() => void connect(baud, { pick: true, frame })}>
               Choose port
             </button>
           )}
