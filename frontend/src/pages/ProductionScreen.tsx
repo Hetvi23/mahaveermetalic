@@ -1271,7 +1271,7 @@ function ScaleCapture({ scale, baud, onBaud, frame, onFrame, onCapture }: {
   frame: FrameName; onFrame: (f: FrameName) => void;
   onCapture: (weight: number) => void;
 }) {
-  const { supported, granted, connected, connecting, error, note, portLabel, reading, connect, disconnect } = scale;
+  const { supported, granted, connected, connecting, error, note, portLabel, reading, bytes, connect, disconnect } = scale;
   // Chrome hands a page a serial port on a click and never otherwise, and the grant does
   // not travel between sites or PCs. So on a machine that has never been asked, there is
   // nothing to reopen and no amount of trying will connect: say that, ask for the one
@@ -1337,7 +1337,17 @@ function ScaleCapture({ scale, baud, onBaud, frame, onFrame, onCapture }: {
           <button type="button" className="mm-mini" onClick={() => void disconnect()}>Disconnect</button>
         </div>
       )}
-      {connected && reading && <div className="mm-scale-raw" title="Raw frame from the scale — share this to lock the parser">{reading.raw}</div>}
+      {/* THE ONE NUMBER WORTH SEEING when nothing appears: bytes received. Zero means the
+          indicator is not transmitting — demand mode, wrong port, or a cable fault — and no
+          amount of changing baud or framing will help. Anything above zero means it IS
+          talking and only the settings or the parser are wrong, which is fixable. */}
+      {connected && (
+        <div className="mm-scale-raw" title="Raw frame from the scale — share this to lock the parser">
+          {reading ? reading.raw : bytes > 0
+            ? `${bytes} bytes in, none readable yet — try the other framing or baud rate`
+            : "0 bytes in — the indicator is not sending (check it is set to continuous, not print-on-demand)"}
+        </div>
+      )}
       {!connected && unlinked && (
         <p className="mm-muted mm-scale-hint">
           <Scale size={12} /> This PC has not been shown the scale yet. Pick its COM port once — every voucher after that connects by itself.

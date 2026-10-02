@@ -214,6 +214,9 @@ export function useSerialScale() {
   const [note, setNote] = useState<string | null>(null);
   const [portLabel, setPortLabel] = useState<string | null>(null);
   const [reading, setReading] = useState<ScaleReading | null>(null);
+  /** How many bytes this port has delivered. The one number that separates "the scale is
+   *  silent" from "the scale is talking and we cannot read it". */
+  const [bytes, setBytes] = useState(0);
 
   const portRef = useRef<SerialPortLike | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
@@ -238,6 +241,7 @@ export function useSerialScale() {
     setConnected(false);
     setPortLabel(null);
     setNote(null);
+    setBytes(0);
   }, [clearSilence, release]);
 
   /**
@@ -269,25 +273,46 @@ export function useSerialScale() {
       );
     }, SILENCE_MS);
 
-    // Background read loop — split the byte stream into CR/LF-delimited frames.
+    // Background read loop — split the byte stream into frames.
+    //
+    // ANY BYTE MEANS THE SCALE IS TALKING. The silence timer used to be cleared only when a
+    // whole CR/LF-terminated line arrived, so an indicator that streams a fixed-width frame
+    // with no line ending — several do, some wrap in STX/ETX instead — filled the buffer
+    // for ever while the screen said "the indicator hasn't sent anything". That sentence
+    // sent the floor hunting for a cable fault that was not there. Bytes now stop the
+    // timer; whether they PARSE is a separate question, answered below.
+    let flush: ReturnType<typeof setTimeout> | null = null;
+    const emit = (ln: string) => {
+      if (!ln.trim()) return;
+      setNote(null);
+      setReading(parseScaleFrame(ln));
+    };
     void (async () => {
       try {
         while (!stopRef.current) {
           const { value, done } = await reader.read();
           if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const parts = buf.split(/\r\n|\r|\n/);
-          buf = parts.pop() ?? "";
-          for (const ln of parts) {
-            if (!ln.trim()) continue;
+          if (value?.length) {
             clearSilence();
-            setNote(null);
-            setReading(parseScaleFrame(ln));
+            setBytes((n) => n + value.length);
           }
+          buf += decoder.decode(value, { stream: true });
+          // STX/ETX are delimiters too, and are stripped rather than parsed.
+          const parts = buf.split(/\r\n|\r|\n|\x02|\x03/);
+          buf = parts.pop() ?? "";
+          for (const ln of parts) emit(ln);
+          // NO DELIMITER AT ALL is a real frame style, not a fault. A buffer that stops
+          // growing for a moment is a finished frame, and one that runs long without a
+          // break never had a delimiter to wait for — either way, read it rather than hold
+          // it for ever.
+          if (flush) clearTimeout(flush);
+          if (buf.length > 160) { emit(buf); buf = ""; }
+          else if (buf) flush = setTimeout(() => { emit(buf); buf = ""; }, 400);
         }
       } catch (e) {
         if (!stopRef.current) setError(String((e as Error)?.message || e));
       } finally {
+        if (flush) clearTimeout(flush);
         // The cable being pulled ends the stream; without this the UI keeps claiming it is
         // connected and the operator waits on a reading that can never arrive.
         if (!stopRef.current) {
@@ -400,5 +425,5 @@ export function useSerialScale() {
   // Clean up the port on unmount.
   useEffect(() => () => { void disconnect(); }, [disconnect]);
 
-  return { supported, granted, connected, connecting, error, note, portLabel, reading, connect, autoConnect, disconnect };
+  return { supported, granted, connected, connecting, error, note, portLabel, reading, bytes, connect, autoConnect, disconnect };
 }
