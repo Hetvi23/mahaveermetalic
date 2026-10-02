@@ -212,6 +212,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   );
   // A stock-only production raises no challan, so its labels come off its own boxes. Same
   // shape as challan_for_print, so the sticker builder takes it unchanged.
+  // The next number in whichever book is chosen. Each book counts on its own and restarts
+  // every financial year, so this is a question only the server can answer.
+  const { call: nextIdCall } = useFrappePostCall<{ message: string }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.next_challan_id",
+  );
   const { call: fetchBoxLabels } = useFrappePostCall<{ message: ChallanPrintData | null }>(
     "mahaveermetalic.mahaveer_metallic.api.challan.production_box_labels",
   );
@@ -293,6 +298,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     setChallanSeries(jobWork ? "Job Challan" : DISPATCH_SERIES[0].value);
   }, [jobWork, seriesTouched]);
   const [challanId, setChallanId] = useState("");
+  /** Typed by hand? Then the book's own count stops suggesting over it. */
+  const [challanIdTyped, setChallanIdTyped] = useState(false);
   const [vdate, setVdate] = useState<string>(today());
   /* THE CHALLAN ID IS TYPED, NOT SUGGESTED (Hetvi: "make challan id manual for now"). The
      book's next number is still available server-side — api.challan.next_challan_id, which
@@ -423,7 +430,14 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
    *  prefix (MMProduction._box_prefix), so what is printed is what is saved. */
   /** Is this voucher raising a dispatch challan? Only then is there a book, a challan ID,
    *  or a challan for the boxes to be named after. */
-  const challanActive = !!order && !toStock;
+  /* A CHALLAN IS RAISED FOR THE PARTY, with or without an order behind it — that is what
+     create_challan_from_production does, and has done since production without an order
+     stopped being invisible. The ID was gated on the ORDER anyway, so a voucher naming a
+     customer but no order could not be given its number and the field read "No order —
+     goes to stock", which was simply untrue: it goes out on a challan (Hetvi: "allow
+     challan id even when order not selected"). Ticking Add to stock is the one thing that
+     really does raise nothing. */
+  const challanActive = !!party && !toStock;
   const seriesCode = DISPATCH_SERIES.find((t) => t.value === challanSeries)?.series ?? "MMUSC-";
   // …but only when a challan is actually raised. Without an order the boxes go to stock,
   // there is no challan to name them after, and the voucher's own number stands in.
@@ -447,6 +461,27 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   const isRealCode = (c?: string) => !!c && !c.startsWith("PREVIEW-");
   // Once a sticker carries the ID, what the code is built from cannot change under it.
   const codesPrinted = boxes.some((b) => isRealCode(b.code));
+
+  /* THE BOOK'S OWN NEXT NUMBER, suggested as soon as a book is chosen (Hetvi: "by auto
+     bring the latest series based on challan type"). Re-asked when the book or the date
+     changes, because each book counts separately and restarts every financial year.
+
+     It never writes over a number somebody keyed, and never over one a box is already
+     wearing: the stickers are built from this ID, so a suggestion landing on top of it
+     would label the rest of the boxes differently from the first. */
+  useEffect(() => {
+    if (!challanActive || challanIdTyped || codesPrinted) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const r = await nextIdCall({ series: challanSeries, on: vdate });
+        const next = (r as { message?: string })?.message;
+        if (alive && next) setChallanId(String(next));
+      } catch { /* a suggestion that cannot be fetched is simply not made */ }
+    })();
+    return () => { alive = false; };
+  }, [challanActive, challanSeries, vdate, challanIdTyped, codesPrinted, nextIdCall]);
+
 
   /** One box as a sticker — otherwise exactly the label that gets stuck on. */
   const stickerFor = (b: BoxRow, i: number) => ({
@@ -679,7 +714,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <span className="mm-field-label">Challan Type</span>
               <SearchSelect noClear value={challanSeries} onChange={(v) => { setChallanSeries(v); setSeriesTouched(true); }}
                 disabled={!challanActive}
-                placeholder={challanActive ? "Sales Chalan" : toStock ? "Added to stock" : "No order — goes to stock"}
+                placeholder={challanActive ? "Sales Chalan" : toStock ? "Added to stock" : "No party — goes to stock"}
                 options={DISPATCH_SERIES.map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
             </label>
             <label className="mm-field">
@@ -689,8 +724,12 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
               <input className="mm-input" value={challanId} disabled={!challanActive}
                 readOnly={codesPrinted && challanActive}
                 title={codesPrinted ? "Boxes are already labelled with this ID — delete them to change it" : undefined}
-                placeholder={challanActive ? "e.g. 123" : toStock ? "Added to stock" : "No order — goes to stock"}
-                onChange={(e) => setChallanId(e.target.value)} />
+                placeholder={challanActive ? "e.g. 123" : toStock ? "Added to stock" : "No party — goes to stock"}
+                onChange={(e) => {
+                  setChallanId(e.target.value);
+                  // Emptying it asks for the suggestion back rather than leaving it blank.
+                  setChallanIdTyped(e.target.value.trim() !== "");
+                }} />
               {challanActive && challanId.trim() && (
                 <span className="mm-field-hint">
                   Saved as <b>{challanIdFor(
