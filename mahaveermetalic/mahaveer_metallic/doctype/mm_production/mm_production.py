@@ -180,6 +180,22 @@ class MMProduction(Document):
 					if br and not self.branch:
 						self.db_set("branch", br, update_modified=False)
 					break
+		# STILL NOTHING? Take the site's own, when it has only one.
+		#
+		# Giving up here is how 431 kg of real material went missing on
+		# mm.mahaveermetalic.com: six productions whose program and cutting both carried no
+		# location wrote no stock row at all, and the only sign was an alert on a screen
+		# that had already moved on. A shop with one location cannot mean anywhere else, so
+		# guessing is not guessing. Two or more and it still refuses, because then it would
+		# be putting stock somewhere nobody chose.
+		if not self.location:
+			locs = frappe.get_all("MM Location Master", pluck="name", limit=2)
+			if len(locs) == 1:
+				self.db_set("location", locs[0], update_modified=False)
+				if not self.branch:
+					brs = frappe.get_all("MM Branch", pluck="name", limit=2)
+					if len(brs) == 1:
+						self.db_set("branch", brs[0], update_modified=False)
 		if not self.location:
 			frappe.msgprint(
 				_("No location on this production, so its output wasn't added to inventory."), alert=True

@@ -224,10 +224,25 @@ def create_cutting(
 	resolved_shade = shade or entries[0].color_name
 	roll_no = entries[0].roll_name or resolved_shade or "—"
 
+	# WHERE THIS MATERIAL IS. MM Cutting carries branch and location and nothing was filling
+	# them, so every cutting made this way came out blank — and the blank travelled: the
+	# program took none either, and MMProduction._add_to_inventory, which falls back to the
+	# program's and then the cutting's location before giving up, gave up. Six productions
+	# on mm.mahaveermetalic.com wrote no stock row at all for that reason, 431 kg of real
+	# material that the system never saw. It comes off the inward the rows belong to, which
+	# is where it was always known.
+	src = frappe.db.sql(
+		"""select i.branch, i.location from `tabMM Inward Item` ii
+		join `tabMM Inward` i on i.name = ii.parent
+		where ii.name in %(names)s and ifnull(i.location, '') != '' limit 1""",
+		{"names": tuple(names)}, as_dict=True,
+	)
 	cutting = frappe.get_doc(
 		{
 			"doctype": "MM Cutting",
 			"posting_date": cutting_date or frappe.utils.nowdate(),
+			"branch": src[0].branch if src else None,
+			"location": src[0].location if src else None,
 			"customer_order": order,
 			"lot": entries[0].get("lot"),
 			"roll_no": roll_no,
