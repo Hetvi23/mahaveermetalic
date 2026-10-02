@@ -462,25 +462,35 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // Once a sticker carries the ID, what the code is built from cannot change under it.
   const codesPrinted = boxes.some((b) => isRealCode(b.code));
 
-  /* THE BOOK'S OWN NEXT NUMBER, suggested as soon as a book is chosen (Hetvi: "by auto
-     bring the latest series based on challan type"). Re-asked when the book or the date
-     changes, because each book counts separately and restarts every financial year.
+  /* THE BOOK'S OWN NEXT NUMBER, suggested once per book-and-date (Hetvi: "by auto bring
+     the latest series based on challan type"). Each book counts on its own and restarts
+     every financial year, so it is re-asked when either changes.
 
-     It never writes over a number somebody keyed, and never over one a box is already
-     wearing: the stickers are built from this ID, so a suggestion landing on top of it
-     would label the rest of the boxes differently from the first. */
+     ASKED ONCE, AND TYPING ALWAYS WINS. `nextIdCall` is a fresh function on every render,
+     so listing it as a dependency re-ran this on every render — each run fetching, setting
+     the id, re-rendering, fetching again. Keystrokes landed in the middle of that and the
+     next answer wrote straight over them, which reads as a field that will not let you
+     type (Hetvi: "it should be editable as well"). A ref remembers what has already been
+     asked, and a second ref holds whether the operator has typed, read at the moment the
+     answer arrives rather than when it was sent. */
+  const suggestedFor = useRef("");
+  const typedRef = useRef(false);
   useEffect(() => {
     if (!challanActive || challanIdTyped || codesPrinted) return;
-    let alive = true;
+    const key = `${challanSeries}|${vdate}`;
+    if (suggestedFor.current === key) return;
+    suggestedFor.current = key;
     void (async () => {
       try {
         const r = await nextIdCall({ series: challanSeries, on: vdate });
         const next = (r as { message?: string })?.message;
-        if (alive && next) setChallanId(String(next));
+        // Typed while this was in flight? Then the number on screen is theirs, not ours.
+        if (next && !typedRef.current) setChallanId(String(next));
       } catch { /* a suggestion that cannot be fetched is simply not made */ }
     })();
-    return () => { alive = false; };
-  }, [challanActive, challanSeries, vdate, challanIdTyped, codesPrinted, nextIdCall]);
+    // nextIdCall is deliberately NOT a dependency — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challanActive, challanSeries, vdate, challanIdTyped, codesPrinted]);
 
 
   /** One box as a sticker — otherwise exactly the label that gets stuck on. */
@@ -726,9 +736,14 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 title={codesPrinted ? "Boxes are already labelled with this ID — delete them to change it" : undefined}
                 placeholder={challanActive ? "e.g. 123" : toStock ? "Added to stock" : "No party — goes to stock"}
                 onChange={(e) => {
-                  setChallanId(e.target.value);
-                  // Emptying it asks for the suggestion back rather than leaving it blank.
-                  setChallanIdTyped(e.target.value.trim() !== "");
+                  const v = e.target.value;
+                  setChallanId(v);
+                  // Set on the ref FIRST and synchronously: an answer already in flight is
+                  // checked against this, not against state that has not settled yet.
+                  typedRef.current = v.trim() !== "";
+                  setChallanIdTyped(typedRef.current);
+                  // Emptied by hand? Let the book suggest again for this type and date.
+                  if (!typedRef.current) suggestedFor.current = "";
                 }} />
               {challanActive && challanId.trim() && (
                 <span className="mm-field-hint">
