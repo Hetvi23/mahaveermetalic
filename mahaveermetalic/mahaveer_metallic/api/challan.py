@@ -86,6 +86,15 @@ def create_challan_from_production(production, challan_series=None, challan_id=N
 					"total_bobbin_weight": b.total_bobbin_weight,
 					"box_weight": b.box_weight,
 					"net_weight": b.net_weight,
+					# THE RETURN TICKS, which this dict left out. _box_row maps box_return ->
+					# r_box and bobbin_return -> r_bobbin, but it can only map what it is
+					# handed: the ten fields above were listed by name and these two were not,
+					# so every challan a production raised for itself printed "Return No. of
+					# Box: 0 — No. of Bobbin: 0" however the boxes were ticked. MMUSC-2089-26/27
+					# is one: both its boxes carry box_return=1 and bobbin_return=1 and the
+					# paper said 0 and 0.
+					"box_return": b.box_return,
+					"bobbin_return": b.bobbin_return,
 				},
 				production=prod.name,
 				order=prod.customer_order,
@@ -264,8 +273,11 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	for name in box_list:
 		b = frappe.db.get_value(
 			"MM Production Box", name,
+			# box_return / bobbin_return are read here for the same reason they are passed in
+			# create_challan_from_production: _box_row maps them onto r_box / r_bobbin, and a
+			# field left out of this list is a field it never sees.
 			["parent", "item", "barcode", "gross_weight", "bobbin", "bobbin_pcs", "bobbin_pcs_weight",
-			 "total_bobbin_weight", "box_weight", "net_weight"],
+			 "total_bobbin_weight", "box_weight", "net_weight", "box_return", "bobbin_return"],
 			as_dict=True,
 		)
 		if not b:
