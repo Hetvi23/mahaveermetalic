@@ -369,10 +369,37 @@ class MMSalesChallan(Document):
 		if it.get("roll_inventory") and frappe.db.exists("MM Roll Inventory", it.roll_inventory):
 			return frappe.get_doc("MM Roll Inventory", it.roll_inventory)
 
+		# THE LOT THE BOXES CAME FROM, first. A produced box belongs to one lot's pile, and
+		# matching on colour alone took `limit 1` off whatever row happened to come back —
+		# so a dispatch of one lot could be deducted from another lot's stock, or off a raw
+		# inward roll instead of the finished pile it actually left. The colour's total came
+		# out right and every per-lot figure was wrong, which is what "the deduction is not
+		# done" looks like from the floor: the pile you are watching does not move.
+		lot_no = None
+		if it.get("production"):
+			lot = frappe.db.get_value("MM Production", it.production, "lot")
+			if lot:
+				lot_no = frappe.db.get_value("MM Lot", lot, "lot_id")
+		if lot_no:
+			scoped = {"color_name": it.color_name, "lot_number": lot_no}
+			if self.location:
+				scoped["location"] = self.location
+			# Prefer a row that can actually give the weight, so a lot spread over several
+			# rows is drawn from one that holds something rather than an emptied one.
+			hit = frappe.get_all(
+				"MM Roll Inventory", filters=scoped, fields=["name"],
+				order_by="stock_weight desc", limit=1,
+			)
+			if hit:
+				return frappe.get_doc("MM Roll Inventory", hit[0].name)
+
 		filters = {"color_name": it.color_name}
 		if self.location:
 			filters["location"] = self.location
-		match = frappe.get_all("MM Roll Inventory", filters=filters, fields=["name"], limit=1)
+		match = frappe.get_all(
+			"MM Roll Inventory", filters=filters, fields=["name"],
+			order_by="stock_weight desc", limit=1,
+		)
 		if match:
 			return frappe.get_doc("MM Roll Inventory", match[0].name)
 

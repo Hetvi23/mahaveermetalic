@@ -195,7 +195,15 @@ def create_cutting(
 	entries = frappe.db.sql(
 		"""
 		select item.name, item.parent, item.cutting, item.customer_order,
-			item.roll_name, item.color_name, item.cut, item.weight, inw.party, inw.lot as lot
+			item.roll_name, item.color_name, item.cut, item.weight, inw.party,
+			-- THE ROW'S OWN LOT. This read inw.lot — the lot on the inward HEADER — but a
+			-- lot belongs to a ROW here (one inward carries several lots, which is the whole
+			-- point of lot-per-row), and the header's is usually empty. So the cutting came
+			-- out with no lot, the program inherited none, the production none, and its
+			-- finished goods landed in a lot-less pile: 456.71 kg of Silver BSM and 509.58
+			-- of ST10 ANMOL BS are sitting in exactly such piles on vm.essenceerp.in. That
+			-- is why output never merged by lot — there was no lot on it to merge by.
+			coalesce(item.lot, inw.lot) as lot
 		from `tabMM Inward Item` item
 		join `tabMM Inward` inw on inw.name = item.parent
 		where item.name in %(names)s
