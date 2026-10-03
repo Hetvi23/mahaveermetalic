@@ -208,10 +208,24 @@ class MMProduction(Document):
 			"lot_number": lot_no,
 			"color_name": self.shade,
 		}
+		# ONE FINISHED PILE PER COLOUR AND LOT — which is the whole of "same colour, same lot
+		# merges". This took the FIRST row of the colour matching branch/location/lot, and
+		# those rows are the raw inward ROLLS: the inward keys on roll_no, so one lot is one
+		# row per roll. Output therefore landed on whichever roll happened to come back
+		# first, finished goods were mixed into raw stock, and a lot stayed spread across
+		# rolls instead of adding up. STB ANMOL BSM's LT8/26-27 is four rows of ~300 kg on
+		# mm.mahaveermetalic.com where the floor expects one of ~1,187.
+		#
+		# The finished pile is the row this very method creates, and it names itself after
+		# the colour rather than a roll. So that is what is looked for, and only that.
+		pile_roll = self.shade
 		existing = None
-		for cand in frappe.get_all("MM Roll Inventory", filters={"color_name": self.shade}, fields=["name", "branch", "location", "lot_number"]):
+		for cand in frappe.get_all(
+			"MM Roll Inventory", filters={"color_name": self.shade},
+			fields=["name", "branch", "location", "lot_number", "roll_no"],
+		):
 			if (cand.branch or "") == (self.branch or "") and (cand.location or "") == (self.location or "") \
-				and (cand.lot_number or "") == (lot_no or ""):
+				and (cand.lot_number or "") == (lot_no or "") and (cand.roll_no or "") == pile_roll:
 				existing = cand.name
 				break
 		boxes = float(self.box_qty or 0) or len(self.boxes or [])
@@ -221,7 +235,9 @@ class MMProduction(Document):
 			row.stock_box = round(float(row.stock_box or 0) + boxes, 3)
 			row.save(ignore_permissions=True)
 		else:
-			row = frappe.get_doc(dict({"doctype": "MM Roll Inventory", "roll_no": self.roll_no or self.shade,
+			# Named for the COLOUR, not the roll that happened to feed it: the pile is the
+			# lot's finished goods, and the next production of the same lot must find it.
+			row = frappe.get_doc(dict({"doctype": "MM Roll Inventory", "roll_no": pile_roll,
 				"stock_weight": net, "stock_box": boxes}, **key))
 			row.insert(ignore_permissions=True)
 		stock_ledger.post_movement(
