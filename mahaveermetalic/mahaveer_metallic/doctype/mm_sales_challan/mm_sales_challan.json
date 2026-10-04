@@ -10,6 +10,7 @@
   "naming_series",
   "transaction_date",
   "party",
+  "company_name",
   "sales_order",
   "col_break_1",
   "branch",
@@ -69,6 +70,12 @@
    "label": "Company / Party",
    "options": "MM Party Master",
    "reqd": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "label": "Company",
+   "description": "The firm this challan is made out to. A party can trade as several companies, and the paper names the one that was chosen — not whichever happens to be first on the party."
   },
   {
    "fieldname": "sales_order",
@@ -197,7 +204,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-12 17:18:18.864989",
+ "modified": "2026-10-04 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Challan",

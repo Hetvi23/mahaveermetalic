@@ -114,6 +114,10 @@ def create_challan_from_production(production, challan_series=None, challan_id=N
 			"naming_series": SERIES[series_key],
 			"transaction_date": prod.posting_date or frappe.utils.today(),
 			"party": prod.party,
+			# THE FIRM THE OPERATOR CHOSE. A party can trade as several companies and the
+			# challan carried none, so the print fell back to the party's FIRST company —
+			# pick KAMAL ENTERPRISE on the voucher and the paper came out RAJESHREE JARI.
+			"company_name": prod.get("company_name"),
 			"sales_order": prod.customer_order,
 			"branch": prod.branch,
 			"location": prod.location,
@@ -643,6 +647,7 @@ def next_job_challan_no(challan_type="Job Out"):
 
 @frappe.whitelist()
 def create_job_challan(challan_type="Job Out", party=None, challan_date=None, challan_no=None,
+	company_name=None,
 	rolls=None, bobbins=None, remark=None, location=None, branch=None, against_job_out=None,
 	items=None, delivery_by=None, sales_order=None, challan_id=None, challan_series=None):
 	"""Create a Job Out / Job In challan from the picked rolls and bobbins.
@@ -727,6 +732,8 @@ def create_job_challan(challan_type="Job Out", party=None, challan_date=None, ch
 		"challan_type": challan_type,
 		"transaction_date": challan_date or frappe.utils.today(),
 		"party": party,
+		# The firm the paper is made out to, when the voucher named one.
+		"company_name": (company_name or "").strip() or None,
 		"challan_no": challan_no or None,
 		"remarks": remark or None,
 		"job_work_flag": 1,
@@ -1416,6 +1423,9 @@ def _challan_companies(rows):
 		order_by="parent asc, idx asc",
 	):
 		line_orders.setdefault(it.parent, it.sales_order)
+	# A challan that NAMES its company has already answered this; the lookups below are for
+	# the ones that do not.
+	own = {r.name: (r.get("company_name") or "").strip() for r in rows}
 	order_of = {r.name: (r.sales_order or line_orders.get(r.name)) for r in rows}
 	orders = {o for o in order_of.values() if o}
 	order_info = {
@@ -1435,6 +1445,11 @@ def _challan_companies(rows):
 		if pc.company_name:
 			party_company.setdefault(pc.parent, pc.company_name)
 	def company(r):
+		# What the challan itself says, first. Falling through to the order and then to the
+		# party's first company is a guess, and it was guessing over an answer the operator
+		# had already given on the production voucher.
+		if own.get(r.name):
+			return own[r.name]
 		o = order_info.get(order_of[r.name])
 		if o and o.party == r.party and o.company_name:
 			return o.company_name
@@ -2195,6 +2210,7 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	job_in = create_job_challan(
 		challan_type="Job In",
 		party=receipt_party,
+		company_name=(company_name or "").strip() or _receipt_company(so, receipt_party),
 		challan_date=posting_date or frappe.utils.today(),
 		# Filed under the number of the Job Out it answers unless another was typed: every
 		# receipt against Job Out 125 is Job In 125.
