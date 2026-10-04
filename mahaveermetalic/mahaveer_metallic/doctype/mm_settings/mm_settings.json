@@ -21,7 +21,11 @@
   "section_job_work",
   "job_markup_percent",
   "job_wastage_limit_percent",
-  "purchase_qty_multiple"
+  "purchase_qty_multiple",
+  "app_section",
+  "floor_pending_days",
+  "vapid_public_key",
+  "vapid_private_key"
  ],
  "fields": [
   {
@@ -145,12 +149,38 @@
    "fieldtype": "Float",
    "label": "Purchase Lot Size (Kg)",
    "precision": "3"
+  },
+  {
+   "fieldname": "app_section",
+   "fieldtype": "Section Break",
+   "label": "Mahaveer App"
+  },
+  {
+   "fieldname": "floor_pending_days",
+   "fieldtype": "Int",
+   "label": "Order Pending After Inward (Days)",
+   "default": "5",
+   "description": "Inward rolls not taken into cutting or a program for this many days show under Order Pending on the admin app."
+  },
+  {
+   "fieldname": "vapid_public_key",
+   "fieldtype": "Small Text",
+   "label": "Push Public Key",
+   "read_only": 1,
+   "description": "Generated automatically the first time someone turns on notifications."
+  },
+  {
+   "fieldname": "vapid_private_key",
+   "fieldtype": "Password",
+   "label": "Push Private Key",
+   "hidden": 1,
+   "length": 200
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-01 10:00:00.000000",
+ "modified": "2026-10-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Settings",

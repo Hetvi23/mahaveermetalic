@@ -37,7 +37,8 @@ class MMSalesOrder(Document):
 		self._enforce_lock_rules()
 
 	def _guard_state(self):
-		"""A new order starts Pending; a cancelled one is closed to further edits.
+		"""A new order starts Pending — or New, when the customer placed it from the app and
+		the office has not taken it up yet. A cancelled one is closed to further edits.
 
 		Rejected is deliberately NOT blocked — being editable, under its own number, is what
 		makes a rejection something the admin can fix and approve rather than a deletion.
@@ -417,6 +418,10 @@ def approve_order(sales_order):
 	doc = frappe.get_doc("MM Sales Order", sales_order)
 	if doc.order_state == "Cancelled" or doc.docstatus == 2:
 		frappe.throw(_("Order {0} is cancelled and can't be approved.").format(doc.name))
+	if doc.order_state == "New":
+		# A customer's request is accepted into the order list first; the office then fills
+		# in what the customer could not (supplier, rate) before approving it.
+		frappe.throw(_("Order {0} is a customer request — accept it first, complete it, then approve.").format(doc.name))
 	if doc.docstatus == 0:
 		doc.submit()
 		doc.reload()
@@ -440,6 +445,7 @@ def _set_state(doc, state, reason=None, submitted=False):
 	doc.add_comment("Comment", _("Order {0} by {1}{2}").format(
 		state.lower(), frappe.session.user, f": {reason}" if reason else ""
 	))
+	_tell_customer(doc, state, reason)
 	return {
 		"order": doc.name,
 		"docstatus": doc.docstatus,
@@ -447,6 +453,40 @@ def _set_state(doc, state, reason=None, submitted=False):
 		"approval_status": state,
 		"submitted": submitted,
 	}
+
+
+_CUSTOMER_WORDS = {
+	"Pending": ("Order {0} accepted", "Mahaveer has accepted your order request."),
+	"Approved": ("Order {0} confirmed", "Your order is confirmed and in process."),
+	"Rejected": ("Order {0} needs a change", "Mahaveer sent your order back{1}."),
+	"Cancelled": ("Order {0} cancelled", "This order has been cancelled{1}."),
+}
+
+
+def _tell_customer(doc, state, reason=None):
+	"""Push the order's new state to the customer's phone, if they have the app.
+
+	Not when they did it themselves (withdrawing a request), and never at the cost of the
+	state change — `notify` swallows its own failures.
+	"""
+	words = _CUSTOMER_WORDS.get(state)
+	if not words or not doc.party:
+		return
+	user = frappe.db.get_value("MM Party Master", doc.party, "user")
+	if not user or user == frappe.session.user:
+		return
+	from mahaveermetalic.mahaveer_metallic.api.push import APP_BASE, notify
+
+	why = f": {reason}" if reason else ""
+	colours = ", ".join(dict.fromkeys(i.color_name for i in doc.items if i.color_name))
+	notify(
+		[user],
+		_(words[0]).format(doc.name),
+		(_(words[1]).format(doc.name, why) + (f" ({colours})" if colours else "")).strip(),
+		url=f"{APP_BASE}/c/orders/{doc.name}",
+		category="order",
+		reference=("MM Sales Order", doc.name),
+	)
 
 
 def order_has_inward(order) -> bool:
@@ -827,6 +867,9 @@ def approval_state(docstatus, order_state=None):
 		return "Cancelled"
 	if order_state == "Rejected":
 		return "Rejected"
+	if order_state == "New" and docstatus == 0:
+		# A customer's request from the app that the office has not taken up yet.
+		return "New"
 	# The field stores "Approved" (submitting the order is what sets it); the floor reads
 	# it as "Accepted", so the wording is translated here rather than migrating the data.
 	return "Accepted" if docstatus == 1 or order_state == "Approved" else "Pending"

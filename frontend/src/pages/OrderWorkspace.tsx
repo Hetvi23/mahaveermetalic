@@ -9,7 +9,7 @@ import {
   useFrappePostCall,
   useFrappeUpdateDoc,
 } from "frappe-react-sdk";
-import { Check, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Flame, Inbox, Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
 import PartyPicker from "@/components/PartyPicker";
@@ -82,6 +82,7 @@ type Row = {
    *  column, where "Approved" reads as Accepted. Approval only, never dispatch. */
   order_state?: string;
   company_name?: string;
+  is_urgent?: number;
 };
 
 /* Each column answers ONE question, decided by its own rule server-side in
@@ -111,6 +112,8 @@ function purchaseBadge(st?: string): { label: string; cls: string } | null {
  *  Rejected. Cancelled is carried too: an order that is over is none of the three, and
  *  calling it one of them would state something untrue. */
 function approvalBadge(st: string): { label: string; cls: string } {
+  // A customer's request from the app, not yet taken up by the office.
+  if (st === "New") return { label: "New request", cls: "mm-pill-warn" };
   if (st === "Cancelled") return { label: "Cancelled", cls: "mm-pill-muted" };
   if (st === "Rejected") return { label: "Rejected", cls: "mm-pill-low" };
   if (st === "Accepted") return { label: "Accepted", cls: "mm-pill-ok" };
@@ -122,6 +125,7 @@ const approvalOf = (o: Row, st?: string) =>
   st
     || (o.order_state === "Cancelled" || Number(o.docstatus) === 2 ? "Cancelled"
       : o.order_state === "Rejected" ? "Rejected"
+      : o.order_state === "New" ? "New"
       : Number(o.docstatus) === 1 || o.order_state === "Approved" ? "Accepted"
       : "Pending");
 
@@ -150,7 +154,11 @@ function isAdmin(): boolean {
 }
 
 export default function OrderWorkspace() {
-  const [selected, setSelected] = useState<string | null>(null);
+  // ?order=123 opens that order straight away — the admin app's Approvals and Deliveries
+  // link here so a request can be completed (supplier, rate) without hunting for it.
+  const [selected, setSelected] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get("order") || null,
+  );
   const [header, setHeader] = useState({
     transaction_date: today(), delivery_date: "", party: "", company: "", fixedLots: false,
   });
@@ -183,6 +191,7 @@ export default function OrderWorkspace() {
   const { data: rows, isLoading, mutate } = useFrappeGetDocList<Row>("MM Sales Order", {
     fields: [
       "name",
+      "is_urgent",
       "transaction_date",
       "delivery_date",
       "party",
@@ -267,6 +276,9 @@ export default function OrderWorkspace() {
   const { call: approveOrder, loading: approving } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.approve_order`);
   const { call: rejectOrder, loading: rejecting } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.reject_order`);
   const { call: cancelOrder, loading: cancelling } = useFrappePostCall<{ message: { docstatus: number } }>(`${SO_API}.cancel_order`);
+  const PORTAL_API = "mahaveermetalic.mahaveer_metallic.api.portal";
+  const { call: acceptRequest, loading: accepting } = useFrappePostCall(`${PORTAL_API}.accept_request`);
+  const { call: setUrgentCall, loading: flagging } = useFrappePostCall<{ message: { suppliers_told: string[]; note?: string } }>(`${PORTAL_API}.set_urgent`);
   // An APPROVED order cannot be saved with a plain REST PUT: Frappe checks the *submit*
   // permission on that path, and the two roles that key orders deliberately don't have it.
   // This endpoint asks for write instead and applies the same rules. See save_order.
@@ -368,6 +380,8 @@ export default function OrderWorkspace() {
   const orderState = String((doc as { order_state?: string } | undefined)?.order_state ?? "");
   const cancelled = !!selected && (orderState === "Cancelled" || Number((doc as { docstatus?: number } | undefined)?.docstatus) === 2);
   const rejected = !!selected && orderState === "Rejected";
+  const isRequest = !!selected && orderState === "New";
+  const urgent = !!Number((doc as { is_urgent?: number } | undefined)?.is_urgent);
   // From the server, so the screen and the guard agree: a goods return can net
   // `inwarded_weight` back to zero while the inwards themselves still stand.
   const hasInward = !!selected && !!stateByOrder[selected]?.has_inward;
@@ -838,6 +852,34 @@ export default function OrderWorkspace() {
     } catch (e) { setFormError(extractErrorMessage(e)); }
   }
 
+  /** A customer's request becomes an ordinary draft here; supplier and rate are filled in
+   *  next, then it is approved like any other order. */
+  async function onAccept() {
+    if (!selected) return;
+    const name = selected;
+    setFormError(null);
+    try {
+      await acceptRequest({ order: name });
+      hydrated.current = null;
+      await refreshOrder();
+      setFlash(`Request ${name} accepted — fill in the purchase details, then approve.`);
+      toast(`Order ${name} accepted`);
+    } catch (e) { setFormError(extractErrorMessage(e)); }
+  }
+
+  /** Urgent tells the supplier on their phone at once; clearing it tells nobody. */
+  async function onToggleUrgent() {
+    if (!selected) return;
+    const name = selected;
+    try {
+      const r = await setUrgentCall({ doctype: "MM Sales Order", name, urgent: urgent ? 0 : 1 });
+      await refreshOrder();
+      const told = r?.message?.suppliers_told ?? [];
+      if (urgent) toast(`Order ${name} no longer urgent`, "info");
+      else toast(told.length ? `Order ${name} urgent — ${told.join(", ")} notified` : (r?.message?.note || `Order ${name} marked urgent`), told.length ? "success" : "info");
+    } catch (e) { toast(extractErrorMessage(e), "error"); }
+  }
+
   /** Reject = SEND BACK. The order keeps its number and stays editable, so the admin can fix
    *  it and approve the same order. Nothing is deleted and no number is reused. */
   async function onReject() {
@@ -946,6 +988,14 @@ export default function OrderWorkspace() {
               Cancelled — closed for good. Order {selected} keeps its number so nothing else takes it.
               {(doc as { state_reason?: string } | undefined)?.state_reason
                 ? ` Reason: ${(doc as { state_reason?: string }).state_reason}`
+                : ""}
+            </div>
+          )}
+          {isRequest && (
+            <div className="mm-banner mm-banner-warn">
+              New request from the customer app. Accept it to bring it into drafts, add supplier and rate, then approve.
+              {(doc as { customer_remarks?: string } | undefined)?.customer_remarks
+                ? ` Customer's note: ${(doc as { customer_remarks?: string }).customer_remarks}`
                 : ""}
             </div>
           )}
@@ -1176,7 +1226,13 @@ export default function OrderWorkspace() {
                 {busy ? "Saving…" : "Save changes"}
               </button>
             )}
-            {selected && !ro && !submitted && isAdmin() && (
+            {isRequest && !ro && isAdmin() && (
+              <button type="button" className="mm-btn-primary" disabled={busy || accepting} onClick={() => void onAccept()}
+                title="Accept the customer's request — it becomes a draft order here">
+                <Inbox size={16} /> {accepting ? "…" : "Accept request"}
+              </button>
+            )}
+            {selected && !ro && !submitted && !isRequest && isAdmin() && (
               <>
                 {/* Icon-only, so the row fits on one line — but never unlabelled: each
                     carries the same sentence it used to spell out, as a tooltip and as
@@ -1200,6 +1256,20 @@ export default function OrderWorkspace() {
                 )}
               </>
             )}
+            {isRequest && !ro && isAdmin() && (
+              <button type="button" className="mm-btn-icon mm-btn-icon-danger" disabled={busy} aria-busy={rejecting}
+                onClick={() => void onReject()} aria-label="Reject request"
+                title="Send the request back to the customer with a reason">
+                <X size={16} />
+              </button>
+            )}
+            {selected && !cancelled && (
+              <button type="button" className={urgent ? "mm-btn-danger" : "mm-btn-secondary"} disabled={busy || flagging}
+                onClick={() => void onToggleUrgent()}
+                title={urgent ? "Clear the urgent flag" : "Mark urgent — the supplier gets a phone notification straight away"}>
+                <Flame size={16} /> {urgent ? "Urgent" : "Mark urgent"}
+              </button>
+            )}
             {/* Cancel survives approval: an approved order that nothing has arrived for is
                 still an order that can be called off, and refusing left no way to close one
                 but to approve, receive and return. It dies where editing dies — at receipt. */}
@@ -1213,7 +1283,7 @@ export default function OrderWorkspace() {
             )}
             {selected && !ro && !submitted && !isAdmin() && (
               <span className="mm-pill mm-pill-pending">
-                {rejected ? "Rejected — an admin can correct and approve it" : "Pending admin approval"}
+                {rejected ? "Rejected — an admin can correct and approve it" : isRequest ? "Customer request — waiting for an admin to accept" : "Pending admin approval"}
               </span>
             )}
             {/* The state and its reason are already spelled out in the banner above the form —
@@ -1283,7 +1353,7 @@ export default function OrderWorkspace() {
                   const overdue = !!o.delivery_date && !done && o.delivery_date < today();
                   return (
                     <tr key={o.name} className={`mm-ws-row ${selected === o.name ? "mm-ws-row-active" : ""}`} onClick={() => { setSelected(o.name); setFlash(null); setFormError(null); }}>
-                      <td className="mm-ow-cell-order">{o.name}</td>
+                      <td className="mm-ow-cell-order">{o.name}{Number(o.is_urgent) ? <Flame size={13} className="mm-ow-urgent" aria-label="Urgent" /> : null}</td>
                       <td className="mm-ow-cell-date">{fmtDate(o.transaction_date) || "—"}</td>
                       <td title={o.company_name || (o.party ?? "")}>{o.company_name || o.party || "—"}</td>
                       <td title={linesByOrder[o.name]?.colours.join(", ") || ""}>{linesByOrder[o.name]?.colours.join(", ") || "—"}</td>

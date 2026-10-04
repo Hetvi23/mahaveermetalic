@@ -24,3 +24,4 @@ mahaveermetalic.patches.add_accounts_role
 mahaveermetalic.patches.gr_per_roll
 mahaveermetalic.patches.lot_remark_colour
 mahaveermetalic.patches.order_box_weight
+mahaveermetalic.patches.customer_app

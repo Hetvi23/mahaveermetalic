@@ -14,6 +14,8 @@ MM_ROLES = [
 	# it. Kept apart from MM Admin because the two halves of that flow are two people.
 	{"role_name": "MM Accounts", "desk_access": 1},
 	{"role_name": "MM Supplier", "desk_access": 0},
+	# A customer's own login: their orders, deliveries and bobbins in the app, nothing else.
+	{"role_name": "MM Customer", "desk_access": 0},
 ]
 
 

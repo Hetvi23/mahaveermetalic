@@ -36,6 +36,7 @@ import {
   FileText,
   Sun,
   Moon,
+  CalendarCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +57,8 @@ function readOpenGroups(): Set<string> {
 /** Primary destinations on the bottom tab bar (mobile) + top of the rail. */
 const PRIMARY: NavItem[] = [
   { label: "Home", icon: Home, to: "/" },
+  // The admin's day on one screen: approvals, deliveries, purchase, floor, follow-ups.
+  { label: "Today", icon: CalendarCheck, to: "/admin" },
   { label: "Orders", icon: ShoppingCart, to: "/sales-order" },
   { label: "Inward", icon: ArrowDownToLine, to: "/inward" },
   { label: "Cutting", icon: Scissors, to: "/cutting" },
@@ -282,6 +285,8 @@ export default function AppNav() {
         <nav className="mm-rail-nav">
           {/* No "Home" for suppliers — their group below IS their only destination. */}
           {!supplier && <RailLink item={{ label: "Home", icon: Home, to: "/" }} pathname={loc.pathname} />}
+          {!supplier && <RailLink item={{ label: "Today", icon: CalendarCheck, to: "/admin" }} pathname={loc.pathname} />}
+          {!supplier && <RailLink item={{ label: "Notifications", icon: Bell, to: "/alerts" }} pathname={loc.pathname} />}
           {(supplier
             ? [{ key: "s", label: "Supplier", icon: ClipboardList, items: [{ label: "My Purchase Orders", icon: ClipboardList, to: "/purchase-order" }] }]
             : SECTIONS

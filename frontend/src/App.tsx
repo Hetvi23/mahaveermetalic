@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { FrappeProvider, useFrappeAuth } from "frappe-react-sdk";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import AppNav, { isSupplierOnly } from "./components/AppNav";
+import AppNav from "./components/AppNav";
 import Dashboard from "./pages/Dashboard";
 import DocFormPage from "./pages/DocFormPage";
 import DocListPage from "./pages/DocListPage";
@@ -27,8 +27,66 @@ import InventoryScreen from "./pages/InventoryScreen";
 import StockLedgerScreen from "./pages/StockLedgerScreen";
 import TaskReminderChatPage from "./pages/TaskReminderChatPage";
 import Login from "./pages/Login";
+import AdminApp from "./portal/AdminApp";
+import CustomerApp from "./portal/CustomerApp";
+import Notifications from "./portal/Notifications";
+import SupplierApp from "./portal/SupplierApp";
+import { PORTAL, useApi } from "./portal/api";
+import { ErrorBox, Loading } from "./portal/ui";
+import "./portal/portal.css";
 import Toaster from "./components/Toaster";
 import { DOC_REGISTRY } from "@/config/registry";
+
+/** Which app this login gets, read off the roles the page was booted with. Staff roles win:
+ *  a manager who also holds MM Customer for testing still lands in the office app. */
+const STAFF_ROLES = ["Administrator", "System Manager", "MM Admin", "MM Operations", "MM Production",
+  "MM Inventory Manager", "MM Sales Team", "MM Accounts"];
+function bootKind(): "staff" | "customer" | "supplier" {
+  const roles = (window as unknown as { frappe?: { boot?: { user?: { roles?: string[] } } } }).frappe?.boot?.user?.roles ?? [];
+  if (STAFF_ROLES.some((r) => roles.includes(r))) return "staff";
+  if (roles.includes("MM Customer")) return "customer";
+  if (roles.includes("MM Supplier")) return "supplier";
+  return "staff";
+}
+
+/** Customer and supplier logins: their own phone app, and nothing else. */
+function ExternalApp({ kind }: { kind: "customer" | "supplier" }) {
+  const { currentUser, isLoading } = useFrappeAuth();
+  const location = useLocation();
+  const me = useApi<{ kind: string; party?: string; party_name?: string; vendor?: string; full_name?: string }>(
+    currentUser && currentUser !== "Guest" ? `${PORTAL}.me` : null,
+  );
+  if (isLoading) return <div className="pt-app"><main className="pt-main"><Loading rows={4} /></main></div>;
+  if (!currentUser || currentUser === "Guest") {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  if (me.error && !me.data) {
+    return <div className="pt-app"><main className="pt-main"><ErrorBox error={me.error} onRetry={me.reload} /></main></div>;
+  }
+  if (!me.data) return <div className="pt-app"><main className="pt-main"><Loading rows={4} /></main></div>;
+  if (me.data.kind !== kind) return <Navigate to="/" replace />;
+  if (kind === "customer" && !me.data.party) return <NotLinked what="customer" />;
+  if (kind === "supplier" && !me.data.vendor) return <NotLinked what="supplier" />;
+  return kind === "customer" ? <CustomerApp me={me.data} /> : <SupplierApp me={me.data} />;
+}
+
+function NotLinked({ what }: { what: string }) {
+  return (
+    <div className="mm-login-wrap">
+      <div className="mm-login-card">
+        <h2>Almost there</h2>
+        <p className="mm-muted">
+          Your login works, but it isn't linked to a {what} yet. Please ask Mahaveer Metalic to link it, then sign in again.
+        </p>
+        <button type="button" className="mm-btn-primary" style={{ width: "100%" }} onClick={() => {
+          void fetch("/api/method/logout", { method: "POST", credentials: "include",
+            headers: { "X-Frappe-CSRF-Token": (window as unknown as { csrf_token?: string }).csrf_token || "" } })
+            .finally(() => { window.location.href = "/mahaveermetalic/login"; });
+        }}>Sign out</button>
+      </div>
+    </div>
+  );
+}
 
 function AuthedShell() {
   const { currentUser, isLoading } = useFrappeAuth();
@@ -46,10 +104,11 @@ function AuthedShell() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // Supplier logins only get their own purchase orders — keep them out of the ops home.
-  if (isSupplierOnly() && location.pathname === "/") {
-    return <Navigate to="/purchase-order" replace />;
-  }
+  // Customers and suppliers never see the office screens — every office URL sends them
+  // to their own app.
+  const kind = bootKind();
+  if (kind === "customer") return <Navigate to="/c" replace />;
+  if (kind === "supplier") return <Navigate to="/s" replace />;
 
   // Every screen uses the full width now; forms self-center via their own .mm-page cap,
   // so the app fills the screen consistently instead of a narrow centered column.
@@ -93,8 +152,12 @@ export default function App() {
       <BrowserRouter basename="/mahaveermetalic">
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/c/*" element={<ExternalApp kind="customer" />} />
+          <Route path="/s/*" element={<ExternalApp kind="supplier" />} />
           <Route element={<AuthedShell />}>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/admin" element={<AdminApp />} />
+            <Route path="/alerts" element={<div className="pt-staff-page"><Notifications /></div>} />
             {/* Cutting + Orders use custom full-width screens instead of the generic list. */}
             <Route path="/cutting" element={<CuttingWorklist />} />
             <Route path="/program" element={<ProgramScreen />} />

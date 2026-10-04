@@ -43,6 +43,13 @@ class MMVendorMaster(Document):
 					).format(self.name, used[0], used[1])
 				)
 
+	def on_update(self):
+		# Same as a customer: linking the login is the whole onboarding.
+		if self.get("user"):
+			from mahaveermetalic.mahaveer_metallic.app_access import SUPPLIER_ROLE, grant_role
+
+			grant_role(self.user, SUPPLIER_ROLE)
+
 	def on_trash(self):
 		used = where_used(self.name, VENDOR_USES)
 		if used:

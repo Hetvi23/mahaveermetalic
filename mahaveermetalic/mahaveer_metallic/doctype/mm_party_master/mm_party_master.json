@@ -19,7 +19,11 @@
   "poc_number",
   "column_break_2",
   "reference",
-  "reference_number"
+  "reference_number",
+  "app_section",
+  "user",
+  "min_order_threshold_kg",
+  "threshold_alerted_on"
  ],
  "fields": [
   {
@@ -56,7 +60,7 @@
    "fieldname": "is_job_work",
    "fieldtype": "Check",
    "label": "Job Work Party",
-   "description": "Work done for this party is job work \u2014 Production ticks 'Is Job Work?' automatically when they are selected.",
+   "description": "Work done for this party is job work — Production ticks 'Is Job Work?' automatically when they are selected.",
    "in_list_view": 1,
    "in_standard_filter": 1
   },
@@ -100,11 +104,37 @@
    "fieldname": "reference_number",
    "fieldtype": "Data",
    "label": "Reference Number"
+  },
+  {
+   "fieldname": "app_section",
+   "fieldtype": "Section Break",
+   "label": "Customer App"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Login User",
+   "unique": 1,
+   "description": "This customer's login for the Mahaveer app. Saving gives the user the MM Customer role."
+  },
+  {
+   "fieldname": "min_order_threshold_kg",
+   "fieldtype": "Float",
+   "label": "Minimum Order Threshold (Kg)",
+   "description": "When this customer's open (undelivered) orders fall below this weight, the customer and the admins get a reminder. Blank or 0 = no reminder."
+  },
+  {
+   "fieldname": "threshold_alerted_on",
+   "fieldtype": "Date",
+   "label": "Threshold Reminder Sent On",
+   "read_only": 1,
+   "hidden": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-07 11:00:00.000000",
+ "modified": "2026-10-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Party Master",

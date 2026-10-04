@@ -25,6 +25,16 @@ def _digits(number):
 class MMPartyMaster(Document):
 	def validate(self):
 		self._guard_duplicate_customer()
+		if (self.get("min_order_threshold_kg") or 0) < 0:
+			frappe.throw(_("Minimum order threshold cannot be negative."))
+
+	def on_update(self):
+		# Linking a login is what lets the customer into their app — give the user the role
+		# in the same breath, so nobody has to open the desk to finish onboarding them.
+		if self.get("user"):
+			from mahaveermetalic.mahaveer_metallic.app_access import CUSTOMER_ROLE, grant_role
+
+			grant_role(self.user, CUSTOMER_ROLE)
 
 	def _guard_duplicate_customer(self):
 		"""THE SAME CUSTOMER ENTERED TWICE — same name AND same mobile — is refused

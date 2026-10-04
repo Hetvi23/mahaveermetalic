@@ -29,7 +29,11 @@
   "order_state",
   "state_reason",
   "state_changed_on",
-  "state_changed_by"
+  "state_changed_by",
+  "placed_via",
+  "customer_remarks",
+  "is_urgent",
+  "urgent_on"
  ],
  "fields": [
   {
@@ -74,14 +78,14 @@
    "fieldtype": "Check",
    "label": "Is Job Work",
    "default": "0",
-   "description": "Raised for job work \u2014 the material was received on a job-work inward and is being processed for the party, not sold to them. Every stage downstream (program, production, challan) inherits it. The sale rate is added later."
+   "description": "Raised for job work — the material was received on a job-work inward and is being processed for the party, not sold to them. Every stage downstream (program, production, challan) inherits it. The sale rate is added later."
   },
-    {
-      "description": "This order's material is bought in fixed lots. A purchase order raised for it must be an exact multiple of the lot size set in MM Settings.",
-      "fieldname": "enforce_purchase_multiple",
-      "fieldtype": "Check",
-      "label": "Purchase in fixed lots"
-    },
+  {
+   "description": "This order's material is bought in fixed lots. A purchase order raised for it must be an exact multiple of the lot size set in MM Settings.",
+   "fieldname": "enforce_purchase_multiple",
+   "fieldtype": "Check",
+   "label": "Purchase in fixed lots"
+  },
   {
    "fieldname": "branch",
    "fieldtype": "Link",
@@ -119,14 +123,14 @@
    "precision": 3,
    "read_only": 1
   },
-    {
-      "description": "Boxes ordered \u2014 the sum of the lines. An order placed in boxes is judged Complete on this rather than on weight.",
-      "fieldname": "ordered_box",
-      "fieldtype": "Float",
-      "label": "Ordered (Box)",
-      "precision": "3",
-      "read_only": 1
-    },
+  {
+   "description": "Boxes ordered — the sum of the lines. An order placed in boxes is judged Complete on this rather than on weight.",
+   "fieldname": "ordered_box",
+   "fieldtype": "Float",
+   "label": "Ordered (Box)",
+   "precision": "3",
+   "read_only": 1
+  },
   {
    "fieldname": "inwarded_weight",
    "fieldtype": "Float",
@@ -186,7 +190,7 @@
    "fieldname": "order_state",
    "fieldtype": "Select",
    "label": "Order State",
-   "options": "Pending\nApproved\nRejected\nCancelled",
+   "options": "New\nPending\nApproved\nRejected\nCancelled",
    "default": "Pending",
    "read_only": 1,
    "allow_on_submit": 1,
@@ -216,12 +220,40 @@
    "options": "User",
    "read_only": 1,
    "allow_on_submit": 1
+  },
+  {
+   "fieldname": "placed_via",
+   "fieldtype": "Data",
+   "label": "Placed Via",
+   "read_only": 1,
+   "description": "Customer App when the customer placed it from the app."
+  },
+  {
+   "fieldname": "customer_remarks",
+   "fieldtype": "Small Text",
+   "label": "Customer Remarks",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_urgent",
+   "fieldtype": "Check",
+   "label": "Urgent",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "urgent_on",
+   "fieldtype": "Datetime",
+   "label": "Marked Urgent On",
+   "allow_on_submit": 1,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-05 13:00:00.000000",
+ "modified": "2026-10-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mahaveer Metallic",
  "name": "MM Sales Order",

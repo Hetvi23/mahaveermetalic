@@ -128,6 +128,14 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 				description: "Map to legacy or external numbering.",
 				fieldnames: ["reference", "reference_number"],
 			},
+			{
+				id: "app",
+				title: "Customer app",
+				description:
+					"Link a login so this customer can see orders, deliveries and bobbins and place orders from their phone. " +
+					"When open orders fall below the minimum, the customer and the admins get a reminder.",
+				fieldnames: ["user", "min_order_threshold_kg"],
+			},
 		],
 		listColumns: [
 			{ fieldname: "party_name", label: "Name" },
@@ -149,6 +157,8 @@ export const DOC_REGISTRY: DocRegistryEntry[] = [
 			{ fieldname: "poc_number", label: "POC Number", fieldtype: "Data" },
 			{ fieldname: "reference", label: "Reference", fieldtype: "Data" },
 			{ fieldname: "reference_number", label: "Reference Number", fieldtype: "Data" },
+			{ fieldname: "user", label: "Login User", fieldtype: "Link", options: "User" },
+			{ fieldname: "min_order_threshold_kg", label: "Minimum Order Threshold (Kg)", fieldtype: "Float" },
 		],
 		childTables: [
 			{

@@ -115,6 +115,7 @@ def _matching_orders(colours):
 		from `tabMM Sales Order` so
 		join `tabMM Sales Order Item` soi on soi.parent = so.name
 		where so.docstatus < 2
+			and ifnull(so.order_state, '') not in ('New', 'Cancelled', 'Rejected')
 			and ifnull(so.production_completed_percent, 0) < 100
 		order by so.delivery_date asc, so.modified desc
 		""",

@@ -256,6 +256,21 @@ export default function ProgramScreen() {
     return m;
   }, [programs, dayDate, nightDate]);
 
+  // One cell's programs collapsed into PILES of colour + lot + cut. Hetvi: "st anmol lot6
+  // patties should show together in the program" — the floor counts a lot as one pile on
+  // the machine, not as the separate plans that happened to build it up. Each pile keeps
+  // the slot of its first run, so collapsing never reshuffles the board.
+  const pilesOf = (list: Program[]) => {
+    const order: string[] = [];
+    const piles: Record<string, Program[]> = {};
+    for (const p of list) {
+      const k = `${(p.shade || p.roll_no || "").trim()}|${(p.lot_id || "").trim()}|${(p.cut || "").trim()}`;
+      if (!piles[k]) { piles[k] = []; order.push(k); }
+      piles[k].push(p);
+    }
+    return order.map((k) => piles[k]);
+  };
+
   // Feeder: finished patty — colour and how many patti it has, nothing else. A patty whose
   // patti are all programmed is not on the shelf at all: the shelf is what can go on a
   // machine, and a spent one cannot.
@@ -347,6 +362,72 @@ export default function ProgramScreen() {
               <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={revertWithReason(p.name, `Revert ${p.shade || p.roll_no || p.name}?`)}><Undo2 size={13} /> Revert</button>
             </>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  /** A pile: every run of one colour + lot + cut on this machine-shift, under one head.
+      The head carries what the floor asks for — the lot, and the patti and weight it adds
+      up to. The runs stay listed inside it because Complete and Revert act on ONE
+      program, and a pile is not a thing the server can complete. */
+  function ProgPile({ group }: { group: Program[] }) {
+    const head = group[0];
+    const totalB = group.reduce((a, p) => a + (p.total_batches ?? 0), 0);
+    const doneB = group.reduce((a, p) => a + (p.completed_batches ?? 0), 0);
+    const totalKg = group.reduce((a, p) => a + programKg(p), 0);
+    const doneKg = group.reduce((a, p) => a + (p.completed_weight ?? 0), 0);
+    const allUnfinished = group.every((p) => p.unfinished);
+    return (
+      <div className={`mm-prog-card mm-prog-pile ${allUnfinished ? "mm-prog-card-unfinished" : ""}`}>
+        <div className="mm-prog-card-top">
+          <span className="mm-prog-card-name">
+            {head.shade || head.roll_no || "—"}
+            <LotRemarkBadge
+              remarks={remarksFor(
+                group.map((p) => p.lot),
+                group.flatMap((p) => (p.lot_ids?.length ? p.lot_ids : [p.lot_id])),
+                head.shade,
+              )}
+              label={head.shade || head.roll_no || "Lot"} />
+          </span>
+          <span className="mm-prog-pile-count">{group.length} runs</span>
+        </div>
+        <div className="mm-prog-card-meta">
+          {head.lot_id ? <>{head.lot_id} · </> : null}
+          {head.cut || "—"} · {doneB}/{totalB} batches · {kg(totalKg)} kg
+          {doneKg > 0 ? ` · ${kg(doneKg)} kg done` : ""}
+        </div>
+        <div className="mm-prog-pile-runs">
+          {group.map((p) => (
+            <div key={p.name} className="mm-prog-pile-run">
+              <div className="mm-prog-pile-run-top">
+                {p.unfinished
+                  ? <span className="mm-state mm-state-unfinished">To cut</span>
+                  : <span className={stateClass(p.status)}>{p.status}</span>}
+                <span className="mm-prog-pile-run-qty">
+                  {p.completed_batches ?? 0}/{p.total_batches ?? 0} ·{" "}
+                  {p.unfinished ? "roll not yet picked" : (
+                    <span title={perPattyNote(p)}>{kg(programKg(p))} kg</span>
+                  )}
+                </span>
+              </div>
+              {p.remark && <div className="mm-prog-card-remark">“{p.remark}”</div>}
+              <div className="mm-prog-actions">
+                {p.unfinished ? (
+                  <>
+                    <button className="mm-mini mm-mini-ok" title="Cut this on the Cutting screen (pick the roll there)" onClick={() => nav("/cutting")}><Scissors size={13} /> Finish in Cutting</button>
+                    <button className="mm-mini mm-mini-warn" onClick={revertWithReason(p.name, `Cancel the plan for ${p.shade || p.roll_no || p.name}?`)}><Undo2 size={13} /> Cancel plan</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="mm-mini" disabled={!!p.reverted} onClick={() => setCompleting(p)}><Check size={13} /> Complete</button>
+                    <button className="mm-mini mm-mini-warn" disabled={p.status === "Open" || !!p.reverted} onClick={revertWithReason(p.name, `Revert ${p.shade || p.roll_no || p.name}?`)}><Undo2 size={13} /> Revert</button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -476,7 +557,9 @@ export default function ProgramScreen() {
                       return (
                         <td key={s} className="mm-prog-col">
                           <div className="mm-prog-shiftcell">
-                            {list.map((p) => <ProgCard key={p.name} p={p} />)}
+                            {pilesOf(list).map((g) => (g.length === 1
+                              ? <ProgCard key={g[0].name} p={g[0]} />
+                              : <ProgPile key={g[0].name} group={g} />))}
                             {shut ? (
                               <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
                                 <span className="mm-state mm-state-open">Not working</span>

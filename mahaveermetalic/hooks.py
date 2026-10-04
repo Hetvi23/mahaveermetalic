@@ -154,9 +154,19 @@ scheduler_events = {
 	"cron": {
 		"* * * * *": [
 			"mahaveermetalic.mahaveer_metallic.task_reminder.scheduler.run_reminder_checks",
-		]
+		],
+		# Customers whose open orders fell below their minimum — reminded mid-morning.
+		"30 10 * * *": [
+			"mahaveermetalic.mahaveer_metallic.api.portal.check_order_thresholds",
+		],
 	},
+	"daily": [
+		"mahaveermetalic.mahaveer_metallic.api.push.purge_old_notifications",
+	],
 }
+
+# Customer and supplier logins may only call the endpoints built for them.
+before_request = ["mahaveermetalic.mahaveer_metallic.app_access.guard_external_api"]
 
 # Testing
 # -------
