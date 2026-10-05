@@ -65,8 +65,9 @@
   -webkit-tap-highlight-color: transparent;
 }
 .pt-tab-on { color: var(--mm-blue); }
+.pt-tab-icon { display: grid; place-items: center; height: 32px; }
 .pt-tab-primary .pt-tab-icon {
-  display: grid; place-items: center; width: 44px; height: 32px; border-radius: 16px;
+  width: 48px; border-radius: 16px;
   background: var(--mm-accent); color: #fff;
 }
 .pt-tab-primary.pt-tab-on .pt-tab-icon { box-shadow: 0 0 0 3px var(--mm-focus); }
@@ -156,6 +157,14 @@
 .pt-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 @media (min-width: 640px) { .pt-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (min-width: 1100px) { .pt-stats-6 { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+/* The admin's tiles are a glance, not the page: on a phone they shrink to three across so
+   the list the admin came for starts above the fold. */
+@media (max-width: 639px) {
+  .pt-stats-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .pt-stats-6 .pt-stat { padding: 10px; border-radius: 12px; }
+  .pt-stats-6 .pt-stat-value { font-size: 18px; }
+  .pt-stats-6 .pt-stat-label, .pt-stats-6 .pt-stat-sub { font-size: 11px; }
+}
 .pt-stat {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
   background: var(--mm-card); border: 1px solid var(--mm-hairline); border-radius: var(--mm-radius);

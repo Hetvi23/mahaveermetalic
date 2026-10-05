@@ -31,7 +31,9 @@ def _vm_get(path: str, params=None):
 	s = _settings()
 	base = s.base_url.rstrip("/")
 	headers = {"Accept": "application/json"}
-	secret = s.get_password("api_secret", raise_exception=False) if s.api_secret else None
+	# Read the stored secret itself: the Password field on a Single can read back empty
+	# even when a secret is saved, and gating on it meant the token was never sent.
+	secret = s.get_password("api_secret", raise_exception=False)
 	if s.api_key and secret:
 		headers["Authorization"] = f"token {s.api_key}:{secret}"
 	url = f"{base}{path}"

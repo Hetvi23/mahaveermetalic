@@ -66,6 +66,12 @@ def _norm(s):
 	return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
+def _kg(value) -> str:
+	"""8,502.4 kg — how a person writes a weight, not how Python prints a float."""
+	v = round(flt(value), 2)
+	return f"{v:,.2f}".rstrip("0").rstrip(".") + " kg"
+
+
 def _date_or_none(value):
 	if not value:
 		return None
@@ -484,7 +490,7 @@ def place_order(items, delivery_date=None, remarks=None, company_name=None):
 		created.append(so.name)
 
 	party_name = frappe.db.get_value("MM Party Master", party, "party_name") or party
-	summary = ", ".join(f"{l['color_name']} {l['qty_weight']:g} kg" for l in clean)
+	summary = ", ".join(f"{l['color_name']} {_kg(l['qty_weight'])}" for l in clean)
 	notify(
 		admin_users(),
 		_("New order request — {0}").format(party_name),
@@ -881,7 +887,7 @@ def set_urgent(doctype, name, urgent=1):
 			notify(
 				[user],
 				_("URGENT — order {0}").format(po.po_number or po.sales_order or po.name),
-				_("{0} · {1} kg{2}. Please send this first.").format(po.color or "", flt(po.qty_kg, 3), when),
+				_("{0} · {1}{2}. Please send this first.").format(po.color or "", _kg(po.qty_kg), when),
 				url=f"{APP_BASE}/s",
 				category="urgent",
 				reference=("MM Purchase Order", po.name),
@@ -916,7 +922,7 @@ def follow_ups():
 			auto.append({
 				"kind": "threshold", "severity": "warn",
 				"title": _("{0} is below their minimum order").format(t["party_name"]),
-				"detail": _("{0} kg on order · minimum {1} kg").format(t["active_weight"], t["threshold"]),
+				"detail": _("{0} on order · minimum {1}").format(_kg(t["active_weight"]), _kg(t["threshold"])),
 				"party": t["party"],
 			})
 
@@ -926,7 +932,7 @@ def follow_ups():
 			auto.append({
 				"kind": "late_delivery", "severity": "high" if o["overdue_days"] > 3 else "warn",
 				"title": _("Order {0} is {1} day(s) late").format(o["name"], o["overdue_days"]),
-				"detail": f"{o['party_name']} · {o['colours']} · {flt(o['pending_weight'], 3)} kg left",
+				"detail": f"{o['party_name']} · {o['colours']} · {_kg(o['pending_weight'])} left",
 				"order": o["name"],
 			})
 
@@ -940,7 +946,7 @@ def follow_ups():
 					p["supplier"], p["order_no"],
 					_("urgent") if p["urgent"] and not p["overdue"] else _("{0} day(s) late").format(late),
 				),
-				"detail": f"{p['color']} · {p['pending']} kg pending",
+				"detail": f"{p['color']} · {_kg(p['pending'])} pending",
 				"supplier": p["supplier"],
 			})
 
@@ -1101,8 +1107,8 @@ def check_order_thresholds():
 			notify(
 				[t["user"]],
 				_("Time to place your next order"),
-				_("You have {0} kg on order with Mahaveer — below your usual {1} kg.").format(
-					t["active_weight"], t["threshold"]
+				_("You have {0} on order with Mahaveer — below your usual {1}.").format(
+					_kg(t["active_weight"]), _kg(t["threshold"])
 				),
 				url=f"{APP_BASE}/c/new",
 				category="threshold",
@@ -1130,7 +1136,9 @@ def _vm_post(path, payload):
 	s = _settings()
 	base = s.base_url.rstrip("/")
 	headers = {"Accept": "application/json", "Content-Type": "application/json"}
-	secret = s.get_password("api_secret", raise_exception=False) if s.api_secret else None
+	# Read the stored secret itself: the Password field on a Single can read back empty
+	# even when a secret is saved, and gating on it meant the token was never sent.
+	secret = s.get_password("api_secret", raise_exception=False)
 	if s.api_key and secret:
 		headers["Authorization"] = f"token {s.api_key}:{secret}"
 	try:

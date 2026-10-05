@@ -46,10 +46,10 @@ export default function Login() {
 		<div className="mm-login-wrap">
 			<div className="mm-login-card">
 				<h2>Mahaveer Metalic LLP</h2>
-				<p className="mm-muted">Sign in with your Frappe user.</p>
+				<p className="mm-muted">Sign in with the email and password Mahaveer Metalic gave you.</p>
 				<form onSubmit={onSubmit}>
 					<label className="mm-field">
-						<span className="mm-field-label">Username</span>
+						<span className="mm-field-label">Email</span>
 						<input
 							className="mm-input"
 							value={usr}

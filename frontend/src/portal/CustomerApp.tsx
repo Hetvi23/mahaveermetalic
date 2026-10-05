@@ -499,6 +499,13 @@ type BobbinData = {
   balances: { bobbin: string; qty: number; box: number }[];
 };
 
+/** The ledger is kept from Mahaveer's side: OUT = sent to you, IN = returned. A negative
+ *  balance therefore means bobbins are with the customer. Said in words, not signs. */
+function holding(n: number): string {
+  if (Math.abs(n) < 0.001) return "All settled";
+  return n < 0 ? `${fmtNum(-n)} with you` : `${fmtNum(n)} returned extra`;
+}
+
 function Bobbins() {
   const [from, setFrom] = useState(todayISO(-90));
   const [to, setTo] = useState(todayISO());
@@ -519,13 +526,14 @@ function Bobbins() {
               : (
                 <div className="pt-stats">
                   {d.balances.map((b) => (
-                    <Stat key={b.bobbin} label={b.bobbin} value={fmtNum(b.qty)} sub={b.box ? `${fmtNum(b.box)} box` : undefined} />
+                    <Stat key={b.bobbin} label={b.bobbin} value={fmtNum(Math.abs(b.qty))}
+                      sub={`${b.qty < 0 ? "with you" : "returned extra"}${b.box ? ` · ${fmtNum(Math.abs(b.box))} box` : ""}`} />
                   ))}
                 </div>
               )}
             <h2 className="pt-h2">Movements</h2>
             <div className="pt-card pt-table-card">
-              <div className="pt-line pt-line-head"><span>Opening</span><span className="pt-num">{fmtNum(d.statement.opening_qty)}</span></div>
+              <div className="pt-line pt-line-head"><span>Opening</span><span className="pt-num">{holding(d.statement.opening_qty)}</span></div>
               {d.statement.rows.length === 0 && <div className="pt-muted pt-small pt-pad">No movement in these dates.</div>}
               {d.statement.rows.map((r, i) => (
                 <div key={`${r.voucher_no}-${r.bobbin}-${i}`} className="pt-bob">
@@ -533,11 +541,11 @@ function Bobbins() {
                     <span className="pt-strong">{r.bobbin}</span>
                     <span className="pt-muted pt-small">{fmtDate(r.date)} · {r.voucher_type} {r.voucher_no}</span>
                   </div>
-                  <span className={`pt-num ${r.qty < 0 ? "pt-neg" : "pt-pos"}`}>{r.qty > 0 ? "+" : ""}{fmtNum(r.qty)}</span>
-                  <span className="pt-num pt-muted">{fmtNum(r.balance_qty)}</span>
+                  <span className={`pt-num ${r.qty < 0 ? "pt-neg" : "pt-pos"}`}>{r.qty < 0 ? `Sent ${fmtNum(-r.qty)}` : `Returned ${fmtNum(r.qty)}`}</span>
+                  <span className="pt-num pt-muted pt-small">{holding(r.balance_qty)}</span>
                 </div>
               ))}
-              <div className="pt-line pt-line-head"><span>Closing</span><span className="pt-num">{fmtNum(d.statement.closing_qty)}</span></div>
+              <div className="pt-line pt-line-head"><span>Closing</span><span className="pt-num">{holding(d.statement.closing_qty)}</span></div>
             </div>
           </>
         )}
