@@ -1,4 +1,4 @@
-import { Component, type ReactNode, useEffect, useState } from "react";
+import { Component, type ReactNode, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Inbox, RefreshCw, WifiOff, X } from "lucide-react";
 import type { ApiError } from "./api";
 
@@ -95,8 +95,17 @@ export function Chips<T extends string>({
   onChange: (v: T) => void;
   options: { value: T; label: string; count?: number }[];
 }) {
+  // The chosen chip is scrolled into view: on a narrow phone it can sit past the edge,
+  // and a cut-off chip leaves you unsure which section you are in.
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const on = row.current?.querySelector<HTMLElement>(".pt-chip-on");
+    on?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // Re-run when the chips themselves change: counts arriving widen them and would push
+    // the chosen one back past the edge.
+  }, [value, options.map((o) => `${o.value}:${o.count ?? ""}`).join("|")]);
   return (
-    <div className="pt-chips" role="tablist">
+    <div className="pt-chips" role="tablist" ref={row}>
       {options.map((o) => (
         <button
           key={o.value}

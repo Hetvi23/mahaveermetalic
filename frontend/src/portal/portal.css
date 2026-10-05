@@ -370,3 +370,9 @@ button.pt-stat:hover { border-color: var(--mm-blue-border); }
 .pt-auto-high { box-shadow: inset 4px 0 0 var(--mm-danger), var(--mm-shadow); }
 .pt-auto-warn { box-shadow: inset 4px 0 0 var(--mm-accent), var(--mm-shadow); }
 .pt-staff-page { max-width: 680px; }
+
+/* A short phone (SE, small Androids) cannot spare a floating bar on top of the tab bar —
+   it hid half of the item being typed. There the Send bar sits at the end of the form. */
+@media (max-height: 720px) {
+  .pt-submit-bar { position: static; box-shadow: var(--mm-shadow); }
+}
