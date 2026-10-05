@@ -49,6 +49,28 @@ def program_input_weight(prog) -> float:
 	)
 
 
+def program_produced_weight(program_names) -> dict:
+	"""Net already boxed against each program, by its submitted productions.
+
+	ONE PROGRAM IS BOXED OVER SEVERAL VOUCHERS, so "what went in" and "what is left to
+	box" stop being the same number the moment the first box is weighed. The queue and
+	the Produce modal both want the second one: a 275.9 kg program with 100 kg boxed has
+	175.9 kg still to wind, and saying 275.9 sends the floor looking for thread that is
+	already in a carton.
+	"""
+	if not program_names:
+		return {}
+	rows = frappe.db.sql(
+		"""select source_program, coalesce(sum(net_weight), 0) as w
+		from `tabMM Production`
+		where docstatus = 1 and source_program in %(names)s
+		group by source_program""",
+		{"names": tuple(program_names)},
+		as_dict=True,
+	)
+	return {r.source_program: round(float(r.w or 0), 3) for r in rows}
+
+
 def program_lots(program_names):
 	"""The lot each program's material came from, keyed by program.
 
@@ -170,6 +192,7 @@ def threads_processing(branch=None, location=None):
 		):
 			order_party[o.name] = o.party
 	lots = program_lots([r.name for r in rows])
+	boxed = program_produced_weight([r.name for r in rows])
 	for r in rows:
 		r["party"] = order_party.get(r.customer_order)
 		# Lot id, fetched for the screen rather than left for the operator to look up —
@@ -191,7 +214,19 @@ def threads_processing(branch=None, location=None):
 		done = int(r.get("completed_batches") or 0)
 		formed = done if done > 0 else planned
 		# Part-done hands over only what ran — the same rule create_production gates on.
-		r["input_weight"] = program_input_weight(r)
+		#
+		# What the screen shows is what is LEFT of that: the program's input less every
+		# kilo already boxed against it. Hetvi: "i make a box entry then also 275 will
+		# come" — a 275.9 kg program with 100 kg boxed kept offering 275.9, and so did the
+		# Produce modal's "still to box", because both read this one field. The server's
+		# own ceiling is unchanged and still measured against the whole program; it is the
+		# same rule stated the other way round, since already + net > input is exactly
+		# net > remaining.
+		full_input = program_input_weight(r)
+		done = float(boxed.get(r.name) or 0)
+		r["planned_input"] = full_input
+		r["produced_weight"] = round(done, 3)
+		r["input_weight"] = round(max(full_input - done, 0.0), 3)
 		r["formed_patti"] = formed
 		r["planned_patti"] = planned
 		r["patti_qty"] = formed

@@ -2404,6 +2404,8 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* A pile of one colour+lot: the head reads as a normal card, the runs inside it are
    indented off a rule so the eye takes the pile first and the runs second. */
 .mm-prog-pile { border-left: 3px solid var(--mm-accent, #6366f1); }
+/* "left of 275.9" beside the remaining input — quieter than the figure it qualifies. */
+.mm-prod-boxed { font-size: 0.7rem; color: var(--mm-text-sec); opacity: 0.85; }
 .mm-prog-pile-count { font-size: 0.68rem; font-weight: 700; color: var(--mm-text-sec); white-space: nowrap; }
 .mm-prog-pile-runs { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.45rem; padding-left: 0.5rem; border-left: 1px dashed var(--mm-border); }
 .mm-prog-pile-run + .mm-prog-pile-run { border-top: 1px solid var(--mm-border); padding-top: 0.4rem; }

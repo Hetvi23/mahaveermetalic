@@ -38,7 +38,11 @@ type Program = {
   planned_patti?: number;
   part_done?: number;
   net_weight?: number;
+  /** STILL TO BOX — the program's input less every kilo already boxed against it, since a
+   *  program is boxed over several vouchers. `planned_input` is what it started with. */
   input_weight?: number;
+  planned_input?: number;
+  produced_weight?: number;
   /** Fetched from the patty this program took — the lot its material was inwarded under.
    *  A program drawing patty off two lots carries both. */
   lot?: string | null;
@@ -136,7 +140,16 @@ export default function ProductionScreen() {
                       {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
                       {p.patti_qty ?? 0} patty
                       {p.part_done ? <span className="mm-prod-partdone"> of {p.planned_patti} — rest still running</span> : ""}
+                      {/* What is LEFT to box, not what the program started with — once a
+                          voucher has taken 100 kg off a 275.9 kg program the floor needs
+                          the 175.9. The original is kept beside it so a part-boxed program
+                          is obvious at a glance. */}
                       {" "}· input {(p.input_weight ?? 0).toLocaleString()} kg
+                      {(p.produced_weight ?? 0) > 0
+                        ? <span className="mm-prod-boxed" title={`${(p.produced_weight ?? 0).toLocaleString()} kg already boxed against this program`}>
+                            {" "}left of {(p.planned_input ?? 0).toLocaleString()}
+                          </span>
+                        : null}
                       {p.job_work_flag ? " · job work" : ""}
                     </div>
                   </div>
