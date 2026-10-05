@@ -199,7 +199,9 @@ before_request = ["mahaveermetalic.mahaveer_metallic.app_access.guard_external_a
 # Request Events
 # ----------------
 # before_request = ["mahaveermetalic.utils.before_request"]
-# after_request = ["mahaveermetalic.utils.after_request"]
+# The SPA page must never come back from a browser cache, or a deploy stays invisible.
+# See mahaveer_metallic/cache_headers.py.
+after_request = ["mahaveermetalic.mahaveer_metallic.cache_headers.no_store_spa_page"]
 
 # Job Events
 # ----------
