@@ -189,7 +189,17 @@ export default function ChallanReportPage() {
               <tbody>
                 {shown.map((r) => (
                   <tr key={r.name} className="mm-ws-row" onClick={() => openChallan(r.name)}>
-                    <td>{r.challan_no || r.name}</td>
+                    {/* THE ID NAMES THE ROW. This read challan_no first, so two Job Ins
+                        answering the same Job Out both listed as "188" — the C.No of the
+                        Job Out they came back on — and nothing on the row told them apart
+                        or matched the barcodes inside them. The book number is still worth
+                        reading, so it travels beside the id rather than instead of it. */}
+                    <td>
+                      {r.name}
+                      {r.challan_no && r.challan_no !== r.name
+                        ? <span className="mm-suggest-meta" title="C.No in the shop's book">C.No {r.challan_no}</span>
+                        : null}
+                    </td>
                     <td>{fmtDate(r.transaction_date) || "—"}</td>
                     <td>{r.challan_type || "—"}</td>
                     <td title={r.party_name || r.party ? `Party: ${r.party_name || r.party}` : undefined}>
@@ -286,7 +296,8 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
     // Straight from the click, so the pop-up is allowed; if the browser blocks it anyway
     // the same labels are saved as a file rather than lost.
     if (!printBoxStickers(labels)) {
-      downloadBoxStickers(labels, `barcodes-${d?.challan_no || challan}`);
+      // Named by the voucher, not by the book number two vouchers can share.
+      downloadBoxStickers(labels, `barcodes-${d?.challan || challan}`);
       toast("The print pop-up was blocked — the barcodes have been saved as a file instead.");
     }
   }
