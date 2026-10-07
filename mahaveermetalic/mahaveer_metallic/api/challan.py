@@ -197,17 +197,25 @@ def available_boxes(party=None, sales_order=None, limit=200):
 	# production with an order raises its own challan immediately, the list came back empty
 	# every time ("Select box not working").
 	#
-	# A RECEIPT IS NOT A DISPATCH. "Already on a challan" has to mean already SENT OUT; a
-	# Job In lists the very boxes that just arrived, so counting it here made every box
-	# ever received back from a job worker invisible to Select Box — 283 of them on
-	# vm.essenceerp.in, none of which had gone anywhere (Hetvi: "i did job in but box not
-	# coming here"). Only outbound types consume a box.
+	# A RECEIPT IS NOT A DISPATCH — BUT WHICH BOOK IT IS FILED IN SAYS WHICH IT IS.
+	#
+	# A Job In numbered in its own MMUJI- book is a pure receipt: the boxes arrived and are
+	# in stock, and counting it here made every box ever received back invisible to Select
+	# Box (Hetvi: "i did job in but box not coming here").
+	#
+	# A Job In numbered in a DISPATCH book is both at once. The receipt is filed as the
+	# customer's sales challan — it prints as one, and names the customer rather than the
+	# worker — so those boxes have gone out and offering them again would dispatch them
+	# twice (Hetvi: "see voucher is already created for this boxes", on MMUSC-207-26/27).
+	#
+	# On mm that is 188 boxes still available against 680 already sent.
+	JOB_IN_BOOK = "(c.challan_type = 'Job In' and (c.naming_series = 'MMUJI-.YYYY.-' or c.name like 'MMUJI-%%'))"
 	used_barcodes = set(
 		frappe.db.sql_list(
 			"""select distinct ci.barcode from `tabMM Sales Challan Item` ci
 			join `tabMM Sales Challan` c on c.name = ci.parent
-			where c.docstatus < 2 and c.challan_type != 'Job In'
-				and ifnull(ci.barcode, '') != ''"""
+			where c.docstatus < 2 and not {JOB_IN_BOOK}
+				and ifnull(ci.barcode, '') != ''""".format(JOB_IN_BOOK=JOB_IN_BOOK)
 		)
 	)
 	# Boxes that predate barcoding can only be matched by their production.
@@ -215,8 +223,8 @@ def available_boxes(party=None, sales_order=None, limit=200):
 		frappe.db.sql_list(
 			"""select distinct ci.production from `tabMM Sales Challan Item` ci
 			join `tabMM Sales Challan` c on c.name = ci.parent
-			where c.docstatus < 2 and c.challan_type != 'Job In'
-				and ifnull(ci.production, '') != '' and ifnull(ci.barcode, '') = ''"""
+			where c.docstatus < 2 and not {JOB_IN_BOOK}
+				and ifnull(ci.production, '') != '' and ifnull(ci.barcode, '') = ''""".format(JOB_IN_BOOK=JOB_IN_BOOK)
 		)
 	)
 	out = []
