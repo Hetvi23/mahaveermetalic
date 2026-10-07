@@ -272,7 +272,17 @@ def threads_processing(branch=None, location=None):
 		r["patti_qty"] = formed
 		# Batches, not kilos: `done` is still the completed-batch count from above.
 		r["part_done"] = 1 if (0 < done < planned) else 0
-	return rows
+
+	# A PROGRAM WITH NOTHING COMPLETED IS NOT IN PRODUCTION YET, so it is not on this list.
+	#
+	# Held back by weight alone it still appeared, offering 0 kg — a row the floor can see
+	# and cannot act on, which reads as the screen being broken rather than as the program
+	# not being ready. Hetvi: "when i finish in program then also i dont in production",
+	# looking at exactly such a row. It belongs on the Program board, which is where its
+	# batches get marked; it arrives here when it has something to box.
+	#
+	# Grandfathered programs are unaffected — their input is not 0, so they never match.
+	return [r for r in rows if float(r.get("input_weight") or 0) > 0 or float(r.get("planned_input") or 0) > 0]
 
 
 @frappe.whitelist()
