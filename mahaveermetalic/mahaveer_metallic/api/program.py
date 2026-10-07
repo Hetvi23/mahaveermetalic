@@ -535,6 +535,36 @@ def _ensure_default_machines():
 SHIFTS = ("Day", "Night")
 
 
+def _cut_field(shift):
+	"""The field holding ONE shift's cut. Blank shift means the machine's own, which is
+	what the original `cut` field says."""
+	s = (shift or "").strip().title()
+	return f"cut_{s.lower()}" if s in SHIFTS else None
+
+
+def machine_cut_for(machine, shift=None):
+	"""The cut this machine runs on this shift.
+
+	Named `machine_cut_for`, not `machine_cut`, because its callers hold the answer in a
+	local called `machine_cut` — and a name that is a function in one line and a string in
+	the next is how a kilogram count ended up standing in for a batch count elsewhere.
+
+	A machine does not run one cut: Hetvi — "the night and day can have multiple machine
+	cuts". So each shift carries its own, and the original `cut` stays as the machine's
+	default, which is what every machine had before the split and what a shift falls back
+	to until someone sets it. Written once here so the board, the patty shelf and a new
+	program all read the same answer.
+	"""
+	if not machine:
+		return None
+	field = _cut_field(shift)
+	if field:
+		own = frappe.db.get_value("MM Machine", machine, field)
+		if (own or "").strip():
+			return own.strip()
+	return (frappe.db.get_value("MM Machine", machine, "cut") or "").strip() or None
+
+
 def _shift_field(shift):
 	"""The field that closes ONE shift. A blank shift means the whole machine, which is
 	what the legacy `closed` flag says."""
@@ -567,13 +597,19 @@ def list_machines(branch=None):
 		filters["branch"] = branch
 	machines = frappe.get_all(
 		"MM Machine", filters=filters,
-		fields=["name", "machine_no", "machine_name", "cut", "closed", "closed_day", "closed_night"],
+		fields=["name", "machine_no", "machine_name", "cut", "cut_day", "cut_night",
+			"closed", "closed_day", "closed_night"],
 		order_by="cast(machine_no as unsigned) asc, machine_no asc",
 	)
 	for m in machines:
 		m["active_programs"] = frappe.db.count(
 			"MM Program", {"machine_no": m["name"], "docstatus": 1, "released": 0}
 		)
+		# A machine whose shift has no cut of its own runs the machine's default — which is
+		# every machine that existed before the cuts were split per shift.
+		for sh in ("day", "night"):
+			if not (m.get(f"cut_{sh}") or "").strip():
+				m[f"cut_{sh}"] = m.get("cut")
 		# A machine closed before this was per-shift reads as closed on both.
 		if frappe.utils.cint(m.get("closed")):
 			m["closed_day"] = m["closed_night"] = 1
@@ -612,13 +648,14 @@ def remove_machine(machine):
 
 
 @frappe.whitelist()
-def set_machine_cut(machine, cut=None):
-	"""Set the machine's default Cut — every program run on it inherits this cut.
-	Set once, changed only when needed."""
+def set_machine_cut(machine, cut=None, shift=None):
+	"""Set the Cut this machine runs — for ONE shift when a shift is named, otherwise the
+	machine's default. A program created on that machine and shift inherits it."""
 	if not frappe.db.exists("MM Machine", machine):
 		frappe.throw(_("Machine {0} not found.").format(machine))
-	frappe.db.set_value("MM Machine", machine, "cut", (cut or "").strip() or None)
-	return {"machine": machine, "cut": cut}
+	field = _cut_field(shift) or "cut"
+	frappe.db.set_value("MM Machine", machine, field, (cut or "").strip() or None)
+	return {"machine": machine, "cut": cut, "shift": shift, "field": field}
 
 
 @frappe.whitelist()
@@ -916,7 +953,7 @@ def create_program(
 		)
 
 	# The machine's Cut (if set) is the authoritative cut for everything run on it.
-	machine_cut = frappe.db.get_value("MM Machine", machine_no, "cut") if machine_no else None
+	machine_cut = machine_cut_for(machine_no, shift) if machine_no else None
 
 	from_inventory = bool(source_inward_item and not source_cutting)
 	if from_inventory:
@@ -1127,7 +1164,7 @@ def create_unfinished_program(
 			)
 		)
 
-	machine_cut = frappe.db.get_value("MM Machine", machine_no, "cut") if machine_no else None
+	machine_cut = machine_cut_for(machine_no, shift) if machine_no else None
 
 	branch = location = None
 	if roll_inventory:

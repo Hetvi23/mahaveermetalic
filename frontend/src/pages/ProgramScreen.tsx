@@ -24,6 +24,9 @@ type ShiftView = "Day" | "Night" | "Combined";
 
 type Machine = {
   name: string; machine_no: string; machine_name?: string; cut?: string; active_programs?: number;
+  /** The cut is PER SHIFT too — a machine can run one cut at night and another by day.
+   *  `cut` is the machine's default, which a shift without its own falls back to. */
+  cut_day?: string; cut_night?: string;
   /** Closed is PER SHIFT — a machine shut for the night still runs the day. `closed` means
    *  both, and is what a machine closed before this change carries. */
   closed?: number; closed_day?: number; closed_night?: number;
@@ -130,6 +133,10 @@ export default function ProgramScreen() {
   /** Closed for the shift whose column this is — not for the machine as a whole. */
   const shutFor = (m: Machine, s: string) =>
     !!(m.closed || (s === "Night" ? m.closed_night : m.closed_day));
+  /** The cut that shift runs, falling back to the machine's default — the same answer the
+   *  server gives a program created there (api.program.machine_cut_for). */
+  const cutFor = (m: Machine, s: string) =>
+    ((s === "Night" ? m.cut_night : m.cut_day) || m.cut || "").trim();
   const [completing, setCompleting] = useState<Program | null>(null);
 
   /* NOTHING REFRESHES UNDER AN OPEN DIALOG. The board and the patty shelf re-read
@@ -217,7 +224,9 @@ export default function ProgramScreen() {
   /** "What can THIS machine run, right now." Scopes the shelf to the machine's cut and
    *  re-pulls — the patty count moves as programs take patti. */
   const refreshPattyFor = (m: Machine) => {
-    setPattyScope({ machine: m.name, machineNo: m.machine_no, cut: (m.cut || "").trim() });
+    // The cut of the shift leading the board, not the machine's default — with the two
+    // shifts on different cuts, the default is nobody's.
+    setPattyScope({ machine: m.name, machineNo: m.machine_no, cut: cutFor(m, shiftCols[0]) });
     setPattyColourFilter("");
     void pattyCall.mutate();
   };
@@ -543,14 +552,17 @@ export default function ProgramScreen() {
                   <tr key={m.name} className={m.closed ? "mm-prog-row-closed" : ""}>
                     <td className="mm-prog-mcell">
                       <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
-                      <MachineCutInput machine={m.name} value={m.cut} onSaved={refresh} />
-                      {/* CLOSING BELONGS TO A SHIFT, so its button is in the shift's own
-                          column below. What stays here is the machine's own: its cut, the
-                          patty filter, and removing it. */}
+                      {/* THE CUT BELONGS TO A SHIFT, like closing does — a machine runs
+                          one cut at night and can run another by day. This cell heads the
+                          first shift column, so it carries that shift's cut; every later
+                          shift carries its own in front of it. The patty filter and
+                          removing the machine stay here, being the machine's own. */}
+                      <MachineCutInput machine={m.name} shift={shiftCols[0]}
+                        value={cutFor(m, shiftCols[0])} onSaved={refresh} />
                       <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
                         {/* Narrows the shelf to THIS machine's cut. The shelf keeps itself
                             current on its own — this is a filter, not a refresh. */}
-                        <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run${m.cut ? ` (cut ${m.cut})` : ""}`}
+                        <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run${cutFor(m, shiftCols[0]) ? ` (cut ${cutFor(m, shiftCols[0])})` : ""}`}
                           aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
                           onClick={() => refreshPattyFor(m)}>
                           <Search size={13} /> Patty
@@ -565,14 +577,14 @@ export default function ProgramScreen() {
                       const shut = shutFor(m, s);
                       return (
                         <Fragment key={s}>
-                        {/* The machine named again, as a label only. The cut is ONE value
-                            per machine, so a second editable box for it would be two
-                            controlled inputs racing over the same field — it reads here
-                            and stays editable in the real cell at the left. */}
+                        {/* The machine named again in front of each shift after the
+                            first, with THAT shift's cut — reading a Day cell used to mean
+                            tracking back across the whole night to find whose row it was,
+                            and the cut it showed was the night's. */}
                         {i > 0 ? (
                           <td className="mm-prog-mcell mm-prog-mcell-echo">
                             <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
-                            {m.cut ? <span className="mm-prog-mcut-echo">{m.cut}</span> : null}
+                            <MachineCutInput machine={m.name} shift={s} value={cutFor(m, s)} onSaved={refresh} />
                           </td>
                         ) : null}
                         <td className="mm-prog-col">
@@ -652,19 +664,34 @@ export default function ProgramScreen() {
       ran go back to the patty shelf on their own. ── */
 
 /* ── Per-machine Cut (editable; every program on the machine inherits it) ── */
+/** The cut a machine runs ON ONE SHIFT. Hetvi: "the night and day can have multiple
+ *  machine cuts" — so the box lives in the shift's own cell and writes that shift's
+ *  field. Without a `shift` it writes the machine's default, which is what a shift with
+ *  no cut of its own falls back to. */
 const MachineCutInput = memo(function MachineCutInput(
-  { machine, value, onSaved }: { machine: string; value?: string; onSaved: () => void },
+  { machine, shift, value, onSaved }:
+  { machine: string; shift?: string; value?: string; onSaved: () => void },
 ) {
   const [v, setV] = useState(value ?? "");
   const { call } = useFrappePostCall(`${API}.set_machine_cut`);
   const saved = value ?? "";
+  // The board refreshes on its own, and a cut saved elsewhere (or on the other shift)
+  // comes back in that payload — without this the box keeps showing what it was opened
+  // with. It only follows the server while the operator is not mid-edit.
+  const dirty = v.trim() !== saved.trim();
+  const lastSaved = useRef(saved);
+  useEffect(() => {
+    if (saved !== lastSaved.current) { lastSaved.current = saved; setV(saved); }
+  }, [saved]);
   async function save() {
-    if (v.trim() === saved.trim()) return;
-    try { await call({ machine, cut: v.trim() }); onSaved(); } catch { /* ignore */ }
+    if (!dirty) return;
+    try { await call({ machine, cut: v.trim(), shift: shift || undefined }); onSaved(); } catch { /* ignore */ }
   }
   return (
     <input className="mm-input mm-input-compact mm-mach-cut" placeholder="Cut id"
-      title="Default cut for this machine — all its programs use this"
+      title={shift
+        ? `Cut this machine runs on the ${shift.toLowerCase()} shift — its programs that shift use this`
+        : "Default cut for this machine — a shift with no cut of its own uses this"}
       value={v} onChange={(e) => setV(e.target.value)} onBlur={() => void save()}
       onKeyDown={(e) => e.key === "Enter" && void save()} />
   );

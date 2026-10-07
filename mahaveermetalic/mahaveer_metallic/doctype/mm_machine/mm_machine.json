@@ -9,6 +9,8 @@
   "machine_no",
   "machine_name",
   "cut",
+  "cut_day",
+  "cut_night",
   "branch",
   "closed",
   "closed_night",
@@ -61,6 +63,16 @@
    "fieldtype": "Check",
    "label": "Closed (Night)",
    "description": "The NIGHT shift is not working on this machine."
+  },
+  {
+   "fieldname": "cut_night",
+   "fieldtype": "Data",
+   "label": "Cut (Night)"
+  },
+  {
+   "fieldname": "cut_day",
+   "fieldtype": "Data",
+   "label": "Cut (Day)"
   }
  ],
  "index_web_pages_for_search": 1,
