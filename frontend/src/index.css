@@ -2694,8 +2694,13 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-pv-check input { margin: 0; }
 
 /* The picker sheets' search box stretched to fill the whole header (flex: 1 1 260px). It
-   only needs to be wide enough to type a roll or colour into. */
-.mm-sheet .mm-search-box { flex: 0 1 300px; max-width: 300px; }
+   only needs to be wide enough to type a roll or colour into.
+
+   `flex: 0 1 300px` fixed the width in a ROW, but `.mm-sheet .mm-modal-body` is a COLUMN —
+   so the basis applied down the page instead and the box came out 300px TALL with the
+   input floating in the middle of it. Width is set as width, and flex is told to keep its
+   hands off the height. Same trap as .mm-map-pane further down. */
+.mm-sheet .mm-search-box { flex: none; width: 300px; max-width: 100%; margin-bottom: 0.6rem; }
 
 /* ════════════════════════════════════════════════════════════════════════════════
    CRAFT PASS — data entry
