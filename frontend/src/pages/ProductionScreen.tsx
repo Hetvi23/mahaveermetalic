@@ -745,7 +745,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
        bubble up here and close the whole voucher — losing every box already weighed.
        While a box is open the backdrop is inert; the voucher closes from its own X. */
     <div className="mm-modal-scrim mm-scrim-right" onClick={() => { if (!adding) onClose(); }}>
-      <div className="mm-modal mm-sheet" onClick={(e) => e.stopPropagation()} role="dialog">
+      {/* FULL WIDTH, because this is the screen the floor stands at: the paperwork is
+          filled once and the box table is read all night. Capped at 1240px it used a
+          third of a wide monitor for the details and left the boxes in a tall narrow
+          well. */}
+      <div className="mm-modal mm-sheet mm-sheet-full" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
           <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>

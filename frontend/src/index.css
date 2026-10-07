@@ -1983,6 +1983,17 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 .mm-modal-scrim.mm-scrim-right { padding: 0; place-items: stretch end; }
 .mm-modal.mm-sheet { width: min(1240px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; box-shadow: -12px 0 44px rgba(0,0,0,0.28); animation: mm-sheet-in 0.22s cubic-bezier(0.2,0.7,0.3,1); }
 .mm-modal.mm-sheet.mm-sheet-narrow { width: min(560px, 100vw); }
+/* The production voucher takes the whole screen. The paperwork is filled once and the box
+   table is read all night, so the width goes to the table: at 1240px the details sat in a
+   narrow column four fields wide and the boxes were left in a tall thin well. */
+.mm-modal.mm-sheet.mm-sheet-full { width: 100vw; }
+/* With the room, the details lay out across instead of down — fifteen fields in two or
+   three lines rather than five — and every line saved is a line of boxes gained. */
+@media (min-width: 1500px) { .mm-sheet-full .mm-pv-grid { grid-template-columns: repeat(6, 1fr); } }
+@media (min-width: 1900px) { .mm-sheet-full .mm-pv-grid { grid-template-columns: repeat(8, 1fr); } }
+/* Row 1 is paperwork and row 2 is the box table; on a wide screen the paperwork needs
+   proportionally less of it. */
+@media (min-width: 1500px) { .mm-sheet-full .mm-pv-split { grid-template-columns: minmax(0, 1fr) minmax(0, 0.55fr); } }
 /* Box Details is an inline PANEL heading the boxes column, not a popup. Every earlier
    attempt floated it — left, right, wider breakpoints — and each one covered something
    the packer is reading off at that exact moment. Sitting it in the flow costs nothing
