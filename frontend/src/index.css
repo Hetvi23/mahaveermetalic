@@ -2408,6 +2408,16 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 .mm-field-tick .mm-tick { display: flex; align-items: center; gap: 0.4rem; min-height: 2.1rem; font-size: 0.82rem;
   color: var(--mm-text-sec); }
 .mm-field-tick .mm-tick input { width: 1rem; height: 1rem; accent-color: var(--mm-accent, #6366f1); }
+/* A production-queue pile: one colour+lot, its programs stacked under one head. */
+.mm-pick-pile { display: block; border-left: 3px solid var(--mm-accent, #6366f1); }
+.mm-pile-head { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.mm-pile-count { margin-left: auto; font-size: 0.7rem; font-weight: 700; color: var(--mm-text-sec); white-space: nowrap; }
+.mm-pile-total { margin-top: 0.15rem; }
+.mm-pile-runs { display: flex; flex-direction: column; margin-top: 0.5rem; padding-left: 0.6rem;
+  border-left: 1px dashed var(--mm-border); }
+.mm-pile-run { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; cursor: pointer; }
+.mm-pile-run + .mm-pile-run { border-top: 1px solid var(--mm-border); }
+.mm-pile-run:hover { background: var(--mm-bg-soft, transparent); }
 .mm-prog-mcell-echo .mm-prog-mname { opacity: 0.85; }
 .mm-prog-mcut-echo { display: inline-block; margin-top: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.72rem;
   color: var(--mm-text-sec); border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm);

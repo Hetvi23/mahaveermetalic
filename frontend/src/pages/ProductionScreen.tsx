@@ -81,6 +81,19 @@ export default function ProductionScreen() {
     return out;
   };
   // Same fields the row prints, so what is searched is what is on screen.
+  /** The queue collapsed into piles of colour + lot + cut; each pile keeps the slot of its
+   *  first program, so merging never reshuffles the list. */
+  const pilesOf = (list: Program[]) => {
+    const order: string[] = [];
+    const piles: Record<string, Program[]> = {};
+    for (const p of list) {
+      const k = `${(p.shade || "").trim()}|${(p.lot_id || "").trim()}|${(p.cut || "").trim()}`;
+      if (!piles[k]) { piles[k] = []; order.push(k); }
+      piles[k].push(p);
+    }
+    return order.map((k) => piles[k]);
+  };
+
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return queue;
@@ -120,44 +133,34 @@ export default function ProductionScreen() {
             <p className="mm-empty">{queue.length === 0 ? "No programs waiting to be produced." : `Nothing matches “${q.trim()}”.`}</p>
           ) : (
             <div className="mm-pick-list">
-              {shown.map((p) => (
-                <div key={p.name} className="mm-pick-row" onClick={() => setProducing(p)}>
-                  <div style={{ flex: 1 }}>
-                    <div>
-                      {/* COLOUR first, and always. It used to be `roll_no || shade`, so the
-                          moment a roll carried a number the colour vanished — and the queue
-                          reads "1 · 50/85 · Dhruv Singapuri", which names the roll, the cut
-                          and the customer but not the material being wound. */}
-                      <strong className="mm-colour-name">{p.shade || "—"}</strong>
-                      {p.roll_no ? <span className="mm-suggest-meta">roll {p.roll_no}</span> : null}
-                      {" · "}{p.cut || "—"}{p.party ? ` · ${p.party}` : ""}
-                      {p.lot_id ? <span className="mm-prod-lot" title={`Lot ${p.lot_id} — from the patty this program took`}>{p.lot_id}</span> : null}
-                      {/* Why an earlier program on this lot stopped short — read before winding
-                          it, not after. The row is clickable; the badge stops its own clicks. */}
-                      <LotRemarkBadge remarks={remarksForProgram(p)} label={`Lot ${p.lot_id || ""}`} />
-                    </div>
-                    <div className="mm-prog-card-meta">
-                      {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
-                      {p.patti_qty ?? 0} patty
-                      {p.part_done ? <span className="mm-prod-partdone"> of {p.planned_patti} — rest still running</span> : ""}
-                      {/* ONLY WHAT IS LEFT. Once a voucher has taken 100 kg off a 275.9 kg
-                          program the floor needs the 175.9 and nothing else — the original
-                          figure beside it was one number too many to read at a machine. It
-                          stays in the hover for anyone who wants the history. */}
-                      {" "}· input{" "}
-                      <span title={(p.produced_weight ?? 0) > 0
-                        ? `${(p.produced_weight ?? 0).toLocaleString()} kg already boxed of ${(p.planned_input ?? 0).toLocaleString()} kg`
-                        : undefined}>
-                        {(p.input_weight ?? 0).toLocaleString()} kg
-                      </span>
-                      {p.job_work_flag ? " · job work" : ""}
-                    </div>
+              {/* ONE ROW PER COLOUR AND LOT. Seven rows of AN ANMOL BS on LT1/26-27 are one
+                  material in one lot and the floor counts it that way (Hetvi: "same lot
+                  same color why not merged??"). The head carries the lot and what the pile
+                  comes to; the programs stay listed inside it, because Produce acts on ONE
+                  program — each has its own roll, machine, shift and remaining weight, and
+                  a pile is not a thing the server can produce. */}
+              {pilesOf(shown).map((g) => (g.length === 1 ? (
+                <QueueRow key={g[0].name} p={g[0]} onPick={setProducing} remarksFor={remarksForProgram} />
+              ) : (
+                <div key={g[0].name} className="mm-pick-row mm-pick-pile">
+                  <div className="mm-pile-head">
+                    <strong className="mm-colour-name">{g[0].shade || "—"}</strong>
+                    {" · "}{g[0].cut || "—"}
+                    {g[0].lot_id ? <span className="mm-prod-lot" title={`Lot ${g[0].lot_id}`}>{g[0].lot_id}</span> : null}
+                    <LotRemarkBadge remarks={remarksForProgram(g[0])} label={`Lot ${g[0].lot_id || ""}`} />
+                    <span className="mm-pile-count">{g.length} programs</span>
                   </div>
-                  <button className="mm-mini mm-mini-ok" onClick={(e) => { e.stopPropagation(); setProducing(p); }}>
-                    Produce <ArrowRight size={13} />
-                  </button>
+                  <div className="mm-prog-card-meta mm-pile-total">
+                    {g.reduce((a, x) => a + (x.patti_qty ?? 0), 0)} patty · input{" "}
+                    {r3(g.reduce((a, x) => a + (x.input_weight ?? 0), 0)).toLocaleString()} kg
+                  </div>
+                  <div className="mm-pile-runs">
+                    {g.map((p) => (
+                      <QueueRow key={p.name} p={p} inPile onPick={setProducing} remarksFor={remarksForProgram} />
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )))}
             </div>
           )}
         </section>
@@ -190,6 +193,44 @@ type Calc = {
   net_weight: number; variance_percent: number; tolerance: number;
   tolerance_kg: number; short_by: number; pin_required: boolean;
 };
+
+
+/** One program in the queue. Drawn alone it is the row it always was; inside a pile the
+ *  colour, cut and lot are already on the head above it, so it leads with the roll. */
+function QueueRow(
+  { p, inPile, onPick, remarksFor }:
+  { p: Program; inPile?: boolean; onPick: (p: Program) => void; remarksFor: (p: Program) => LotRemark[] },
+) {
+  return (
+    <div className={inPile ? "mm-pile-run" : "mm-pick-row"} onClick={() => onPick(p)}>
+      <div style={{ flex: 1 }}>
+        <div>
+          {!inPile && <strong className="mm-colour-name">{p.shade || "—"}</strong>}
+          {p.roll_no ? <span className="mm-suggest-meta">roll {p.roll_no}</span> : null}
+          {!inPile && <>{" · "}{p.cut || "—"}</>}
+          {p.party ? ` · ${p.party}` : ""}
+          {!inPile && p.lot_id ? <span className="mm-prod-lot">{p.lot_id}</span> : null}
+          {!inPile && <LotRemarkBadge remarks={remarksFor(p)} label={`Lot ${p.lot_id || ""}`} />}
+        </div>
+        <div className="mm-prog-card-meta">
+          {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
+          {p.patti_qty ?? 0} patty
+          {p.part_done ? <span className="mm-prod-partdone"> of {p.planned_patti} — rest still running</span> : ""}
+          {" "}· input{" "}
+          <span title={(p.produced_weight ?? 0) > 0
+            ? `${(p.produced_weight ?? 0).toLocaleString()} kg already boxed of ${(p.planned_input ?? 0).toLocaleString()} kg`
+            : undefined}>
+            {(p.input_weight ?? 0).toLocaleString()} kg
+          </span>
+          {p.job_work_flag ? " · job work" : ""}
+        </div>
+      </div>
+      <button className="mm-mini mm-mini-ok" onClick={(e) => { e.stopPropagation(); onPick(p); }}>
+        Produce <ArrowRight size={13} />
+      </button>
+    </div>
+  );
+}
 
 function ProduceModal({ program, onClose, onDone }: { program: Program; onClose: () => void; onDone: () => void }) {
   // The voucher asks about ONE program, so its own small lookup is right here — this is
