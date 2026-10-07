@@ -1786,11 +1786,20 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 @keyframes mm-shimmer { to { background-position: 200% 0; } }
 
 /* ── Animations ───────────────────────────────────────── */
+/* `backwards`, never `forwards`/`both`. A filling animation keeps opacity (and here
+   transform) animation-controlled for the life of the element, so Chrome keeps a
+   STACKING CONTEXT on it forever. Every page is .mm-page-enter, so every fixed overlay
+   inside one — scrims at z-index 250, sheets, popovers — was trapped in a z-index:auto
+   context and painted UNDER the fixed rail (200), whatever number it carried. Invisible
+   while sheets were capped at 1240px and right-anchored; the moment the production
+   voucher went full-width its first column vanished behind the nav. `backwards` fills
+   only BEFORE the animation runs, which is the half that does the fade-in, and the
+   end state is the element's own style anyway (opacity 1, no translate). */
 @keyframes mm-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.mm-fade-in { animation: mm-fade-in 0.25s ease-out both; }
+.mm-fade-in { animation: mm-fade-in 0.25s ease-out backwards; }
 @keyframes mm-page-enter { from { opacity: 0; } to { opacity: 1; } }
-.mm-page-enter { animation: mm-page-enter 0.2s ease-out both; }
-.mm-panel-enter { animation: mm-fade-in 0.2s ease-out both; }
+.mm-page-enter { animation: mm-page-enter 0.2s ease-out backwards; }
+.mm-panel-enter { animation: mm-fade-in 0.2s ease-out backwards; }
 
 /* ── Login ────────────────────────────────────────────── */
 .mm-login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: var(--mm-primary); }
@@ -1986,7 +1995,9 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 /* The production voucher takes the whole screen. The paperwork is filled once and the box
    table is read all night, so the width goes to the table: at 1240px the details sat in a
    narrow column four fields wide and the boxes were left in a tall thin well. */
-.mm-modal.mm-sheet.mm-sheet-full { width: 100vw; }
+/* 100% of the scrim, not 100vw: vw counts the scrollbar, which would push the sheet
+   a few px wide and scroll the page sideways. */
+.mm-modal.mm-sheet.mm-sheet-full { width: 100%; max-width: 100%; }
 /* With the room, the details lay out across instead of down — fifteen fields in two or
    three lines rather than five — and every line saved is a line of boxes gained. */
 @media (min-width: 1500px) { .mm-sheet-full .mm-pv-grid { grid-template-columns: repeat(6, 1fr); } }
