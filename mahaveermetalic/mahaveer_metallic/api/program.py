@@ -1577,21 +1577,28 @@ def _save_batches(program, completed, is_running):
 def complete_batches(program, completed=None, count=None, partial_keeps_machine=0, reason=None):
 	"""Record how many batches are completed (via the Complete dialog).
 
-	All of them → the program frees off the machine to Production automatically, no manual
-	Free step. FEWER than planned → the program is done short: it leaves the machine and the
-	batches it never ran are handed straight back to the picker, so nobody has to remember
-	to Revert the remainder. (`partial_keeps_machine` keeps a short program on the machine —
-	for callers that record progress as it happens rather than closing the job out.)
+	A SHORT COUNT IS PROGRESS, NOT A CLOSE-OUT. Three of five means three are done and two
+	are still to run: the program stays on the machine, Production is offered the three
+	batches' worth, and the last two are completed later on this same program — Hetvi:
+	"if i select 3 batch then only 3 will be shown in the production ... when i finish the
+	other 2 it will again be added".
 
-	A SHORT CLOSE-OUT ASKS FOR A REASON AND ACCEPTS SILENCE. Six batches planned and two
-	recorded means four patti go back on offer, and why is worth knowing — so the dialog
-	asks, and files whatever is typed against the lot. It used to REFUSE an empty answer.
-	That reads as rigour and works out as the opposite: a box you cannot get past teaches
-	the floor to type "x", and a sentence nobody meant is worse evidence than none, because
-	it can be believed. The same relaxation applies to Revert, which is the same act.
+	It used to mean the opposite. A short count closed the job out: the program was flagged
+	reverted, freed off the machine, and the unrun patti went back to the picker — so
+	coming back to finish the other two was refused outright and the floor had to re-plan
+	material it had never stopped running. Handing patti back is a real act, but it is
+	REVERT's act, and Revert is one button away for the shift that genuinely abandons a job.
+
+	All of them → the program frees off the machine to Production automatically, no manual
+	Free step.
+
+	A REASON IS ASKED FOR AND NOT INSISTED ON: a box you cannot get past teaches the floor
+	to type "x", and a sentence nobody meant is worse evidence than none, because it can be
+	believed. Lowering a count already banked is the one case that still demands one.
 
 	A reverted program is off the machine — completing on it is blocked.
-	(`count` kept for backward-compat: increments by that many.)
+	(`count` kept for backward-compat: increments by that many. `partial_keeps_machine` is
+	accepted and ignored: keeping the machine is now what a short count always does.)
 	"""
 	doc = frappe.db.get_value(
 		"MM Program", program, ["completed_batches", "total_batches", "reverted"], as_dict=True
@@ -1606,13 +1613,6 @@ def complete_batches(program, completed=None, count=None, partial_keeps_machine=
 		comp = max(0, min(int(completed), total))
 	else:
 		comp = max(0, min((doc.completed_batches or 0) + int(count or 1), total))
-
-	if total > 0 and comp < total and not frappe.utils.cint(partial_keeps_machine):
-		# Short of plan: keep what ran, free the slot, and give the rest back.
-		res = revert_batches(program, completed=comp, reason=reason, event_type="Partial Completion")
-		res["auto_reverted"] = True
-		res["returned_batches"] = total - comp
-		return res
 
 	# Recording progress that goes BACKWARDS — 4 done corrected to 2 — is the one case on
 	# this path worth a reason: two patty that were on Production are being taken off it,

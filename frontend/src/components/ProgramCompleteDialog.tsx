@@ -17,9 +17,12 @@ const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
  * program, disagreeing about what completing it means. One component now, so they cannot
  * disagree again.
  *
- * SHORT MEANS THE JOB IS OVER. Fewer batches than planned finishes the program: the
- * machine frees and the patti of the batches that never ran go straight back on offer,
- * so nobody has to remember to Revert the remainder afterwards.
+ * SHORT MEANS PROGRESS, NOT THE END. Three of five is three done and two still to run:
+ * the program stays on the machine, Production is offered three batches' worth, and the
+ * last two are completed later on this same program. It used to mean the opposite — the
+ * job closed out and the unrun patti went back on offer — which refused the operator who
+ * came back to finish the run and made them re-plan material that had never stopped.
+ * Handing patti back is REVERT's act, and Revert is one button away.
  *
  * The remark is OPTIONAL, including when the job stops short. It was compulsory, on the
  * reasoning that the next person to meet this material deserves to know why it came back.
@@ -54,13 +57,13 @@ export default function ProgramCompleteDialog({
     if (comp === null) return setErr("Enter how many batches are completed.");
     setErr(null);
     try {
-      const res = await call({ program, completed: comp, reason: reason.trim() || undefined });
-      const back = Number((res as { message?: { returned_batches?: number } })?.message?.returned_batches || 0);
-      const returned = back || total - comp;
+      // Nothing is returned any more — a short count keeps the program, so there is no
+      // `returned_batches` to read back and no patti going anywhere.
+      await call({ program, completed: comp, reason: reason.trim() || undefined });
       toast(
         comp >= total
           ? "All batches done — sent to Production"
-          : `${comp}/${total} done · ${returned} batch${returned === 1 ? "" : "es"} returned to the patty shelf`,
+          : `${comp}/${total} done — ${total - comp} still to run`,
       );
       onDone();
     } catch (e) {
@@ -91,8 +94,8 @@ export default function ProgramCompleteDialog({
                 <strong>All done → goes to Production</strong>
               ) : (
                 <>
-                  {comp}/{total} done · machine frees up ·{" "}
-                  <strong>{total - comp} batch{total - comp === 1 ? "" : "es"}</strong> of patty returned
+                  {comp}/{total} done → <strong>{comp} batch{comp === 1 ? "" : "es"}</strong> to Production ·{" "}
+                  <strong>{total - comp}</strong> still to run on this program
                 </>
               )}
             </p>
@@ -106,7 +109,7 @@ export default function ProgramCompleteDialog({
               Remark <span className="mm-muted">(optional)</span>
             </span>
             <textarea className="mm-input" rows={2} value={reason}
-              placeholder={short ? "Thread broke, shade off, machine trouble…" : "Anything worth knowing about this run"}
+              placeholder={short ? "How the run is going — thread broke, shade off, machine trouble…" : "Anything worth knowing about this run"}
               onChange={(e) => setReason(e.target.value)} />
             <span className="mm-muted" style={{ fontSize: "0.76rem" }}>
               If you write one it stays on this lot — anyone programming, cutting or receiving it later will see it.
