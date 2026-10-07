@@ -1505,6 +1505,12 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 	rows = frappe.db.sql(
 		f"""
 		select c.name, c.challan_type, c.challan_no, c.transaction_date, c.party,
+			-- THE COMPANY THE VOUCHER ITSELF NAMED. _challan_companies prefers this over
+			-- every fallback, but the register never selected it — so the preference could
+			-- not fire here and a Job In fell through to the party's first company, which
+			-- on a job receipt is the WORKER (Hetvi: "hiral jari is not the company, the
+			-- one i selected in job in ... should be shown").
+			c.company_name,
 			c.sales_order, c.total_box, c.total_weight, c.docstatus, c.job_work_flag, c.against_job_out,
 			-- `lines` is reserved in MariaDB; naming it that failed the whole query.
 			(select count(*) from `tabMM Sales Challan Item` ci where ci.parent = c.name) as line_count,

@@ -194,12 +194,7 @@ export default function ChallanReportPage() {
                         Job Out they came back on — and nothing on the row told them apart
                         or matched the barcodes inside them. The book number is still worth
                         reading, so it travels beside the id rather than instead of it. */}
-                    <td>
-                      {r.name}
-                      {r.challan_no && r.challan_no !== r.name
-                        ? <span className="mm-suggest-meta" title="C.No in the shop's book">C.No {r.challan_no}</span>
-                        : null}
-                    </td>
+                    <td title={r.challan_no ? `C.No ${r.challan_no}` : undefined}>{r.name}</td>
                     <td>{fmtDate(r.transaction_date) || "—"}</td>
                     <td>{r.challan_type || "—"}</td>
                     <td title={r.party_name || r.party ? `Party: ${r.party_name || r.party}` : undefined}>
