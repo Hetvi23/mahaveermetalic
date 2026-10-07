@@ -2421,6 +2421,12 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* A picker row that cannot be chosen because the voucher is already carrying another item. */
 .mm-row-locked { opacity: 0.4; }
 .mm-row-locked:hover { background: transparent; }
+/* The picker's filter bar: a ROW inside a column body, so the search box's width rule
+   applies the way it was written. */
+.mm-picker-filters { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.mm-picker-filters .mm-search-box { margin-bottom: 0; }
+.mm-picker-date { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--mm-text-sec); }
+.mm-picker-date .mm-input { width: 9.5rem; }
 .mm-prog-mcell-echo .mm-prog-mname { opacity: 0.85; }
 .mm-prog-mcut-echo { display: inline-block; margin-top: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.72rem;
   color: var(--mm-text-sec); border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm);

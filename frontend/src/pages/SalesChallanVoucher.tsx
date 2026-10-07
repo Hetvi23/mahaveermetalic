@@ -386,6 +386,8 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
     `chal-boxes-${party}-${order}`,
   );
   const [q, setQ] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   // Only boxes of a colour this order is for, then whatever the operator is looking for.
   // The shelf runs to a couple of hundred boxes on a busy day and they are all one date
   // and one item, so the barcode and the weight are what actually tell them apart.
@@ -396,6 +398,13 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
       if (!t) return true;
       return [r.item, r.cut, r.customer_order, r.barcode, r.posting_date, String(r.net_weight ?? "")]
         .some((v) => String(v ?? "").toLowerCase().includes(t));
+    })
+    // Dates compare as ISO strings — which is what posting_date already is, so this needs
+    // no parsing and no timezone to get wrong. An open end leaves that side unbounded.
+    .filter((r) => {
+      const d = String(r.posting_date ?? "").slice(0, 10);
+      if (!d) return !from && !to;
+      return (!from || d >= from) && (!to || d <= to);
     });
   const [sel, setSel] = useState<Record<string, BoxRow>>({});
   // ONE CHALLAN, ONE ITEM. The first box picked settles what this voucher is carrying, and
@@ -410,9 +419,23 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
   return (
     <PickerSheet title="Select box" isLoading={isLoading} empty={rows.length === 0} emptyText="No produced boxes available."
       onClose={onClose} onAdd={() => onAdd(Object.values(sel))} count={Object.keys(sel).length}
-      search={<div className="mm-search-box"><Search size={15} />
-        <input className="mm-input mm-input-compact" placeholder="Search item / cut / order / barcode…"
-          value={q} onChange={(e) => setQ(e.target.value)} /></div>}>
+      search={
+        <div className="mm-picker-filters">
+          <div className="mm-search-box"><Search size={15} />
+            <input className="mm-input mm-input-compact" placeholder="Search item / cut / order / barcode…"
+              value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <label className="mm-picker-date">From
+            <input type="date" className="mm-input mm-input-compact" value={from}
+              onChange={(e) => setFrom(e.target.value)} /></label>
+          <label className="mm-picker-date">To
+            <input type="date" className="mm-input mm-input-compact" value={to}
+              onChange={(e) => setTo(e.target.value)} /></label>
+          {(q || from || to) && (
+            <button type="button" className="mm-mini"
+              onClick={() => { setQ(""); setFrom(""); setTo(""); }}>Clear</button>
+          )}
+        </div>
+      }>
       {lockedItem && (
         <p className="mm-muted" style={{ margin: "0 0 0.5rem" }}>
           Carrying <strong>{lockedItem}</strong> — boxes of another item are locked. Unpick to change it.
