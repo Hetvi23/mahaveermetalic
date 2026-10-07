@@ -26,6 +26,32 @@ from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 )
 
 
+# MATERIAL REACHES PRODUCTION ONLY ONCE THE PROGRAM SAYS IT RAN.
+#
+# Hetvi: "the material will go in production after being completed in program. If in
+# program 4 out of 6 batches are completed then only 4 batches go in production." Four of
+# six always did hand over four batches' thread. Zero of six did not: `0 < 0 < planned` is
+# false, so a program with nothing marked completed fell through to its FULL weight. It was
+# written for old records that only ever arrived fully done and carried no count at all —
+# but it reads every untouched program the same way, and on mm 25 live programs were
+# offering 2,047.8 kg that no batch had been marked for.
+#
+# Programs created from this moment on are held to the rule. The ones already in flight
+# keep the old reading until they finish, so the floor is not stopped mid-program over a
+# count nobody was asked for at the time.
+_ZERO_BATCH_RULE_FROM = "2026-10-07 04:50:00"
+
+
+def zero_batch_rule_applies(prog) -> bool:
+	"""Is this program new enough to be held to "no completed batches, nothing to box"?"""
+	created = prog.get("creation")
+	if not created:
+		# No creation stamp to judge by — grandfather it. Erring the other way would block
+		# a real program over a field this function simply was not given.
+		return False
+	return str(created) >= _ZERO_BATCH_RULE_FROM
+
+
 def program_input_weight(prog) -> float:
 	"""The weight this program hands to Production.
 
@@ -34,10 +60,15 @@ def program_input_weight(prog) -> float:
 	(which gates variance on it) so the figure the operator saw is the figure they are
 	measured against — they used to differ, and a part-done program was judged against the
 	full plan it never ran.
+
+	Nothing completed hands over nothing, for a program new enough to be held to it: see
+	_ZERO_BATCH_RULE_FROM.
 	"""
 	planned = int(prog.get("total_batches") or 0) or int(round(float(prog.get("patti_qty") or 0)))
 	done = int(prog.get("completed_batches") or 0)
 	full = float(prog.get("net_weight") or 0)
+	if done <= 0 and planned > 0 and zero_batch_rule_applies(prog):
+		return 0.0
 	if not (0 < done < planned):
 		return round(full, 3)
 	per_patty = float(prog.get("per_patty_weight") or 0)
@@ -180,6 +211,8 @@ def threads_processing(branch=None, location=None):
 			"completed_batches",
 			"completed_weight",
 			"per_patty_weight",
+			# Which side of _ZERO_BATCH_RULE_FROM this program falls on.
+			"creation",
 		],
 		order_by="modified desc",
 		limit_page_length=500,
@@ -667,8 +700,14 @@ def create_production(
 	prog = frappe.db.get_value(
 		"MM Program",
 		source_program,
+		# THE BATCH FIELDS ARE PART OF THE GATE, not decoration. Without them
+		# program_input_weight saw planned = 0 and done = 0 here and fell straight through
+		# to the full net_weight, so the ceiling the server enforced was the whole program
+		# while the queue was showing the operator four batches' worth of it.
 		["name", "docstatus", "status", "production", "customer_order", "roll_no", "shade",
-		 "cut", "machine_no", "net_weight", "lot", "branch", "location"],
+		 "cut", "machine_no", "net_weight", "lot", "branch", "location",
+		 "total_batches", "completed_batches", "patti_qty", "completed_weight",
+		 "per_patty_weight", "creation"],
 		as_dict=True,
 	)
 	if not prog:
@@ -695,6 +734,25 @@ def create_production(
 		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import assert_order_submitted
 
 		assert_order_submitted(eff_order)
+
+	# NOTHING MARKED COMPLETE, NOTHING TO BOX. Said here, plainly, rather than left to
+	# surface downstream as "this voucher would take the program to X kg, more than the
+	# 0 kg that went into it" — which is true but tells the operator nothing about what to
+	# do. Grandfathered programs never reach this: their input weight is not 0.
+	if (
+		int(prog.get("completed_batches") or 0) <= 0
+		and int(prog.get("total_batches") or 0) > 0
+		and zero_batch_rule_applies(prog)
+	):
+		frappe.throw(
+			_("No batches are marked completed on program {0}, so there is nothing to box "
+			  "yet. Mark the batches that have come off the machine on the Program screen "
+			  "first — {1} of {2} are completed.").format(
+				prog.name,
+				int(prog.get("completed_batches") or 0),
+				int(prog.get("total_batches") or 0),
+			)
+		)
 
 	box_rows = _coerce_boxes(boxes)
 	bobbin_rows = _coerce_bobbins(bobbins)
