@@ -266,6 +266,10 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
   };
   const netOf = (it: Line) => Number(valueOf(it, "net_weight") ?? it.weight ?? 0) || 0;
   const total = items.reduce((s, it) => s + netOf(it), 0);
+  // Gross as well as net: the net is what the order is measured against, but the gross is
+  // what was on the scale, and a correction screen that shows only one of them cannot be
+  // checked against the paper.
+  const totalGross = items.reduce((s, it) => s + (Number(valueOf(it, "gross_weight") ?? 0) || 0), 0);
 
   // What the order can still take, this challan's own rows excluded — the same ceiling
   // the server checks, shown before the save rather than after it fails.
@@ -330,7 +334,12 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
             <ArrowLeft size={16} />
           </button>
           <div>
-            <h1 className="mm-page-title">Update Sales Challan Voucher — {d?.challan_no || challan}</h1>
+            {/* THE DOCUMENT'S OWN ID, not the shop's book number. This read `challan_no`
+                first, so the page called itself "188" while every barcode on it, and the
+                URL, said MMUSC-207-26/27 (Hetvi: "188 is not the actual id"). 188 is the
+                C.No written in the book — real, and kept in its own field below, but it
+                is not what names this voucher. */}
+            <h1 className="mm-page-title">Update Sales Challan Voucher — {d?.challan || challan}</h1>
             <p className="mm-page-sub">Correct the weights on an issued challan. The order&apos;s inward cover still applies.</p>
           </div>
         </div>
@@ -343,7 +352,11 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
           <section className="mm-card mm-card-pad">
             <div className="mm-pv-grid">
               <label className="mm-field"><span className="mm-field-label">Sale Chalan</span>
-                <input className="mm-input" value={d.challan_no || d.challan} readOnly /></label>
+                <input className="mm-input" value={d.challan || challan} readOnly /></label>
+              {d.challan_no && (
+                <label className="mm-field"><span className="mm-field-label">C.No</span>
+                  <input className="mm-input" value={d.challan_no} readOnly /></label>
+              )}
               <label className="mm-field"><span className="mm-field-label">Customer</span>
                 <input className="mm-input" value={d.party || "—"} readOnly /></label>
               <label className="mm-field"><span className="mm-field-label">Order</span>
@@ -429,6 +442,7 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
           <div className="mm-job-foot">
             <div className="mm-pv-totals">
               <span>Rows <strong>{items.length}</strong></span>
+              <span>Total Gross <strong>{kg(totalGross)} kg</strong></span>
               <span>Total Net <strong className={over ? "mm-var-over" : undefined}>{kg(total)} kg</strong></span>
               {available !== null && <span>Available <strong>{kg(available)} kg</strong></span>}
             </div>
