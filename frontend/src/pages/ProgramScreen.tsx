@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import {
@@ -526,7 +526,16 @@ export default function ProgramScreen() {
               <thead>
                 <tr>
                   <th className="mm-prog-mcell">Machine</th>
-                  {shiftCols.map((s) => <th key={s} className="mm-prog-col">{shiftIcon(s)} {s} · {shiftDate(s)}</th>)}
+                  {/* Combined puts Night and Day side by side, and the machine was named
+                      once at the far left — so reading a Day cell meant tracking back
+                      across the whole night to find out whose row it was. Every shift
+                      after the first gets the machine named again in front of it. */}
+                  {shiftCols.map((s, i) => (
+                    <Fragment key={s}>
+                      {i > 0 ? <th className="mm-prog-mcell mm-prog-mcell-echo">Machine</th> : null}
+                      <th className="mm-prog-col">{shiftIcon(s)} {s} · {shiftDate(s)}</th>
+                    </Fragment>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -551,11 +560,22 @@ export default function ProgramScreen() {
                         )}
                       </div>
                     </td>
-                    {shiftCols.map((s) => {
+                    {shiftCols.map((s, i) => {
                       const list = byMachineShift[m.name]?.[s] ?? [];
                       const shut = shutFor(m, s);
                       return (
-                        <td key={s} className="mm-prog-col">
+                        <Fragment key={s}>
+                        {/* The machine named again, as a label only. The cut is ONE value
+                            per machine, so a second editable box for it would be two
+                            controlled inputs racing over the same field — it reads here
+                            and stays editable in the real cell at the left. */}
+                        {i > 0 ? (
+                          <td className="mm-prog-mcell mm-prog-mcell-echo">
+                            <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
+                            {m.cut ? <span className="mm-prog-mcut-echo">{m.cut}</span> : null}
+                          </td>
+                        ) : null}
+                        <td className="mm-prog-col">
                           <div className="mm-prog-shiftcell">
                             {pilesOf(list).map((g) => (g.length === 1
                               ? <ProgCard key={g[0].name} p={g[0]} />
@@ -583,6 +603,7 @@ export default function ProgramScreen() {
                             )}
                           </div>
                         </td>
+                        </Fragment>
                       );
                     })}
                   </tr>

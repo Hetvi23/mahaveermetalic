@@ -2401,6 +2401,13 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
    of width); the board scrolls horizontally via .mm-table-scroll. */
 .mm-prog-shiftcell { display: flex; flex-flow: row wrap; gap: 0.6rem; align-items: flex-start; min-width: 240px; }
 .mm-prog-shiftcell > .mm-prog-card { flex: 0 0 300px; width: 300px; max-width: 100%; }
+/* The machine named again in front of every shift after the first — a label, not the
+   machine's controls, which stay in the real cell at the far left. */
+.mm-prog-mcell-echo { background: var(--mm-bg-soft, var(--mm-card)); }
+.mm-prog-mcell-echo .mm-prog-mname { opacity: 0.85; }
+.mm-prog-mcut-echo { display: inline-block; margin-top: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.72rem;
+  color: var(--mm-text-sec); border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm);
+  font-variant-numeric: tabular-nums; }
 /* A pile of one colour+lot: the head reads as a normal card, the runs inside it are
    indented off a rule so the eye takes the pile first and the runs second. */
 .mm-prog-pile { border-left: 3px solid var(--mm-accent, #6366f1); }
