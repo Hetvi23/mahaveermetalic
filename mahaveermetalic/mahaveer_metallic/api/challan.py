@@ -2080,7 +2080,7 @@ def _receipt_company(so, party):
 def create_job_in_production(against_job_out, boxes=None, customer_order=None, party=None,
 	posting_date=None, batch_no=None, cut=None, operator=None, shift=None, challan_no=None,
 	box_return=0, bobbin_return=0, delivery_by=None, voucher_no=None, challan_id=None,
-	challan_series=None, company_name=None):
+	challan_series=None, company_name=None, to_stock=0):
 	"""Receive a Job Out back as a PRODUCTION voucher, and close the Job Out with a Job In.
 
 	`voucher_no` and `challan_id` are the two IDs the operator may type by hand — the
@@ -2102,6 +2102,17 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 		frappe.throw(_("Add at least one box."))
 	# Both typed IDs are checked up front: the challan is raised after the production is
 	# submitted, and a taken challan ID found only then would throw the whole receipt away.
+	# RECEIVED INTO STOCK, NOT FILED AS A NUMBERED RECEIPT. Hetvi: "add a stock tick ... so
+	# the challan id will stop the box or patty will be stored in production". The goods
+	# were already being stocked — the production's own on_submit does that, and the Job In
+	# challan posts no movement of its own — so what the tick changes is the paperwork: no
+	# typed challan number, no book to file it in, and the production marked as a stock
+	# receipt. The Job In challan is still raised against the Job Out, because the worker's
+	# balance in Job work hisab is computed from it and skipping it would leave the material
+	# showing as still with the worker.
+	to_stock = frappe.utils.cint(to_stock)
+	if to_stock:
+		challan_id = None
 	voucher_no = _manual_id("MM Production", voucher_no, frappe.get_meta("MM Production").autoname)
 	challan_series = _series_key(challan_series, "Job In")
 	_challan_id(challan_id, challan_series, posting_date)
@@ -2184,6 +2195,9 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	# Material arriving must not dispatch itself: the production carries the order for
 	# attribution, but the goods have just come IN.
 	prod.flags.skip_dispatch_challan = True
+	# What the shop calls a stock receipt, and the same field the Production screen's own
+	# "Add to stock" tick sets — so one flag answers "did this go to stock?" everywhere.
+	prod.to_inventory = 1 if to_stock else 0
 	prod.flags.manual_id = voucher_no
 	# The boxes are numbered off the Job In challan they come back on, which is raised
 	# below — the ID is already decided, so it travels with the production.
@@ -2233,6 +2247,7 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	)
 	return {
 		"production": prod.name,
+		"to_stock": to_stock,
 		"job_in": (job_in or {}).get("challan") if isinstance(job_in, dict) else job_in,
 		"net_weight": prod.net_weight,
 		"variance_percent": prod.variance_percent,

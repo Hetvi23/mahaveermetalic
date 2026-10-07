@@ -2404,6 +2404,10 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* The machine named again in front of every shift after the first — a label, not the
    machine's controls, which stay in the real cell at the far left. */
 .mm-prog-mcell-echo { background: var(--mm-bg-soft, var(--mm-card)); }
+/* A tick that sits in the field grid beside the inputs it governs. */
+.mm-field-tick .mm-tick { display: flex; align-items: center; gap: 0.4rem; min-height: 2.1rem; font-size: 0.82rem;
+  color: var(--mm-text-sec); }
+.mm-field-tick .mm-tick input { width: 1rem; height: 1rem; accent-color: var(--mm-accent, #6366f1); }
 .mm-prog-mcell-echo .mm-prog-mname { opacity: 0.85; }
 .mm-prog-mcut-echo { display: inline-block; margin-top: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.72rem;
   color: var(--mm-text-sec); border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm);

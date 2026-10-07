@@ -791,7 +791,11 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   );
   // The book the Job In challan is written in: its own unless another series is picked.
   // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
-  const [series, setSeries] = useState(JOB_IN_SERIES.value);
+  const [series, setSeries] = useState("");
+  /** Received into stock rather than filed as a numbered receipt. The goods are stocked
+   *  either way — the production does that — so this turns off the book and the number,
+   *  and marks the production a stock receipt. */
+  const [toStock, setToStock] = useState(false);
   /* Typed, not suggested (Hetvi: "make challan id manual for now"). api.challan.next_challan_id
      still knows each book's next number if this is ever filled in again. */
   const [batchNo, setBatchNo] = useState("");
@@ -833,7 +837,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
 
   useEffect(() => {
     setBoxes([]); setErr(null); setAdding(false); setVNo(""); setChallanId("");
-    setSeries(JOB_IN_SERIES.value);
+    setSeries("");
+    setToStock(false);
   }, [jobOut]);
 
   useEffect(() => { setCNo(meta?.challan_no || ""); }, [jobOut, meta?.challan_no]);
@@ -861,8 +866,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
         posting_date: vDate,
         batch_no: batchNo || undefined,
         voucher_no: vNo.trim() || undefined,
-        challan_id: challanId.trim() || undefined,
-        challan_series: series,
+        challan_id: toStock ? undefined : challanId.trim() || undefined,
+        challan_series: toStock ? undefined : series,
+        to_stock: toStock ? 1 : 0,
         cut: size || undefined,
         challan_no: cNo || undefined,
         delivery_by: deliveryBy || undefined,
@@ -1024,19 +1030,34 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                     the arrival it is recording (Hetvi: "if you select Sales type then should
                     it not go in Sales type?"). To send this material on to the customer,
                     raise a Sales Challan Voucher and pick its boxes. */}
-                <SearchSelect noClear value={series} onChange={setSeries}
-                  options={[JOB_IN_SERIES, ...DISPATCH_SERIES].map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
-                {series !== JOB_IN_SERIES.value && (
+                <SearchSelect value={series} onChange={setSeries} disabled={toStock}
+                  placeholder={toStock ? "Not filed — into stock" : "Pick a book"}
+                  options={DISPATCH_SERIES.map((t) => ({ value: t.value, label: t.label, meta: t.series }))} />
+                {!toStock && series && (
                   <span className="mm-field-hint">
                     Numbered in the {series} book — still a Job In receipt, not a dispatch.
                   </span>
                 )}
               </label>
+              {/* BETWEEN THE BOOK AND THE NUMBER, because it is what decides whether
+                  either applies. Ticked, the material is received into stock: no book, no
+                  number, and the boxes wait in inventory to be picked onto a challan later
+                  (Hetvi: "the box can be selectable during challan creation"). The worker is
+                  still credited — the Job In is written against the Job Out regardless. */}
+              <label className="mm-field mm-field-tick">
+                <span className="mm-field-label">Stock</span>
+                <span className="mm-tick">
+                  <input type="checkbox" checked={toStock}
+                    onChange={(e) => setToStock(e.target.checked)} />
+                  <span>Into stock — no challan number</span>
+                </span>
+              </label>
               <label className="mm-field">
                 <span className="mm-field-label">Challan ID</span>
-                <input className="mm-input" value={challanId} placeholder="e.g. 123"
+                <input className="mm-input" value={challanId} placeholder={toStock ? "—" : "e.g. 123"}
+                  disabled={toStock}
                   onChange={(e) => setChallanId(e.target.value)} />
-                {challanId.trim() && (
+                {!toStock && challanId.trim() && (
                   <span className="mm-field-hint">
                     Saved as <b>{challanIdFor(
                       [JOB_IN_SERIES, ...DISPATCH_SERIES].find((t) => t.value === series)?.series ?? JOB_IN_SERIES.series,
