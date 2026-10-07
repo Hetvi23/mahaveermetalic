@@ -48,14 +48,16 @@ type Program = {
   lot?: string | null;
   lot_id?: string | null;
   lot_ids?: string[];
+  /** Set when this row stands for a PILE — the programs its weight is allocated across.
+   *  Absent on an ordinary single-program row. */
+  pile?: string[];
 };
 type BobbinMaster = { name: string; weight?: number; quality?: string };
 
 export default function ProductionScreen() {
   const queueCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "prod-queue");
   const [producing, setProducing] = useState<Program | null>(null);
-  /** A pile whose Produce was pressed — the operator picks which run inside it. */
-  const [pickFrom, setPickFrom] = useState<Program[] | null>(null);
+
   const [q, setQ] = useState("");
 
   const queue = queueCall.data?.message ?? [];
@@ -151,8 +153,15 @@ export default function ProductionScreen() {
                 }
                 const patty = g.reduce((a, x) => a + (x.patti_qty ?? 0), 0);
                 const wt = r3(g.reduce((a, x) => a + (x.input_weight ?? 0), 0));
+                // The pile, as one thing to box: the lot's totals, and the runs it will
+                // be allocated across carried along for the server to split it over.
+                const pile: Program = {
+                  ...g[0], patti_qty: patty, input_weight: wt, planned_input: wt,
+                  produced_weight: 0, part_done: 0, planned_patti: patty,
+                  pile: g.map((x) => x.name),
+                };
                 return (
-                  <div key={g[0].name} className="mm-pick-row" onClick={() => setPickFrom(g)}
+                  <div key={g[0].name} className="mm-pick-row" onClick={() => setProducing(pile)}
                     style={{ cursor: "pointer" }}>
                     <div style={{ flex: 1 }}>
                       <div>
@@ -168,7 +177,7 @@ export default function ProductionScreen() {
                           {r3(wt / patty).toLocaleString()} kg/patty</span></> : null}
                       </div>
                     </div>
-                    <button className="mm-mini mm-mini-ok" onClick={(e) => { e.stopPropagation(); setPickFrom(g); }}>
+                    <button className="mm-mini mm-mini-ok" onClick={(e) => { e.stopPropagation(); setProducing(pile); }}>
                       Produce <ArrowRight size={13} />
                     </button>
                   </div>
@@ -179,42 +188,6 @@ export default function ProductionScreen() {
         </section>
 
       </div>
-
-      {pickFrom && (
-        <div className="mm-modal-scrim" onClick={() => setPickFrom(null)}>
-          <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
-            <div className="mm-modal-head">
-              <span className="mm-modal-title">
-                {pickFrom[0].shade} · {pickFrom[0].lot_id || "no lot"} — which run?
-              </span>
-              <button className="mm-chat-overlay-close" onClick={() => setPickFrom(null)} aria-label="Close"><X size={18} /></button>
-            </div>
-            <div className="mm-modal-body">
-              {/* The pile is one material, but the weight on the scale came off ONE run and
-                  that is the run it has to be credited to. */}
-              <div className="mm-pick-list">
-                {pickFrom.map((p) => (
-                  <div key={p.name} className="mm-pick-row" style={{ cursor: "pointer" }}
-                    onClick={() => { setProducing(p); setPickFrom(null); }}>
-                    <div style={{ flex: 1 }}>
-                      <div>
-                        {p.roll_no ? <span className="mm-suggest-meta">roll {p.roll_no}</span> : null}
-                        {p.party ? ` · ${p.party}` : ""}
-                      </div>
-                      <div className="mm-prog-card-meta">
-                        {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
-                        {p.patti_qty ?? 0} patty · {(p.input_weight ?? 0).toLocaleString()} kg
-                        {p.job_work_flag ? " · job work" : ""}
-                      </div>
-                    </div>
-                    <ArrowRight size={14} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {producing && (
         <ProduceModal program={producing} onClose={() => setProducing(null)} onDone={() => { setProducing(null); refresh(); }} />
@@ -308,6 +281,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
 
   const { call: preview } = useFrappePostCall<{ message: Calc }>(`${API}.preview_variance`);
   const { call: create, loading } = useFrappePostCall(`${API}.create_production`);
+  // A PILE IS BOXED AS ONE. The server splits the boxes across the runs it stands for —
+  // whole boxes, in order, each to the first run with room — so the operator never picks
+  // one. A single-program row goes the ordinary way.
+  const { call: createPile } = useFrappePostCall(`${API}.create_production_for_pile`);
   // Production auto-raises its challan; fetch it back so it can print straight away
   // instead of the operator hunting for it on another screen.
   const { call: fetchChallan } = useFrappePostCall<{ message: ChallanPrintData | null }>(
@@ -633,7 +610,37 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
       );
     }
     try {
-      const res = await create({
+      const res = program.pile?.length
+        ? await createPile({
+            source_programs: JSON.stringify(program.pile),
+            boxes: JSON.stringify(
+              boxes.map((b) => ({
+                item: b.item, gross_weight: b.gross, qty: b.qty, bobbin: b.bobbin || undefined,
+                barcode: isRealCode(b.code) ? b.code : undefined,
+                bobbin_pcs: b.bobbinPcs, bobbin_pcs_weight: b.perPcsWeight,
+                total_bobbin_weight: b.totalBobbin, box_weight: b.boxWeight,
+                box_return: b.boxReturn ? 1 : 0, bobbin_return: b.bobbinReturn ? 1 : 0,
+              })),
+            ),
+            // Everything the single-program call sends, bar the two IDs: a pile may write
+            // more than one voucher, and one typed number cannot name them all. They fall
+            // to their series, as a blank number always has.
+            operator: operator || undefined,
+            delivery_by: deliveryBy || undefined,
+            shift,
+            customer_order: order || undefined,
+            party: party || undefined,
+            company_name: company || undefined,
+            cut: size || undefined,
+            posting_date: vdate || today(),
+            batch_no: batchNo || undefined,
+            box_return: boxReturn ? 1 : 0,
+            bobbin_return: bobbinReturn ? 1 : 0,
+            job_work: jobWork ? 1 : 0,
+            pin: pin || undefined,
+            to_inventory: toStock ? 1 : 0,
+          })
+        : await create({
         source_program: program.name,
         boxes: JSON.stringify(
           boxes.map((b) => ({

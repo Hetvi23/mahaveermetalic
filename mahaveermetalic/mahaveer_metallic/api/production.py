@@ -664,6 +664,83 @@ def preview_variance(input_weight, gross_weight, bobbin_weight=0, box_weight=0):
 
 
 @frappe.whitelist()
+def create_production_for_pile(source_programs, boxes=None, **kwargs):
+	"""Box a PILE — one colour and lot — without the operator choosing a run.
+
+	The floor sees a lot as one material and boxes it as one, which is what the queue now
+	shows: AN ANMOL BS LT1/26-27, 19 patty, 505.49 kg (Hetvi: "directly total the patty and
+	weight i dont want to choose it like this"). A production, though, belongs to ONE
+	program — each has its own roll, machine and remaining weight, and the batch rules are
+	per program — so the weight is allocated here instead of being asked for.
+
+	WHOLE BOXES, IN ORDER. Each box goes to the first program with room left for it; when
+	that program is full the next one takes over. A box is never split, because a box is a
+	physical thing with one barcode and one sticker. The programs are consumed in the order
+	given, which is the order the queue listed them in.
+
+	One production voucher per program that took boxes — each going through
+	create_production, so every check that applies to a single run still applies here.
+	"""
+	if isinstance(source_programs, str):
+		source_programs = json.loads(source_programs or "[]")
+	if isinstance(boxes, str):
+		boxes = json.loads(boxes or "[]")
+	if not source_programs:
+		frappe.throw(_("No programs to produce against."))
+	if not boxes:
+		frappe.throw(_("Add at least one box."))
+
+	# What each program can still take, by the same rule the queue showed.
+	boxed = program_produced_weight(source_programs)
+	room = {}
+	for name in source_programs:
+		prog = frappe.db.get_value(
+			"MM Program", name,
+			["name", "total_batches", "completed_batches", "patti_qty", "net_weight",
+			 "completed_weight", "per_patty_weight", "creation"], as_dict=True,
+		)
+		if not prog:
+			frappe.throw(_("Program {0} not found.").format(name))
+		room[name] = round(program_input_weight(prog) - float(boxed.get(name) or 0), 3)
+
+	tol = get_production_tolerance_kg()
+
+	# THE PILE HAS A CEILING, AND IT IS THE PILE'S. Checked here, in the pile's own terms,
+	# because the per-program check cannot say anything useful about it: allocation would
+	# fill the runs in turn and the LAST one would carry the whole excess, so 120 kg boxed
+	# against an 85.8 kg pile surfaced as "this voucher would take the program to 115.943
+	# kg" — true of a run the operator never chose and never saw.
+	total_net = round(sum(_box_net(b) for b in boxes), 3)
+	total_room = round(sum(room.values()), 3)
+	if total_room and total_net > total_room + tol:
+		frappe.throw(
+			_("These boxes come to {0} kg, more than the {1} kg still to box on this lot "
+			  "({2} runs). Correct the box weights, or box what is left of it.").format(
+				total_net, total_room, len(source_programs)
+			)
+		)
+
+	share, idx = {}, 0
+	for b in boxes:
+		net = _box_net(b)
+		# Walk to a run that can still take this box. The last one carries whatever is left
+		# over, which after the ceiling above can only ever be a rounding crumb — a real
+		# box is never stranded over arithmetic, and create_production's own per-run ceiling
+		# still has the last word.
+		while idx < len(source_programs) - 1 and room[source_programs[idx]] < net - tol:
+			idx += 1
+		name = source_programs[idx]
+		share.setdefault(name, []).append(b)
+		room[name] = round(room[name] - net, 3)
+
+	out = []
+	for name, rows in share.items():
+		res = create_production(source_program=name, boxes=json.dumps(rows), **kwargs)
+		out.append({"program": name, "boxes": len(rows), "result": res})
+	return {"productions": out, "programs": len(out), "boxes": len(boxes)}
+
+
+@frappe.whitelist()
 def create_production(
 	source_program,
 	gross_weight=0,
