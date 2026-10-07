@@ -1051,7 +1051,17 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <span className="mm-field-label">Stock</span>
                 <span className="mm-tick">
                   <input type="checkbox" checked={toStock}
-                    onChange={(e) => setToStock(e.target.checked)} />
+                    onChange={(e) => {
+                      // CLEAR WHAT WILL NOT BE USED. The number and the book are both
+                      // dropped from the payload when this is on, but leaving them in the
+                      // boxes meant a disabled field still showing "123" and a hint that
+                      // had said "Saved as MMUJI-123-26/27" — while the challan actually
+                      // came out MMUJI-2026-00006 (Hetvi: "the challan id suggestion is
+                      // not being shown as the actual saved id"). An empty box cannot
+                      // promise a number it is not going to get.
+                      setToStock(e.target.checked);
+                      if (e.target.checked) { setChallanId(""); setSeries(""); }
+                    }} />
                   <span>Into stock — no challan number</span>
                 </span>
               </label>
@@ -1060,6 +1070,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <input className="mm-input" value={challanId} placeholder={toStock ? "—" : "e.g. 123"}
                   disabled={toStock}
                   onChange={(e) => setChallanId(e.target.value)} />
+                {toStock && (
+                  <span className="mm-field-hint">Numbered automatically in the Job In book.</span>
+                )}
                 {!toStock && challanId.trim() && (
                   <span className="mm-field-hint">
                     Saved as <b>{challanIdFor(
