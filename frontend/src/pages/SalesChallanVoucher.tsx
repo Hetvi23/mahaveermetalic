@@ -38,6 +38,9 @@ type BoxRow = {
   bobbin_pcs_weight?: number; total_bobbin_weight?: number; box_weight?: number; net_weight?: number;
   /** Ticked on the production voucher: this box's packaging / bobbins come back. */
   box_return?: number; bobbin_return?: number;
+  /** 1 when the box came back from a job worker — its barcode names the Job In it arrived
+   *  on, which looks like a challan it is already committed to. */
+  job_work_flag?: number;
   /** 1 when the box came off the stock shelf rather than this party's own production. */
   from_stock?: number;
 };
@@ -474,7 +477,13 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
               <td>{r.cut || "—"}</td>
               {/* Where it came from: this party's own production, or the stock shelf —
                   which anyone may draw on, so it needs saying. */}
-              <td>{r.customer_order || (r.from_stock ? <span className="mm-state mm-state-open">stock</span> : "—")}</td>
+              <td>
+                {r.customer_order || (r.job_work_flag
+                  ? <span className="mm-state mm-state-open" title="Came back from a job worker — in stock, not yet dispatched">job in</span>
+                  : r.from_stock
+                    ? <span className="mm-state mm-state-open">stock</span>
+                    : "—")}
+              </td>
               <td className="mm-num">{(r.net_weight ?? 0).toLocaleString()}</td>
             </tr>
           ))}

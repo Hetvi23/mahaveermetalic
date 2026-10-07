@@ -177,7 +177,12 @@ def available_boxes(party=None, sales_order=None, limit=200):
 			-- So the picker can say where a box came from: this party's own production,
 			-- or the stock shelf that anyone may draw on.
 			case when ifnull(p.to_inventory, 0) = 1 or ifnull(p.party, '') = ''
-				then 1 else 0 end as from_stock
+				then 1 else 0 end as from_stock,
+			-- Came BACK from a job worker. Its barcode is stamped with the Job In challan it
+			-- arrived on (MMUSC-207-26/27.1), which reads exactly like a box already sitting
+			-- on challan 207 — so the picker says where it came from rather than leaving the
+			-- operator to read it off a code that means the opposite of what it looks like.
+			ifnull(p.job_work_flag, 0) as job_work_flag
 		from `tabMM Production Box` b
 		join `tabMM Production` p on p.name = b.parent
 		where {" and ".join(conds)}

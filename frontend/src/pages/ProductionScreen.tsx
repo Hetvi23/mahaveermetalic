@@ -54,6 +54,8 @@ type BobbinMaster = { name: string; weight?: number; quality?: string };
 export default function ProductionScreen() {
   const queueCall = useFrappeGetCall<{ message: Program[] }>(`${API}.threads_processing`, undefined, "prod-queue");
   const [producing, setProducing] = useState<Program | null>(null);
+  /** A pile whose Produce was pressed — the operator picks which run inside it. */
+  const [pickFrom, setPickFrom] = useState<Program[] | null>(null);
   const [q, setQ] = useState("");
 
   const queue = queueCall.data?.message ?? [];
@@ -133,39 +135,86 @@ export default function ProductionScreen() {
             <p className="mm-empty">{queue.length === 0 ? "No programs waiting to be produced." : `Nothing matches “${q.trim()}”.`}</p>
           ) : (
             <div className="mm-pick-list">
-              {/* ONE ROW PER COLOUR AND LOT. Seven rows of AN ANMOL BS on LT1/26-27 are one
-                  material in one lot and the floor counts it that way (Hetvi: "same lot
-                  same color why not merged??"). The head carries the lot and what the pile
-                  comes to; the programs stay listed inside it, because Produce acts on ONE
-                  program — each has its own roll, machine, shift and remaining weight, and
-                  a pile is not a thing the server can produce. */}
-              {pilesOf(shown).map((g) => (g.length === 1 ? (
-                <QueueRow key={g[0].name} p={g[0]} onPick={setProducing} remarksFor={remarksForProgram} />
-              ) : (
-                <div key={g[0].name} className="mm-pick-row mm-pick-pile">
-                  <div className="mm-pile-head">
-                    <strong className="mm-colour-name">{g[0].shade || "—"}</strong>
-                    {" · "}{g[0].cut || "—"}
-                    {g[0].lot_id ? <span className="mm-prod-lot" title={`Lot ${g[0].lot_id}`}>{g[0].lot_id}</span> : null}
-                    <LotRemarkBadge remarks={remarksForProgram(g[0])} label={`Lot ${g[0].lot_id || ""}`} />
-                    <span className="mm-pile-count">{g.length} programs</span>
+              {/* ONE ROW PER COLOUR AND LOT, and only one. Seven rows of AN ANMOL BS on
+                  LT1/26-27 are one material in one lot and the floor counts it that way
+                  (Hetvi: "should show only one entry for LT1/26-27"). The totals are the
+                  pile's, and the per-patty rate is computed from them — the blend of what
+                  is actually there, not one program's rate standing in for six others.
+
+                  Produce still acts on ONE program, because each has its own roll, machine
+                  and remaining weight and the server has no notion of boxing a pile. So a
+                  pile of more than one asks which, INSIDE the Produce flow — one tap, and
+                  the list above stays one row per lot. */}
+              {pilesOf(shown).map((g) => {
+                if (g.length === 1) {
+                  return <QueueRow key={g[0].name} p={g[0]} onPick={setProducing} remarksFor={remarksForProgram} />;
+                }
+                const patty = g.reduce((a, x) => a + (x.patti_qty ?? 0), 0);
+                const wt = r3(g.reduce((a, x) => a + (x.input_weight ?? 0), 0));
+                return (
+                  <div key={g[0].name} className="mm-pick-row" onClick={() => setPickFrom(g)}
+                    style={{ cursor: "pointer" }}>
+                    <div style={{ flex: 1 }}>
+                      <div>
+                        <strong className="mm-colour-name">{g[0].shade || "—"}</strong>
+                        {" · "}{g[0].cut || "—"}
+                        {g[0].lot_id ? <span className="mm-prod-lot" title={`Lot ${g[0].lot_id}`}>{g[0].lot_id}</span> : null}
+                        <LotRemarkBadge remarks={remarksForProgram(g[0])} label={`Lot ${g[0].lot_id || ""}`} />
+                        <span className="mm-pile-count">{g.length} programs</span>
+                      </div>
+                      <div className="mm-prog-card-meta">
+                        {patty} patty · input {wt.toLocaleString()} kg
+                        {patty > 0 ? <> · <span title="The pile's own rate: its total weight over its total patty">
+                          {r3(wt / patty).toLocaleString()} kg/patty</span></> : null}
+                      </div>
+                    </div>
+                    <button className="mm-mini mm-mini-ok" onClick={(e) => { e.stopPropagation(); setPickFrom(g); }}>
+                      Produce <ArrowRight size={13} />
+                    </button>
                   </div>
-                  <div className="mm-prog-card-meta mm-pile-total">
-                    {g.reduce((a, x) => a + (x.patti_qty ?? 0), 0)} patty · input{" "}
-                    {r3(g.reduce((a, x) => a + (x.input_weight ?? 0), 0)).toLocaleString()} kg
-                  </div>
-                  <div className="mm-pile-runs">
-                    {g.map((p) => (
-                      <QueueRow key={p.name} p={p} inPile onPick={setProducing} remarksFor={remarksForProgram} />
-                    ))}
-                  </div>
-                </div>
-              )))}
+                );
+              })}
             </div>
           )}
         </section>
 
       </div>
+
+      {pickFrom && (
+        <div className="mm-modal-scrim" onClick={() => setPickFrom(null)}>
+          <div className="mm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+            <div className="mm-modal-head">
+              <span className="mm-modal-title">
+                {pickFrom[0].shade} · {pickFrom[0].lot_id || "no lot"} — which run?
+              </span>
+              <button className="mm-chat-overlay-close" onClick={() => setPickFrom(null)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="mm-modal-body">
+              {/* The pile is one material, but the weight on the scale came off ONE run and
+                  that is the run it has to be credited to. */}
+              <div className="mm-pick-list">
+                {pickFrom.map((p) => (
+                  <div key={p.name} className="mm-pick-row" style={{ cursor: "pointer" }}
+                    onClick={() => { setProducing(p); setPickFrom(null); }}>
+                    <div style={{ flex: 1 }}>
+                      <div>
+                        {p.roll_no ? <span className="mm-suggest-meta">roll {p.roll_no}</span> : null}
+                        {p.party ? ` · ${p.party}` : ""}
+                      </div>
+                      <div className="mm-prog-card-meta">
+                        {p.machine_no ? `Machine ${p.machine_no} · ` : ""}{p.shift || "—"} ·{" "}
+                        {p.patti_qty ?? 0} patty · {(p.input_weight ?? 0).toLocaleString()} kg
+                        {p.job_work_flag ? " · job work" : ""}
+                      </div>
+                    </div>
+                    <ArrowRight size={14} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {producing && (
         <ProduceModal program={producing} onClose={() => setProducing(null)} onDone={() => { setProducing(null); refresh(); }} />
