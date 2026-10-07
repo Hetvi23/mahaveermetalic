@@ -223,10 +223,11 @@ export default function ProgramScreen() {
   const openAdd = (preset: { machine?: string; shift?: string; colour?: string; lotId?: string }) => setAdding(preset);
   /** "What can THIS machine run, right now." Scopes the shelf to the machine's cut and
    *  re-pulls — the patty count moves as programs take patti. */
-  const refreshPattyFor = (m: Machine) => {
-    // The cut of the shift leading the board, not the machine's default — with the two
-    // shifts on different cuts, the default is nobody's.
-    setPattyScope({ machine: m.name, machineNo: m.machine_no, cut: cutFor(m, shiftCols[0]) });
+  const refreshPattyFor = (m: Machine, shift?: string) => {
+    // THE CUT OF THE SHIFT THE BUTTON BELONGS TO. Night and day can run different cuts, so
+    // a single answer for the machine is nobody's — the Day column's Patty button has to
+    // scope the shelf to the day's cut, not the night's.
+    setPattyScope({ machine: m.name, machineNo: m.machine_no, cut: cutFor(m, shift || shiftCols[0]) });
     setPattyColourFilter("");
     void pattyCall.mutate();
   };
@@ -564,7 +565,7 @@ export default function ProgramScreen() {
                             current on its own — this is a filter, not a refresh. */}
                         <button className="mm-mini" title={`Show only the patty Machine ${m.machine_no} can run${cutFor(m, shiftCols[0]) ? ` (cut ${cutFor(m, shiftCols[0])})` : ""}`}
                           aria-label={`Filter the patty shelf to machine ${m.machine_no}`}
-                          onClick={() => refreshPattyFor(m)}>
+                          onClick={() => refreshPattyFor(m, shiftCols[0])}>
                           <Search size={13} /> Patty
                         </button>
                         {Object.values(byMachineShift[m.name] || {}).flat().length === 0 && (
@@ -585,6 +586,16 @@ export default function ProgramScreen() {
                           <td className="mm-prog-mcell mm-prog-mcell-echo">
                             <div className="mm-prog-mname"><Monitor size={15} /> Machine {m.machine_no}</div>
                             <MachineCutInput machine={m.name} shift={s} value={cutFor(m, s)} onSaved={refresh} />
+                            {/* The same filter the first column has, for THIS shift's cut —
+                                planning the day meant reading the night's shelf. Removing
+                                the machine stays in the first column: there is one machine,
+                                not one per shift. */}
+                            <button className="mm-mini"
+                              title={`Show only the patty Machine ${m.machine_no} can run on the ${s.toLowerCase()} shift${cutFor(m, s) ? ` (cut ${cutFor(m, s)})` : ""}`}
+                              aria-label={`Filter the patty shelf to machine ${m.machine_no}, ${s.toLowerCase()} shift`}
+                              onClick={() => refreshPattyFor(m, s)}>
+                              <Search size={13} /> Patty
+                            </button>
                           </td>
                         ) : null}
                         <td className="mm-prog-col">
