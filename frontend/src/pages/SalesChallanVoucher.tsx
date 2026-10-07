@@ -385,21 +385,68 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
     { party: party || undefined, sales_order: order || undefined },
     `chal-boxes-${party}-${order}`,
   );
-  // Only boxes of a colour this order is for.
-  const rows = (data?.message ?? []).filter((r) => colours.length === 0 || !r.item || colours.includes(r.item));
+  const [q, setQ] = useState("");
+  // Only boxes of a colour this order is for, then whatever the operator is looking for.
+  // The shelf runs to a couple of hundred boxes on a busy day and they are all one date
+  // and one item, so the barcode and the weight are what actually tell them apart.
+  const rows = (data?.message ?? [])
+    .filter((r) => colours.length === 0 || !r.item || colours.includes(r.item))
+    .filter((r) => {
+      const t = q.trim().toLowerCase();
+      if (!t) return true;
+      return [r.item, r.cut, r.customer_order, r.barcode, r.posting_date, String(r.net_weight ?? "")]
+        .some((v) => String(v ?? "").toLowerCase().includes(t));
+    });
   const [sel, setSel] = useState<Record<string, BoxRow>>({});
+  // ONE CHALLAN, ONE ITEM. The first box picked settles what this voucher is carrying, and
+  // the rest of the shelf is read-only until it is unpicked — a challan mixing two colours
+  // bills the customer for goods they did not get and takes the wrong pile out of stock.
+  const lockedItem = Object.values(sel)[0]?.item;
+  const blocked = (r: BoxRow) => !!lockedItem && !!r.item && r.item !== lockedItem;
+  // What "all" means here: the shown rows of the one item this voucher is (or is about to
+  // be) carrying — never a mixed heap.
+  const allItem = lockedItem || rows[0]?.item;
+  const selectable = rows.filter((r) => !r.item || !allItem || r.item === allItem);
   return (
     <PickerSheet title="Select box" isLoading={isLoading} empty={rows.length === 0} emptyText="No produced boxes available."
-      onClose={onClose} onAdd={() => onAdd(Object.values(sel))} count={Object.keys(sel).length}>
+      onClose={onClose} onAdd={() => onAdd(Object.values(sel))} count={Object.keys(sel).length}
+      search={<div className="mm-search-box"><Search size={15} />
+        <input className="mm-input mm-input-compact" placeholder="Search item / cut / order / barcode…"
+          value={q} onChange={(e) => setQ(e.target.value)} /></div>}>
+      {lockedItem && (
+        <p className="mm-muted" style={{ margin: "0 0 0.5rem" }}>
+          Carrying <strong>{lockedItem}</strong> — boxes of another item are locked. Unpick to change it.
+        </p>
+      )}
       <table className="mm-table mm-table-dense">
-        <thead><tr><th /><th>Date</th><th>Item</th><th>Cut</th><th>Order</th><th className="mm-num">Net Wt</th></tr></thead>
+        <thead><tr>
+          {/* SELECT ALL takes every row the filter is showing — of ONE item, since that is
+              all a challan may carry. With nothing picked yet it settles on the first
+              visible row's item; with something picked it tops up that one. Ticked, it
+              clears, so the same box undoes the whole lot. */}
+          <th>
+            <input type="checkbox" aria-label="Select all shown"
+              checked={selectable.length > 0 && selectable.every((r) => sel[r.box])}
+              onChange={(e) => {
+                if (!e.target.checked) return setSel({});
+                setSel(Object.fromEntries(selectable.map((r) => [r.box, r])));
+              }} />
+          </th>
+          <th>Date</th><th>Barcode</th><th>Item</th><th>Cut</th><th>Order</th><th className="mm-num">Net Wt</th>
+        </tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.box} className={sel[r.box] ? "mm-ws-row-active" : undefined}
-              onClick={() => setSel((p) => { const n = { ...p }; if (n[r.box]) delete n[r.box]; else n[r.box] = r; return n; })}
-              style={{ cursor: "pointer" }}>
-              <td><input type="checkbox" checked={!!sel[r.box]} readOnly /></td>
+            <tr key={r.box}
+              className={sel[r.box] ? "mm-ws-row-active" : blocked(r) ? "mm-row-locked" : undefined}
+              title={blocked(r) ? `This challan is carrying ${lockedItem}` : undefined}
+              onClick={() => { if (blocked(r)) return;
+                setSel((p) => { const n = { ...p }; if (n[r.box]) delete n[r.box]; else n[r.box] = r; return n; }); }}
+              style={{ cursor: blocked(r) ? "not-allowed" : "pointer" }}>
+              <td><input type="checkbox" checked={!!sel[r.box]} disabled={blocked(r)} readOnly /></td>
               <td>{fmtDate(r.posting_date) || "—"}</td>
+              {/* The one thing that tells two boxes of the same item, date and cut apart —
+                  and what the search is most often typed against. */}
+              <td>{r.barcode || "—"}</td>
               <td>{r.item || "—"}</td>
               <td>{r.cut || "—"}</td>
               {/* Where it came from: this party's own production, or the stock shelf —
