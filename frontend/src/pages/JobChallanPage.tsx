@@ -861,7 +861,10 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
       const res = await create({
         against_job_out: jobOut,
         customer_order: order || undefined,
-        party: jiParty || party || undefined,
+        // Only what was actually chosen. `party` is the Job Out's — the worker — and
+        // passing it with no order picked made the fallback a silent decision rather than
+        // the informed one the placeholder claimed it was.
+        party: jiParty || (order ? party : "") || undefined,
         company_name: jiCompany || undefined,
         posting_date: vDate,
         batch_no: batchNo || undefined,
@@ -1110,10 +1113,16 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                       c && !jiCompanies.some((x) => x.company_name === c && x.party === v) ? "" : c);
                   }}
                   options={jiParties.map((p) => ({ value: p.value, label: p.label }))}
-                  placeholder={
-                    picked?.customer_name || picked?.customer || meta?.party_name
-                      || meta?.party_label || party || "Party"
-                  }
+                  // WITH NO ORDER THERE IS NOBODY TO NAME. This fell all the way back to
+                  // the Job Out's own party — the job WORKER — so a receipt against no
+                  // order sat reading "SHREEJI JARI" as though an account had been chosen
+                  // (Hetvi: "if order not selected then job party should not be auto
+                  // selected"). An order names its customer and that is worth offering;
+                  // without one the box says what it means, which is: pick.
+                  placeholder={order
+                    ? (picked?.customer_name || picked?.customer || meta?.party_name
+                        || meta?.party_label || party || "Party")
+                    : "Select party"}
                   emptyText="No party matches." />
               </label>
               <label className="mm-field">
