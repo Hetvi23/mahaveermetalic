@@ -222,14 +222,22 @@ def threads_processing(branch=None, location=None):
 		# own ceiling is unchanged and still measured against the whole program; it is the
 		# same rule stated the other way round, since already + net > input is exactly
 		# net > remaining.
+		#
+		# TWO DEDUCTIONS, AND THEY ARE NOT THE SAME ONE. `program_input_weight` answers the
+		# first: 4 of 6 batches completed hands over four batches' thread, not six. This
+		# answers the second: of that thread, what has not already been boxed. Keeping them
+		# in separate names matters — `boxed_kg` was once called `done` as well, and
+		# `part_done` below then compared KILOGRAMS against a BATCH COUNT, so the "4 of 6 —
+		# rest still running" marker went out on exactly the programs that needed it.
 		full_input = program_input_weight(r)
-		done = float(boxed.get(r.name) or 0)
+		boxed_kg = float(boxed.get(r.name) or 0)
 		r["planned_input"] = full_input
-		r["produced_weight"] = round(done, 3)
-		r["input_weight"] = round(max(full_input - done, 0.0), 3)
+		r["produced_weight"] = round(boxed_kg, 3)
+		r["input_weight"] = round(max(full_input - boxed_kg, 0.0), 3)
 		r["formed_patti"] = formed
 		r["planned_patti"] = planned
 		r["patti_qty"] = formed
+		# Batches, not kilos: `done` is still the completed-batch count from above.
 		r["part_done"] = 1 if (0 < done < planned) else 0
 	return rows
 
