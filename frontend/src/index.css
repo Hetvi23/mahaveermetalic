@@ -3822,3 +3822,22 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-ph-list .mm-muted { font-size: 0.8rem; margin-top: 0.1rem; }
 /* A cancelled production stays on the trail — it happened — but must not read as output. */
 .mm-ph-dead { opacity: 0.55; text-decoration: line-through; }
+
+/* Program history, grouped: a day, then each machine inside it. The two columns that
+   repeated down every row are headings now, which is how the register is actually read
+   ("what did machine 4 do on the 6th"). */
+.mm-ph-dayrow > td {
+  background: var(--mm-primary); color: #fff;
+  padding: 0.55rem 0.9rem; border-top: 2px solid var(--mm-border);
+}
+.mm-ph-day-block:first-of-type .mm-ph-dayrow > td { border-top: 0; }
+.mm-ph-day { font-weight: 800; font-size: 0.95rem; margin-right: 0.7rem; }
+.mm-ph-machrow > td {
+  background: var(--mm-bg); padding: 0.45rem 0.9rem 0.45rem 1.6rem;
+  border-bottom: 1px solid var(--mm-hairline);
+}
+.mm-ph-mach { font-weight: 700; font-size: 0.86rem; margin-right: 0.6rem; }
+/* The heading's own arithmetic, set quieter than the heading itself. */
+.mm-ph-sum { font-size: 0.78rem; opacity: 0.78; }
+.mm-ph-dayrow .mm-ph-sum { color: rgba(255,255,255,0.85); }
+.mm-ph-machrow .mm-ph-sum { color: var(--mm-text-sec); }

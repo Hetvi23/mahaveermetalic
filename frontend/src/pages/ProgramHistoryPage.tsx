@@ -93,6 +93,42 @@ export default function ProgramHistoryPage() {
   const rows = useMemo(() => r?.rows ?? [], [r]);
   const t = r?.totals;
 
+  /* DATE, THEN MACHINE. The register is read as a day's work — "what did machine 4 do on
+     the 6th" — not as a flat list of programs, so the two things that were repeating down
+     every row become the headings they already were in the reader's head. The server
+     returns newest-date-first and a Map keeps that order; only the machines inside a day
+     need sorting, numerically, or 10 lands between 1 and 2. */
+  const days = useMemo(() => {
+    const byDate = new Map<string, Map<string, Row[]>>();
+    for (const p of rows) {
+      const d = p.program_date || "\u2014";
+      const m = p.machine_no || "\u2014";
+      if (!byDate.has(d)) byDate.set(d, new Map());
+      const machines = byDate.get(d)!;
+      if (!machines.has(m)) machines.set(m, []);
+      machines.get(m)!.push(p);
+    }
+    return [...byDate.entries()].map(([date, machines]) => ({
+      date,
+      machines: [...machines.entries()]
+        .sort((a, b) => {
+          const na = Number(a[0]), nb = Number(b[0]);
+          return !Number.isNaN(na) && !Number.isNaN(nb) ? na - nb : a[0].localeCompare(b[0]);
+        })
+        .map(([machine, rs]) => ({ machine, rows: rs })),
+    }));
+  }, [rows]);
+
+  /* Each heading carries its own arithmetic, so a day or a machine can be read without
+     adding its rows up by eye. */
+  const sums = (rs: Row[]) => ({
+    planned: rs.reduce((a, x) => a + x.planned_weight, 0),
+    boxed: rs.reduce((a, x) => a + x.boxed_weight, 0),
+    pending: rs.reduce((a, x) => a + x.pending_weight, 0),
+    patty: rs.reduce((a, x) => a + x.patti_qty, 0),
+  });
+  const COLS = 12;
+
   function apply() { setApplied({ from, to, machine, stage, q }); }
 
   return (
@@ -161,8 +197,8 @@ export default function ProgramHistoryPage() {
               <thead>
                 <tr>
                   <th style={{ width: 28 }} aria-label="Expand" />
-                  <th>Date</th><th>Program</th><th>Colour · Cut</th><th>Lot</th>
-                  <th>Machine</th><th>Order</th>
+                  <th>Program</th><th>Colour · Cut</th><th>Lot</th>
+                  <th>Shift</th><th>Order</th>
                   <th className="mm-num" title="Batches cut out of the batches planned">Batches</th>
                   <th className="mm-num">Patty</th>
                   <th className="mm-num" title="What the program put on the machine">Planned</th>
@@ -171,86 +207,121 @@ export default function ProgramHistoryPage() {
                   <th>Stage</th>
                 </tr>
               </thead>
-              <tbody>
-                {rows.map((p) => {
-                  const isOpen = open === p.name;
-                  /* A program with nothing behind it has nothing to open — don't offer a
-                     caret that reveals an empty panel. */
-                  const hasTrail = p.productions.length > 0 || p.events.length > 0 || !!p.remark;
-                  return (
-                    <Fragment key={p.name}>
-                      <tr className={hasTrail ? "mm-row-click" : undefined}
-                        onClick={() => hasTrail && setOpen(isOpen ? null : p.name)}>
-                        <td>{hasTrail ? (isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : null}</td>
-                        <td>{fmtDate(p.program_date) || "—"}</td>
-                        <td title={p.roll_no ? `Roll ${p.roll_no}` : undefined}>{p.name}</td>
-                        <td><strong className="mm-colour-name">{p.shade || "—"}</strong>{p.cut ? ` · ${p.cut}` : ""}</td>
-                        <td>{p.lot || "—"}</td>
-                        <td>{p.machine_no || "—"}{p.shift ? ` · ${p.shift}` : ""}</td>
-                        <td title={p.company || p.party || undefined}>{p.customer_order || "—"}</td>
-                        <td className="mm-num">{p.total_batches ? `${p.completed_batches}/${p.total_batches}` : "—"}</td>
-                        <td className="mm-num">{p.patti_qty || "—"}</td>
-                        <td className="mm-num">{kg(p.planned_weight)}</td>
-                        <td className="mm-num">{kg(p.boxed_weight)}</td>
-                        <td className="mm-num">{p.pending_weight ? kg(p.pending_weight) : "—"}</td>
-                        <td>
-                          <span className={`mm-pill ${stagePill(p.stage)}`}>{p.stage}</span>
-                          {p.reverted ? <span className="mm-pill mm-pill-warn" title="This program was reverted at least once">reverted</span> : null}
-                        </td>
-                      </tr>
-                      {isOpen && (
-                        <tr className="mm-ph-trailrow">
-                          <td colSpan={13}>
-                            <div className="mm-ph-trail">
-                              <div>
-                                <h4 className="mm-section-title">Boxed</h4>
-                                {p.productions.length === 0 ? (
-                                  <p className="mm-muted">Nothing boxed against this program yet.</p>
-                                ) : (
-                                  <ul className="mm-ph-list">
-                                    {p.productions.map((x) => (
-                                      <li key={x.name} className={x.cancelled ? "mm-ph-dead" : undefined}>
-                                        <strong>{fmtDate(x.posting_date) || "—"}</strong> · {x.name} ·{" "}
-                                        {x.box_qty} box · <strong>{kg(x.net_weight)}</strong> kg net
-                                        {x.operator ? ` · ${x.operator}` : ""}
-                                        {x.shift ? ` · ${x.shift}` : ""}
-                                        {x.batch_no ? ` · batch ${x.batch_no}` : ""}
-                                        {x.to_inventory ? " · to stock" : ""}
-                                        {x.cancelled ? " · cancelled" : ""}
-                                      </li>
-                                    ))}
-                                  </ul>
+              {days.map((day) => {
+                const all = day.machines.flatMap((m) => m.rows);
+                const dayT = sums(all);
+                return (
+                  <tbody key={day.date} className="mm-ph-day-block">
+                    <tr className="mm-ph-dayrow">
+                      <td colSpan={COLS}>
+                        <span className="mm-ph-day">{fmtDate(day.date) || day.date}</span>
+                        <span className="mm-ph-sum">
+                          {all.length} program{all.length === 1 ? "" : "s"} \u00b7 {day.machines.length} machine
+                          {day.machines.length === 1 ? "" : "s"} \u00b7 planned <strong>{kg(dayT.planned)}</strong> kg
+                          {" \u00b7 boxed "}<strong>{kg(dayT.boxed)}</strong> kg
+                          {dayT.pending ? <> \u00b7 pending <strong>{kg(dayT.pending)}</strong> kg</> : null}
+                        </span>
+                      </td>
+                    </tr>
+
+                    {day.machines.map((m) => {
+                      const mT = sums(m.rows);
+                      return (
+                        <Fragment key={m.machine}>
+                          <tr className="mm-ph-machrow">
+                            <td colSpan={COLS}>
+                              <span className="mm-ph-mach">Machine {m.machine}</span>
+                              <span className="mm-ph-sum">
+                                {m.rows.length} program{m.rows.length === 1 ? "" : "s"} \u00b7 planned{" "}
+                                <strong>{kg(mT.planned)}</strong> kg \u00b7 boxed <strong>{kg(mT.boxed)}</strong> kg
+                                {mT.pending ? <> \u00b7 pending <strong>{kg(mT.pending)}</strong> kg</> : null}
+                              </span>
+                            </td>
+                          </tr>
+
+                          {m.rows.map((p) => {
+                            const isOpen = open === p.name;
+                            /* A program with nothing behind it has nothing to open \u2014 don't
+                               offer a caret that reveals an empty panel. */
+                            const hasTrail = p.productions.length > 0 || p.events.length > 0 || !!p.remark;
+                            return (
+                              <Fragment key={p.name}>
+                                <tr className={hasTrail ? "mm-row-click" : undefined}
+                                  onClick={() => hasTrail && setOpen(isOpen ? null : p.name)}>
+                                  <td>{hasTrail ? (isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : null}</td>
+                                  <td title={p.roll_no ? `Roll ${p.roll_no}` : undefined}>{p.name}</td>
+                                  <td><strong className="mm-colour-name">{p.shade || "\u2014"}</strong>{p.cut ? ` \u00b7 ${p.cut}` : ""}</td>
+                                  <td>{p.lot || "\u2014"}</td>
+                                  <td>{p.shift || "\u2014"}</td>
+                                  <td title={p.company || p.party || undefined}>{p.customer_order || "\u2014"}</td>
+                                  <td className="mm-num">{p.total_batches ? `${p.completed_batches}/${p.total_batches}` : "\u2014"}</td>
+                                  <td className="mm-num">{p.patti_qty || "\u2014"}</td>
+                                  <td className="mm-num">{kg(p.planned_weight)}</td>
+                                  <td className="mm-num">{kg(p.boxed_weight)}</td>
+                                  <td className="mm-num">{p.pending_weight ? kg(p.pending_weight) : "\u2014"}</td>
+                                  <td>
+                                    <span className={`mm-pill ${stagePill(p.stage)}`}>{p.stage}</span>
+                                    {p.reverted ? <span className="mm-pill mm-pill-warn" title="This program was reverted at least once">reverted</span> : null}
+                                  </td>
+                                </tr>
+                                {isOpen && (
+                                  <tr className="mm-ph-trailrow">
+                                    <td colSpan={COLS}>
+                                      <div className="mm-ph-trail">
+                                        <div>
+                                          <h4 className="mm-section-title">Boxed</h4>
+                                          {p.productions.length === 0 ? (
+                                            <p className="mm-muted">Nothing boxed against this program yet.</p>
+                                          ) : (
+                                            <ul className="mm-ph-list">
+                                              {p.productions.map((x) => (
+                                                <li key={x.name} className={x.cancelled ? "mm-ph-dead" : undefined}>
+                                                  <strong>{fmtDate(x.posting_date) || "\u2014"}</strong> \u00b7 {x.name} \u00b7{" "}
+                                                  {x.box_qty} box \u00b7 <strong>{kg(x.net_weight)}</strong> kg net
+                                                  {x.operator ? ` \u00b7 ${x.operator}` : ""}
+                                                  {x.shift ? ` \u00b7 ${x.shift}` : ""}
+                                                  {x.batch_no ? ` \u00b7 batch ${x.batch_no}` : ""}
+                                                  {x.to_inventory ? " \u00b7 to stock" : ""}
+                                                  {x.cancelled ? " \u00b7 cancelled" : ""}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          )}
+                                        </div>
+                                        <div>
+                                          <h4 className="mm-section-title">What happened</h4>
+                                          {p.events.length === 0 && !p.remark ? (
+                                            <p className="mm-muted">No short completion or revert was recorded.</p>
+                                          ) : (
+                                            <ul className="mm-ph-list">
+                                              {p.events.map((e, i) => (
+                                                <li key={i}>
+                                                  <strong>{e.event_type || "Event"}</strong>
+                                                  {e.on ? ` \u00b7 ${e.on}` : ""}
+                                                  {e.resolved ? " \u00b7 resolved" : ""}
+                                                  {e.reason ? <div className="mm-muted">{e.reason}</div> : null}
+                                                </li>
+                                              ))}
+                                              {p.remark ? <li><strong>Remark</strong><div className="mm-muted">{p.remark}</div></li> : null}
+                                            </ul>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 )}
-                              </div>
-                              <div>
-                                <h4 className="mm-section-title">What happened</h4>
-                                {p.events.length === 0 && !p.remark ? (
-                                  <p className="mm-muted">No short completion or revert was recorded.</p>
-                                ) : (
-                                  <ul className="mm-ph-list">
-                                    {p.events.map((e, i) => (
-                                      <li key={i}>
-                                        <strong>{e.event_type || "Event"}</strong>
-                                        {e.on ? ` · ${e.on}` : ""}
-                                        {e.resolved ? " · resolved" : ""}
-                                        {e.reason ? <div className="mm-muted">{e.reason}</div> : null}
-                                      </li>
-                                    ))}
-                                    {p.remark ? <li><strong>Remark</strong><div className="mm-muted">{p.remark}</div></li> : null}
-                                  </ul>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
+                              </Fragment>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                );
+              })}
               <tfoot>
                 <tr>
-                  <td colSpan={8} />
+                  <td colSpan={7} />
                   <td className="mm-num"><strong>{kg(t?.patti_qty)}</strong></td>
                   <td className="mm-num"><strong>{kg(t?.planned_weight)}</strong></td>
                   <td className="mm-num"><strong>{kg(t?.boxed_weight)}</strong></td>
