@@ -630,9 +630,17 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
         try {
           const c = await fetchBoxLabels({ production: prod });
           const labels = c?.message ? stickersFromChallan(c.message, { batch: batchNo, operator }) : [];
+          // PRINTED, NOT SAVED. A file in Downloads is not a label on a box: somebody
+          // still has to find it, open it and print it, and by then the boxes are on the
+          // rack (Hetvi: "direct print should be done not download"). If the pop-up was
+          // blocked the answer is the Barcodes button on this production's row — a real
+          // click, which is never blocked — not a file nobody asked for.
           if (labels.length && !printBoxStickers(labels)) {
-            downloadBoxStickers(labels, `barcodes-${prod}`);
-            toast("Added to stock. The print pop-up was blocked — the barcodes were saved as a file instead.");
+            toast(
+              "Added to stock. The print pop-up was blocked — use the Barcodes button on " +
+                "this production's row, or allow pop-ups for this site.",
+              "error",
+            );
           }
         } catch (e) {
           toast(`Added to stock, but printing the barcodes failed — ${extractErrorMessage(e)}`, "error");
@@ -1173,12 +1181,14 @@ function BoxDialog({
     setGross(Number(w.toFixed(3)));
   }, [reading, grossTyped, edit, prev]);
 
-  /* Enter walks the three fields that are actually keyed and the third one files the box:
-     total weight → box weight → pcs → added. It used to add from whichever field the
-     cursor happened to be in, so Enter after the weight filed a box with no box tare and
-     no bobbin count on it. Enter anywhere else still adds. */
+  /* Enter walks the fields that are actually keyed and the last one files the box:
+     total weight → pcs → added. The box tare is NOT a stop (Hetvi: "remove the enter
+     redirection to box wt") — it is the same empty carton every time and carries over
+     from the last box, so stopping on it asked the operator to confirm a number they had
+     not changed, once per box, twenty times a voucher. It is still there to be typed when
+     a box really is different; Enter just no longer insists. Enter anywhere else adds. */
   const panelRef = useRef<HTMLElement>(null);
-  const FLOW = ["gross", "boxWeight", "pcs"];
+  const FLOW = ["gross", "pcs"];
 
   const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
   const net = r3((Number(gross) || 0) - totalBobbin - (Number(boxWeight) || 0));
@@ -1346,7 +1356,7 @@ function BoxDialog({
         {/* Said out loud. A shortcut nobody is told about is a shortcut nobody uses, and
             these operators will not go looking for one. */}
         <span className="mm-keys">
-          <kbd>Enter</kbd> next field, third {edit ? "saves" : "adds the box"} · <kbd>Esc</kbd> close
+          <kbd>Enter</kbd> next field, second {edit ? "saves" : "adds the box and prints its sticker"} · <kbd>Esc</kbd> close
         </span>
         <button className="mm-btn-ghost mm-btn-compact" onClick={onClose}>Cancel</button>
         <button className="mm-btn-primary mm-btn-compact" onClick={add}>{edit ? "Save box" : "Add box"}</button>
