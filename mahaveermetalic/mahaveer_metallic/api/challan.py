@@ -1594,10 +1594,17 @@ def challan_lines(challan):
 	}
 	return {
 		"challan": doc.name,
-		"challan_no": doc.challan_no or doc.name,
+		# The BOOK number, or nothing. It used to fall back to the document name, so a
+		# challan with no number in the book showed its full id in the C.No box as though
+		# that were what the shop had written there.
+		"challan_no": doc.challan_no or None,
 		"challan_type": doc.challan_type,
 		"transaction_date": str(doc.transaction_date or ""),
 		"party": doc.party,
+		# WHOSE NAME GOES ON IT — resolved by the same rule the register uses, so the two
+		# screens cannot disagree. Opened from a list showing "4 PRATIK TEXTILES", the
+		# voucher said "HIRAL JARI": the party, who on a job receipt is the worker.
+		"company": _challan_companies([doc]).get(doc.name),
 		"sales_order": doc.sales_order,
 		"docstatus": doc.docstatus,
 		"total_box": doc.total_box,

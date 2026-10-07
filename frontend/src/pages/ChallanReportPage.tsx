@@ -44,7 +44,7 @@ type Line = {
 };
 type Detail = {
   challan: string; challan_no?: string; challan_type?: string; transaction_date?: string;
-  party?: string; sales_order?: string; docstatus?: number;
+  party?: string; company?: string; sales_order?: string; docstatus?: number;
   total_box?: number; total_weight?: number; cover?: Cover | null; job?: Job | null; items: Line[];
 };
 
@@ -363,8 +363,10 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                 <label className="mm-field"><span className="mm-field-label">C.No</span>
                   <input className="mm-input" value={d.challan_no} readOnly /></label>
               )}
+              {/* The same name the register prints, not the party underneath it. */}
               <label className="mm-field"><span className="mm-field-label">Customer</span>
-                <input className="mm-input" value={d.party || "—"} readOnly /></label>
+                <input className="mm-input" value={d.company || d.party || "—"} readOnly
+                  title={d.party && d.company && d.party !== d.company ? `Party: ${d.party}` : undefined} /></label>
               <label className="mm-field"><span className="mm-field-label">Order</span>
                 <input className="mm-input" value={d.sales_order || "—"} readOnly /></label>
               <label className="mm-field"><span className="mm-field-label">Chalan Date</span>
