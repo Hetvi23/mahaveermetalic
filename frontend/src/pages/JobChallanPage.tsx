@@ -853,6 +853,12 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     setOrder(orderOpts.length === 1 ? orderOpts[0].order : "");
   }, [jobOut, orderOpts]);
 
+  // Clearing the order clears the pair it named. Left standing, the firm the order chose
+  // would sit in the box with nothing behind it and be filed on submit.
+  useEffect(() => {
+    if (!order) { setJiParty(""); setJiCompany(""); }
+  }, [order]);
+
   async function submit() {
     setErr(null);
     if (!jobOut) return setErr("Pick the Job Out this receipt answers, on the left.");
@@ -1150,7 +1156,13 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                     // alike, and filing under the wrong one is the whole risk here.
                     meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
                   }))}
-                  placeholder={(picked ? picked.company_name : meta?.company_name) || "Company"}
+                  // Same rule as Party above: with no order there is nobody to name, and
+                  // falling back to the Job Out's company put the WORKER's firm in the box
+                  // as though it had been chosen (Hetvi: "company also like party if order
+                  // not selected then dont auto select").
+                  placeholder={order
+                    ? ((picked ? picked.company_name : meta?.company_name) || "Company")
+                    : "Select company"}
                   emptyText={jiParty ? "That party has no other company on file." : "No company matches."} />
               </label>
               {/* Who brought it back — the same question a dispatch asks, read the other
