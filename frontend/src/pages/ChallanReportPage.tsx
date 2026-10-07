@@ -48,6 +48,11 @@ type Detail = {
   total_box?: number; total_weight?: number; cover?: Cover | null; job?: Job | null; items: Line[];
 };
 
+/** An open order, as the mapping picker lists it. */
+type OrderOpt = {
+  name: string; party?: string; party_name?: string; colours?: string; pending_weight?: number;
+};
+
 /** No type picked shows the sales register — Sales and Job Challan (see api.challan_report).
  *  Job Out / Job In are next in the list rather than last: they are the two types the
  *  default deliberately leaves out, so they are the two most likely to be picked, and the
@@ -261,8 +266,63 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
   );
   const d = data?.message;
   const { call: save, loading } = useFrappePostCall(`${API}.update_challan_weights`);
+  const { call: mapOrder, loading: mapping } = useFrappePostCall(`${API}.map_challan_order`);
   const [edits, setEdits] = useState<Record<string, Partial<Line>>>({});
   const [err, setErr] = useState<string | null>(null);
+
+  // THE ORDER IS DECIDED AFTER THE PAPER HAS GONE. A challan raised off a production is
+  // issued before anyone has worked out which order it filled, so these two are editable
+  // here rather than read-only: picking the order names the customer (that is the way the
+  // information flows), and with no order the customer is simply typed.
+  const [order, setOrder] = useState("");
+  const [customer, setCustomer] = useState("");
+  useEffect(() => {
+    setOrder(d?.sales_order || "");
+    setCustomer(d?.company || d?.party || "");
+  }, [d?.challan, d?.sales_order, d?.company, d?.party]);
+
+  // Every open order, not just this party's: the challan may be mapped to an order of a
+  // customer it was never filed under, which is half the reason the mapping is being made.
+  const ordersCall = useFrappeGetCall<{ message: OrderOpt[] }>(
+    `${API}.orders_for_challan`, {}, "chal-map-orders",
+  );
+  const orderOpts = useMemo(() => {
+    const rows = ordersCall.data?.message ?? [];
+    const opts = rows.map((o) => ({
+      value: o.name,
+      label: `${o.name}${o.colours ? ` \u00b7 ${o.colours}` : ""}`,
+      meta: [o.party_name || o.party, o.pending_weight ? `${kg(o.pending_weight)} kg left` : null]
+        .filter(Boolean).join(" \u00b7 ") || undefined,
+    }));
+    // The order already on the challan is offered even when the list leaves it out \u2014 it is
+    // dropped once covered, and THIS challan is often what covers it.
+    const have = d?.sales_order;
+    if (have && !opts.some((o) => o.value === have)) opts.unshift({ value: have, label: have, meta: "on this challan" });
+    return opts;
+  }, [ordersCall.data?.message, d?.sales_order]);
+
+  const mapDirty = order !== (d?.sales_order || "")
+    || (!order && customer.trim() !== (d?.company || d?.party || "").trim());
+
+  async function saveMapping() {
+    setErr(null);
+    try {
+      const r = await mapOrder({
+        challan,
+        sales_order: order || undefined,
+        // With an order the order answers this; the server ignores it either way.
+        company_name: order ? undefined : customer.trim(),
+      });
+      const m = (r as { message?: { sales_order?: string | null } })?.message;
+      toast(m?.sales_order ? `Challan mapped to ${m.sales_order}` : "Order cleared from this challan");
+      await mutate();
+      onSaved();
+    } catch (e) {
+      const msg = extractErrorMessage(e);
+      setErr(msg);
+      toast(msg, "error");
+    }
+  }
 
   const items = d?.items ?? [];
   const valueOf = (it: Line, f: keyof Line) => {
@@ -363,15 +423,37 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                 <label className="mm-field"><span className="mm-field-label">C.No</span>
                   <input className="mm-input" value={d.challan_no} readOnly /></label>
               )}
-              {/* The same name the register prints, not the party underneath it. */}
+              {/* The same name the register prints, not the party underneath it. Typed only
+                  while no order is mapped — once there is one, the order settles who the
+                  customer is and a second answer here could only contradict it. */}
               <label className="mm-field"><span className="mm-field-label">Customer</span>
-                <input className="mm-input" value={d.company || d.party || "—"} readOnly
+                <input className="mm-input" value={customer} readOnly={!!order}
+                  onChange={(e) => setCustomer(e.target.value)}
+                  placeholder={order ? "" : "Who it went to"}
                   title={d.party && d.company && d.party !== d.company ? `Party: ${d.party}` : undefined} /></label>
               <label className="mm-field"><span className="mm-field-label">Order</span>
-                <input className="mm-input" value={d.sales_order || "—"} readOnly /></label>
+                <SearchSelect value={order} onChange={setOrder} options={orderOpts}
+                  placeholder="— none —" menuMinWidth={320}
+                  emptyText="No open orders to map this to." /></label>
               <label className="mm-field"><span className="mm-field-label">Chalan Date</span>
                 <input className="mm-input" value={d.transaction_date || "—"} readOnly /></label>
             </div>
+
+            {/* Mapping moves real figures \u2014 the order's dispatched weight, the rates on the
+                lines, the stock ledger \u2014 so it is its own save, not a side effect of
+                correcting a weight. */}
+            {mapDirty && (
+              <div className="mm-cr-maprow">
+                <span className="mm-muted">
+                  {order
+                    ? `Map this challan to ${order}: its weight counts against that order, the ordered rate is carried onto the lines, and the customer comes from the order.`
+                    : "Take the order off this challan. Its weight stops counting against it, which can reopen it."}
+                </span>
+                <button type="button" className="mm-btn-primary" disabled={mapping} onClick={() => void saveMapping()}>
+                  {mapping ? "Saving\u2026" : order ? "Map to order" : "Save"}
+                </button>
+              </div>
+            )}
 
             {/* A job challan answers to its Job Out, not to the order. */}
             {d.job && (

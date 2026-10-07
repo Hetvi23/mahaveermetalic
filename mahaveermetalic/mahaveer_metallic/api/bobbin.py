@@ -6,6 +6,10 @@
      party (in), Give = we handed bobbins to them (out).
   2. Production — the bobbins entered on each box are consumed (out).
 
+Those two, and nothing else. A Job Out / Job In challan lists the bobbins inside the
+boxes it carries, but the production that packed them has already consumed them — posting
+the challan as well counted the same bobbins out twice. See post_job_challan.
+
 The report reads that ledger as Opening (everything before the from-date) + the period's
 movements, ending in a running balance.
 """
@@ -198,6 +202,14 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 			{
 				"date": str(r.posting_date) if r.posting_date else None,
 				"voucher_type": r.voucher_type,
+				# WHAT THE SHOP CALLED IT. A Bobbin In / Out entry is keyed as Given or
+				# Received and that is the word on the page it was typed on; the register
+				# said "Bobbin Challan" for both, so the two directions read identically
+				# and only the sign told them apart.
+				"label": (
+					("Received" if float(r.in_qty or 0) >= float(r.out_qty or 0) else "Given")
+					if r.voucher_type == "Bobbin Challan" else r.voucher_type
+				),
 				"voucher_no": r.voucher_no,
 				"bobbin": r.bobbin,
 				"note": r.note,
@@ -247,34 +259,27 @@ def bobbin_balances(party=None):
 
 
 def post_job_challan(doc):
-	"""Bobbins riding on a job challan.
+	"""A job challan does NOT move the bobbin ledger. It only clears what it once wrote.
 
-	Job Out sends bobbins to the worker (out of MM's hands); Job In is them coming back.
-	Same ledger as Bobbin In/Out and Production, so the report reconciles across all
-	three sources.
+	THE SAME BOBBINS, COUNTED TWICE. A Job Out carries boxes to the worker and lists the
+	bobbins inside them; the production that packed those boxes has already consumed those
+	very bobbins. Posting both took 1,555 bobbins out on MMUJO-2026-00001 and the same
+	1,555 out again on MMPROD-00001 the next day — 31,309 bobbins double-counted across 19
+	Job Outs on mm alone, and every party's balance that much too low.
+
+	The ledger has two feeds and only ever had two (Hetvi: "data will come from
+	give/receive format from the bobbin in/out page through the given/received label and
+	the production"):
+
+	  • Bobbin / Box tracking — Given takes bobbins out, Received brings them back. This is
+	    where a bobbin physically changing hands is recorded.
+	  • Production — the bobbins packed into each box are consumed.
+
+	A job challan is neither: it moves goods that were already accounted for. The hisab's
+	per-Job-Out bobbin count is untouched by this — it reads `against_job_out`, which only
+	Bobbin In / Out ever sets.
+
+	Still called, and still clears: a job challan posted under the old rule drops its rows
+	the next time it is saved or cancelled.
 	"""
 	clear_voucher(doc.name)
-	if (doc.challan_type or "") not in ("Job Out", "Job In"):
-		return
-	going_out = doc.challan_type == "Job Out"
-	# Bobbins coming back are the WORKER's to return, so they post to the Job Out's party —
-	# a Job In received against an order carries the customer as its own party.
-	party = doc.party
-	if not going_out and doc.get("against_job_out"):
-		party = frappe.db.get_value("MM Sales Challan", doc.against_job_out, "party") or doc.party
-	for row in doc.bobbins or []:
-		qty = float(row.qty or 0)
-		if qty <= 0:
-			continue
-		_post(
-			posting_date=doc.transaction_date or frappe.utils.today(),
-			voucher_type=doc.challan_type,
-			voucher_no=doc.name,
-			party=party,
-			bobbin=row.bobbin,
-			note=doc.remarks,
-			# A Job Out / Job In IS job work — the ledger records it without being asked.
-			job_work_flag=1,
-			in_qty=0 if going_out else qty,
-			out_qty=qty if going_out else 0,
-		)

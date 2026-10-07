@@ -16,6 +16,9 @@ const monthAgo = () => {
 
 type Row = {
   date?: string | null; voucher_type?: string; voucher_no?: string; bobbin?: string;
+  /** What the shop called the movement: Given / Received for a Bobbin In / Out entry,
+   *  else the voucher type. Both directions used to read "Bobbin Challan". */
+  label?: string;
   note?: string | null; in_qty: number; out_qty: number; qty: number; box: number;
   /** How many ledger movements this line stands for — >1 when the bill is grouped. */
   movements?: number;
@@ -148,7 +151,7 @@ export default function BobbinReportPage() {
                   <tr key={i}>
                     <td>{fmtDate(row.date) || "—"}</td>
                     <td>{row.voucher_no || "—"}</td>
-                    <td>{row.voucher_type || "—"}</td>
+                    <td>{row.label || row.voucher_type || "—"}</td>
                     <td>{row.bobbin || "—"}</td>
                     {/* Free text — let it wrap rather than stretch the register sideways. */}
                     <td className="mm-cell-wrap">

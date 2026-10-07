@@ -1761,6 +1761,174 @@ def update_challan_weights(challan, lines):
 	}
 
 
+
+@frappe.whitelist()
+def map_challan_order(challan, sales_order=None, company_name=None):
+	"""Point an already-issued challan at the order it answers to — or change it, or clear it.
+
+	A challan raised off a production goes out before anyone has decided which order it
+	fills, so MMUSC-208 sits with "—" in its Order box while the order it actually
+	delivered still reads as undelivered. Re-issuing is not an option: the number is
+	already with the customer, so the mapping is made in place, the same way a weight
+	correction is.
+
+	THE LINK IS NOT A LABEL. Every figure the order is judged on reads it, so attaching one
+	has to do what issuing the challan against it would have done:
+
+	  • the colours are checked against what was ordered,
+	  • the weight is checked against the order's inward cover,
+	  • the agreed rate is carried onto the lines and the challan is footed,
+	  • the stock-ledger rows this challan already posted are re-pointed,
+	  • and BOTH orders are recounted — the new one may now be covered, and the one it
+	    was taken off may have just reopened.
+
+	The lines are re-pointed as well as the header. Every dispatch sum reads
+	`coalesce(nullif(ci.sales_order,''), c.sales_order)`, the LINE winning over the header,
+	so a header written alone would be ignored on any challan whose rows already name one.
+
+	With no order, `company_name` is whatever the office types — an order-less challan still
+	has a customer's name on the paper. With an order, the order answers that question and
+	the typed value is ignored.
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import (
+		is_dispatch,
+		order_rates,
+		rate_for,
+	)
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
+		mark_dispatched,
+	)
+
+	doc = frappe.get_doc("MM Sales Challan", challan)
+	if doc.docstatus == 2:
+		frappe.throw(_("Challan {0} is cancelled — it can no longer be mapped to an order.").format(doc.name))
+
+	new_order = (sales_order or "").strip() or None
+	old_order = (doc.sales_order or "").strip() or None
+
+	so = None
+	if new_order:
+		so = frappe.db.get_value(
+			"MM Sales Order", new_order,
+			["name", "party", "company_name", "docstatus", "order_state"], as_dict=True,
+		)
+		if not so:
+			frappe.throw(_("Order {0} does not exist.").format(new_order))
+		if so.docstatus == 2 or (so.order_state or "") == "Cancelled":
+			frappe.throw(
+				_("Order {0} is cancelled — nothing can be dispatched against it.").format(new_order)
+			)
+
+		# THE SAME PICKING CHECK CREATING THE CHALLAN RUNS. Mapping a dispatch onto an order
+		# that never asked for this colour mis-bills the customer just as surely as picking
+		# the wrong box would have.
+		ordered = {
+			c for c in frappe.get_all(
+				"MM Sales Order Item",
+				filters={"parent": new_order, "parenttype": "MM Sales Order"},
+				pluck="color_name",
+			) if c
+		}
+		if ordered:
+			wrong = sorted({it.color_name for it in doc.items if it.color_name and it.color_name not in ordered})
+			if wrong:
+				frappe.throw(
+					_("This challan carries {0}, but order {1} is for {2}. Map it to the order that was placed for these colours.").format(
+						", ".join(wrong), new_order, ", ".join(sorted(ordered)),
+					)
+				)
+
+	total = round(sum(float(i.weight or 0) for i in doc.items), 3)
+	if new_order and is_dispatch(doc.challan_type):
+		cover = _order_cover(new_order, exclude_challan=doc.name)
+		if cover and cover["inwarded_weight"] > 0:
+			available = round(cover["inwarded_weight"] - cover["dispatched_weight"], 3)
+			if total > available:
+				frappe.throw(
+					_(
+						"This challan is {0} kg, more than order {1} can still send out. It has taken "
+						"in {2} kg, {3} kg has already gone on other challans, so {4} kg is left."
+					).format(
+						total, new_order, cover["inwarded_weight"], cover["dispatched_weight"], available,
+					)
+				)
+
+	# A RATE THE OLD ORDER FILLED IN IS NOT A DECISION — it is the old order's answer to a
+	# question that now has a different one. _apply_rates only ever fills a BLANK rate (a
+	# typed rate is deliberate and must survive), so a remap would otherwise keep billing
+	# the previous order's price. Clear only the lines still sitting on exactly what the old
+	# order would have put there; anything typed by hand differs from it and stands.
+	if old_order and old_order != new_order:
+		was = order_rates(doc)
+		for it in doc.items:
+			auto = rate_for(was, it.sales_order or old_order, it.color_name, it.cut)
+			if auto and abs(float(it.rate or 0) - auto) < 1e-6:
+				it.rate = 0
+
+	doc.sales_order = new_order
+	for it in doc.items:
+		it.sales_order = new_order
+
+	if new_order:
+		# A Job Out / Job In is addressed to the WORKER and names the customer's order
+		# alongside; moving the party onto it would file the worker's movement under the
+		# customer. Every dispatch type goes to the customer themselves, so there the order
+		# settles who that is.
+		if so.party and is_dispatch(doc.challan_type):
+			doc.party = so.party
+		if so.company_name:
+			doc.company_name = so.company_name
+	elif company_name is not None:
+		doc.company_name = (company_name or "").strip() or None
+
+	# Foots the challan off the new order's rates. Run on the document so the rule stays in
+	# the one place every other path already uses it.
+	doc._apply_rates()
+
+	for it in doc.items:
+		frappe.db.set_value(
+			"MM Sales Challan Item", it.name,
+			{"sales_order": it.sales_order, "rate": it.rate, "amount": it.amount},
+			update_modified=False,
+		)
+	frappe.db.set_value(
+		"MM Sales Challan", doc.name,
+		{
+			"sales_order": doc.sales_order, "party": doc.party,
+			"company_name": doc.company_name, "total_amount": doc.total_amount,
+		},
+		update_modified=True,
+	)
+
+	# The movement this challan posted is stamped with the order it went out against, and
+	# the Stock Ledger is read by order. Left alone, the kilos would show against the old
+	# order — or against nothing — for ever.
+	frappe.db.sql(
+		"update `tabMM Stock Ledger Entry` set customer_order = %(so)s where voucher_no = %(v)s",
+		{"so": new_order, "v": doc.name},
+	)
+
+	# BOTH ORDERS. The new one may now be covered; the old one has just had this challan's
+	# weight taken off it and may have reopened.
+	if is_dispatch(doc.challan_type):
+		for o in filter(None, {old_order, new_order}):
+			try:
+				mark_dispatched(o)
+			except Exception:
+				frappe.log_error(title=f"could not recount order {o} after mapping challan {doc.name}")
+
+	return {
+		"challan": doc.name,
+		"sales_order": new_order,
+		"previous_order": old_order,
+		"party": doc.party,
+		"company": _challan_companies([doc]).get(doc.name),
+		"total_amount": doc.total_amount,
+		"lines": len(doc.items),
+		"cover": _order_cover(new_order, exclude_challan=doc.name) if new_order and is_dispatch(doc.challan_type) else None,
+	}
+
+
 # ── Job In: what is still out with a worker ───────────────────────────────────────
 
 

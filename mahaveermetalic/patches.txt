@@ -25,3 +25,4 @@ mahaveermetalic.patches.gr_per_roll
 mahaveermetalic.patches.lot_remark_colour
 mahaveermetalic.patches.order_box_weight
 mahaveermetalic.patches.customer_app
+mahaveermetalic.patches.drop_job_challan_bobbin_rows

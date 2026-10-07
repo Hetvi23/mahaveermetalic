@@ -12,6 +12,7 @@ import ProductionScreen from "./pages/ProductionScreen";
 import ProductionViewPage from "./pages/ProductionViewPage";
 import CloseoutStackPage from "./pages/CloseoutStackPage";
 import BobbinReportPage from "./pages/BobbinReportPage";
+import ProgramHistoryPage from "./pages/ProgramHistoryPage";
 import JobChallanPage from "./pages/JobChallanPage";
 import JobReportPage from "./pages/JobReportPage";
 import JobHisabPage from "./pages/JobHisabPage";
@@ -166,6 +167,7 @@ export default function App() {
             <Route path="/production-view" element={<ProductionViewPage />} />
             <Route path="/closeout" element={<CloseoutStackPage />} />
             <Route path="/bobbin-report" element={<BobbinReportPage />} />
+            <Route path="/program-history" element={<ProgramHistoryPage />} />
             <Route path="/job-out" element={<JobChallanPage type="Job Out" />} />
             <Route path="/job-in" element={<JobChallanPage type="Job In" />} />
             <Route path="/job-report" element={<JobReportPage />} />

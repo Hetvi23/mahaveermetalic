@@ -3799,3 +3799,26 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 
 /* Urgent flag beside an order number in the Orders list. */
 .mm-ow-urgent { color: var(--mm-danger); margin-left: 4px; vertical-align: -2px; }
+
+/* The order-mapping save on the challan correction screen. Its own row under the header
+   fields, because mapping is a different act from correcting a weight and must not look
+   like part of the same form. */
+.mm-cr-maprow {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  margin: 0 0 0.7rem; padding: 0.7rem 0.9rem;
+  border: 1px solid var(--mm-accent-soft); border-radius: var(--mm-radius-sm);
+  background: var(--mm-blue-bg);
+}
+.mm-cr-maprow .mm-muted { flex: 1; min-width: 240px; font-size: 0.82rem; }
+
+/* Program history: the trail behind one program, opened under its row. Two columns on a
+   wide screen — what was boxed beside why it went that way — because they are read
+   together when a weight does not tie. */
+.mm-ph-trailrow > td { background: var(--mm-bg); padding: 0.9rem 1.1rem; }
+.mm-ph-trail { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
+@media (min-width: 860px) { .mm-ph-trail { grid-template-columns: 1.3fr 1fr; } }
+.mm-ph-list { list-style: none; margin: 0.35rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.mm-ph-list > li { font-size: 0.84rem; padding-left: 0.7rem; border-left: 2px solid var(--mm-hairline); }
+.mm-ph-list .mm-muted { font-size: 0.8rem; margin-top: 0.1rem; }
+/* A cancelled production stays on the trail — it happened — but must not read as output. */
+.mm-ph-dead { opacity: 0.55; text-decoration: line-through; }

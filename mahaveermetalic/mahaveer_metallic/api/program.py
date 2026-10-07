@@ -1798,3 +1798,194 @@ def threads_processing(branch=None, machine_no=None, program_date=None):
 		r["lot_ids"] = ids
 		r["lot_id"] = ids[0] if len(ids) == 1 else (found.get("lot_id") or None)
 	return rows
+
+
+# ── Program history ─────────────────────────────────────────────────
+
+
+def _program_stage(p, boxed_kg, tol=0.001):
+	"""One word for where a program stands, read in the order the floor would ask it.
+
+	The flags are not exclusive — a reverted program is also partly done, a closed one may
+	never have been boxed — so they are tested most-specific first and the first that
+	answers wins. Boxing is checked before batches: a program whose batches are all marked
+	done but whose weight never left the machine is NOT finished, and reading the batch
+	count alone is what made the queue overstate itself.
+	"""
+	total = int(p.get("total_batches") or 0)
+	done = int(p.get("completed_batches") or 0)
+	planned = float(p.get("net_weight") or 0)
+	if p.get("unfinished"):
+		return "Unfinished"
+	if p.get("closed"):
+		return "Closed"
+	if planned > 0 and boxed_kg >= planned - tol:
+		return "Boxed"
+	if boxed_kg > tol:
+		return "Part boxed"
+	if total and done >= total:
+		return "Batches done"
+	if done > 0:
+		return "Part cut"
+	if p.get("is_running"):
+		return "Running"
+	return "Open"
+
+
+@frappe.whitelist()
+def program_history(from_date=None, to_date=None, machine=None, shade=None, lot=None,
+	customer_order=None, stage=None, search=None, limit=300):
+	"""Every program's life in one place: what was planned, what was cut, what was boxed,
+	and every hand-entered event along the way.
+
+	A program is the unit the floor actually works in — one colour, one lot, one machine,
+	one shift — but its story was scattered: the plan on MM Program, the output on the
+	productions raised against it, and the REASONS on MM Lot Remark, which is where a short
+	completion or a revert records why. Nobody could answer "what happened to this lot" from
+	any one screen.
+
+	Three queries, not three per row: the programs, then their productions and their events
+	fetched for the whole page at once.
+	"""
+	conds = ["1=1"]
+	vals = {}
+	if from_date:
+		conds.append("p.program_date >= %(fd)s")
+		vals["fd"] = from_date
+	if to_date:
+		conds.append("p.program_date <= %(td)s")
+		vals["td"] = to_date
+	if machine:
+		conds.append("p.machine_no = %(m)s")
+		vals["m"] = machine
+	if shade:
+		conds.append("p.shade = %(sh)s")
+		vals["sh"] = shade
+	if lot:
+		conds.append("p.lot = %(lot)s")
+		vals["lot"] = lot
+	if customer_order:
+		conds.append("p.customer_order = %(co)s")
+		vals["co"] = customer_order
+	if search:
+		conds.append(
+			"(p.name like %(q)s or p.shade like %(q)s or p.roll_no like %(q)s or p.cut like %(q)s"
+			" or p.lot like %(q)s or p.machine_no like %(q)s or p.customer_order like %(q)s)"
+		)
+		vals["q"] = f"%{search}%"
+	vals["lim"] = int(limit or 300)
+
+	rows = frappe.db.sql(
+		f"""
+		select p.name, p.program_date, p.shade, p.cut, p.lot, p.roll_no, p.machine_no, p.shift,
+			p.customer_order, p.status, p.is_running, p.closed, p.reverted, p.unfinished,
+			p.released, p.job_work_flag, p.total_batches, p.completed_batches, p.patti_qty,
+			p.net_weight, p.per_patty_weight, p.completed_weight, p.remark, p.creation,
+			so.party, so.company_name
+		from `tabMM Program` p
+		left join `tabMM Sales Order` so on so.name = p.customer_order
+		where {" and ".join(conds)}
+		-- Newest first: history is read backwards from what just happened.
+		order by p.program_date desc, p.creation desc
+		limit %(lim)s
+		""",
+		vals,
+		as_dict=True,
+	)
+	if not rows:
+		return {"rows": [], "totals": {}}
+
+	names = [r.name for r in rows]
+
+	# What was actually boxed against each program.
+	prods = {}
+	for pr in frappe.get_all(
+		"MM Production",
+		filters={"source_program": ["in", names]},
+		fields=["name", "source_program", "posting_date", "box_qty", "net_weight", "gross_weight",
+			"operator", "shift", "batch_no", "to_inventory", "docstatus"],
+		order_by="posting_date asc, creation asc",
+		limit_page_length=0,
+	):
+		prods.setdefault(pr.source_program, []).append(pr)
+
+	# WHY it went the way it did. A short completion and a revert both record a reason, and
+	# the reason is the only part of the history a number cannot carry.
+	events = {}
+	for e in frappe.get_all(
+		"MM Lot Remark",
+		filters={"program": ["in", names]},
+		fields=["name", "program", "event_type", "reason", "resolved", "resolved_on", "creation",
+			"source_doctype", "source_name"],
+		order_by="creation asc",
+		limit_page_length=0,
+	):
+		events.setdefault(e.program, []).append(e)
+
+	out = []
+	for p in rows:
+		mine = prods.get(p.name) or []
+		live = [x for x in mine if x.docstatus != 2]
+		boxed_kg = round(sum(float(x.net_weight or 0) for x in live), 3)
+		boxed_box = round(sum(float(x.box_qty or 0) for x in live), 3)
+		planned = round(float(p.net_weight or 0), 3)
+		out.append({
+			"name": p.name,
+			"program_date": str(p.program_date or "") or None,
+			"shade": p.shade, "cut": p.cut, "lot": p.lot, "roll_no": p.roll_no,
+			"machine_no": p.machine_no, "shift": p.shift,
+			"customer_order": p.customer_order, "party": p.party, "company": p.company_name,
+			"job_work_flag": int(p.job_work_flag or 0),
+			"status": p.status,
+			"stage": _program_stage(p, boxed_kg),
+			"reverted": int(p.reverted or 0),
+			"total_batches": int(p.total_batches or 0),
+			"completed_batches": int(p.completed_batches or 0),
+			"patti_qty": float(p.patti_qty or 0),
+			"per_patty_weight": float(p.per_patty_weight or 0),
+			"planned_weight": planned,
+			"completed_weight": round(float(p.completed_weight or 0), 3),
+			"boxed_weight": boxed_kg,
+			"boxed_box": boxed_box,
+			# What is still on the machine. Never negative: boxing over the plan is a
+			# variance the production screen already gated, not a negative remainder.
+			"pending_weight": round(max(0.0, planned - boxed_kg), 3),
+			"remark": p.remark,
+			"productions": [
+				{
+					"name": x.name, "posting_date": str(x.posting_date or "") or None,
+					"box_qty": float(x.box_qty or 0), "net_weight": float(x.net_weight or 0),
+					"gross_weight": float(x.gross_weight or 0), "operator": x.operator,
+					"shift": x.shift, "batch_no": x.batch_no,
+					"to_inventory": int(x.to_inventory or 0),
+					"cancelled": 1 if x.docstatus == 2 else 0,
+				}
+				for x in mine
+			],
+			"events": [
+				{
+					"event_type": e.event_type, "reason": e.reason,
+					"on": str(e.creation or "")[:19] or None,
+					"resolved": int(e.resolved or 0),
+					"source": e.source_name or e.source_doctype,
+				}
+				for e in (events.get(p.name) or [])
+			],
+		})
+
+	# Stage is DERIVED, so it cannot be a SQL condition \u2014 filtered here, after each
+	# program's boxing has actually been counted.
+	if stage:
+		out = [r for r in out if r["stage"] == stage]
+
+	return {
+		"rows": out,
+		"totals": {
+			"programs": len(out),
+			"planned_weight": round(sum(r["planned_weight"] for r in out), 3),
+			"boxed_weight": round(sum(r["boxed_weight"] for r in out), 3),
+			"pending_weight": round(sum(r["pending_weight"] for r in out), 3),
+			"patti_qty": round(sum(r["patti_qty"] for r in out), 3),
+			"boxed_box": round(sum(r["boxed_box"] for r in out), 3),
+		},
+	}

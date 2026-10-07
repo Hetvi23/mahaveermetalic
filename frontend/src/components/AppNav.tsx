@@ -38,6 +38,7 @@ import {
   Moon,
   CalendarCheck,
   type LucideIcon,
+  History,
 } from "lucide-react";
 
 export type NavItem = { label: string; icon: LucideIcon; to?: string };
@@ -129,6 +130,7 @@ const SECTIONS: Section[] = [
       { label: "Sales Challan Report", icon: ScrollText, to: "/challan-report" },
       { label: "Job Report", icon: ScrollText, to: "/job-report" },
       { label: "Job Hisab", icon: ScrollText, to: "/job-hisab" },
+      { label: "Program History", icon: History, to: "/program-history" },
       { label: "Bobbin Report", icon: Disc3, to: "/bobbin-report" },
       { label: "Stock Ledger", icon: ScrollText, to: "/stock-ledger" },
     ],
