@@ -12,6 +12,7 @@ SRS 5.7: a >tolerance (default 4%) variance between produced Net and the Program
 input weight requires an Admin Override PIN (MM Settings).
 """
 
+import inspect
 import json
 
 import frappe
@@ -733,9 +734,20 @@ def create_production_for_pile(source_programs, boxes=None, **kwargs):
 		share.setdefault(name, []).append(b)
 		room[name] = round(room[name] - net, 3)
 
+	# ONLY WHAT create_production DECLARES. Frappe's get_newargs filters a call's arguments
+	# to the signature — unless the signature has **kwargs, and then it hands over the whole
+	# form_dict instead, `cmd` and all. Forwarding that verbatim failed every pile with
+	# "create_production() got an unexpected keyword argument 'cmd'"; single-program
+	# productions never saw it, because they are the ones Frappe filters.
+	#
+	# Read off the signature rather than popping `cmd` by name: the next key the request
+	# carries would land us straight back here.
+	allowed = set(inspect.signature(create_production).parameters)
+	passed = {k: v for k, v in kwargs.items() if k in allowed}
+
 	out = []
 	for name, rows in share.items():
-		res = create_production(source_program=name, boxes=json.dumps(rows), **kwargs)
+		res = create_production(source_program=name, boxes=json.dumps(rows), **passed)
 		out.append({"program": name, "boxes": len(rows), "result": res})
 	return {"productions": out, "programs": len(out), "boxes": len(boxes)}
 
