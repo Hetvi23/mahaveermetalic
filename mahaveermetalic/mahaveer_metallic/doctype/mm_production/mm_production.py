@@ -295,11 +295,25 @@ class MMProduction(Document):
 		self._sync_source_program(link=False)
 		self._refresh_order_production()
 
+	def _runs(self) -> list:
+		"""Every program this voucher took boxes off.
+
+		One for an ordinary voucher; several when a pile of one colour and lot was boxed as
+		a single paper. Where the allocation table exists it is the truth \u2014 `source_program`
+		is only the run that happened to take the first box, and closing on that alone would
+		leave the other runs showing material that is already in a carton.
+		"""
+		named = [r.program for r in (self.get("programs") or []) if r.program]
+		return named or ([self.source_program] if self.source_program else [])
+
 	def _sync_source_program(self, link: bool):
-		"""Mark the source program done (and link it) on submit; release it on cancel so
-		it returns to 'In Threads Processing'."""
-		if not self.source_program or not frappe.db.exists("MM Program", self.source_program):
-			return
+		"""Mark each run done (and link it) on submit; release them on cancel so they
+		return to 'In Threads Processing'."""
+		for program in self._runs():
+			if frappe.db.exists("MM Program", program):
+				self._sync_one_program(program, link)
+
+	def _sync_one_program(self, program: str, link: bool):
 		if link:
 			# A PROGRAM IS NOT DONE JUST BECAUSE A VOUCHER TOUCHED IT. The first production
 			# marked it Completed outright, so a 1,200 kg program that had boxed 200 kg
@@ -310,20 +324,20 @@ class MMProduction(Document):
 			# refuses a program that has one. So it must only be stamped once the program is
 			# genuinely finished — stamped on the first voucher, a 1,200 kg program boxed
 			# 200 kg vanished off the floor's list and could never be produced against again.
-			status = self._program_status_after()
+			status = self._program_status_after(program)
 			fills = {"status": status}
 			if status == "Completed":
 				fills["production"] = self.name
-			frappe.db.set_value("MM Program", self.source_program, fills, update_modified=False)
+			frappe.db.set_value("MM Program", program, fills, update_modified=False)
 		else:
 			frappe.db.set_value(
 				"MM Program",
-				self.source_program,
+				program,
 				{"production": None, "status": "In Progress"},
 				update_modified=False,
 			)
 
-	def _program_status_after(self) -> str:
+	def _program_status_after(self, program: str) -> str:
 		"""Completed only when the program has nothing left worth boxing.
 
 		Two conditions, and both have to hold:
@@ -339,29 +353,24 @@ class MMProduction(Document):
 			get_leftover_tolerance,
 		)
 
-		produced = round(
-			float(
-				frappe.db.sql(
-					"""select coalesce(sum(net_weight), 0) from `tabMM Production`
-					where source_program = %s and docstatus = 1 and name != %s""",
-					(self.source_program, self.name),
-				)[0][0]
-				or 0
-			)
-			+ float(self.net_weight or 0),
-			3,
-		)
-		planned = float(frappe.db.get_value("MM Program", self.source_program, "net_weight") or 0)
+		from mahaveermetalic.mahaveer_metallic.api.production import program_produced_weight
+
+		# THIS RUN'S SHARE, not the voucher's total. A pile's voucher carries the whole
+		# lot's boxes, so its net says nothing about how much came off this particular run;
+		# program_produced_weight reads that from the allocation table. By the time this
+		# runs the voucher is submitted, so its own share is already counted.
+		produced = round(float(program_produced_weight([program]).get(program) or 0), 3)
+		planned = float(frappe.db.get_value("MM Program", program, "net_weight") or 0)
 		remaining = round(planned - produced, 3)
 		if planned and remaining > get_leftover_tolerance():
 			return "Partially Done"
-		if self._lot_still_in_stock():
+		if self._lot_still_in_stock(program):
 			return "Partially Done"
 		return "Completed"
 
-	def _lot_still_in_stock(self) -> bool:
+	def _lot_still_in_stock(self, program: str) -> bool:
 		"""Is any roll of this program's lot still holding stock?"""
-		lot = frappe.db.get_value("MM Program", self.source_program, "lot")
+		lot = frappe.db.get_value("MM Program", program, "lot")
 		lot_id = frappe.db.get_value("MM Lot", lot, "lot_id") if lot else None
 		if not lot_id:
 			return False

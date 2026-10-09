@@ -13,6 +13,7 @@
   "party",
   "company_name",
   "source_program",
+  "programs",
   "roll_no",
   "shade",
   "cut",
@@ -67,6 +68,14 @@
    "label": "Source Program",
    "options": "MM Program",
    "description": "The program (threads on machine) this production was wound from."
+  },
+  {
+   "fieldname": "programs",
+   "fieldtype": "Table",
+   "label": "Runs On This Voucher",
+   "options": "MM Production Program",
+   "read_only": 1,
+   "description": "How this voucher's boxes divide across the runs of one colour and lot. One row when it is a single program; several when a pile was boxed as one."
   },
   {
    "fieldname": "roll_no",
@@ -171,7 +180,7 @@
    "fieldtype": "Table",
    "label": "Boxes",
    "options": "MM Production Box",
-   "description": "One row per produced box: gross, bobbin (pcs × per-pcs wt), box tare and net."
+   "description": "One row per produced box: gross, bobbin (pcs \u00d7 per-pcs wt), box tare and net."
   },
   {
    "fieldname": "bobbins",
@@ -205,7 +214,7 @@
    "label": "Input Weight (Kg)",
    "precision": 3,
    "read_only": 1,
-   "description": "Thread/patty weight sent in from Program — the baseline for variance."
+   "description": "Thread/patty weight sent in from Program \u2014 the baseline for variance."
   },
   {
    "fieldname": "gross_weight",
@@ -232,7 +241,7 @@
    "label": "Net Weight (Kg)",
    "precision": 3,
    "read_only": 1,
-   "description": "Auto: Gross − Bobbin − Box (sum of boxes)."
+   "description": "Auto: Gross \u2212 Bobbin \u2212 Box (sum of boxes)."
   },
   {
    "fieldname": "section_variance",
@@ -245,7 +254,7 @@
    "label": "Variance (%)",
    "precision": 2,
    "read_only": 1,
-   "description": "Auto: (Net − Input) ÷ Input × 100."
+   "description": "Auto: (Net \u2212 Input) \u00f7 Input \u00d7 100."
   },
   {
    "fieldname": "pin_override",
@@ -276,7 +285,7 @@
    "label": "Closed",
    "read_only": 1,
    "default": "0",
-   "description": "Leftover closed out — no further material is added to this record."
+   "description": "Leftover closed out \u2014 no further material is added to this record."
   },
   {
    "fieldname": "close_mode",

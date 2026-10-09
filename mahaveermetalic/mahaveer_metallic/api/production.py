@@ -92,15 +92,35 @@ def program_produced_weight(program_names) -> dict:
 	"""
 	if not program_names:
 		return {}
+	names = tuple(program_names)
+	# A PILE IS ONE VOUCHER ACROSS SEVERAL RUNS, so the voucher's own net says nothing
+	# about how much came off each of them \u2014 the allocation table does. Where a voucher
+	# carries one, it is the truth and `source_program` is only the first of its rows.
 	rows = frappe.db.sql(
-		"""select source_program, coalesce(sum(net_weight), 0) as w
-		from `tabMM Production`
-		where docstatus = 1 and source_program in %(names)s
-		group by source_program""",
-		{"names": tuple(program_names)},
+		"""select pp.program as program, coalesce(sum(pp.net_weight), 0) as w
+		from `tabMM Production Program` pp
+		join `tabMM Production` p on p.name = pp.parent
+		where p.docstatus = 1 and pp.program in %(names)s
+		group by pp.program""",
+		{"names": names},
 		as_dict=True,
 	)
-	return {r.source_program: round(float(r.w or 0), 3) for r in rows}
+	out = {r.program: round(float(r.w or 0), 3) for r in rows}
+	# Every voucher written before the table existed, and every single-run voucher that
+	# carries no allocation: its whole net belongs to its one program.
+	for r in frappe.db.sql(
+		"""select p.source_program as program, coalesce(sum(p.net_weight), 0) as w
+		from `tabMM Production` p
+		where p.docstatus = 1 and p.source_program in %(names)s
+			and not exists (
+				select 1 from `tabMM Production Program` x where x.parent = p.name
+			)
+		group by p.source_program""",
+		{"names": names},
+		as_dict=True,
+	):
+		out[r.program] = round(out.get(r.program, 0.0) + float(r.w or 0), 3)
+	return out
 
 
 def program_lots(program_names):
@@ -735,7 +755,7 @@ def create_production_for_pile(source_programs, boxes=None, **kwargs):
 		room[name] = round(room[name] - net, 3)
 
 	# ONLY WHAT create_production DECLARES. Frappe's get_newargs filters a call's arguments
-	# to the signature — unless the signature has **kwargs, and then it hands over the whole
+	# to the signature \u2014 unless the signature has **kwargs, and then it hands over the whole
 	# form_dict instead, `cmd` and all. Forwarding that verbatim failed every pile with
 	# "create_production() got an unexpected keyword argument 'cmd'"; single-program
 	# productions never saw it, because they are the ones Frappe filters.
@@ -744,44 +764,39 @@ def create_production_for_pile(source_programs, boxes=None, **kwargs):
 	# carries would land us straight back here.
 	allowed = set(inspect.signature(create_production).parameters)
 	passed = {k: v for k, v in kwargs.items() if k in allowed}
+	passed.pop("program_split", None)
 
-	# A TYPED NUMBER NAMES ONE PAPER \u2014 so give it to one, and number the rest.
+	# ONE VOUCHER, ONE CHALLAN (Hetvi: "this is supposed to be considered as one prg and one
+	# challan only"). These boxes are one colour, one lot, and they left the floor together,
+	# so they are one dispatch and one paper. The runs underneath are recorded as the
+	# allocation, not as separate vouchers: writing one production per run gave a single
+	# submit three productions and three challan numbers, and the customer three papers for
+	# one set of goods.
 	#
-	# These two used to be withheld from a pile entirely, on the reasoning that one number
-	# cannot name several vouchers. True, but the consequence was worse: EVERY pile fell
-	# through to the raw naming series, so a submit the operator had picked 230 for came out
-	# as MMUSC-2026-00016, -00017 and -00018, with box stickers reading MMPROD-00153.1
-	# instead of the challan ID. A pile usually boxes onto ONE run anyway, and then the
-	# typed number is simply its own.
-	#
-	# Split across runs, the first paper takes what was typed and each one after it takes
-	# the next number the book has free \u2014 read after the previous insert, so two papers in
-	# one submit cannot land on the same number.
-	from mahaveermetalic.mahaveer_metallic.api.challan import _series_key, next_challan_id
-
-	typed_challan = (passed.pop("challan_id", None) or "").strip() or None
-	typed_voucher = (passed.pop("voucher_no", None) or "").strip() or None
-	series_key = _series_key(passed.get("challan_series"), "Sales")
-	on = passed.get("posting_date")
-
-	out = []
-	for i, (name, rows) in enumerate(share.items()):
-		if not typed_challan:
-			cid = None
-		elif i == 0:
-			cid = typed_challan
-		else:
-			cid = next_challan_id(series_key, on)
-		res = create_production(
-			source_program=name,
-			boxes=json.dumps(rows),
-			challan_id=cid,
-			# The voucher's own number is the same story: one typed value, one voucher.
-			voucher_no=typed_voucher if i == 0 else None,
-			**passed,
-		)
-		out.append({"program": name, "boxes": len(rows), "challan_id": cid, "result": res})
-	return {"productions": out, "programs": len(out), "boxes": len(boxes)}
+	# The voucher is filed under the run that took the first box; the rest ride in the
+	# table, and every weight the floor is judged on is read from there.
+	rows_split = [
+		{
+			"program": name,
+			"box_qty": len(rows),
+			"net_weight": round(sum(_box_net(b) for b in rows), 3),
+		}
+		for name, rows in share.items()
+	]
+	res = create_production(
+		source_program=rows_split[0]["program"],
+		boxes=json.dumps(boxes),
+		program_split=json.dumps(rows_split),
+		**passed,
+	)
+	return {
+		"productions": [{"program": r["program"], "boxes": r["box_qty"], "result": res}
+			for r in rows_split],
+		"production": res.get("production"),
+		"programs": len(rows_split),
+		"boxes": len(boxes),
+		"split": rows_split,
+	}
 
 
 @frappe.whitelist()
@@ -809,6 +824,7 @@ def create_production(
 	challan_series=None,
 	challan_id=None,
 	to_inventory=0,
+	program_split=None,
 ):
 	"""Submit handler: wind a program's threads into a completed MM Production voucher.
 
@@ -885,9 +901,53 @@ def create_production(
 			)
 		)
 
+	# A PILE IS ONE VOUCHER. `program_split` says how this voucher's boxes divide across the
+	# runs of one colour and lot. The paperwork is ONE production and ONE challan, because
+	# one set of boxes physically left the floor \u2014 while the weight still comes off each run
+	# it was wound on. Boxing a pile used to write a voucher per run, so a single submit
+	# came out as three productions and three challan numbers for one dispatch.
+	split = json.loads(program_split) if isinstance(program_split, str) else (program_split or [])
+	split = [r for r in split if (r or {}).get("program")]
+	run_names = [r["program"] for r in split] or [prog.name]
+
+	def _run(name):
+		"""One run of the pile, with the fields the batch rules are read from."""
+		if name == prog.name:
+			return prog
+		row = frappe.db.get_value(
+			"MM Program", name,
+			["name", "docstatus", "status", "production", "roll_no", "machine_no",
+			 "total_batches", "completed_batches", "patti_qty", "net_weight",
+			 "completed_weight", "per_patty_weight", "creation"],
+			as_dict=True,
+		)
+		if not row:
+			frappe.throw(_("Program {0} not found.").format(name))
+		return row
+
+	# Every run on the voucher faces the checks the single run already faced \u2014 a pile is
+	# not a way around them.
+	for name in run_names:
+		if name == prog.name:
+			continue
+		other = _run(name)
+		if other.docstatus != 1 or other.status not in ("Running", "Partially Done", "Completed"):
+			frappe.throw(
+				_("Only a program that is In Threads Processing can be produced \u2014 {0} is not.")
+				.format(other.name)
+			)
+		if other.production:
+			frappe.throw(
+				_("Program {0} is finished \u2014 it was closed by {1}. Plan a new program to produce more.")
+				.format(other.name, other.production)
+			)
+
 	box_rows = _coerce_boxes(boxes)
 	bobbin_rows = _coerce_bobbins(bobbins)
-	input_weight = program_input_weight(prog)
+	# THE CEILING IS THE PILE'S when the voucher is a pile's. Measuring the whole voucher
+	# against one run's input would refuse a correct voucher the moment its boxes spilled
+	# past the first run.
+	input_weight = round(sum(program_input_weight(_run(n)) for n in run_names), 3)
 
 	# Compute the produced Net up front (matches the controller) so we can gate on variance
 	# and set pin_override before the doc validates.
@@ -917,17 +977,9 @@ def create_production(
 	# it is the RUNNING TOTAL that cannot exceed the program, not the single voucher:
 	# 200 then 1,150 against a 1,200 kg program is 1,350 kg out of 1,200 and is refused
 	# on the second voucher, even though 1,150 on its own would have looked fine.
-	already = round(
-		float(
-			frappe.db.sql(
-				"""select coalesce(sum(net_weight), 0) from `tabMM Production`
-				where source_program = %s and docstatus = 1""",
-				(prog.name,),
-			)[0][0]
-			or 0
-		),
-		3,
-	)
+	# Across every run this voucher touches, and read through the allocation table so a
+	# pile boxed earlier counts against the runs it actually came off.
+	already = round(sum(program_produced_weight(run_names).values()), 3)
 	total_after = round(already + net, 3)
 	# The kg floor keeps a rounding crumb on the last box of a long program from being
 	# read as material appearing out of nowhere.
@@ -956,6 +1008,18 @@ def create_production(
 			"party": party or (frappe.db.get_value("MM Sales Order", customer_order, "party") if customer_order else None),
 			"company_name": company_name or None,
 			"source_program": prog.name,
+			# The run-by-run breakdown. One row for a single program, several for a pile;
+			# this is what every "how much is left to box" figure is read from.
+			"programs": [
+				{
+					"program": r["program"],
+					"roll_no": _run(r["program"]).get("roll_no"),
+					"machine_no": _run(r["program"]).get("machine_no"),
+					"box_qty": frappe.utils.flt(r.get("box_qty")),
+					"net_weight": frappe.utils.flt(r.get("net_weight")),
+				}
+				for r in split
+			],
 			# The program's lot when it has one, otherwise the one its patty came off —
 			# the same answer the screen showed, so the production is stamped with the lot
 			# the operator was looking at.
