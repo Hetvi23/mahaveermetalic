@@ -505,6 +505,17 @@ def _challan_id(value, series_key, on=None):
 # start from 3"), so its count begins at 3; every other book begins at 1.
 CHALLAN_ID_START = {"Sales": 3}
 
+# AN OLDER RUN SITS IN THE SAME BOOK. The sales challans carry two separate runs of
+# numbers: the one the shop writes in now, up in the low hundreds, and a legacy run of
+# 1997–2129 from before. Counting max+1 over both offered 2130 while the floor was on 229
+# — so the suggested number was always wrong, always cleared or overtyped, and a cleared
+# box is exactly how a challan ends up with no ID and falls to the raw naming series
+# (MMUSC-2026-00013). Numbers from here up are the old book and do not drive the count.
+#
+# The current run is at 230; it would have to write 1,670 more challans before this
+# mattered, and a number in the old range can still be typed by hand if one is needed.
+CHALLAN_ID_LEGACY_FROM = {"Sales": 1900}
+
 
 @frappe.whitelist()
 def next_challan_id(series=None, on=None):
@@ -520,14 +531,19 @@ def next_challan_id(series=None, on=None):
 	key = _series_key(series, "Sales")
 	code = SERIES[key].split("-")[0]
 	fy = financial_year(frappe.utils.getdate(on or frappe.utils.today())).replace("-", "/")
+	legacy_from = CHALLAN_ID_LEGACY_FROM.get(key)
 	highest = 0
 	for (name,) in frappe.db.sql(
 		"""select name from `tabMM Sales Challan` where name like %s""",
 		(f"{code}-%-{fy}",),
 	):
 		middle = name[len(code) + 1 : -len(fy) - 1]
-		if middle.isdigit():
-			highest = max(highest, int(middle))
+		if not middle.isdigit():
+			continue
+		n = int(middle)
+		if legacy_from and n >= legacy_from:
+			continue
+		highest = max(highest, n)
 	return str(max(highest + 1, CHALLAN_ID_START.get(key, 1)))
 
 
