@@ -745,10 +745,42 @@ def create_production_for_pile(source_programs, boxes=None, **kwargs):
 	allowed = set(inspect.signature(create_production).parameters)
 	passed = {k: v for k, v in kwargs.items() if k in allowed}
 
+	# A TYPED NUMBER NAMES ONE PAPER \u2014 so give it to one, and number the rest.
+	#
+	# These two used to be withheld from a pile entirely, on the reasoning that one number
+	# cannot name several vouchers. True, but the consequence was worse: EVERY pile fell
+	# through to the raw naming series, so a submit the operator had picked 230 for came out
+	# as MMUSC-2026-00016, -00017 and -00018, with box stickers reading MMPROD-00153.1
+	# instead of the challan ID. A pile usually boxes onto ONE run anyway, and then the
+	# typed number is simply its own.
+	#
+	# Split across runs, the first paper takes what was typed and each one after it takes
+	# the next number the book has free \u2014 read after the previous insert, so two papers in
+	# one submit cannot land on the same number.
+	from mahaveermetalic.mahaveer_metallic.api.challan import _series_key, next_challan_id
+
+	typed_challan = (passed.pop("challan_id", None) or "").strip() or None
+	typed_voucher = (passed.pop("voucher_no", None) or "").strip() or None
+	series_key = _series_key(passed.get("challan_series"), "Sales")
+	on = passed.get("posting_date")
+
 	out = []
-	for name, rows in share.items():
-		res = create_production(source_program=name, boxes=json.dumps(rows), **passed)
-		out.append({"program": name, "boxes": len(rows), "result": res})
+	for i, (name, rows) in enumerate(share.items()):
+		if not typed_challan:
+			cid = None
+		elif i == 0:
+			cid = typed_challan
+		else:
+			cid = next_challan_id(series_key, on)
+		res = create_production(
+			source_program=name,
+			boxes=json.dumps(rows),
+			challan_id=cid,
+			# The voucher's own number is the same story: one typed value, one voucher.
+			voucher_no=typed_voucher if i == 0 else None,
+			**passed,
+		)
+		out.append({"program": name, "boxes": len(rows), "challan_id": cid, "result": res})
 	return {"productions": out, "programs": len(out), "boxes": len(boxes)}
 
 

@@ -622,9 +622,11 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 box_return: b.boxReturn ? 1 : 0, bobbin_return: b.bobbinReturn ? 1 : 0,
               })),
             ),
-            // Everything the single-program call sends, bar the two IDs: a pile may write
-            // more than one voucher, and one typed number cannot name them all. They fall
-            // to their series, as a blank number always has.
+            // Everything the single-program call sends, the two IDs included. A pile
+            // usually boxes onto ONE run, so the typed number is simply its own; when the
+            // boxes genuinely span runs the server gives the first paper this number and
+            // takes the next ones in the book for the rest. Withholding them dropped every
+            // pile onto the raw naming series \u2014 MMUSC-2026-00016/17/18 for one submit.
             operator: operator || undefined,
             delivery_by: deliveryBy || undefined,
             shift,
@@ -638,6 +640,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             bobbin_return: bobbinReturn ? 1 : 0,
             job_work: jobWork ? 1 : 0,
             pin: pin || undefined,
+            voucher_no: vNo.trim() || undefined,
+            challan_series: challanSeries,
+            challan_id: (challanActive && challanId.trim()) || undefined,
             to_inventory: toStock ? 1 : 0,
           })
         : await create({
