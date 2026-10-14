@@ -69,10 +69,22 @@ def rate_for(rates: dict, order, colour, cut) -> float:
 
 class MMSalesChallan(Document):
 	def autoname(self):
-		# A challan ID typed by hand (checked in api.challan._manual_id). Left unset, the
-		# naming series names it as before.
+		# A challan ID typed by hand (checked in api.challan._manual_id).
 		if self.flags.manual_id:
 			self.name = self.flags.manual_id
+			return
+		# A BLANK ID IN THE SALES BOOK IS THE BOOK'S NEXT LEAF, not the raw series. Every
+		# path that left the box empty — a pile, a cleared suggestion, the voucher keyed by
+		# hand — filed the paper as MMUSC-2026-000NN, a number the customer's copy never
+		# carries and the report sorts among the real ones (Hetvi: "the id is still not
+		# renamed"). Seven of them had to be renamed by hand on 2026-10-10, and an eighth
+		# was written that morning. Only the sales book: the job books are numbered by
+		# their series on purpose (a stock Job In has no challan number to give).
+		from mahaveermetalic.mahaveer_metallic.api.challan import SERIES, challan_id_name, next_challan_id
+
+		if (self.naming_series or SERIES.get(self.challan_type or "Sales")) == SERIES["Sales"]:
+			on = self.transaction_date or frappe.utils.today()
+			self.name = challan_id_name(next_challan_id("Sales", on), "Sales", on)
 
 	def _guard_order_cover(self):
 		"""A dispatch cannot send out more than its order has taken in.
