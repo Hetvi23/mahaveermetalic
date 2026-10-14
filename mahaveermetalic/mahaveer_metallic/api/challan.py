@@ -146,7 +146,7 @@ def create_challan_from_production(production, challan_series=None, challan_id=N
 
 
 @frappe.whitelist()
-def available_boxes(party=None, sales_order=None, limit=200):
+def available_boxes(party=None, sales_order=None, limit=500):
 	"""SELECT BOX: produced boxes not yet on a challan."""
 	conds = ["p.docstatus = 1"]
 	vals = {}
@@ -163,6 +163,29 @@ def available_boxes(party=None, sales_order=None, limit=200):
 	elif party:
 		conds.append(f"(p.party = %(party)s or {STOCK})")
 		vals["party"] = party
+	# WHICH BOXES ARE ALREADY GONE — tested INSIDE the query, not after it.
+	#
+	# This used to fetch `limit` boxes and then drop the used ones in Python, so the limit
+	# was spent on boxes that were never going to be offered. With 3,265 boxes on the site
+	# and most of them dispatched, asking for 200 returned TWO: the 19 boxes of
+	# MMPROD-00125 sat 1,321 rows deep and were never fetched at all, so a production the
+	# floor had just stocked was invisible in Select Box however hard anyone looked.
+	# Filtering in SQL means `limit` counts boxes that can actually be picked.
+	#
+	# Dropped BY BOX, not by production: excluding the whole production hid every remaining
+	# box the moment one of its boxes shipped.
+	#
+	# A RECEIPT IS NOT A DISPATCH — BUT WHICH BOOK IT IS FILED IN SAYS WHICH IT IS.
+	#
+	# A Job In numbered in its own MMUJI- book is a pure receipt: the boxes arrived and are
+	# in stock, and counting it here made every box ever received back invisible to Select
+	# Box (Hetvi: "i did job in but box not coming here").
+	#
+	# A Job In numbered in a DISPATCH book is both at once. The receipt is filed as the
+	# customer's sales challan — it prints as one, and names the customer rather than the
+	# worker — so those boxes have gone out and offering them again would dispatch them
+	# twice (Hetvi: "see voucher is already created for this boxes", on MMUSC-207-26/27).
+	JOB_IN_BOOK = "(c.challan_type = 'Job In' and (c.naming_series = 'MMUJI-.YYYY.-' or c.name like 'MMUJI-%%'))"
 	rows = frappe.db.sql(
 		f"""
 		select b.name as box, b.barcode, p.name as production, p.posting_date, p.shade as item, p.cut,
@@ -186,55 +209,24 @@ def available_boxes(party=None, sales_order=None, limit=200):
 		from `tabMM Production Box` b
 		join `tabMM Production` p on p.name = b.parent
 		where {" and ".join(conds)}
+			and not exists (
+				select 1 from `tabMM Sales Challan Item` ci
+				join `tabMM Sales Challan` c on c.name = ci.parent
+				where c.docstatus < 2 and not {JOB_IN_BOOK}
+					and (
+						(ifnull(b.barcode, '') != '' and ci.barcode = b.barcode)
+						-- Boxes that predate barcoding can only be matched by their production.
+						or (ifnull(b.barcode, '') = '' and ifnull(ci.barcode, '') = ''
+							and ci.production = p.name)
+					)
+			)
 		order by p.posting_date desc, b.idx asc
 		limit {int(limit)}
 		""",
 		vals,
 		as_dict=True,
 	)
-	# Drop boxes already on a challan — BY BOX, not by production. Excluding the whole
-	# production hid every remaining box the moment one of its boxes shipped, and since a
-	# production with an order raises its own challan immediately, the list came back empty
-	# every time ("Select box not working").
-	#
-	# A RECEIPT IS NOT A DISPATCH — BUT WHICH BOOK IT IS FILED IN SAYS WHICH IT IS.
-	#
-	# A Job In numbered in its own MMUJI- book is a pure receipt: the boxes arrived and are
-	# in stock, and counting it here made every box ever received back invisible to Select
-	# Box (Hetvi: "i did job in but box not coming here").
-	#
-	# A Job In numbered in a DISPATCH book is both at once. The receipt is filed as the
-	# customer's sales challan — it prints as one, and names the customer rather than the
-	# worker — so those boxes have gone out and offering them again would dispatch them
-	# twice (Hetvi: "see voucher is already created for this boxes", on MMUSC-207-26/27).
-	#
-	# On mm that is 188 boxes still available against 680 already sent.
-	JOB_IN_BOOK = "(c.challan_type = 'Job In' and (c.naming_series = 'MMUJI-.YYYY.-' or c.name like 'MMUJI-%%'))"
-	used_barcodes = set(
-		frappe.db.sql_list(
-			"""select distinct ci.barcode from `tabMM Sales Challan Item` ci
-			join `tabMM Sales Challan` c on c.name = ci.parent
-			where c.docstatus < 2 and not {JOB_IN_BOOK}
-				and ifnull(ci.barcode, '') != ''""".format(JOB_IN_BOOK=JOB_IN_BOOK)
-		)
-	)
-	# Boxes that predate barcoding can only be matched by their production.
-	used_productions = set(
-		frappe.db.sql_list(
-			"""select distinct ci.production from `tabMM Sales Challan Item` ci
-			join `tabMM Sales Challan` c on c.name = ci.parent
-			where c.docstatus < 2 and not {JOB_IN_BOOK}
-				and ifnull(ci.production, '') != '' and ifnull(ci.barcode, '') = ''""".format(JOB_IN_BOOK=JOB_IN_BOOK)
-		)
-	)
-	out = []
-	for r in rows:
-		if r.get("barcode") and r["barcode"] in used_barcodes:
-			continue
-		if not r.get("barcode") and r.production in used_productions:
-			continue
-		out.append(r)
-	return out
+	return rows
 
 
 @frappe.whitelist()
