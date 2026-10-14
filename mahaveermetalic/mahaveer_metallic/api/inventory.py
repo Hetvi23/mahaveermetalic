@@ -110,6 +110,18 @@ def reserved_roll_names(exclude_program=None) -> set:
 
 
 @frappe.whitelist()
+def is_finished_pile(row) -> bool:
+	"""True when this inventory row is PRODUCTION OUTPUT, not raw material to be wound.
+
+	Finished boxes are held in a row named after their COLOUR rather than a roll number —
+	that naming is what lets the next production of the same lot find the same pile
+	(MMProduction._add_to_inventory). Raw rolls carry the roll number the inward gave them,
+	"1077/2" and the like. So the name is the distinction, and this is the one place that
+	says so.
+	"""
+	return (row.get("roll_no") or "").strip() == (row.get("color_name") or "").strip()
+
+
 def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=200, for_program=None):
 	"""Inventory rolls of a given colour that still have stock AND are not already spoken
 	for — the Program screen's 'search a roll from inventory' picker.
@@ -134,7 +146,17 @@ def rolls_by_colour(color=None, branch=None, location=None, search=None, limit=2
 	if not rows:
 		return rows
 	reserved = reserved_roll_names(exclude_program=for_program)
-	return [r for r in rows if r.get("name") not in reserved]
+	# FINISHED GOODS ARE NOT SOMETHING TO CUT. This returned every row of the colour that
+	# held stock, and the finished pile looks exactly like a roll to it \u2014 so the Add-program
+	# picker offered boxes that were already wound, packed and sitting on the shelf as raw
+	# material. Picking one and finishing the program issued the pile's whole balance:
+	# 16 programs did it, 5,279.715 kg of finished output consumed as input, and the boxes
+	# it swallowed could no longer be dispatched because their pile read zero
+	# (AN ANMOL BS LT1/26-27, cutting 72l5mq9j7p, 19 real boxes on the shelf).
+	#
+	# Only this picker is narrowed. Inventory, the ledger and the dispatch pickers go on
+	# reporting the pile, because the stock is genuinely there \u2014 it just is not input.
+	return [r for r in rows if r.get("name") not in reserved and not is_finished_pile(r)]
 
 
 @frappe.whitelist()
