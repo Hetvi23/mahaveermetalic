@@ -253,18 +253,16 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	if not party:
 		frappe.throw(_("Choose the customer."))
 
-	# A SALE IS AGAINST AN ORDER. Rolls were going out on Sales challans with no order on
-	# them at all: nothing was billed against, the order's dispatch cover was never
-	# touched, and the material simply left. The other types are deliberately free of this
-	# — a plain Challan or Delivery Challan is how stock moves without a sale behind it,
-	# and that is what they are for.
-	if (challan_type or "Sales") == "Sales" and not sales_order:
-		frappe.throw(
-			_(
-				"Pick the order this is being sent against. To move stock with no sale behind "
-				"it, raise a Delivery Challan instead."
-			)
-		)
+	# THE ORDER CAN COME LATER. A Sales challan used to be refused without one, because a
+	# dispatch that answers to nothing is never billed and never touches an order's cover.
+	# But the floor often does not know which order a box fills until after the paper has
+	# gone — which is why the goods sat unshipped instead — and the challan can now be
+	# pointed at its order afterwards, on the correction screen, with every figure the
+	# order is judged on moving with it (api.challan.map_challan_order).
+	#
+	# So the order is optional here and answerable later, rather than a gate at the moment
+	# the operator knows least. A challan still standing with no order is visible as a blank
+	# Order on the Sales Challan Report, which is where it gets picked up.
 
 	# The order fixes what may go on the challan: dispatching a colour the customer never
 	# ordered is a picking mistake, and it silently mis-bills them.
