@@ -2175,7 +2175,12 @@ a.mm-open-row:hover { background: var(--mm-hover-bg); }
 /* Picker rows inside a modal */
 .mm-pick-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; padding: 0.55rem 0.6rem; border: 1px solid var(--mm-border); border-radius: var(--mm-radius-sm); margin-bottom: 0.4rem; cursor: pointer; }
 .mm-pick-row:hover { background: var(--mm-hover-bg); border-color: var(--mm-accent-soft); }
-.mm-pick-row-active { border-color: var(--mm-text); background: var(--mm-primary-soft); }
+/* SELECTED, NOT INVERTED. This filled the row with --mm-primary-soft, which is a dark
+   navy in BOTH themes (#343c47 light, #2c333d dark) while the text stayed the theme's own
+   — so in light mode the picked patty was dark text on a dark bar and could not be read at
+   all. The accent pair flips with the theme, and is what the other picker's selected row
+   (.mm-map-row-active) already uses. */
+.mm-pick-row-active { border-color: var(--mm-accent); background: var(--mm-accent-bg); }
 /* The roll number sits against the colour with no text between them. */
 .mm-pick-row .mm-colour-name + .mm-suggest-meta { margin-left: 0.4rem; }
 
