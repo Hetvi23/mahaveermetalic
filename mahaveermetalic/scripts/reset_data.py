@@ -72,6 +72,9 @@ TRANSACTIONAL = [
 	"MM Production",
 	"MM Production Box",
 	"MM Production Bobbin",
+	# How one voucher's boxes divided across the runs of a pile \u2014 a child of the voucher
+	# above, so it cannot outlive it.
+	"MM Production Program",
 	# Dispatch
 	"MM Sales Challan",
 	"MM Sales Challan Item",
@@ -88,6 +91,12 @@ TRANSACTIONAL = [
 	# Reminder history (the reminders THEMSELVES are config — see REMINDER_CONFIG).
 	"MM Task Reminder Log",
 	"MM Task Reminder Poll Link",
+	# Notifications already sent, each pointing at a document that is about to go. Left
+	# behind, the bell opens on a list of orders and challans that no longer exist.
+	"MM App Notification",
+	# A dated follow-up on a party or a sales order, keyed during the day's work and
+	# meaningless once the order it chases is gone.
+	"MM Follow Up",
 ]
 
 # ── What survives ────────────────────────────────────────────────────────────────────
@@ -106,6 +115,11 @@ MASTER_TABLES = [
 	"MM Location Master",
 	"MM Bobbin Master",
 	"MM Cut Patty Config",
+	# A DEVICE, not a transaction. This is the browser's push registration \u2014 endpoint and
+	# keys \u2014 written by the device when someone allows notifications, not by anyone's work
+	# during a shift. Clearing the trial data must not silently stop every phone receiving
+	# pushes until each user thinks to subscribe again.
+	"MM Push Subscription",
 ]
 
 # Configuration, not data, and kept apart from the masters for one reason: MM Veermetlon
