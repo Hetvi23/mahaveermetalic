@@ -866,14 +866,24 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
    */
   const pattyOnShelf = useMemo(() => {
     if (!sel || sel.kind !== "inventory") return null;
-    const same = sources.filter(
-      (s) => s.kind === "cutting" && s.colour === sel.colour && s.batches > 0 && (!machineCut || s.cut === machineCut),
+    const ofColour = sources.filter(
+      (s) => s.kind === "cutting" && s.colour === sel.colour && s.batches > 0,
     );
-    if (same.length === 0) return null;
+    if (ofColour.length === 0) return null;
+    // Patty this machine could actually run, first. Failing that, patty of the colour cut
+    // to something else: it cannot go on THIS machine, but the operator is about to cut a
+    // fresh roll of a colour that is already sitting cut on the shelf, and that is worth
+    // knowing. It was silent in exactly that case before — the cut filter removed such
+    // patty from the list AND from this question, so the one situation where the patty is
+    // invisible was the one nobody was told about.
+    const runnable = ofColour.filter((s) => !machineCut || s.cut === machineCut);
+    const use = runnable.length ? runnable : ofColour;
     return {
-      source: same[0],
-      batches: same.reduce((n, x) => n + x.batches, 0),
-      cut: same[0].cut,
+      source: use[0],
+      batches: use.reduce((n, x) => n + x.batches, 0),
+      cut: use[0].cut,
+      // False when the patty is cut to a size this machine does not run.
+      sameCut: runnable.length > 0,
     };
   }, [sel, sources, machineCut]);
 
@@ -1131,9 +1141,9 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
                     {" · "}
                     {/* "none" is a fact about a list that has arrived. While the call is in
                         flight the honest word is that we are still looking. */}
-                    {orderOpts.isLoading
-                      ? "checking orders…"
-                      : `${orders.length || "none"} for ${colour}${pattyCut ? ` at cut ${pattyCut}` : ""}`}
+                    {/* The colour and cut are on the selected row already; here the only
+                        news is how many orders match. */}
+                    {orderOpts.isLoading ? "checking\u2026" : `${orders.length || "none"} match`}
                   </span>
                 ) : null}
               </span>
@@ -1158,14 +1168,18 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
               <input type="checkbox" checked={jobWork} onChange={(e) => setJobWork(e.target.checked)} /> <span className="mm-field-label">Is Job Work?</span>
             </label>
           </div>
+          {/* ONLY WHAT THE ROW ABOVE DOES NOT ALREADY SAY. This repeated the whole
+              selection \u2014 colour, form, cut, lot, patty count, weight each and weight total,
+              all of it already on the highlighted row two inches up \u2014 and then trailed off
+              mid-sentence. What is left is the one thing the row cannot show: which orders
+              this choice can still answer. */}
           {sel && bestRow && (
             <p className="mm-muted" style={{ marginTop: "0.5rem", fontSize: "0.78rem" }}>
-              Programming <strong>{sel.colour}</strong> · {formLabel(sel)}
               {sel.kind === "inventory"
-                ? " — still to be cut, so any order wanting this colour can take it"
+                ? "Still to be cut \u2014 any order for this colour can take it."
                 : sel.cut
-                  ? ` — already cut, so only orders wanting ${sel.colour} at ${sel.cut}`
-                  : ""}
+                  ? `Already cut at ${sel.cut} \u2014 only orders for this colour at that cut can take it.`
+                  : "Already cut."}
             </p>
           )}
           {/* Standing note the moment a roll is picked over available patty — the question
@@ -1173,7 +1187,8 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
           {sel?.kind === "inventory" && pattyOnShelf && !askPatty && (
             <p className="mm-prog-pattynote">
               {pattyOnShelf.batches} patty of {sel.colour}
-              {pattyOnShelf.cut ? ` at cut ${pattyOnShelf.cut}` : ""} is already cut and free.
+              {pattyOnShelf.cut ? ` at cut ${pattyOnShelf.cut}` : ""} is already cut and free
+              {pattyOnShelf.sameCut ? "." : ` \u2014 this machine runs ${machineCut}, so it is not on the list.`}
             </p>
           )}
           {askPatty && sel && pattyOnShelf && (
@@ -1181,14 +1196,19 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
               <span>
                 <strong>{pattyOnShelf.batches} patty</strong> of {sel.colour}
                 {pattyOnShelf.cut ? ` at cut ${pattyOnShelf.cut}` : ""} is already cut and free.
-                Programming this roll cuts more and leaves that patty on the shelf. Proceed?
+                {pattyOnShelf.sameCut
+                  ? " Programming this roll cuts more and leaves that patty on the shelf. Proceed?"
+                  : ` This machine runs ${machineCut}, so that patty cannot go on it \u2014 programming`
+                    + " this roll cuts a fresh one. Move it to a machine on that cut, or proceed?"}
               </span>
               <span className="mm-prog-pattyask-acts">
-                <button type="button" className="mm-mini mm-mini-ok"
-                  title="Program the patty that is already cut instead of cutting this roll"
-                  onClick={() => { setSel(pattyOnShelf.source); setOrder(""); setAskPatty(false); }}>
-                  Use the patty
-                </button>
+                {pattyOnShelf.sameCut && (
+                  <button type="button" className="mm-mini mm-mini-ok"
+                    title="Program the patty that is already cut instead of cutting this roll"
+                    onClick={() => { setSel(pattyOnShelf.source); setOrder(""); setAskPatty(false); }}>
+                    Use the patty
+                  </button>
+                )}
                 <button type="button" className="mm-mini" disabled={creating || creatingU}
                   onClick={() => void submit(true)}>
                   Program the roll anyway
