@@ -249,7 +249,7 @@ def _locked(inward):
 
 
 @frappe.whitelist()
-def rolls(search=None, inward=None, unmapped_only=0, color=None, order=None, limit=200):
+def rolls(search=None, inward=None, unmapped_only=0, color=None, order=None, colours=None, limit=200):
 	"""Rolls in stock, with where each one is currently credited.
 
 	Only rolls still HOLDING something are offered: a row emptied by cutting is a
@@ -268,6 +268,16 @@ def rolls(search=None, inward=None, unmapped_only=0, color=None, order=None, lim
 		# Free stock: answering for no order yet. The receipt mapping is a separate
 		# question and deliberately does not hide a roll from this one.
 		conds.append("ifnull(r.mapped_order, '') = ''")
+	# THE ORDER DECIDES WHICH COLOURS ARE EVEN CANDIDATES. An order is placed for named
+	# colours, so crediting a roll of anything else to it is a picking mistake \u2014 and on a
+	# shelf of 191 rolls it is one nobody would catch. Narrowed to the order's own colours
+	# the moment one is selected, which also makes the list short enough to read.
+	picked = frappe.parse_json(colours) if isinstance(colours, str) else (colours or [])
+	picked = [c for c in picked if c]
+	if picked:
+		conds.append("r.color_name in %(colours)s")
+		vals["colours"] = tuple(picked)
+
 	# ONE COLOUR AT A TIME. Typing it into the search box matches it as a substring, so
 	# "AN ANMOL BS" also drags in every other colour whose name contains it; mapping is
 	# decided a colour at a time and the filter has to mean exactly that one.
@@ -295,7 +305,7 @@ def rolls(search=None, inward=None, unmapped_only=0, color=None, order=None, lim
 
 
 @frappe.whitelist()
-def roll_colours(unmapped_only=0, inward=None, order=None):
+def roll_colours(unmapped_only=0, inward=None, order=None, colours=None):
 	"""The colours actually present in the roll pool, with how many rolls and how much.
 
 	Built from the same pool the list is drawn from rather than from the colour master, so
@@ -312,6 +322,11 @@ def roll_colours(unmapped_only=0, inward=None, order=None):
 		vals["inward"] = inward.strip()
 	elif frappe.utils.cint(unmapped_only):
 		conds.append("ifnull(r.mapped_order, '') = ''")
+	picked = frappe.parse_json(colours) if isinstance(colours, str) else (colours or [])
+	picked = [c for c in picked if c]
+	if picked:
+		conds.append("r.color_name in %(colours)s")
+		vals["colours"] = tuple(picked)
 	return frappe.db.sql(
 		f"""
 		select r.color_name as color, count(*) as rolls,

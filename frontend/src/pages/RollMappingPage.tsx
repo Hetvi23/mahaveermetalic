@@ -59,15 +59,30 @@ export default function RollMappingPage() {
   const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
     fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
   });
+  /* The colours the selected order is actually placed for. Crediting a roll of any other
+     colour to it is a picking mistake, so the shelf is narrowed to these the moment an
+     order is chosen \u2014 on 191 rolls that is also the difference between a readable list
+     and a scroll. "On this order" is NOT narrowed: whatever is already credited must stay
+     visible, including anything credited in error, or it could never be taken back off.
+
+     Read off the fetched list rather than `current`, which is derived further down \u2014 the
+     calls below need this and would otherwise use it before it exists. */
+  const orderColours = useMemo(() => {
+    if (view === "mine") return [] as string[];
+    const o = (ordersCall.data?.message ?? []).find((x) => x.name === sel);
+    return (o?.colours || "").split(",").map((c) => c.trim()).filter(Boolean);
+  }, [ordersCall.data?.message, sel, view]);
+
   const rollsCall = useFrappeGetCall<{ message: Roll[] }>(
     `${API}.rolls`,
     {
       search: rq || undefined,
       color: colour || undefined,
+      colours: orderColours.length ? JSON.stringify(orderColours) : undefined,
       order: view === "mine" ? sel || "__none__" : undefined,
       unmapped_only: view === "free" ? 1 : 0,
     },
-    `map-rolls-${rq}-${colour}-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
+    `map-rolls-${rq}-${colour}-${view}-${view === "mine" ? sel : ""}-${orderColours.join("|")}`, { keepPreviousData: true },
   );
   /* The colours in the pool being shown, not every colour on file: the list narrows with
      the Free / Mine / All view so it can never offer one that would come back empty. */
@@ -76,8 +91,10 @@ export default function RollMappingPage() {
     {
       order: view === "mine" ? sel || "__none__" : undefined,
       unmapped_only: view === "free" ? 1 : 0,
+      colours: orderColours.length ? JSON.stringify(orderColours) : undefined,
     },
-    `map-colours-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
+    `map-colours-${view}-${view === "mine" ? sel : ""}-${orderColours.join("|")}`,
+    { keepPreviousData: true },
   );
   const colourOpts = useMemo(
     () => (coloursCall.data?.message ?? []).map((c) => ({
@@ -244,6 +261,7 @@ export default function RollMappingPage() {
           ) : rolls.length === 0 ? (
             <p className="mm-flow-empty-state">
               {view === "mine" ? "No roll is credited to this order yet."
+                : orderColours.length ? `No ${orderColours.join(" / ")} roll is free.`
                 : view === "free" ? "Every roll in stock is already credited to a receipt."
                   : "No roll matches."}
             </p>
