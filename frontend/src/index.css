@@ -3841,3 +3841,15 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .mm-ph-sum { font-size: 0.78rem; opacity: 0.78; }
 .mm-ph-dayrow .mm-ph-sum { color: rgba(255,255,255,0.85); }
 .mm-ph-machrow .mm-ph-sum { color: var(--mm-text-sec); }
+
+/* Roll Mapping: the search box and the colour filter sit on one line above the roll list. */
+.mm-map-filters { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.mm-map-filters .mm-search-box { flex: 1 1 220px; min-width: 180px; }
+.mm-map-colour { flex: 0 0 210px; min-width: 170px; }
+.mm-map-order { flex: 0 0 110px; min-width: 90px; }
+/* Backlog badge — amber, so it reads as "needs attention" beside the neutral states. */
+.mm-state-old {
+  background: var(--mm-accent-bg); color: var(--mm-accent-fg);
+  border: 1px solid rgba(221,134,19,0.28); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; font-size: 0.66rem;
+}

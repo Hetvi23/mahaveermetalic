@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
+import { useEffect, useMemo, useState } from "react";
+import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
+import SearchSelect from "@/components/SearchSelect";
 import { Link2, Link2Off, Lock, RefreshCw, Search } from "lucide-react";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -12,6 +13,10 @@ type Inward = {
   orders?: string[];
   expected_weight: number; mapped_weight: number; still_due: number;
   mapped_rolls: number; locked: boolean; sales_order?: string;
+  /** The ORDER's own date (earliest, when a receipt answers several), and whether that
+   *  puts it in the backlog. `old_basis` says which date the flag was read off, because
+   *  a receipt with no order behind it falls back to its own posting date. */
+  order_date?: string | null; is_old?: boolean; old_basis?: "order" | "receipt";
 };
 type Roll = {
   name: string; roll_no?: string; lot_number?: string; color_name?: string;
@@ -38,24 +43,61 @@ export default function RollMappingPage() {
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [iq, setIq] = useState("");
   const [rq, setRq] = useState("");
+  /* Mapping is decided a colour at a time — the floor works through one shade's rolls and
+     credits them, then the next. The search box matches colour as a SUBSTRING, so it
+     cannot say "only this one". */
+  const [colour, setColour] = useState("");
   /** Which rolls the right-hand list is showing: the ones nobody has claimed, the ones on
    *  the selected receipt, or everything in stock. */
   const [view, setView] = useState<"free" | "mine" | "all">("free");
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
+  const [party, setParty] = useState("");
+  const [orderId, setOrderId] = useState("");
   const inwardsCall = useFrappeGetCall<{ message: Inward[] }>(
-    `${API}.inwards`, { search: iq || undefined, only_open: onlyOpen ? 1 : 0 },
-    `map-inwards-${iq}-${onlyOpen}`, { keepPreviousData: true },
+    `${API}.inwards`,
+    {
+      search: iq || undefined, only_open: onlyOpen ? 1 : 0,
+      party: party || undefined, order: orderId.trim() || undefined,
+    },
+    `map-inwards-${iq}-${onlyOpen}-${party}-${orderId.trim()}`, { keepPreviousData: true },
   );
+  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
+    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
+  });
   const rollsCall = useFrappeGetCall<{ message: Roll[] }>(
     `${API}.rolls`,
     {
       search: rq || undefined,
+      color: colour || undefined,
       inward: view === "mine" ? sel || "__none__" : undefined,
       unmapped_only: view === "free" ? 1 : 0,
     },
-    `map-rolls-${rq}-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
+    `map-rolls-${rq}-${colour}-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
   );
+  /* The colours in the pool being shown, not every colour on file: the list narrows with
+     the Free / Mine / All view so it can never offer one that would come back empty. */
+  const coloursCall = useFrappeGetCall<{ message: { color: string; rolls: number; weight: number }[] }>(
+    `${API}.roll_colours`,
+    {
+      inward: view === "mine" ? sel || "__none__" : undefined,
+      unmapped_only: view === "free" ? 1 : 0,
+    },
+    `map-colours-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
+  );
+  const colourOpts = useMemo(
+    () => (coloursCall.data?.message ?? []).map((c) => ({
+      value: c.color,
+      label: c.color,
+      meta: `${c.rolls} roll${c.rolls === 1 ? "" : "s"} \u00b7 ${kg(c.weight)}`,
+    })),
+    [coloursCall.data?.message],
+  );
+  /* A colour picked under one view may not exist under the next — drop it rather than
+     silently filtering everything away. */
+  useEffect(() => {
+    if (colour && colourOpts.length && !colourOpts.some((o) => o.value === colour)) setColour("");
+  }, [colourOpts, colour]);
   const { call: assign, loading: assigning } = useFrappePostCall(`${API}.assign`);
   const { call: unassign, loading: unassigning } = useFrappePostCall(`${API}.unassign`);
 
@@ -112,10 +154,21 @@ export default function RollMappingPage() {
               <span className="mm-field-label">Open only</span>
             </label>
           </div>
-          <div className="mm-search-box">
-            <Search size={15} />
-            <input className="mm-input mm-input-compact" placeholder="Inward, challan, party or lot…"
-              value={iq} onChange={(e) => setIq(e.target.value)} />
+          <div className="mm-map-filters">
+            <div className="mm-search-box">
+              <Search size={15} />
+              <input className="mm-input mm-input-compact" placeholder="Inward, challan, party or lot…"
+                value={iq} onChange={(e) => setIq(e.target.value)} />
+            </div>
+            <SearchSelect value={party} onChange={setParty} placeholder="All parties"
+              className="mm-map-colour" menuMinWidth={260}
+              options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))} />
+            <input className="mm-input mm-input-compact mm-map-order" placeholder="Order id"
+              value={orderId} onChange={(e) => setOrderId(e.target.value)} />
+            {(iq || party || orderId) && (
+              <button type="button" className="mm-mini"
+                onClick={() => { setIq(""); setParty(""); setOrderId(""); }}>Clear</button>
+            )}
           </div>
           {inwardsCall.isLoading && !inwards.length ? (
             <p className="mm-muted">Loading…</p>
@@ -152,9 +205,22 @@ export default function RollMappingPage() {
                           <Lock size={11} /> closed
                         </span>
                       )}
+                      {/* Backlog, not this week's work. */}
+                      {i.is_old && (
+                        <span className="mm-state mm-state-old"
+                          title={i.old_basis === "order"
+                            ? `Order dated ${i.order_date} — on or before 15 Oct 2026`
+                            : `No order behind this receipt; its own date ${i.posting_date} is on or before 15 Oct 2026`}>
+                          old
+                        </span>
+                      )}
                     </div>
                     <div className="mm-map-row-meta">
-                      {i.posting_date} · {i.party || i.company_name || "no party"}
+                      {i.posting_date}
+                      {i.order_date && i.order_date !== i.posting_date
+                        ? <span title="Date of the order this receipt answers"> · ord {i.order_date}</span>
+                        : null}
+                      {" · "}{i.party || i.company_name || "no party"}
                       {i.lot_number ? ` · lot ${i.lot_number}` : ""}
                     </div>
                     <div className="mm-map-bar" aria-hidden><span style={{ width: `${pct}%` }} /></div>
@@ -187,10 +253,19 @@ export default function RollMappingPage() {
               ))}
             </div>
           </div>
-          <div className="mm-search-box">
-            <Search size={15} />
-            <input className="mm-input mm-input-compact" placeholder="Roll, lot, colour or supplier…"
-              value={rq} onChange={(e) => setRq(e.target.value)} />
+          <div className="mm-map-filters">
+            <div className="mm-search-box">
+              <Search size={15} />
+              <input className="mm-input mm-input-compact" placeholder="Roll, lot, colour or supplier…"
+                value={rq} onChange={(e) => setRq(e.target.value)} />
+            </div>
+            <SearchSelect value={colour} onChange={setColour} options={colourOpts}
+              placeholder="All colours" className="mm-map-colour" menuMinWidth={260}
+              emptyText="No colour in this pool." />
+            {(rq || colour) && (
+              <button type="button" className="mm-mini"
+                onClick={() => { setRq(""); setColour(""); }}>Clear</button>
+            )}
           </div>
 
           {!current && <p className="mm-muted">Pick a receipt on the left to map rolls to it.</p>}
