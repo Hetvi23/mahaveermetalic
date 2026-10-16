@@ -741,18 +741,49 @@ def create_production_for_pile(source_programs, boxes=None, **kwargs):
 			)
 		)
 
-	share, idx = {}, 0
+	# WEIGHT DIVIDES; BOXES DO NOT.
+	#
+	# A box is one physical thing with one barcode, so it is COUNTED against a single run.
+	# Its weight is not: a run is emptied kilo by kilo, and it has to be, or a run whose
+	# remainder is smaller than one box can never be finished at all. Placing whole boxes
+	# only, that remainder was counted in the pile the operator was shown and then could
+	# not be used \u2014 so a voucher that exactly filled the pile was refused, naming a ceiling
+	# belonging to runs the operator never chose.
+	#
+	# KBCH BSM LT1/26-27 on 2026-10-16 is the case: three runs with 2.935 + 26.643 + 51.481
+	# = 81.059 kg of room, the screen offered all of it, 81.051 kg was boxed, and it was
+	# refused by 2.927 kg because no 8.8 kg box fits in a 2.935 kg remainder.
+	#
+	# So each box's net is drawn from the runs in order, splitting across a boundary where
+	# it falls, and the box ITSELF is counted against whichever run took the most of it \u2014
+	# which keeps the box counts whole and summing to the voucher's own.
+	alloc = {n: {"box_qty": 0, "net_weight": 0.0} for n in source_programs}
+	idx = 0
 	for b in boxes:
-		net = _box_net(b)
-		# Walk to a run that can still take this box. The last one carries whatever is left
-		# over, which after the ceiling above can only ever be a rounding crumb — a real
-		# box is never stranded over arithmetic, and create_production's own per-run ceiling
-		# still has the last word.
-		while idx < len(source_programs) - 1 and room[source_programs[idx]] < net - tol:
-			idx += 1
-		name = source_programs[idx]
-		share.setdefault(name, []).append(b)
-		room[name] = round(room[name] - net, 3)
+		left = _box_net(b)
+		best_run, best_share = None, 0.0
+		while left > tol and idx < len(source_programs):
+			name = source_programs[idx]
+			take = min(left, max(room[name], 0.0))
+			if take <= 0:
+				idx += 1
+				continue
+			alloc[name]["net_weight"] = round(alloc[name]["net_weight"] + take, 3)
+			room[name] = round(room[name] - take, 3)
+			left = round(left - take, 3)
+			if take > best_share:
+				best_run, best_share = name, take
+			if room[name] <= tol:
+				idx += 1
+		# Past the last run's room. The pile ceiling above has already refused a real
+		# excess, so this is a rounding crumb; it lands on the last run rather than
+		# stranding a box that physically exists.
+		if left > tol:
+			name = source_programs[-1]
+			alloc[name]["net_weight"] = round(alloc[name]["net_weight"] + left, 3)
+			if left > best_share:
+				best_run = name
+		alloc[best_run or source_programs[-1]]["box_qty"] += 1
 
 	# ONLY WHAT create_production DECLARES. Frappe's get_newargs filters a call's arguments
 	# to the signature \u2014 unless the signature has **kwargs, and then it hands over the whole
@@ -775,13 +806,11 @@ def create_production_for_pile(source_programs, boxes=None, **kwargs):
 	#
 	# The voucher is filed under the run that took the first box; the rest ride in the
 	# table, and every weight the floor is judged on is read from there.
+	# In the order the queue listed them, and only the runs that actually took something.
 	rows_split = [
-		{
-			"program": name,
-			"box_qty": len(rows),
-			"net_weight": round(sum(_box_net(b) for b in rows), 3),
-		}
-		for name, rows in share.items()
+		{"program": n, "box_qty": alloc[n]["box_qty"], "net_weight": alloc[n]["net_weight"]}
+		for n in source_programs
+		if alloc[n]["net_weight"] > 0 or alloc[n]["box_qty"] > 0
 	]
 	res = create_production(
 		source_program=rows_split[0]["program"],
