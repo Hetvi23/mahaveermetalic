@@ -75,6 +75,11 @@ export default function SalesChallanVoucher() {
   const [lines, setLines] = useState<Line[]>([]);
   const [picker, setPicker] = useState<"box" | "roll" | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /* Over the order's inward cover. The PIN box only appears once the server has actually
+     refused for that reason, so the override is never the first thing anyone reaches for
+     — it is the answer to a specific refusal, offered where the refusal was read. */
+  const [overCover, setOverCover] = useState(false);
+  const [pin, setPin] = useState("");
 
   const { call: createChallan, loading } = useFrappePostCall(`${API}.create_challan`);
   const { call: scanBox } = useFrappePostCall<{ message: BoxRow & { barcode?: string } }>(`${API}.scan_box`);
@@ -185,13 +190,14 @@ export default function SalesChallanVoucher() {
     setPicker(null);
   }
 
-  async function submit() {
+  async function submit(withPin?: string) {
     setErr(null);
     if (!party) return setErr("Choose the customer.");
     if (lines.length === 0) return setErr("Add at least one box or roll.");
     try {
       const res = await createChallan({
         party, sales_order: order || undefined, challan_date: date, remark: remark || undefined,
+        pin: withPin || undefined,
         delivery_by: deliveryBy || undefined,
         challan_type: challanType,
         job_work: jobWork ? 1 : 0, challan_no: challanNo || undefined,
@@ -203,12 +209,16 @@ export default function SalesChallanVoucher() {
       const typeLabel = CHALLAN_TYPES.find((t) => t.value === challanType)?.label ?? challanType;
       toast(`${typeLabel} ${name || ""} created`);
       setLines([]); setChallanNo(""); setChallanId(""); setRemark("");
+      setOverCover(false); setPin("");
       if (name) {
         setLastChallan(name);
         await doPrint(name);
       }
     } catch (e) {
-      setErr(extractErrorMessage(e));
+      const m = extractErrorMessage(e);
+      setErr(m);
+      // Only this refusal can be overridden, and only an admin can do it.
+      setOverCover(/can still send out/i.test(m));
     }
   }
 
@@ -360,6 +370,22 @@ export default function SalesChallanVoucher() {
         </div>
 
         {err && <p className="mm-error" style={{ marginTop: "0.6rem" }}>{err}</p>}
+        {/* The order has less cover than this challan needs. Sending anyway is a decision,
+            not a slip, so it is taken deliberately with the Admin Override PIN and the
+            challan itself records that it went out over cover. */}
+        {overCover && (
+          <div className="mm-cover-override">
+            <span className="mm-muted">
+              Sending more than the order has taken in. Enter the Admin Override PIN to send it
+              anyway — the challan will say it went out over cover.
+            </span>
+            <input className="mm-input mm-input-compact" type="password" placeholder="Admin PIN"
+              value={pin} onChange={(e) => setPin(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && pin.trim()) void submit(pin.trim()); }} />
+            <button type="button" className="mm-mini mm-mini-ok" disabled={!pin.trim() || loading}
+              onClick={() => void submit(pin.trim())}>Send anyway</button>
+          </div>
+        )}
 
         <div className="mm-scv-foot">
           <span>Total Box: <strong>{totals.boxes}</strong></span>

@@ -103,6 +103,14 @@ class MMSalesChallan(Document):
 
 		if not is_dispatch(self.challan_type):
 			return
+		# AN ADMIN SAID SO. The cover is a real limit and it stays the default answer, but
+		# the floor sometimes has to get goods out against an order whose inward has not
+		# caught up \u2014 the material is there, the paperwork is behind. Gated by the same
+		# Admin Override PIN that lets a production past its variance, set by the API that
+		# took the PIN, so the bypass is a decision somebody made and not a rule that
+		# quietly stopped applying.
+		if self.flags.get("cover_override"):
+			return
 		order = self.sales_order or next((it.sales_order for it in self.items if it.sales_order), None)
 		if not order:
 			return

@@ -3853,3 +3853,14 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   border: 1px solid rgba(221,134,19,0.28); font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; font-size: 0.66rem;
 }
+
+/* Over-cover override on the Sales Challan Voucher: shown only after the server has
+   refused for that reason, so the PIN is an answer to a refusal, not a standing option. */
+.mm-cover-override {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-top: 0.55rem; padding: 0.6rem 0.8rem;
+  border: 1px solid var(--mm-danger-border); border-radius: var(--mm-radius-sm);
+  background: var(--mm-danger-bg);
+}
+.mm-cover-override .mm-muted { flex: 1; min-width: 240px; font-size: 0.82rem; }
+.mm-cover-override input { flex: 0 0 140px; }

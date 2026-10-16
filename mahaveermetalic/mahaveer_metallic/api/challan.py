@@ -232,7 +232,7 @@ def available_boxes(party=None, sales_order=None, limit=500):
 @frappe.whitelist()
 def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None,
-	challan_type="Sales", delivery_by=None, challan_id=None, **kwargs):
+	challan_type="Sales", delivery_by=None, challan_id=None, pin=None, **kwargs):
 	"""Build a challan by hand from picked produced boxes and/or inventory rolls.
 
 	`challan_type` is the paper being issued — Sales, Job Challan, Challan or Delivery
@@ -342,6 +342,19 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 		}
 	)
 	challan.flags.manual_id = _challan_id(challan_id, challan_type, challan.transaction_date)
+	# Over the order's inward cover, on purpose and on an admin's say-so. Checked here so a
+	# wrong PIN is refused before anything is created, and recorded in the remarks so the
+	# register says the challan went out over cover rather than leaving it to be noticed
+	# later as a negative balance.
+	if str(pin or "").strip():
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+			require_admin_pin,
+		)
+
+		require_admin_pin(pin, action=_("send more than the order has taken in"))
+		challan.flags.cover_override = True
+		note = _("Sent over order cover on Admin Override.")
+		challan.remarks = f"{challan.remarks}\n{note}" if challan.remarks else note
 	challan.insert(ignore_permissions=True)
 	# Submit it. A hand-built challan used to be left as a DRAFT, so nothing ran: stock
 	# never moved, the order was never marked dispatched (it sat on "Material In" even
