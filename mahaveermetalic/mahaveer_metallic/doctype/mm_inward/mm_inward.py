@@ -110,11 +110,44 @@ def assert_order_room(order, add_weight, add_box, *, exclude_inward=None, exclud
 
 
 class MMInward(Document):
+	def _ensure_roll_identity(self):
+		"""ONE ROW IS ONE ROLL, so one row must be one stock line.
+
+		Stock is held per roll and keyed by its number, so two rows of the same colour and
+		lot carrying the SAME number read as one physical roll and their weights are added
+		together. Two rolls of NEW G ANMOL BS LT1/26-27 at 298.6 and 299.1 became a single
+		line of 597.7 kg \u2014 a roll that does not exist on the floor, and one no program can
+		be planned against. On a receipt where every row had been numbered "ROLL", the whole
+		delivery collapsed to one line per colour and lot.
+
+		A number the operator repeated is a label, not an identity, so the rows it cannot
+		tell apart are numbered here: ROLL, ROLL-2, ROLL-3. The FIRST row keeps exactly what
+		was typed \u2014 including nothing \u2014 so a receipt whose numbers are already distinct is
+		untouched, which is every receipt on mm.
+
+		Within one receipt only. Two rows there are two rolls the operator entered
+		separately (Hetvi: "inward is done seperately \u2026 it should come roll wise"). Across
+		receipts the same number legitimately means the same roll \u2014 a part delivery landing
+		on a roll already in stock \u2014 so that is left alone.
+		"""
+		seen = {}
+		for row in self.items or []:
+			key = (
+				(row.color_name or ""),
+				(row.lot_number or self.lot_number or ""),
+				(row.roll_name or "").strip(),
+			)
+			seen[key] = seen.get(key, 0) + 1
+			if seen[key] > 1:
+				base = (row.roll_name or "").strip()
+				row.roll_name = f"{base}-{seen[key]}" if base else f"ROLL-{seen[key]}"
+
 	def validate(self):
 		self._set_branch_location_from_employee()
 		self._set_company()
 		if not self.items:
 			frappe.throw(_("Add at least one inward item."))
+		self._ensure_roll_identity()
 		# A GOODS RETURN is the same document read backwards: its rolls carry NEGATIVE weight,
 		# which is what takes them back out of stock and nets the quantity off the register.
 		# So the sign rules invert for it, and only for it.
