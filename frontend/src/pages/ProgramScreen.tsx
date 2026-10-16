@@ -1142,8 +1142,15 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
                     {/* "none" is a fact about a list that has arrived. While the call is in
                         flight the honest word is that we are still looking. */}
                     {/* The colour and cut are on the selected row already; here the only
-                        news is how many orders match. */}
-                    {orderOpts.isLoading ? "checking\u2026" : `${orders.length || "none"} match`}
+                        news is how many orders match \u2014 EXCEPT when the patty already carries
+                        one. Then the field reads "none match" beside a greyed order number
+                        that is precisely what the program will be filed under, which says
+                        two opposite things at once. The fallback wins the sentence. */}
+                    {orderOpts.isLoading
+                      ? "checking\u2026"
+                      : bestRow?.customer_order
+                        ? `using ${bestRow.customer_order} from the cutting${orders.length ? ` \u00b7 ${orders.length} other` : ""}`
+                        : `${orders.length || "none"} match`}
                   </span>
                 ) : null}
               </span>
