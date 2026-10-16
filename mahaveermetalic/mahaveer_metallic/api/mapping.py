@@ -449,7 +449,7 @@ def assign_to_order(order, rolls):
 	receipt mapping does: live stock falls as the roll is cut, and reading it live would
 	quietly walk the order's inwarded figure back down afterwards.
 	"""
-	names = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
+	names = frappe.parse_json(rolls) if isinstance(rolls, str) else (rolls or [])
 	names = [n for n in names if n]
 	if not names:
 		frappe.throw(_("Tick the rolls to credit to this order."))
@@ -492,7 +492,7 @@ def assign_to_order(order, rolls):
 @frappe.whitelist()
 def unassign_from_order(rolls):
 	"""Take rolls back off whatever order they were credited to."""
-	names = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
+	names = frappe.parse_json(rolls) if isinstance(rolls, str) else (rolls or [])
 	names = [n for n in names if n]
 	if not names:
 		frappe.throw(_("Tick the rolls to take off the order."))
