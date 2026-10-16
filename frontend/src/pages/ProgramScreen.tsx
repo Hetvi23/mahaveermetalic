@@ -790,14 +790,30 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
   // Pre-select what the shelf tile named — its colour AND its lot, so clicking "TEST
   // SILVER · LT13/26-27" lands on that lot and not on whichever form of the colour
   // happened to rank first. Falls back to the readiest form when no lot was passed.
+  //
+  // ONCE. It used to re-run whenever nothing was picked, so a patty the default machine
+  // cannot run (NEW G ANMOL BS at 50/303 against Machine 1 on 50/15) was picked here,
+  // dropped by the cut guard below, picked again — the dialog flickering between the two
+  // several times a second. The tile names no machine, so it now lands on one that runs
+  // the patty's cut; failing that, the colour goes in the search box, where the picker
+  // already says it is cut to something else and offers "Show all cuts".
+  const presetApplied = useRef(false);
   useEffect(() => {
-    if (presetColour && !sel) {
-      const s =
-        (presetLotId && sources.find((x) => x.colour === presetColour && x.lotId === presetLotId)) ||
-        sources.find((x) => x.colour === presetColour);
-      if (s) setSel(s);
+    if (presetApplied.current || !presetColour || sel) return;
+    const s =
+      (presetLotId && sources.find((x) => x.colour === presetColour && x.lotId === presetLotId)) ||
+      sources.find((x) => x.colour === presetColour);
+    if (!s) return; // sources not loaded yet
+    presetApplied.current = true;
+    const cutOf = (name: string) => (machines.find((m) => m.name === name)?.cut || "").trim();
+    let target = machine;
+    if (s.kind === "cutting" && s.cut && cutOf(target) && cutOf(target) !== s.cut && !presetMachine) {
+      target = machines.find((m) => !m.closed && (m.cut || "").trim() === s.cut)?.name ?? target;
+      setMachine(target);
     }
-  }, [presetColour, presetLotId, sources, sel]);
+    if (s.kind === "cutting" && cutOf(target) && cutOf(target) !== s.cut) setSearch(s.colour);
+    else setSel(s);
+  }, [presetColour, presetLotId, presetMachine, machines, machine, sources, sel]);
 
   const q = search.trim().toLowerCase();
   // Searchable by lot and challan too, matching the shelf's own filter.
