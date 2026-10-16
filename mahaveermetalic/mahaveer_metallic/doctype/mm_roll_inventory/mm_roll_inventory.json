@@ -20,6 +20,7 @@
   "available_weight",
   "reorder_weight",
   "section_mapping",
+  "mapped_order",
   "mapped_inward",
   "mapped_weight"
  ],
@@ -120,12 +121,20 @@
    "label": "Receipt Mapping"
   },
   {
+   "fieldname": "mapped_order",
+   "fieldtype": "Link",
+   "label": "Credited To Order",
+   "options": "MM Sales Order",
+   "read_only": 1,
+   "description": "The sales order this roll answers for, decided on the Roll Mapping page. Rolls arrive as plain stock when the inward names no order; this is where that is settled afterwards, and the order's Inwards (Kg) follows it."
+  },
+  {
    "fieldname": "mapped_inward",
    "fieldtype": "Link",
    "options": "MM Inward",
    "label": "Mapped to Inward",
    "read_only": 1,
-   "description": "The receipt this roll is credited to. Set from the Roll Mapping page, not by hand — the inward's Partial/Complete status is counted from it."
+   "description": "The receipt this roll is credited to. Set from the Roll Mapping page, not by hand \u2014 the inward's Partial/Complete status is counted from it."
   },
   {
    "fieldname": "mapped_weight",

@@ -314,6 +314,23 @@ def recalculate_order_fulfilment(order: str):
 		""",
 		(order,),
 	)[0][0] or 0
+	# ROLLS CREDITED TO THE ORDER BY HAND. Material usually arrives against an order and
+	# the inward row says so. It does not always: the shop buys stock, or the challan comes
+	# in before anyone knows which order it answers, and the rolls then sit in inventory
+	# attributed to nothing. Roll Mapping settles that afterwards, and the weight has to
+	# land HERE — `inwarded_weight` is what the dispatch ceiling reads, so a mapping that
+	# did not reach it would credit the order on one screen and still refuse to let the
+	# goods out on another.
+	#
+	# Added, not merged: an inward row names its order directly, and a roll carries one
+	# only when its row did not, so the two are different material and never the same kilo
+	# twice (api.mapping.assign_to_order refuses a roll whose own inward already names it).
+	mapped = frappe.db.sql(
+		"""select coalesce(sum(ifnull(mapped_weight, 0)), 0)
+		from `tabMM Roll Inventory` where mapped_order = %s""",
+		(order,),
+	)[0][0] or 0
+	inwarded = float(inwarded or 0) + float(mapped or 0)
 	ordered = frappe.db.get_value("MM Sales Order", order, "ordered_weight") or 0
 	frappe.db.set_value(
 		"MM Sales Order",

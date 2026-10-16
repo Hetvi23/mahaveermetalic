@@ -1,27 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import SearchSelect from "@/components/SearchSelect";
-import { Link2, Link2Off, Lock, RefreshCw, Search } from "lucide-react";
+import { Link2, Link2Off, RefreshCw, Search } from "lucide-react";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.mapping";
 
-type Inward = {
-  name: string; posting_date: string; party?: string; company_name?: string;
-  challan_number?: string; lot_number?: string; receipt_status: string;
-  orders?: string[];
-  expected_weight: number; mapped_weight: number; still_due: number;
-  mapped_rolls: number; locked: boolean; sales_order?: string;
-  /** The ORDER's own date (earliest, when a receipt answers several), and whether that
-   *  puts it in the backlog. `old_basis` says which date the flag was read off, because
-   *  a receipt with no order behind it falls back to its own posting date. */
-  order_date?: string | null; is_old?: boolean; old_basis?: "order" | "receipt";
+type Order = {
+  name: string; transaction_date?: string; party?: string; company_name?: string;
+  colours?: string | null;
+  ordered_weight: number; inwarded_weight: number; still_needed: number;
+  mapped_rolls: number; mapped_weight: number; completed?: number; is_old?: boolean;
 };
 type Roll = {
   name: string; roll_no?: string; lot_number?: string; color_name?: string;
   supplier?: string; location?: string; stock_weight: number;
-  mapped_inward?: string | null; mapped_weight?: number;
+  mapped_inward?: string | null; mapped_order?: string | null; mapped_weight?: number;
 };
 
 const kg = (n?: number) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })} kg`;
@@ -53,14 +48,13 @@ export default function RollMappingPage() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   const [party, setParty] = useState("");
-  const [orderId, setOrderId] = useState("");
-  const inwardsCall = useFrappeGetCall<{ message: Inward[] }>(
-    `${API}.inwards`,
+  const ordersCall = useFrappeGetCall<{ message: Order[] }>(
+    `${API}.orders`,
     {
       search: iq || undefined, only_open: onlyOpen ? 1 : 0,
-      party: party || undefined, order: orderId.trim() || undefined,
+      party: party || undefined,
     },
-    `map-inwards-${iq}-${onlyOpen}-${party}-${orderId.trim()}`, { keepPreviousData: true },
+    `map-orders-${iq}-${onlyOpen}-${party}`, { keepPreviousData: true },
   );
   const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
     fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
@@ -70,7 +64,7 @@ export default function RollMappingPage() {
     {
       search: rq || undefined,
       color: colour || undefined,
-      inward: view === "mine" ? sel || "__none__" : undefined,
+      order: view === "mine" ? sel || "__none__" : undefined,
       unmapped_only: view === "free" ? 1 : 0,
     },
     `map-rolls-${rq}-${colour}-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
@@ -80,7 +74,7 @@ export default function RollMappingPage() {
   const coloursCall = useFrappeGetCall<{ message: { color: string; rolls: number; weight: number }[] }>(
     `${API}.roll_colours`,
     {
-      inward: view === "mine" ? sel || "__none__" : undefined,
+      order: view === "mine" ? sel || "__none__" : undefined,
       unmapped_only: view === "free" ? 1 : 0,
     },
     `map-colours-${view}-${view === "mine" ? sel : ""}`, { keepPreviousData: true },
@@ -98,12 +92,12 @@ export default function RollMappingPage() {
   useEffect(() => {
     if (colour && colourOpts.length && !colourOpts.some((o) => o.value === colour)) setColour("");
   }, [colourOpts, colour]);
-  const { call: assign, loading: assigning } = useFrappePostCall(`${API}.assign`);
-  const { call: unassign, loading: unassigning } = useFrappePostCall(`${API}.unassign`);
+  const { call: assign, loading: assigning } = useFrappePostCall(`${API}.assign_to_order`);
+  const { call: unassign, loading: unassigning } = useFrappePostCall(`${API}.unassign_from_order`);
 
-  const inwards = inwardsCall.data?.message ?? [];
+  const orders = ordersCall.data?.message ?? [];
   const rolls = rollsCall.data?.message ?? [];
-  const current = inwards.find((i) => i.name === sel) || null;
+  const current = orders.find((o) => o.name === sel) || null;
   const picked = useMemo(() => Object.keys(checked).filter((k) => checked[k]), [checked]);
   const pickedKg = useMemo(
     () => rolls.filter((r) => checked[r.name]).reduce((s, r) => s + Number(r.stock_weight || 0), 0),
@@ -111,7 +105,7 @@ export default function RollMappingPage() {
   );
 
   function refresh() {
-    void inwardsCall.mutate();
+    void ordersCall.mutate();
     void rollsCall.mutate();
   }
 
@@ -132,9 +126,9 @@ export default function RollMappingPage() {
         <div>
           <h1 className="mm-page-title">Roll Mapping</h1>
           <p className="mm-page-sub">
-            Say which rolls answer for which receipt. Nothing moves — the rolls are already in
-            stock; this decides what each receipt is credited with, and its Partial/Complete
-            status follows.
+            Say which order the rolls in stock answer for. Nothing moves — they are already in
+            stock; this decides what each order is credited with, and its Inwards (Kg) follows,
+            which is what it may then dispatch.
           </p>
         </div>
         <div className="mm-ws-toolbar-right">
@@ -145,11 +139,11 @@ export default function RollMappingPage() {
       </div>
 
       <div className="mm-map-split">
-        {/* ── Receipts ─────────────────────────────────────────── */}
+        {/* ── Orders ────────────────────────────────────────── */}
         <section className="mm-card mm-map-pane">
           <div className="mm-map-head">
-            <h2>Receipts</h2>
-            <label className="mm-field-inline" title="Hide receipts already settled">
+            <h2>Orders</h2>
+            <label className="mm-field-inline" title="Hide orders that already have all their material">
               <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
               <span className="mm-field-label">Open only</span>
             </label>
@@ -157,82 +151,57 @@ export default function RollMappingPage() {
           <div className="mm-map-filters">
             <div className="mm-search-box">
               <Search size={15} />
-              <input className="mm-input mm-input-compact" placeholder="Inward, challan, party or lot…"
+              <input className="mm-input mm-input-compact" placeholder="Order id, party or company…"
                 value={iq} onChange={(e) => setIq(e.target.value)} />
             </div>
             <SearchSelect value={party} onChange={setParty} placeholder="All parties"
               className="mm-map-colour" menuMinWidth={260}
               options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))} />
-            <input className="mm-input mm-input-compact mm-map-order" placeholder="Order id"
-              value={orderId} onChange={(e) => setOrderId(e.target.value)} />
-            {(iq || party || orderId) && (
+            {(iq || party) && (
               <button type="button" className="mm-mini"
-                onClick={() => { setIq(""); setParty(""); setOrderId(""); }}>Clear</button>
+                onClick={() => { setIq(""); setParty(""); }}>Clear</button>
             )}
           </div>
-          {inwardsCall.isLoading && !inwards.length ? (
-            <p className="mm-muted">Loading…</p>
-          ) : inwards.length === 0 ? (
+          {ordersCall.isLoading && !orders.length ? (
+            <p className="mm-muted">Loading\u2026</p>
+          ) : orders.length === 0 ? (
             <p className="mm-flow-empty-state">
-              {onlyOpen ? "No receipt is waiting — untick “Open only” to see settled ones." : "No receipts."}
+              {onlyOpen ? "Every order has all the material it asked for \u2014 untick \u201cOpen only\u201d to see them all."
+                : "No orders."}
             </p>
           ) : (
             <div className="mm-map-list">
-              {inwards.map((i) => {
-                const pct = i.expected_weight > 0
-                  ? Math.min(100, Math.round((i.mapped_weight / i.expected_weight) * 100)) : 0;
+              {orders.map((o) => {
+                const pct = o.ordered_weight > 0
+                  ? Math.min(100, Math.round((o.inwarded_weight / o.ordered_weight) * 100)) : 0;
                 return (
-                  <button type="button" key={i.name}
-                    className={`mm-map-row${sel === i.name ? " mm-map-row-active" : ""}`}
-                    onClick={() => { setSel(i.name); setChecked({}); }}>
-                    {/* SAY WHICH NUMBER IS WHICH. Orders here are bare numbers — 1, 45, 46 —
-                        and a challan like MM587/26-27 sits in the same place on the card, so
-                        the heading alone was being read as the order. Both are labelled. */}
+                  <button type="button" key={o.name}
+                    className={`mm-map-row${sel === o.name ? " mm-map-row-active" : ""}`}
+                    onClick={() => { setSel(o.name); setChecked({}); }}>
                     <div className="mm-map-row-top">
-                      <span className="mm-muted">Challan</span>
-                      <strong>{i.challan_number || i.name}</strong>
-                      {i.orders && i.orders.length > 0 && (
-                        <>
-                          <span className="mm-muted">· Order</span>
-                          <strong>{i.orders.join(", ")}</strong>
-                        </>
-                      )}
-                      <span className={i.receipt_status === "Complete" ? "mm-state mm-state-done" : "mm-state mm-state-open"}>
-                        {i.receipt_status}
-                      </span>
-                      {i.locked && (
-                        <span className="mm-state" title="This challan was closed by another receipt — its mapping is fixed">
-                          <Lock size={11} /> closed
-                        </span>
-                      )}
+                      <span className="mm-muted">Order</span>
+                      <strong>{o.name}</strong>
+                      {o.still_needed <= 0
+                        ? <span className="mm-state mm-state-done">covered</span>
+                        : <span className="mm-state mm-state-open">{kg(o.still_needed)} short</span>}
                       {/* Backlog, not this week's work. */}
-                      {i.is_old && (
+                      {o.is_old && (
                         <span className="mm-state mm-state-old"
-                          title={i.old_basis === "order"
-                            ? `Order dated ${i.order_date} — on or before 15 Oct 2026`
-                            : `No order behind this receipt; its own date ${i.posting_date} is on or before 15 Oct 2026`}>
-                          old
-                        </span>
+                          title={`Order dated ${o.transaction_date} \u2014 on or before 15 Oct 2026`}>old</span>
                       )}
                     </div>
                     <div className="mm-map-row-meta">
-                      {i.posting_date}
-                      {i.order_date && i.order_date !== i.posting_date
-                        ? <span title="Date of the order this receipt answers"> · ord {i.order_date}</span>
-                        : null}
-                      {" · "}{i.party || i.company_name || "no party"}
-                      {i.lot_number ? ` · lot ${i.lot_number}` : ""}
+                      {o.transaction_date} \u00b7 {o.company_name || o.party || "no party"}
+                      {o.colours ? ` \u00b7 ${o.colours}` : ""}
                     </div>
                     <div className="mm-map-bar" aria-hidden><span style={{ width: `${pct}%` }} /></div>
-                    {/* A receipt nobody has mapped yet is not short — it is untouched, and
-                        saying "147 kg still due" beside the word Complete reads as a
-                        contradiction on every historic receipt the day this page opens. */}
+                    {/* What the order asked for against what it actually has \u2014 including
+                        the rolls this page credited, which is the point of the board. */}
                     <div className="mm-map-row-meta">
-                      {i.mapped_rolls === 0
-                        ? `Nothing mapped yet · expected ${kg(i.expected_weight)}`
-                        : `${kg(i.mapped_weight)} of ${kg(i.expected_weight)}`
-                          + (i.still_due > 0 ? ` · ${kg(i.still_due)} still due` : " · settled")
-                          + ` · ${i.mapped_rolls} roll${i.mapped_rolls === 1 ? "" : "s"}`}
+                      {kg(o.inwarded_weight)} of {kg(o.ordered_weight)}
+                      {o.mapped_rolls > 0
+                        ? ` \u00b7 ${o.mapped_rolls} roll${o.mapped_rolls === 1 ? "" : "s"} mapped here (${kg(o.mapped_weight)})`
+                        : " \u00b7 nothing mapped here yet"}
                     </div>
                   </button>
                 );
@@ -246,7 +215,7 @@ export default function RollMappingPage() {
           <div className="mm-map-head">
             <h2>Rolls in stock</h2>
             <div className="mm-seg">
-              {([["free", "Unmapped"], ["mine", "On this receipt"], ["all", "All"]] as const).map(([k, label]) => (
+              {([["free", "Unmapped"], ["mine", "On this order"], ["all", "All"]] as const).map(([k, label]) => (
                 <button key={k} className={`mm-seg-btn${view === k ? " mm-seg-btn-active" : ""}`}
                   disabled={k === "mine" && !sel}
                   onClick={() => { setView(k); setChecked({}); }}>{label}</button>
@@ -268,13 +237,13 @@ export default function RollMappingPage() {
             )}
           </div>
 
-          {!current && <p className="mm-muted">Pick a receipt on the left to map rolls to it.</p>}
+          {!current && <p className="mm-muted">Pick an order on the left to credit rolls to it.</p>}
 
           {rollsCall.isLoading && !rolls.length ? (
             <p className="mm-muted">Loading…</p>
           ) : rolls.length === 0 ? (
             <p className="mm-flow-empty-state">
-              {view === "mine" ? "No roll is credited to this receipt yet."
+              {view === "mine" ? "No roll is credited to this order yet."
                 : view === "free" ? "Every roll in stock is already credited to a receipt."
                   : "No roll matches."}
             </p>
@@ -320,24 +289,25 @@ export default function RollMappingPage() {
             </div>
           )}
 
-          {/* The two actions, with what they are about to do spelled out: a mapping changes
-              a submitted receipt's status, so it should never be a mystery click. */}
+          {/* The two actions, with what they are about to do spelled out: crediting rolls
+              moves the order's Inwards (Kg) — and with it how much may be dispatched
+              against it — so it should never be a mystery click. */}
           <div className="mm-map-actions">
             <span className="mm-muted">
               {picked.length
                 ? `${picked.length} roll${picked.length === 1 ? "" : "s"} · ${kg(pickedKg)}`
                 : "Tick the rolls to map."}
             </span>
-            <button className="mm-mini mm-mini-ok" disabled={!current || !picked.length || assigning || !!current?.locked}
-              title={current?.locked
-                ? "This challan is closed — its mapping is fixed"
-                : current ? `Credit these rolls to ${current.challan_number || current.name}` : "Pick a receipt first"}
-              onClick={() => run(() => assign({ inward: sel, rolls: JSON.stringify(picked) }),
-                `${picked.length} roll(s) credited to ${current?.challan_number || sel}`)}>
-              <Link2 size={13} /> Map to receipt
+            <button className="mm-mini mm-mini-ok" disabled={!current || !picked.length || assigning}
+              title={current
+                ? `Credit these rolls to order ${current.name} — its Inwards (Kg) goes up by ${kg(pickedKg)}`
+                : "Pick an order first"}
+              onClick={() => run(() => assign({ order: sel, rolls: JSON.stringify(picked) }),
+                `${picked.length} roll(s) credited to order ${sel}`)}>
+              <Link2 size={13} /> Map to order
             </button>
             <button className="mm-mini" disabled={!picked.length || unassigning}
-              title="Take these rolls off whatever receipt they are credited to"
+              title="Take these rolls off whatever order they are credited to"
               onClick={() => run(() => unassign({ rolls: JSON.stringify(picked) }), `${picked.length} roll(s) unmapped`)}>
               <Link2Off size={13} /> Unmap
             </button>

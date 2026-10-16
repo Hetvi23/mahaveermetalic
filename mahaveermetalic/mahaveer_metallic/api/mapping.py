@@ -249,7 +249,7 @@ def _locked(inward):
 
 
 @frappe.whitelist()
-def rolls(search=None, inward=None, unmapped_only=0, color=None, limit=200):
+def rolls(search=None, inward=None, unmapped_only=0, color=None, order=None, limit=200):
 	"""Rolls in stock, with where each one is currently credited.
 
 	Only rolls still HOLDING something are offered: a row emptied by cutting is a
@@ -257,11 +257,17 @@ def rolls(search=None, inward=None, unmapped_only=0, color=None, limit=200):
 	"""
 	conds = ["ifnull(r.stock_weight, 0) > 0"]
 	vals = {"limit": int(limit or 200)}
-	if (inward or "").strip():
+	if (order or "").strip():
+		# "On this order" \u2014 what the board has already credited to the order in hand.
+		conds = ["r.mapped_order = %(order)s"]
+		vals["order"] = order.strip()
+	elif (inward or "").strip():
 		conds = ["r.mapped_inward = %(inward)s"]
 		vals["inward"] = inward.strip()
 	elif int(unmapped_only or 0):
-		conds.append("ifnull(r.mapped_inward, '') = ''")
+		# Free stock: answering for no order yet. The receipt mapping is a separate
+		# question and deliberately does not hide a roll from this one.
+		conds.append("ifnull(r.mapped_order, '') = ''")
 	# ONE COLOUR AT A TIME. Typing it into the search box matches it as a substring, so
 	# "AN ANMOL BS" also drags in every other colour whose name contains it; mapping is
 	# decided a colour at a time and the filter has to mean exactly that one.
@@ -277,7 +283,7 @@ def rolls(search=None, inward=None, unmapped_only=0, color=None, limit=200):
 	return frappe.db.sql(
 		f"""
 		select r.name, r.roll_no, r.lot_number, r.color_name, r.supplier, r.location,
-			r.stock_weight, r.mapped_inward, r.mapped_weight
+			r.stock_weight, r.mapped_inward, r.mapped_order, r.mapped_weight
 		from `tabMM Roll Inventory` r
 		where {' and '.join(conds)}
 		order by r.lot_number, r.roll_no
@@ -289,7 +295,7 @@ def rolls(search=None, inward=None, unmapped_only=0, color=None, limit=200):
 
 
 @frappe.whitelist()
-def roll_colours(unmapped_only=0, inward=None):
+def roll_colours(unmapped_only=0, inward=None, order=None):
 	"""The colours actually present in the roll pool, with how many rolls and how much.
 
 	Built from the same pool the list is drawn from rather than from the colour master, so
@@ -298,11 +304,14 @@ def roll_colours(unmapped_only=0, inward=None):
 	"""
 	conds = ["ifnull(r.stock_weight, 0) > 0"]
 	vals = {}
-	if (inward or "").strip():
+	if (order or "").strip():
+		conds = ["r.mapped_order = %(order)s"]
+		vals["order"] = order.strip()
+	elif (inward or "").strip():
 		conds = ["r.mapped_inward = %(inward)s"]
 		vals["inward"] = inward.strip()
 	elif frappe.utils.cint(unmapped_only):
-		conds.append("ifnull(r.mapped_inward, '') = ''")
+		conds.append("ifnull(r.mapped_order, '') = ''")
 	return frappe.db.sql(
 		f"""
 		select r.color_name as color, count(*) as rolls,
@@ -362,3 +371,152 @@ def unassign(rolls):
 		touched.add(current)
 		frappe.db.set_value("MM Roll Inventory", name, {"mapped_inward": None, "mapped_weight": 0})
 	return {"unmapped": len(rolls), "status": {i: _sync_status(i) for i in touched}}
+
+
+# ── Rolls → ORDER ────────────────────────────────────────────────────
+#
+# An inward often names no order at all — the challan arrives before anyone has decided
+# which order it answers, or the shop simply buys stock — and the rolls then sit in
+# inventory attributed to nothing. One order is filled from SEVERAL inwards, so the answer
+# is not "which receipt does this roll belong to" but "which order is it for"
+# (Hetvi: "order 1 can be mapped against multiple inward … the rolls in the stock can be
+# mapped to an order by this page").
+
+
+@frappe.whitelist()
+def orders(search=None, only_open=1, party=None, limit=100):
+	"""Sales orders to credit rolls to, with how much is already against each."""
+	conds = ["so.docstatus = 1", "ifnull(so.order_state, '') != 'Cancelled'"]
+	vals = {"limit": int(limit or 100)}
+	if (party or "").strip():
+		conds.append("so.party = %(party)s")
+		vals["party"] = party.strip()
+	if (search or "").strip():
+		conds.append(
+			"(so.name like %(q)s or ifnull(so.party,'') like %(q)s"
+			" or ifnull(so.company_name,'') like %(q)s)"
+		)
+		vals["q"] = f"%{search.strip()}%"
+	rows = frappe.db.sql(
+		f"""
+		select so.name, so.transaction_date, so.party, so.company_name, so.ordered_weight,
+			so.inwarded_weight, so.required_weight, so.completed,
+			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
+			 from `tabMM Sales Order Item` x where x.parent = so.name) as colours
+		from `tabMM Sales Order` so
+		where {' and '.join(conds)}
+		order by so.transaction_date asc, so.creation asc
+		limit %(limit)s
+		""",
+		vals,
+		as_dict=True,
+	)
+	if not rows:
+		return []
+	names = [r.name for r in rows]
+	# What this page itself put against each order, told apart from weight that arrived
+	# already tagged, so the board can show its own work.
+	by_order = {}
+	for r in frappe.db.sql(
+		"""select mapped_order, count(*) as rolls, coalesce(sum(ifnull(mapped_weight,0)),0) as w
+		from `tabMM Roll Inventory` where mapped_order in %(o)s group by mapped_order""",
+		{"o": tuple(names)},
+		as_dict=True,
+	):
+		by_order[r.mapped_order] = r
+	out = []
+	for r in rows:
+		m = by_order.get(r.name)
+		r["mapped_rolls"] = int(m["rolls"]) if m else 0
+		r["mapped_weight"] = round(float(m["w"]), 3) if m else 0.0
+		r["ordered_weight"] = round(float(r.ordered_weight or 0), 3)
+		r["inwarded_weight"] = round(float(r.inwarded_weight or 0), 3)
+		# What the order still wants. Never negative: over-supplying an order is a
+		# decision somebody made, not a figure to show as a deficit.
+		r["still_needed"] = round(max(0.0, r["ordered_weight"] - r["inwarded_weight"]), 3)
+		r["is_old"] = bool(str(r.transaction_date or "") <= OLD_ON_OR_BEFORE)
+		if frappe.utils.cint(only_open) and r["still_needed"] <= 0:
+			continue
+		out.append(r)
+	return out
+
+
+@frappe.whitelist()
+def assign_to_order(order, rolls):
+	"""Credit rolls in stock to a sales order.
+
+	The roll's CURRENT stock weight is snapshotted onto `mapped_weight`, exactly as the
+	receipt mapping does: live stock falls as the roll is cut, and reading it live would
+	quietly walk the order's inwarded figure back down afterwards.
+	"""
+	names = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
+	names = [n for n in names if n]
+	if not names:
+		frappe.throw(_("Tick the rolls to credit to this order."))
+	if not order or not frappe.db.exists("MM Sales Order", order):
+		frappe.throw(_("Order {0} not found.").format(order))
+	if frappe.db.get_value("MM Sales Order", order, "docstatus") != 1:
+		frappe.throw(_("Order {0} is not submitted.").format(order))
+
+	touched, done = {order}, 0
+	for name in names:
+		row = frappe.db.get_value(
+			"MM Roll Inventory", name,
+			["name", "stock_weight", "mapped_order", "mapped_inward"], as_dict=True,
+		)
+		if not row:
+			continue
+		# NOT THE SAME KILO TWICE. A roll whose own inward row already names this order is
+		# counted there; crediting it again here would add it to the order's inwards a
+		# second time (see mm_sales_order.recalculate_order_fulfilment).
+		if row.mapped_inward and frappe.db.exists(
+			"MM Inward Item", {"parent": row.mapped_inward, "customer_order": order}
+		):
+			frappe.throw(
+				_("Roll {0} came in on {1}, which already names order {2} — it is counted there.")
+				.format(row.name, row.mapped_inward, order)
+			)
+		if row.mapped_order:
+			touched.add(row.mapped_order)
+		frappe.db.set_value(
+			"MM Roll Inventory", name,
+			{"mapped_order": order, "mapped_weight": round(float(row.stock_weight or 0), 3)},
+			update_modified=False,
+		)
+		done += 1
+
+	_recount_orders(touched)
+	return {"order": order, "rolls": done}
+
+
+@frappe.whitelist()
+def unassign_from_order(rolls):
+	"""Take rolls back off whatever order they were credited to."""
+	names = json.loads(rolls) if isinstance(rolls, str) else (rolls or [])
+	names = [n for n in names if n]
+	if not names:
+		frappe.throw(_("Tick the rolls to take off the order."))
+	touched, done = set(), 0
+	for name in names:
+		cur = frappe.db.get_value("MM Roll Inventory", name, "mapped_order")
+		if not cur:
+			continue
+		touched.add(cur)
+		frappe.db.set_value(
+			"MM Roll Inventory", name, {"mapped_order": None, "mapped_weight": 0},
+			update_modified=False,
+		)
+		done += 1
+	_recount_orders(touched)
+	return {"rolls": done}
+
+
+def _recount_orders(names):
+	"""Push every touched order's Inwards (Kg) / Required (Kg) back through the one
+	function that owns them, so this page can never drift from the order screens."""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
+		recalculate_order_fulfilment,
+	)
+
+	for o in filter(None, names):
+		recalculate_order_fulfilment(o)
