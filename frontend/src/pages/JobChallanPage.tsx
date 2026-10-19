@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import NumInput from "@/components/NumInput";
 import { createPortal } from "react-dom";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
@@ -58,6 +58,11 @@ type JobOutOrder = {
   company_name?: string;
   transaction_date?: string;
   ordered_weight?: number;
+};
+
+/** One of a party's open orders (api.production.orders_for_production). */
+type PartyOrder = {
+  name: string; colours?: string; company_name?: string; remaining_weight?: number;
 };
 
 type JobOutRow = {
@@ -816,7 +821,10 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const { call: fetchProdPrint } = useFrappePostCall<{ message: ChallanPrintData }>(
     `${API}.production_box_labels`,
   );
-  const bobbinMasters = useFrappeGetDocList<{ name: string }>("MM Bobbin Master", { fields: ["name"], limit: 0 });
+  // With the weight: picking a bobbin on a box fills its per-piece weight from this.
+  const bobbinMasters = useFrappeGetDocList<{ name: string; weight?: number }>(
+    "MM Bobbin Master", { fields: ["name", "weight"], limit: 0 },
+  );
 
   // The orders THIS Job Out was given against — the only ones a receipt on it can belong
   // to, so the box is a pick from them rather than a name to be remembered and typed.
@@ -826,7 +834,33 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     jobOut ? `job-out-orders-${jobOut}` : null,
   );
   const orderOpts = ordersCall.data?.message ?? [];
-  const picked = orderOpts.find((o) => o.order === order);
+
+  /* ONCE A PARTY IS PICKED, ITS OPEN ORDERS (Hetvi: "when we select the party, that party's
+     open orders should come in the dropdown"). The Job Out's own orders only ever named the
+     customer it was sent for, so a receipt filed under anyone else had no order to pick.
+     Open means what the production voucher means — approved, with weight still to produce —
+     because a Job In IS a production. Every colour is offered, this Job Out's first; the
+     order of the list is otherwise the server's FIFO. */
+  const partyOrdersCall = useFrappeGetCall<{ message: PartyOrder[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.production.orders_for_production",
+    jiParty ? { party: jiParty } : undefined,
+    jiParty ? `ji-party-orders-${jiParty}` : null,
+  );
+  const jobColour = (meta?.color_name || "").trim();
+  const partyOrders = useMemo(() => {
+    const rows = partyOrdersCall.data?.message ?? [];
+    const ofColour = (o: PartyOrder) => !!jobColour && (o.colours || "").split(", ").includes(jobColour);
+    return [...rows].sort((a, b) => Number(ofColour(b)) - Number(ofColour(a)));
+  }, [partyOrdersCall.data, jobColour]);
+  const partyPick = partyOrders.find((o) => o.name === order);
+  const picked: JobOutOrder | undefined = orderOpts.find((o) => o.order === order)
+    ?? (partyPick ? { order: partyPick.name, company_name: partyPick.company_name } : undefined);
+
+  // An order of the previous party is not this one's — dropped once the new list is in.
+  useEffect(() => {
+    if (!jiParty || !partyOrdersCall.data) return;
+    if (order && !partyOrders.some((o) => o.name === order)) setOrder("");
+  }, [jiParty, partyOrdersCall.data, partyOrders, order]);
 
   const totals = useMemo(() => ({
     boxes: boxes.length,
@@ -839,6 +873,10 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     setBoxes([]); setErr(null); setAdding(false); setVNo(""); setChallanId("");
     setSeries("");
     setToStock(false);
+    // A fresh receipt names nobody yet. This used to happen through the order: a new Job
+    // Out reset the order, and clearing the order cleared these two. The party now DRIVES
+    // the order list, so clearing an order must leave the party standing.
+    setJiParty(""); setJiCompany("");
   }, [jobOut]);
 
   useEffect(() => { setCNo(meta?.challan_no || ""); }, [jobOut, meta?.challan_no]);
@@ -852,12 +890,6 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     if (!jobOut) return;
     setOrder(orderOpts.length === 1 ? orderOpts[0].order : "");
   }, [jobOut, orderOpts]);
-
-  // Clearing the order clears the pair it named. Left standing, the firm the order chose
-  // would sit in the box with nothing behind it and be filed on submit.
-  useEffect(() => {
-    if (!order) { setJiParty(""); setJiCompany(""); }
-  }, [order]);
 
   async function submit() {
     setErr(null);
@@ -1103,15 +1135,24 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <SearchSelect
                   value={order}
                   onChange={setOrder}
-                  options={orderOpts.map((o) => ({
-                    value: o.order,
-                    label: o.order,
-                    // The customer under the number: an order id says nothing on its own,
-                    // and picking the wrong one files the receipt against the wrong firm.
-                    meta: [o.customer_name, o.company_name].filter(Boolean).join(" · "),
-                  }))}
-                  placeholder={ordersCall.isLoading ? "Loading…" : "No order"}
-                  emptyText="This Job Out names no customer order."
+                  options={jiParty
+                    ? partyOrders.map((o) => ({
+                        value: o.name,
+                        label: o.name,
+                        // The party is already named, so what tells its orders apart is the
+                        // colour and how much each still wants.
+                        meta: [o.colours, `${(o.remaining_weight ?? 0).toLocaleString()} kg left`]
+                          .filter(Boolean).join(" · "),
+                      }))
+                    : orderOpts.map((o) => ({
+                        value: o.order,
+                        label: o.order,
+                        // The customer under the number: an order id says nothing on its own,
+                        // and picking the wrong one files the receipt against the wrong firm.
+                        meta: [o.customer_name, o.company_name].filter(Boolean).join(" · "),
+                      }))}
+                  placeholder={(jiParty ? partyOrdersCall.isLoading : ordersCall.isLoading) ? "Loading…" : "No order"}
+                  emptyText={jiParty ? "This party has no open orders." : "This Job Out names no customer order."}
                 />
               </label>
               {/* WHOSE ACCOUNT THIS RECEIPT LANDS IN — chosen here, and what is chosen wins
@@ -1199,7 +1240,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                 <span className="mm-pill mm-pill-muted">#{boxes.length + 1}</span>
               </div>
               <JobInBoxForm
-                bobbins={(bobbinMasters.data ?? []).map((b) => b.name)}
+                bobbins={bobbinMasters.data ?? []}
                 defaults={{ box: boxReturn, bobbin: bobbinReturn }}
                 available={r3(Math.max(0, (meta?.outstanding_weight ?? meta?.total_weight ?? 0) - totals.net))}
                 onBobbinCreated={() => void bobbinMasters.mutate()}
@@ -1311,7 +1352,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
 
 
 function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onCancel, onAdd }: {
-  bobbins: string[];
+  bobbins: { name: string; weight?: number }[];
   /** The list lives on the voucher above, so a bobbin created here asks it to refetch —
    *  otherwise the next box would not find the one just made. */
   onBobbinCreated?: () => void;
@@ -1345,6 +1386,32 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
   const [perPcs, setPerPcs] = useState<string>(prev?.perPcsWeight != null ? String(prev.perPcsWeight) : "");
   const [err, setErr] = useState<string | null>(null);
 
+  /* THE BOBBIN'S WEIGHT COMES WITH IT, as on the production box panel. This form was
+     given the bobbin names only, so the per-piece weight was typed for every bobbin and
+     changing the bobbin left the old one's figure in the total. Picking one now sets its
+     master weight every time (still editable after), and "none" clears it. */
+  const tareMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const b of bobbins) m[b.name] = Number(b.weight || 0);
+    return m;
+  }, [bobbins]);
+  const pickBobbin = (name: string) => {
+    setBobbin(name);
+    setPerPcs(name && tareMap[name] ? String(tareMap[name]) : "");
+  };
+  // A bobbin carried over from the last box, or one just created whose weight arrives with
+  // the refetched list, still gets its weight — only into an empty field.
+  useEffect(() => {
+    if (bobbin && perPcs === "" && tareMap[bobbin]) setPerPcs(String(tareMap[bobbin]));
+  }, [bobbin, perPcs, tareMap]);
+
+  /* ENTER CARRIES THE BOX, the way the production panel does: Net wt → Pcs → added, and
+     Enter on any other field adds. The box tare is not a stop — it carries over from the
+     last box. Escape closes. After a box is added the cursor goes back to Net wt, ready for
+     the next one, since this form stays open between boxes. */
+  const panelRef = useRef<HTMLDivElement>(null);
+  const FLOW = ["net", "pcs"];
+
   const totalBobbin = r3((Number(pcs) || 0) * (Number(perPcs) || 0));
   const gross = r3((Number(net) || 0) + totalBobbin + (Number(boxWt) || 0));
   const over = (Number(net) || 0) > r3(available) + 0.001;
@@ -1365,10 +1432,25 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
       boxReturn: defaults.box, bobbinReturn: defaults.bobbin,
     });
     setNet("");
+    panelRef.current?.querySelector<HTMLInputElement>('[data-bx="net"]')?.focus();
   }
 
   return (
-    <div className="mm-bx-panel">
+    <div className="mm-bx-panel" ref={panelRef}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onCancel(); return; }
+        if (e.key !== "Enter") return;
+        const el = e.target as HTMLElement;
+        if (el.tagName !== "INPUT") return;
+        // Enter inside an open picker is choosing an option, not finishing the box.
+        if (el.closest(".mm-link-wrap") && document.querySelector("[data-mm-menu]")) return;
+        e.preventDefault();
+        const here = (el as HTMLInputElement).dataset.bx;
+        const next = here ? FLOW[FLOW.indexOf(here) + 1] : undefined;
+        const el2 = next ? panelRef.current?.querySelector<HTMLInputElement>(`[data-bx="${next}"]`) : null;
+        if (el2) { el2.focus(); el2.select(); return; }
+        add();
+      }}>
       <div className="mm-bx">
         {/* What the worker still owes back — the ceiling every box below is measured
             against, so it is stated before anything is keyed rather than after. */}
@@ -1379,21 +1461,21 @@ function JobInBoxForm({ bobbins, defaults, prev, available, onBobbinCreated, onC
         <label className="mm-bx-row">
           <span className="mm-bx-label" title="Net weight — what actually came back">Net wt</span>
           <input className={`mm-input mm-bx-hi ${over ? "mm-input-warn" : ""}`} inputMode="decimal"
-            placeholder="Weight" value={net} autoFocus
+            placeholder="Weight" value={net} autoFocus data-bx="net"
             onChange={(e) => { const v = e.target.value;
               if (v === "" || /^\d*\.?\d*$/.test(v)) setNet(v); }} />
         </label>
         <label className="mm-bx-row">
           <span className="mm-bx-label">Bobbin</span>
-          <SearchSelect compact value={bobbin} onChange={setBobbin} placeholder="— bobbin —"
+          <SearchSelect compact value={bobbin} onChange={(v) => pickBobbin(v)} placeholder="— bobbin —"
             createDoctype="MM Bobbin Master"
-            onCreated={(n) => { setBobbin(n); onBobbinCreated?.(); }}
-            options={bobbins.map((b) => ({ value: b, label: b }))} />
+            onCreated={(n) => { pickBobbin(n); onBobbinCreated?.(); }}
+            options={bobbins.map((b) => ({ value: b.name, label: b.name }))} />
         </label>
         <label className="mm-bx-row">
           <span className="mm-bx-label" title="Pieces x weight per piece">Bobbin wt</span>
           <span className="mm-bx-pair">
-            <input className="mm-input" inputMode="decimal" placeholder="Pcs" value={pcs}
+            <input className="mm-input" inputMode="decimal" placeholder="Pcs" value={pcs} data-bx="pcs"
               onChange={(e) => { const v = e.target.value;
                 if (v === "" || /^\d*\.?\d*$/.test(v)) setPcs(v); }} />
             <span className="mm-bx-x">x</span>

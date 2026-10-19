@@ -536,7 +536,7 @@ def orders_for_production(party=None, color=None):
 		vals["color"] = color
 	rows = frappe.db.sql(
 		f"""
-		select distinct so.name, so.transaction_date, so.delivery_date,
+		select distinct so.name, so.transaction_date, so.delivery_date, so.company_name,
 			so.ordered_weight, so.inwarded_weight, so.job_work_flag,
 			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
 				from `tabMM Sales Order Item` x where x.parent = so.name) as colours
@@ -590,6 +590,7 @@ def orders_for_production(party=None, color=None):
 			{
 				"name": r.name,
 				"colours": r.colours,
+				"company_name": r.company_name,
 				"job_work": bool(r.get("job_work_flag")),
 				"transaction_date": str(r.transaction_date) if r.transaction_date else None,
 				"delivery_date": str(r.delivery_date) if r.delivery_date else None,
