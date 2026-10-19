@@ -186,10 +186,16 @@ export default function OrderWorkspace() {
   // The search matches EITHER name a row goes by. The party is usually the person
   // (MANAV BHAI) while the list shows the firm (SHAGUN INDUSTRIES), and it searched the
   // party alone — so on 76 of 80 orders, typing what was on the screen found nothing.
+  // And the COLOUR, which lives on the order's lines: an order is found by any one of its
+  // colours, the way the Color column lists them.
   const orFilters = useMemo(() => {
     const t = q.trim();
     if (!t) return undefined;
-    return [["party", "like", `%${t}%`], ["company_name", "like", `%${t}%`]] as unknown as undefined;
+    return [
+      ["party", "like", `%${t}%`],
+      ["company_name", "like", `%${t}%`],
+      ["MM Sales Order Item", "color_name", "like", `%${t}%`],
+    ] as unknown as undefined;
   }, [q]);
 
   const { data: rows, isLoading, mutate } = useFrappeGetDocList<Row>("MM Sales Order", {
@@ -212,7 +218,9 @@ export default function OrderWorkspace() {
     ],
     orFilters,
     limit: 200,
-    orderBy: { field: "modified", order: "desc" },
+    // Table-qualified: the colour search joins the item table, which has its own
+    // `modified`, and a bare one is refused as ambiguous.
+    orderBy: { field: "`tabMM Sales Order`.modified", order: "desc" },
   });
 
   // Colour lives on the order's child items. Reading `MM Sales Order Item` straight from
@@ -1321,7 +1329,7 @@ export default function OrderWorkspace() {
             </div>
             <div className="mm-search-wrap mm-ow-search">
               <Search size={15} className="mm-search-icon" aria-hidden />
-              <input className="mm-input mm-search-pill" placeholder="Search party…" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input className="mm-input mm-search-pill" placeholder="Search party or colour…" value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
             <span className="mm-pill mm-pill-muted">{isLoading ? "…" : list.length}</span>
           </div>
