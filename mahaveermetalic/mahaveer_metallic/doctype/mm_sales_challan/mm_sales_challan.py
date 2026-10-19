@@ -349,7 +349,7 @@ class MMSalesChallan(Document):
 			# the movement is the dispatch itself and must not be skipped.
 			if (self.challan_type == "Job In") and it.get("production"):
 				continue
-			row = self._inventory_row(it)
+			row = self._inventory_row(it, need=weight if direction == "out" else 0.0)
 			if not row:
 				continue
 			if direction == "out":
@@ -379,8 +379,9 @@ class MMSalesChallan(Document):
 				remarks=_("{0} challan {1}").format(self.challan_type, self.name),
 			)
 
-	def _inventory_row(self, it):
-		"""The inventory row a challan line draws from / returns to.
+	def _inventory_row(self, it, need=0.0):
+		"""The inventory row a challan line draws from / returns to. `need` is the weight a
+		dispatch is about to take off it; 0 for a movement coming back in.
 
 		A line picked straight off inventory carries its row; a produced box does not, so
 		fall back to the (location, colour) key. A Job In brings material back that may
@@ -397,9 +398,28 @@ class MMSalesChallan(Document):
 		# done" looks like from the floor: the pile you are watching does not move.
 		lot_no = None
 		if it.get("production"):
-			lot = frappe.db.get_value("MM Production", it.production, "lot")
-			if lot:
-				lot_no = frappe.db.get_value("MM Lot", lot, "lot_id")
+			prod = frappe.db.get_value("MM Production", it.production, ["lot", "shade"], as_dict=True) or {}
+			if prod.get("lot"):
+				lot_no = frappe.db.get_value("MM Lot", prod.lot, "lot_id")
+			# A PRODUCED BOX COMES OFF ITS LOT'S FINISHED PILE — the row its production booked
+			# it into (MMProduction._add_to_inventory, named after the colour). The heaviest-row
+			# rule below cannot tell a pile from a raw roll of the same lot, so while a 298.6 kg
+			# roll outweighed the pile the dispatch came off the roll: NEW G ANMOL BS
+			# LT1/26-27 on vm.essenceerp.in kept 16 boxes, 149.154 kg, on its pile after all of
+			# them went out on MMUSC-3 and -4, and lost the same weight off a roll still on
+			# the floor. A cancel always goes back onto the pile. A dispatch takes from it when
+			# it holds the weight; output booked before piles existed went onto raw rolls, and
+			# for those the old rule still finds it.
+			shade = prod.get("shade") or it.color_name
+			pile_filters = {"color_name": shade, "roll_no": shade, "lot_number": lot_no or ["is", "not set"]}
+			if self.location:
+				pile_filters["location"] = self.location
+			pile = frappe.get_all(
+				"MM Roll Inventory", filters=pile_filters, fields=["name", "stock_weight"],
+				order_by="stock_weight desc", limit=1,
+			)
+			if pile and float(pile[0].stock_weight or 0) + 0.001 >= float(need or 0):
+				return frappe.get_doc("MM Roll Inventory", pile[0].name)
 		if lot_no:
 			scoped = {"color_name": it.color_name, "lot_number": lot_no}
 			if self.location:

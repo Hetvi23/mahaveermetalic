@@ -320,7 +320,7 @@ def available_rolls(branch=None, location=None, finished_only=0):
 	so it is not an answer to "what can go on a machine" either — even though its stock is
 	still sitting on the floor, untouched until the program is finished and the roll cut.
 	"""
-	from mahaveermetalic.mahaveer_metallic.api.inventory import reserved_roll_names
+	from mahaveermetalic.mahaveer_metallic.api.inventory import is_finished_pile, reserved_roll_names
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_cutting.mm_cutting import ceil2
 
 	rows = []
@@ -427,6 +427,13 @@ def available_rolls(branch=None, location=None, finished_only=0):
 			as_dict=True,
 		):
 			if ri.roll_inventory in reserved:
+				continue
+			# FINISHED GOODS ARE NOT A ROLL TO CUT — the same rule the inventory roll search
+			# already applies (inventory.is_finished_pile). This colour-first picker missed
+			# it, so a lot's pile of wound boxes was offered as an uncut roll and its BOX
+			# count read as "16 rolls" (NEW G ANMOL BS, vm.essenceerp.in). Planning on it and
+			# finishing the program would have issued the finished pile as raw material.
+			if is_finished_pile({"roll_no": ri.roll_no, "color_name": ri.shade}):
 				continue
 			rows.append({
 				"state": "In Inventory",
