@@ -24,7 +24,8 @@ export default function QuickCreateMaster({
 	seed?: string;
 	/** Pre-set other fields, e.g. { item_type: "Roll" } for a new colour. */
 	defaults?: Record<string, unknown>;
-	onCreated: (name: string) => void;
+	/** `doc` is the record as saved, for a caller that needs a field of it at once. */
+	onCreated: (name: string, doc?: Record<string, unknown>) => void;
 	onClose: () => void;
 }) {
 	const { createDoc, loading } = useFrappeCreateDoc();
@@ -67,7 +68,7 @@ export default function QuickCreateMaster({
 		try {
 			const res = await createDoc(meta.doctype, payload);
 			const n = (res as { name?: string }).name;
-			if (n) onCreated(n);
+			if (n) onCreated(n, res as Record<string, unknown>);
 		} catch (e) {
 			setFormError(extractErrorMessage(e));
 		}

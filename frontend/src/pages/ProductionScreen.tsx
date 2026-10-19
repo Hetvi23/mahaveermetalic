@@ -1212,10 +1212,21 @@ function BoxDialog({
     setBobbinReturn(defaultReturns.bobbin);
   }, [defaultReturns.box, defaultReturns.bobbin, edit]);
 
-  // Selecting a bobbin fills the per-pcs weight from its master tare (editable after).
+  // A bobbin carried over from the last box, or one whose master loads after the panel
+  // opens, still gets its tare once the list arrives — only into an empty field.
   useEffect(() => {
     if (bobbin && perPcs === "" && tareMap[bobbin]) setPerPcs(tareMap[bobbin]);
   }, [bobbin, perPcs, tareMap]);
+
+  /* PICKING A BOBBIN TAKES THAT BOBBIN'S WEIGHT, every time. The fill above only writes
+     into an empty field, so the first bobbin picked set the per-pcs weight and every
+     bobbin picked after it kept the first one's — changing the bobbin changed the name
+     and left the old tare in the net (Hetvi: "when the bobbin is changed the wt has to be
+     updated"). Still editable after; "none" clears it, since no bobbin weighs nothing. */
+  const pickBobbin = (name: string, tare = tareMap[name]) => {
+    setBobbin(name);
+    setPerPcs(name && tare ? tare : "");
+  };
 
   /* THE SCALE WRITES THE TOTAL WEIGHT ITSELF.
      Box on, reading settles, the weight is in the box — so the whole entry is Enter,
@@ -1372,7 +1383,7 @@ function BoxDialog({
           <span className="mm-bx-label">Bobbin</span>
           <div className="mm-bx-bobbin">
             <SearchSelect value={bobbin} placeholder="— none —"
-              options={allBobbins.map((b) => ({ value: b.name, label: b.name }))} onChange={setBobbin} />
+              options={allBobbins.map((b) => ({ value: b.name, label: b.name }))} onChange={(v) => pickBobbin(v)} />
             {bobbinMaster && (
               <button type="button" className="mm-link-add mm-bx-add" title="New bobbin" onClick={() => setQuick(true)}><Plus size={15} /></button>
             )}
@@ -1432,9 +1443,12 @@ function BoxDialog({
           meta={bobbinMaster}
           seed=""
           onClose={() => setQuick(false)}
-          onCreated={(name) => {
-            setExtraBobbins((p) => [...p, { name, weight: 0 }]);
-            setBobbin(name);
+          onCreated={(name, doc) => {
+            // The weight typed into the new bobbin, so it is the tare straight away — it
+            // was recorded as 0 here and the per-pcs weight kept whatever was there before.
+            const weight = Number(doc?.weight || 0);
+            setExtraBobbins((p) => [...p, { name, weight }]);
+            pickBobbin(name, weight);
             setQuick(false);
           }}
         />
