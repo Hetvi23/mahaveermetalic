@@ -1561,6 +1561,15 @@ def finish_unfinished(program, roll_inventory=None, rolls=None, no_of_patty=None
 		)
 		frappe.db.set_value("MM Program", doc.name, "source_cutting", pending, update_modified=False)
 
+	# Cutting this roll may have emptied the lot that kept an earlier run of it open.
+	if ri is not None:
+		from mahaveermetalic.mahaveer_metallic.doctype.mm_production.mm_production import close_spent_runs
+
+		try:
+			close_spent_runs(ri.color_name, ri.lot_number)
+		except Exception:
+			frappe.log_error(title=f"closing spent runs after finishing {doc.name} failed")
+
 	return {"program": doc.name, "net_weight": prog_weight, "per_patty_weight": blended,
 		"total_batches": planned, "patti_cut": patty, "patti_taken": take,
 		"spare_patti": max(0, patty - take), "short_by": short, "pending_cutting": pending,

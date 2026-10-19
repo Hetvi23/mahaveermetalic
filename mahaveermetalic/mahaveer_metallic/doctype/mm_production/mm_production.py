@@ -148,6 +148,7 @@ class MMProduction(Document):
 		self._post_bobbin_usage()
 		self._add_to_inventory()
 		self._raise_sales_challan()
+		self._close_spent_siblings()
 
 	def _post_bobbin_usage(self):
 		"""Bobbins entered on the boxes are consumed out of bobbin stock."""
@@ -338,49 +339,15 @@ class MMProduction(Document):
 			)
 
 	def _program_status_after(self, program: str) -> str:
-		"""Completed only when the program has nothing left worth boxing.
+		return program_status_after(program)
 
-		Two conditions, and both have to hold:
-
-		1. What is still unboxed is within the leftover tolerance in MM Settings. A program
-		   is rarely boxed to the exact gram, so a few hundred grams left over is finished
-		   in every sense that matters; 100 kg is not.
-		2. Nothing of that lot is still on the floor. Stock outlives the arithmetic — a
-		   patty or roll of the same lot sitting in inventory is material that can still be
-		   wound, and closing the program while it exists strands it.
-		"""
-		from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
-			get_leftover_tolerance,
-		)
-
-		from mahaveermetalic.mahaveer_metallic.api.production import program_produced_weight
-
-		# THIS RUN'S SHARE, not the voucher's total. A pile's voucher carries the whole
-		# lot's boxes, so its net says nothing about how much came off this particular run;
-		# program_produced_weight reads that from the allocation table. By the time this
-		# runs the voucher is submitted, so its own share is already counted.
-		produced = round(float(program_produced_weight([program]).get(program) or 0), 3)
-		planned = float(frappe.db.get_value("MM Program", program, "net_weight") or 0)
-		remaining = round(planned - produced, 3)
-		if planned and remaining > get_leftover_tolerance():
-			return "Partially Done"
-		if self._lot_still_in_stock(program):
-			return "Partially Done"
-		return "Completed"
-
-	def _lot_still_in_stock(self, program: str) -> bool:
-		"""Is any roll of this program's lot still holding stock?"""
-		lot = frappe.db.get_value("MM Program", program, "lot")
-		lot_id = frappe.db.get_value("MM Lot", lot, "lot_id") if lot else None
-		if not lot_id:
-			return False
-		return bool(
-			frappe.db.sql(
-				"""select 1 from `tabMM Roll Inventory`
-				where lot_number = %s and ifnull(stock_weight, 0) > 0 limit 1""",
-				(lot_id,),
-			)
-		)
+	def _close_spent_siblings(self):
+		"""This voucher may have emptied the lot that was keeping another run open."""
+		lot_id = frappe.db.get_value("MM Lot", self.lot, "lot_id") if self.lot else None
+		try:
+			close_spent_runs(self.shade, lot_id)
+		except Exception:
+			frappe.log_error(title=f"closing spent runs after {self.name} failed")
 
 	def _refresh_order_production(self):
 		if self.customer_order:
@@ -389,3 +356,103 @@ class MMProduction(Document):
 			)
 
 			recalculate_production_completed(self.customer_order)
+
+
+def program_status_after(program: str) -> str:
+	"""Completed only when the program has nothing left worth boxing.
+
+	Two conditions, and both have to hold:
+
+	1. What is still unboxed is within the leftover tolerance in MM Settings. A program
+	   is rarely boxed to the exact gram, so a few hundred grams left over is finished
+	   in every sense that matters; 100 kg is not.
+	2. No raw material of its colour and lot is still free on the floor (_free_material_left).
+	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
+		get_leftover_tolerance,
+	)
+
+	from mahaveermetalic.mahaveer_metallic.api.production import program_produced_weight
+
+	# THIS RUN'S SHARE, not the voucher's total. A pile's voucher carries the whole
+	# lot's boxes, so its net says nothing about how much came off this particular run;
+	# program_produced_weight reads that from the allocation table. By the time this
+	# runs the voucher is submitted, so its own share is already counted.
+	produced = round(float(program_produced_weight([program]).get(program) or 0), 3)
+	planned = float(frappe.db.get_value("MM Program", program, "net_weight") or 0)
+	remaining = round(planned - produced, 3)
+	if planned and remaining > get_leftover_tolerance():
+		return "Partially Done"
+	if _free_material_left(program):
+		return "Partially Done"
+	return "Completed"
+
+
+def _free_material_left(program: str) -> bool:
+	"""Is raw material of this program's COLOUR and lot still on the floor, free to wind?
+
+	Stock outlives the arithmetic: a roll of the same material sitting in inventory can
+	still be wound, and closing the program while it exists strands it. But it asked about
+	the printed lot id alone, and "LT1/26-27" is every colour's first lot. Any colour
+	holding LT1 stock kept every LT1 program open, and so did the finished pile of the
+	program's own output and a roll another program had already booked. On
+	vm.essenceerp.in SV ANMOL 1's ROLL run (302.1 kg, 302.0 boxed in MMPROD-00006) stayed
+	"Partially Done" on the Production screen with 0.1 kg to box, because ROLL-2 of the
+	same lot was still in stock at that moment, booked by its own program.
+
+	So only RAW rolls of this colour and lot count, and not one booked by another program.
+	"""
+	from mahaveermetalic.mahaveer_metallic.api.inventory import is_finished_pile, reserved_roll_names
+
+	p = frappe.db.get_value("MM Program", program, ["lot", "shade"], as_dict=True) or {}
+	lot_id = frappe.db.get_value("MM Lot", p.get("lot"), "lot_id") if p.get("lot") else None
+	if not lot_id:
+		return False
+	filters = {"lot_number": lot_id, "stock_weight": [">", 0]}
+	if p.get("shade"):
+		filters["color_name"] = p.shade
+	rows = frappe.get_all("MM Roll Inventory", filters=filters, fields=["name", "roll_no", "color_name"])
+	if not rows:
+		return False
+	booked = reserved_roll_names(exclude_program=program)
+	return any(not is_finished_pile(r) and r.name not in booked for r in rows)
+
+
+def close_spent_runs(shade, lot_id):
+	"""Close every run of this colour and lot that is only open because of material now gone.
+
+	A run's status is decided when its production is submitted, and nothing asked again.
+	So a run held open by a sister roll still in stock stayed on "In threads processing"
+	after that roll was cut into its own program: SV ANMOL 1 LT1/26-27 showed "2 programs,
+	2 patty, 301.2 kg" for one 301.1 kg run and the 0.1 kg tail of another. Called when a
+	production is submitted and when a program cuts a roll, the two moments the lot's
+	stock moves.
+
+	Only a run that has been boxed from is touched (it is stamped with its latest voucher),
+	and only when program_status_after now says Completed. A run with nothing boxed yet is
+	still work on the floor.
+	"""
+	if not shade or not lot_id:
+		return
+	lots = frappe.get_all("MM Lot", filters={"lot_id": lot_id}, pluck="name")
+	if not lots:
+		return
+	for program in frappe.get_all(
+		"MM Program",
+		filters={"docstatus": 1, "shade": shade, "lot": ["in", lots], "status": "Partially Done",
+			"production": ["is", "not set"]},
+		pluck="name",
+	):
+		last = frappe.db.sql(
+			"""select p.name from `tabMM Production` p
+			where p.docstatus = 1 and (p.source_program = %(prog)s or exists (
+				select 1 from `tabMM Production Program` pp where pp.parent = p.name and pp.program = %(prog)s))
+			order by p.creation desc limit 1""",
+			{"prog": program},
+		)
+		if not last or program_status_after(program) != "Completed":
+			continue
+		frappe.db.set_value(
+			"MM Program", program, {"status": "Completed", "production": last[0][0]},
+			update_modified=False,
+		)
