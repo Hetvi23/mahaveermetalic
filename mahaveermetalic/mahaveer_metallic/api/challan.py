@@ -185,7 +185,19 @@ def available_boxes(party=None, sales_order=None, limit=500):
 	# customer's sales challan — it prints as one, and names the customer rather than the
 	# worker — so those boxes have gone out and offering them again would dispatch them
 	# twice (Hetvi: "see voucher is already created for this boxes", on MMUSC-207-26/27).
+	#
+	# WHAT HAS GONE IS WORKED OUT ONCE, NOT ONCE PER BOX. This was a NOT EXISTS run for
+	# every box, and its barcode-OR-production test cannot use an index — so 4,000 boxes
+	# each scanned all 3,900 challan lines and Select Box sat on "Loading…" for 25 seconds
+	# on mm.mahaveermetalic.com. The dispatched barcodes, and the productions whose
+	# unbarcoded boxes went out, are now two small lists built once and anti-joined: the
+	# same boxes come back, in a tenth of a second.
 	JOB_IN_BOOK = "(c.challan_type = 'Job In' and (c.naming_series = 'MMUJI-.YYYY.-' or c.name like 'MMUJI-%%'))"
+	SHIPPED = f"""
+		select distinct {{col}} from `tabMM Sales Challan Item` ci
+		join `tabMM Sales Challan` c on c.name = ci.parent
+		where c.docstatus < 2 and not {JOB_IN_BOOK} and ifnull(ci.barcode, '') {{cmp}} ''
+	"""
 	rows = frappe.db.sql(
 		f"""
 		select b.name as box, b.barcode, p.name as production, p.posting_date, p.shade as item, p.cut,
@@ -208,18 +220,13 @@ def available_boxes(party=None, sales_order=None, limit=500):
 			ifnull(p.job_work_flag, 0) as job_work_flag
 		from `tabMM Production Box` b
 		join `tabMM Production` p on p.name = b.parent
+		left join ({SHIPPED.format(col="ci.barcode", cmp="!=")}) gone_box on gone_box.barcode = b.barcode
+		-- Boxes that predate barcoding can only be matched by their production.
+		left join ({SHIPPED.format(col="ci.production", cmp="=")}) gone_prod
+			on ifnull(b.barcode, '') = '' and gone_prod.production = p.name
 		where {" and ".join(conds)}
-			and not exists (
-				select 1 from `tabMM Sales Challan Item` ci
-				join `tabMM Sales Challan` c on c.name = ci.parent
-				where c.docstatus < 2 and not {JOB_IN_BOOK}
-					and (
-						(ifnull(b.barcode, '') != '' and ci.barcode = b.barcode)
-						-- Boxes that predate barcoding can only be matched by their production.
-						or (ifnull(b.barcode, '') = '' and ifnull(ci.barcode, '') = ''
-							and ci.production = p.name)
-					)
-			)
+			and gone_box.barcode is null
+			and gone_prod.production is null
 		order by p.posting_date desc, b.idx asc
 		limit {int(limit)}
 		""",
