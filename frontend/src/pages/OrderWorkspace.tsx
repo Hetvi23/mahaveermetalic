@@ -182,10 +182,14 @@ export default function OrderWorkspace() {
   // Only search is server-side; the pending/completed chip is filtered client-side because
   // "completed" now means production 100% OR the inward/force completed flag (an OR the
   // list query can't express cleanly).
-  const filters = useMemo(() => {
-    const f: unknown[] = [];
-    if (q.trim()) f.push(["party", "like", `%${q.trim()}%`]);
-    return f as unknown as undefined;
+  //
+  // The search matches EITHER name a row goes by. The party is usually the person
+  // (MANAV BHAI) while the list shows the firm (SHAGUN INDUSTRIES), and it searched the
+  // party alone — so on 76 of 80 orders, typing what was on the screen found nothing.
+  const orFilters = useMemo(() => {
+    const t = q.trim();
+    if (!t) return undefined;
+    return [["party", "like", `%${t}%`], ["company_name", "like", `%${t}%`]] as unknown as undefined;
   }, [q]);
 
   const { data: rows, isLoading, mutate } = useFrappeGetDocList<Row>("MM Sales Order", {
@@ -206,7 +210,7 @@ export default function OrderWorkspace() {
       "order_state",
       "company_name",
     ],
-    filters,
+    orFilters,
     limit: 200,
     orderBy: { field: "modified", order: "desc" },
   });
