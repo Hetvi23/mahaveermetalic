@@ -25,6 +25,7 @@ from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 	variance_needs_override,
 	verify_admin_pin,
 )
+from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import DISPATCH_SQL
 
 
 # MATERIAL REACHES PRODUCTION ONLY ONCE THE PROGRAM SAYS IT RAN.
@@ -575,7 +576,7 @@ def orders_for_production(party=None, color=None):
 				"""select coalesce(sum(ci.weight), 0)
 				from `tabMM Sales Challan Item` ci join `tabMM Sales Challan` c on c.name = ci.parent
 				where c.docstatus = 1
-					and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+					and """ + DISPATCH_SQL + """
 					and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %s""",
 				(r.name,),
 			)[0][0]

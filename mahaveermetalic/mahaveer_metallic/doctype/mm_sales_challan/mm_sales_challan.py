@@ -33,9 +33,36 @@ def _key(colour):
 	return "".join((colour or "").lower().split())
 
 
-def is_dispatch(challan_type) -> bool:
-	"""True when this challan type sends goods to the customer against their order."""
-	return (challan_type or "Sales") not in NON_DISPATCH_TYPES
+JOB_IN_OWN_SERIES = "MMUJI-.YYYY.-"
+
+
+def is_dispatch(challan_type, name=None, naming_series=None) -> bool:
+	"""True when this challan sends goods to the customer against their order.
+
+	A Job In is the worker's receipt — unless it is written in a DISPATCH book rather than
+	its own MMUJI- book. Then it is the customer's sales challan as well: it prints as one,
+	and the boxes on it have gone out (Hetvi, on MMUSC-207-26/27; api.challan.available_boxes
+	already keeps them off Select Box for that reason). Its weight belongs in the order's
+	delivery, which it never reached: MMUSC-8-26/27 mapped to order 2 left the Order Report
+	reading 0 kg dispatched.
+
+	Pass the challan's `name` (and `naming_series`, when to hand) for that answer. Called
+	with the type alone this answers as it always did — which is what the over-dispatch
+	GUARDS ask, so a worker's receipt is never newly refused on the order's cover.
+	"""
+	t = challan_type or "Sales"
+	if t == "Job In" and (name or naming_series):
+		return (naming_series or "") != JOB_IN_OWN_SERIES and not (name or "").startswith("MMUJI-")
+	return t not in NON_DISPATCH_TYPES
+
+
+# is_dispatch for a query, with the challan aliased `c`: what every dispatch SUM counts.
+# Each caller passes query parameters, hence the doubled %.
+DISPATCH_SQL = (
+	"(ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')"
+	" or (c.challan_type = 'Job In' and ifnull(c.naming_series, '') != 'MMUJI-.YYYY.-'"
+	" and c.name not like 'MMUJI-%%'))"
+)
 
 
 def order_rates(doc) -> dict:
@@ -285,9 +312,9 @@ class MMSalesChallan(Document):
 		customer's order. Every other type counts — a Delivery Challan against an order is
 		as much a dispatch as a Sales challan. `mark_dispatched` closes an order only once
 		the challans COVER it, so a part-delivery no longer closes one and cancelling a
-		challan can open one back up.
+		challan can open one back up. A Job In written in a dispatch book counts (is_dispatch).
 		"""
-		if not is_dispatch(self.challan_type):
+		if not is_dispatch(self.challan_type, self.name, self.get("naming_series")):
 			return
 		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import mark_dispatched
 

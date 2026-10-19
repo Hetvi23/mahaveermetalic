@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import DISPATCH_SQL
 
 # Absolute kg of slack under the percentage over-tolerance, for scale rounding — the same
 # floor the challan-level over-receipt check uses.
@@ -502,7 +503,7 @@ class MMInward(Document):
 			from `tabMM Sales Challan` c
 			left join `tabMM Sales Challan Item` ci on ci.parent = c.name
 			where c.docstatus = 1
-				and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+				and """ + DISPATCH_SQL + """
 				and (c.sales_order in %(orders)s or ci.sales_order in %(orders)s)
 			limit 1
 			""",

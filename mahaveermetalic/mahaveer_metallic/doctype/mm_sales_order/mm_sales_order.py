@@ -12,6 +12,7 @@ from frappe.utils import getdate
 from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 	get_inward_match_tolerance,
 )
+from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import DISPATCH_SQL
 
 
 def is_mm_admin() -> bool:
@@ -911,7 +912,7 @@ def dispatched_by_order(orders):
 		from `tabMM Sales Challan` c
 		join `tabMM Sales Challan Item` ci on ci.parent = c.name
 		where c.docstatus = 1
-			and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+			and """ + DISPATCH_SQL + """
 			and coalesce(nullif(ci.sales_order, ''), c.sales_order) in %(o)s
 		group by so
 		""",
@@ -949,7 +950,7 @@ def orders_with_dispatch(orders):
 		from `tabMM Sales Challan` c
 		left join `tabMM Sales Challan Item` ci on ci.parent = c.name
 		where c.docstatus = 1
-			and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+			and """ + DISPATCH_SQL + """
 			and (c.sales_order in %(o)s or ci.sales_order in %(o)s)
 		""",
 		{"o": tuple(orders)},

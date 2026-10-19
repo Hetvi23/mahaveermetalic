@@ -30,6 +30,7 @@ from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order imp
 from mahaveermetalic.mahaveer_metallic.doctype.mm_settings.mm_settings import (
 	get_inward_match_tolerance,
 )
+from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import DISPATCH_SQL
 
 
 def _rate_range(vals):
@@ -288,7 +289,7 @@ def order_summary(order):
 		join `tabMM Sales Challan` c on c.name = ci.parent
 		left join `tabMM Party Master` pm on pm.name = c.party
 		where c.docstatus = 1
-			and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+			and """ + DISPATCH_SQL + """
 			and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %(o)s
 		group by c.name, c.challan_no, c.transaction_date, c.challan_type, c.party, pm.party_name,
 			ci.color_name, ci.cut

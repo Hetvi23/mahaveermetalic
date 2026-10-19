@@ -14,6 +14,7 @@ import re
 
 import frappe
 from frappe import _
+from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import DISPATCH_SQL
 
 
 def _valid_colour(name):
@@ -1389,7 +1390,7 @@ def _order_cover(sales_order, exclude_challan=None):
 			"""select coalesce(sum(ci.weight), 0)
 			from `tabMM Sales Challan Item` ci join `tabMM Sales Challan` c on c.name = ci.parent
 			where c.docstatus = 1 and c.name != %(me)s
-				and ifnull(c.challan_type, 'Sales') not in ('Job Out', 'Job In', 'Job Challan')
+				and """ + DISPATCH_SQL + """
 				and coalesce(nullif(ci.sales_order, ''), c.sales_order) = %(so)s""",
 			{"so": sales_order, "me": exclude_challan or ""},
 		)[0][0]
@@ -1606,7 +1607,7 @@ def challan_report(from_date=None, to_date=None, party=None, challan_type=None, 
 		# The order's dispatch arithmetic belongs to DISPATCHES. A job challan named the
 		# order only to reach the customer, and showing its cover there read as the job's
 		# balance — a Job Out of 1,239.6 kg answered by 98.62 kg showed 1,239.6 still due.
-		if not is_dispatch(r.challan_type):
+		if not is_dispatch(r.challan_type, r.name, r.get("naming_series")):
 			r["cover"] = None
 			continue
 		if r.sales_order and r.sales_order not in covers:
@@ -1650,7 +1651,7 @@ def challan_lines(challan):
 		"total_weight": doc.total_weight,
 		# Measured WITHOUT this challan, so its own rows don't count against themselves.
 		# Dispatches only — a job challan never draws on the order (see challan_report).
-		"cover": _order_cover(doc.sales_order, exclude_challan=doc.name) if is_dispatch(doc.challan_type) else None,
+		"cover": _order_cover(doc.sales_order, exclude_challan=doc.name) if is_dispatch(doc.challan_type, doc.name, doc.get("naming_series")) else None,
 		"job": _job_balances([frappe._dict(name=doc.name, challan_type=doc.challan_type,
 			against_job_out=doc.get("against_job_out"))]).get(doc.name),
 		"items": [
@@ -1772,7 +1773,7 @@ def update_challan_weights(challan, lines):
 	# Correcting the weight is a completion-changing event now that the order's status is
 	# read off what has gone out: 20 kg keyed as 200 closed the order, and putting it right
 	# has to open it back up. Nothing else recounts on this path.
-	if is_dispatch(doc.challan_type):
+	if is_dispatch(doc.challan_type, doc.name, doc.get("naming_series")):
 		from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_order.mm_sales_order import (
 			mark_dispatched,
 		)
@@ -1935,8 +1936,9 @@ def map_challan_order(challan, sales_order=None, company_name=None):
 	)
 
 	# BOTH ORDERS. The new one may now be covered; the old one has just had this challan's
-	# weight taken off it and may have reopened.
-	if is_dispatch(doc.challan_type):
+	# weight taken off it and may have reopened. A Job In written in a dispatch book is a
+	# delivery too (is_dispatch), so mapping one moves the order's Dispatched figure.
+	if is_dispatch(doc.challan_type, doc.name, doc.get("naming_series")):
 		for o in filter(None, {old_order, new_order}):
 			try:
 				mark_dispatched(o)
@@ -1951,7 +1953,7 @@ def map_challan_order(challan, sales_order=None, company_name=None):
 		"company": _challan_companies([doc]).get(doc.name),
 		"total_amount": doc.total_amount,
 		"lines": len(doc.items),
-		"cover": _order_cover(new_order, exclude_challan=doc.name) if new_order and is_dispatch(doc.challan_type) else None,
+		"cover": _order_cover(new_order, exclude_challan=doc.name) if new_order and is_dispatch(doc.challan_type, doc.name, doc.get("naming_series")) else None,
 	}
 
 
