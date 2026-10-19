@@ -804,7 +804,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                     any non-empty string opened it — so it cost the floor a step and
                     secured nothing. Seeing the full company list is not a privileged act;
                     what is posted against the company still is. */}
-                <button type="button" className="mm-mini mm-pv-seeall"
+                <button type="button" className="mm-mini mm-pv-seeall" disabled={toStock}
                   title={showAll
                     ? "Showing every company — click for only those with an order"
                     : "Showing only companies with an order — click to see every company"}
@@ -812,9 +812,13 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                   {showAll ? "ordered only" : "See all"}
                 </button>
               </span>
+              {/* Read-only while Add to stock is ticked, like the challan fields beside it:
+                  stock is dispatched to nobody, so there is no party to choose here. Untick
+                  to change it. */}
               <SearchSelect
                 value={company}
-                placeholder={partiesCall.isLoading ? "Loading…" : "— select company —"}
+                disabled={toStock}
+                placeholder={toStock ? "Added to stock" : partiesCall.isLoading ? "Loading…" : "— select company —"}
                 options={partyRows.map((p) => ({
                   value: p.company,
                   label: p.company,

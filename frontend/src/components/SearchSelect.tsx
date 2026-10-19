@@ -180,7 +180,8 @@ export default function SearchSelect({
 					<Plus size={15} />
 				</button>
 			)}
-			<AnchoredMenu anchor={wrap} open={open} minWidth={menuMinWidth}
+			{/* A disabled field shows no menu, even one opened just before it was locked. */}
+			<AnchoredMenu anchor={wrap} open={open && !disabled} minWidth={menuMinWidth}
 				className={options.some((o) => o.meta) ? "mm-suggest-rich" : undefined}>
 				<>
 					{!noClear && (
