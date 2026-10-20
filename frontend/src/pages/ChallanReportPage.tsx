@@ -281,10 +281,16 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
     setCustomer(d?.company || d?.party || "");
   }, [d?.challan, d?.sales_order, d?.company, d?.party]);
 
-  // Every open order, not just this party's: the challan may be mapped to an order of a
-  // customer it was never filed under, which is half the reason the mapping is being made.
+  // THIS PARTY'S OPEN ORDERS (Hetvi: "the orders dropdown will only have the party's
+  // orders"). Every open order in the shop was offered, two hundred of them across every
+  // customer, to map one challan. "See all" is kept for the one case that needs it: a
+  // challan filed under the wrong party, such as a Job In filed under its worker, has
+  // none of the right orders under its own name.
+  const [allParties, setAllParties] = useState(false);
+  const scopeParty = allParties ? "" : d?.party || "";
   const ordersCall = useFrappeGetCall<{ message: OrderOpt[] }>(
-    `${API}.orders_for_challan`, {}, "chal-map-orders",
+    `${API}.orders_for_challan`, scopeParty ? { party: scopeParty } : {},
+    d ? `chal-map-orders-${scopeParty || "all"}` : null,
   );
   const orderOpts = useMemo(() => {
     const rows = ordersCall.data?.message ?? [];
@@ -431,10 +437,24 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                   onChange={(e) => setCustomer(e.target.value)}
                   placeholder={order ? "" : "Who it went to"}
                   title={d.party && d.company && d.party !== d.company ? `Party: ${d.party}` : undefined} /></label>
-              <label className="mm-field"><span className="mm-field-label">Order</span>
+              <label className="mm-field">
+                <span className="mm-field-label">
+                  Order
+                  {d.party && (
+                    <button type="button" className="mm-mini mm-pv-seeall"
+                      title={allParties
+                        ? "Showing every customer's open orders — click for only this challan's party"
+                        : "Showing only this challan's party — click to see every customer's open orders"}
+                      onClick={(e) => { e.preventDefault(); setAllParties((v) => !v); }}>
+                      {allParties ? "this party" : "See all"}
+                    </button>
+                  )}
+                </span>
                 <SearchSelect value={order} onChange={setOrder} options={orderOpts}
-                  placeholder="— none —" menuMinWidth={320}
-                  emptyText="No open orders to map this to." /></label>
+                  placeholder={ordersCall.isLoading ? "Loading…" : "— none —"} menuMinWidth={320}
+                  emptyText={scopeParty
+                    ? "This party has no open orders — use See all for another customer's."
+                    : "No open orders to map this to."} /></label>
               <label className="mm-field"><span className="mm-field-label">Chalan Date</span>
                 <input className="mm-input" value={d.transaction_date || "—"} readOnly /></label>
             </div>

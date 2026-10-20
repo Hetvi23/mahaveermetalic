@@ -91,10 +91,18 @@ export default function SearchSelect({
 	// Filter only once the user actually types: clicking a filled field must still offer
 	// all the other options, not just the one already chosen.
 	const q = dirty ? text.trim().toLowerCase() : "";
-	const shown = useMemo(
-		() => (q ? options.filter((o) => `${o.label} ${o.meta ?? ""}`.toLowerCase().includes(q)) : options),
-		[options, q],
-	);
+	// EVERY WORD, IN ANY ORDER. Matched as one phrase, "bch lk" found nothing for LK BCH BSM
+	// and "anmol 11" nothing for ANMOL 11 BS — the colour had to be typed exactly as it is
+	// spelled, from its first letter. Each word now has to appear somewhere in the option's
+	// label or its subtitle, so anything the old phrase found is still found.
+	const shown = useMemo(() => {
+		if (!q) return options;
+		const words = q.split(/\s+/).filter(Boolean);
+		return options.filter((o) => {
+			const hay = `${o.label} ${o.meta ?? ""}`.toLowerCase();
+			return words.every((w) => hay.includes(w));
+		});
+	}, [options, q]);
 	// Typing re-filters, so the highlight has to come back to the top or it points at
 	// whatever now happens to sit at that index. OPENING is different: the highlight starts
 	// on the value already chosen. It used to start at 0, so Enter — the key the box panel
