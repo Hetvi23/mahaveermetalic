@@ -839,19 +839,19 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
      open orders should come in the dropdown"). The Job Out's own orders only ever named the
      customer it was sent for, so a receipt filed under anyone else had no order to pick.
      Open means what the production voucher means — approved, with weight still to produce —
-     because a Job In IS a production. Every colour is offered, this Job Out's first; the
-     order of the list is otherwise the server's FIFO. */
+     because a Job In IS a production.
+
+     ONLY THIS JOB OUT'S COLOUR. The worker is bringing back ANMOL 121 BSM, so an order for
+     LG 113 BSM or STB ANMOL BSM is not one it can fill (Hetvi: "only show order for ANMOL
+     121 BSM for this party"). They were offered too, merely sorted below it — the same
+     filter the production voucher applies, by the same endpoint. In the server's FIFO order. */
+  const jobColour = (meta?.color_name || "").trim();
   const partyOrdersCall = useFrappeGetCall<{ message: PartyOrder[] }>(
     "mahaveermetalic.mahaveer_metallic.api.production.orders_for_production",
-    jiParty ? { party: jiParty } : undefined,
-    jiParty ? `ji-party-orders-${jiParty}` : null,
+    jiParty ? { party: jiParty, color: jobColour || undefined } : undefined,
+    jiParty ? `ji-party-orders-${jiParty}-${jobColour}` : null,
   );
-  const jobColour = (meta?.color_name || "").trim();
-  const partyOrders = useMemo(() => {
-    const rows = partyOrdersCall.data?.message ?? [];
-    const ofColour = (o: PartyOrder) => !!jobColour && (o.colours || "").split(", ").includes(jobColour);
-    return [...rows].sort((a, b) => Number(ofColour(b)) - Number(ofColour(a)));
-  }, [partyOrdersCall.data, jobColour]);
+  const partyOrders = partyOrdersCall.data?.message ?? [];
   const partyPick = partyOrders.find((o) => o.name === order);
   const picked: JobOutOrder | undefined = orderOpts.find((o) => o.order === order)
     ?? (partyPick ? { order: partyPick.name, company_name: partyPick.company_name } : undefined);
@@ -1152,7 +1152,9 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                         meta: [o.customer_name, o.company_name].filter(Boolean).join(" · "),
                       }))}
                   placeholder={(jiParty ? partyOrdersCall.isLoading : ordersCall.isLoading) ? "Loading…" : "No order"}
-                  emptyText={jiParty ? "This party has no open orders." : "This Job Out names no customer order."}
+                  emptyText={jiParty
+                    ? `This party has no open order for ${jobColour || "this colour"}.`
+                    : "This Job Out names no customer order."}
                 />
               </label>
               {/* WHOSE ACCOUNT THIS RECEIPT LANDS IN — chosen here, and what is chosen wins
