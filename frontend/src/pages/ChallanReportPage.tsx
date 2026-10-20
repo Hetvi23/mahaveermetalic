@@ -288,12 +288,36 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
   // none of the right orders under its own name.
   const [allParties, setAllParties] = useState(false);
   const scopeParty = allParties ? "" : d?.party || "";
-  const ordersCall = useFrappeGetCall<{ message: OrderOpt[] }>(
-    `${API}.orders_for_challan`, scopeParty ? { party: scopeParty } : {},
-    d ? `chal-map-orders-${scopeParty || "all"}` : null,
+  // The challan's colours go to the server too: the list stops at 200, oldest first, so a
+  // filter applied only here lost the newer orders under "See all".
+  const challanColourNames = useMemo(
+    () => [...new Set((d?.items ?? []).map((it) => (it.color_name || "").trim()).filter(Boolean))].sort(),
+    [d?.items],
   );
+  const ordersCall = useFrappeGetCall<{ message: OrderOpt[] }>(
+    `${API}.orders_for_challan`,
+    { ...(scopeParty ? { party: scopeParty } : {}), ...(challanColourNames.length ? { colours: JSON.stringify(challanColourNames) } : {}) },
+    d ? `chal-map-orders-${scopeParty || "all"}-${challanColourNames.join("|")}` : null,
+  );
+  /* AND ONLY ORDERS FOR WHAT IS ON THE CHALLAN (Hetvi: "the color match should have
+     happened and shown me only the LK BCH BSM"). The mapping refuses an order that was not
+     placed for every colour the challan carries, so offering one was offering a refusal:
+     MMUSC-12-26/27 carries LK BCH BSM and was shown order 5, FL R WATER BSM. Matched the
+     way the mapping matches — every colour on the challan, case and spacing aside — and an
+     order with no colours on it is open to anything, as there. */
+  const colourKey = (c?: string | null) => (c || "").toLowerCase().replace(/\s+/g, "");
+  const challanColours = useMemo(
+    () => [...new Set((d?.items ?? []).map((it) => colourKey(it.color_name)).filter(Boolean))],
+    [d?.items],
+  );
+  const colourLabel = [...new Set((d?.items ?? []).map((it) => it.color_name).filter(Boolean))].join(", ");
   const orderOpts = useMemo(() => {
-    const rows = ordersCall.data?.message ?? [];
+    const fits = (o: OrderOpt) => {
+      if (!challanColours.length || !o.colours) return true;
+      const has = new Set(o.colours.split(",").map((c) => colourKey(c)));
+      return challanColours.every((c) => has.has(c));
+    };
+    const rows = (ordersCall.data?.message ?? []).filter(fits);
     const opts = rows.map((o) => ({
       value: o.name,
       label: `${o.name}${o.colours ? ` \u00b7 ${o.colours}` : ""}`,
@@ -305,7 +329,7 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
     const have = d?.sales_order;
     if (have && !opts.some((o) => o.value === have)) opts.unshift({ value: have, label: have, meta: "on this challan" });
     return opts;
-  }, [ordersCall.data?.message, d?.sales_order]);
+  }, [ordersCall.data?.message, d?.sales_order, challanColours]);
 
   const mapDirty = order !== (d?.sales_order || "")
     || (!order && customer.trim() !== (d?.company || d?.party || "").trim());
@@ -453,8 +477,8 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                 <SearchSelect value={order} onChange={setOrder} options={orderOpts}
                   placeholder={ordersCall.isLoading ? "Loading…" : "— none —"} menuMinWidth={320}
                   emptyText={scopeParty
-                    ? "This party has no open orders — use See all for another customer's."
-                    : "No open orders to map this to."} /></label>
+                    ? `This party has no open order for ${colourLabel || "these colours"} — use See all for another customer's.`
+                    : `No open order for ${colourLabel || "these colours"}.`} /></label>
               <label className="mm-field"><span className="mm-field-label">Chalan Date</span>
                 <input className="mm-input" value={d.transaction_date || "—"} readOnly /></label>
             </div>

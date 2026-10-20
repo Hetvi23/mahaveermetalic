@@ -1292,7 +1292,7 @@ def order_rates(sales_order=None):
 
 
 @frappe.whitelist()
-def orders_for_challan(party=None):
+def orders_for_challan(party=None, colours=None):
 	"""Orders still available to dispatch against, for the challan's order picker.
 
 	An order goes out on as MANY challans as it takes. This used to drop any order that
@@ -1306,8 +1306,29 @@ def orders_for_challan(party=None):
 	# used to return nothing without a customer, so the screen greyed the Order box out and
 	# told them to go and find the customer first. Picking the order names the customer,
 	# not the other way round; the party is a filter when they have one, not a gate.
+	#
+	# `colours` narrows it to orders that can take EVERY colour named — the same test
+	# map_challan_order applies, and an order with no colours on it takes anything, as there.
+	# Filtered here and not in the browser: the list stops at 200, oldest first, so a
+	# filter applied after it lost exactly the newer orders it was looking for.
+	if isinstance(colours, str):
+		colours = json.loads(colours) if colours.strip().startswith("[") else colours.split(",")
+	colours = sorted({(c or "").strip() for c in (colours or []) if (c or "").strip()})
+	vals = {"party": party or None}
+	colour_cond = ""
+	if colours:
+		has_all = []
+		for i, c in enumerate(colours):
+			vals[f"c{i}"] = c
+			has_all.append(
+				f"exists (select 1 from `tabMM Sales Order Item` y where y.parent = so.name and y.color_name = %(c{i})s)"
+			)
+		colour_cond = (
+			"and (not exists (select 1 from `tabMM Sales Order Item` y where y.parent = so.name"
+			" and ifnull(y.color_name, '') != '') or (" + " and ".join(has_all) + "))"
+		)
 	rows = frappe.db.sql(
-		"""
+		f"""
 		select so.name, so.party, so.transaction_date, so.ordered_weight, so.ordered_box, so.completion_mode,
 			pm.party_name,
 			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
@@ -1317,6 +1338,7 @@ def orders_for_challan(party=None):
 		where (%(party)s is null or %(party)s = '' or so.party = %(party)s)
 			and so.docstatus = 1
 			and ifnull(so.order_state, '') != 'Cancelled'
+			{colour_cond}
 		-- FIFO: the order that came in first is filled first. This listed the NEWEST
 		-- order at the top, so the newest was the one picked by default and the oldest
 		-- sank down the list as more arrived — the queue ran backwards.
@@ -1326,7 +1348,7 @@ def orders_for_challan(party=None):
 		order by so.transaction_date asc, so.creation asc
 		limit 200
 		""",
-		{"party": party or None},
+		vals,
 		as_dict=True,
 	)
 	if not rows:

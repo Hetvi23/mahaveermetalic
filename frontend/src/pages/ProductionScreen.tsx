@@ -1245,27 +1245,50 @@ function BoxDialog({
      first (armed below) so the box just added, still sitting on the scale, cannot key
      itself in again; and it never overwrites a weight the operator typed by hand. */
   const [grossTyped, setGrossTyped] = useState(false);
-  const armed = useRef(false);
-  // Whether this panel has already taken a reading. Once it has, only an empty platform
-  // re-arms it — the box it took is still sitting there.
-  const taken = useRef(false);
   const reading = scale.reading;
+  /* TOTAL WEIGHT FOLLOWS THE SETTLED SCALE (Hetvi: "when i put the box the total weight
+     should auto fetch it, i dont have to click on use wt"). It used to take ONE reading
+     once the platform had read 0.05 kg or less, and then nothing more. A platform that
+     never reads that low (a tray, a zero that has drifted) armed it anyway — so the empty
+     tray's 0.30 kg was taken as the box, the real box after it was ignored, and Use
+     weight was the only way in. And 5 g of jitter on the box just added made it "a new
+     box", which keyed the same box in twice.
+
+     So now:
+       • the field follows the scale whenever the weight SETTLES — the indicator says
+         stable and the last readings agree within a few grams, or, for an indicator that
+         only prints when stable, its stable print on its own;
+       • anything under 0.5 kg, or a fifth of the last box, is an empty platform and is
+         never taken;
+       • the box just added is left alone until the platform empties or a clearly
+         different weight settles;
+       • a weight typed by hand is never overwritten, nor is an edited box's. */
+  const hist = useRef<{ w: number; t: number }[]>([]);
+  const waitClear = useRef(!!prev && !edit);
   useEffect(() => {
     const w = reading?.weight ?? null;
     if (w == null) return;
-    if (w <= 0.05) { armed.current = true; return; }
-    // OPENED WITH A BOX ALREADY ON THE SCALE, the panel takes its weight straight away.
-    // Waiting for an empty platform first meant the first box of every voucher sat there
-    // reading "18.19 kg stable" until somebody clicked Use weight (Hetvi: "use weight by
-    // default"). The one reading still held back is the box just added: it reads exactly
-    // that box's gross, so it waits for the platform to clear like before.
-    if (!armed.current && !taken.current && !(prev && Math.abs(w - prev.gross) < 0.005)) {
-      armed.current = true;
+    const now = Date.now();
+    const h = hist.current;
+    const gap = h.length ? now - h[h.length - 1].t : Infinity;
+    h.push({ w, t: now });
+    while (h.length > 12 || now - h[0].t > 2000) h.shift();
+    if (w < Math.max(SCALE_EMPTY_KG, (prev?.gross ?? 0) * 0.2)) { waitClear.current = false; return; }
+    if (!reading?.stable) return;
+    const recent = h.filter((x) => now - x.t <= 1500).map((x) => x.w);
+    const band = Math.max(0.02, w * 0.002);
+    const steady = recent.length >= 3 && Math.max(...recent) - Math.min(...recent) <= band;
+    // Frames a second or more apart are an indicator that prints on stable: trust it.
+    if (!steady && gap < 1000) return;
+    if (waitClear.current) {
+      if (prev && Math.abs(w - prev.gross) <= Math.max(0.05, prev.gross * 0.005)) return;
+      waitClear.current = false;
     }
-    if (!armed.current || !reading?.stable || grossTyped || edit) return;
-    armed.current = false;
-    taken.current = true;
-    setGross(Number(w.toFixed(3)));
+    if (grossTyped || edit) return;
+    // Held through the scale's own jitter, so the field does not flicker 10.24 / 10.245;
+    // a real change — the box nudged, bobbins added — moves it.
+    const next = Number(w.toFixed(3));
+    setGross((g) => (g !== "" && Math.abs(Number(g) - next) <= band ? g : next));
   }, [reading, grossTyped, edit, prev]);
 
   /* Enter walks the fields that are actually keyed and the last one files the box:
@@ -1346,8 +1369,7 @@ function BoxDialog({
               return;
             }
             setErr(null);
-            taken.current = true;
-            armed.current = false;
+            waitClear.current = false;
             setGross(Number(w.toFixed(3)));
           }
         }
@@ -1470,6 +1492,9 @@ function BoxDialog({
 
 /* ── Weighing-scale capture (Web Serial) for the gross weight ── */
 const BAUDS = [9600, 2400, 4800, 19200, 38400, 1200];
+/** Below this the platform is empty, whatever it reads: a tray, a zero that has drifted. No
+ *  box of wound jari weighs under half a kilo. Enter or Use weight still takes it by hand. */
+const SCALE_EMPTY_KG = 0.5;
 
 /** The scale's controls and its live reading. The connection itself belongs to the
  *  voucher above — this only drives it, so moving between boxes never drops the port. */
