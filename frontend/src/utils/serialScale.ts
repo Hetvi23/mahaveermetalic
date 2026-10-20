@@ -166,16 +166,24 @@ export type FrameName = keyof typeof FRAMES;
 
 const FRAME_BASE = { stopBits: 1, flowControl: "none", bufferSize: 4096 } as const;
 
-async function openPort(port: SerialPortLike, baudRate: number, frame: FrameName = "8N1"): Promise<void> {
+export async function openPort(port: SerialPortLike, baudRate: number, frame: FrameName = "8N1"): Promise<void> {
   const FRAME = { ...FRAME_BASE, ...(FRAMES[frame] ?? FRAMES["8N1"]) };
   try {
     await port.open({ baudRate, ...FRAME });
     return;
   } catch (e) {
     const err = e as { name?: string; message?: string };
-    // Already open and already ours — a reload or a half-finished disconnect left it that
-    // way. Opening it twice is the error; using it is fine.
-    if (err?.name === "InvalidStateError" || /already open/i.test(String(err?.message))) return;
+    // Already open and already ours — a half-finished disconnect left it that way. It is
+    // open at whatever baud and framing it was opened with, so using it as it stands meant
+    // a changed setting never applied: 19200 switched to 9600 went on reading at 19200.
+    // Reopen with what was asked for; if it cannot be closed, use it as it is.
+    if (err?.name === "InvalidStateError" || /already open/i.test(String(err?.message))) {
+      try {
+        await port.close();
+        await port.open({ baudRate, ...FRAME });
+      } catch { /* still open as before */ }
+      return;
+    }
     if (!isBusy(e)) throw e;
     // Windows hands the COM handle back a beat AFTER the previous holder lets go, so the
     // open fired right after closing the old .exe (or reloading this tab) fails and the
@@ -185,6 +193,69 @@ async function openPort(port: SerialPortLike, baudRate: number, frame: FrameName
     await port.open({ baudRate, ...FRAME });
   }
 }
+
+/* ── Reading ────────────────────────────────────────────────────────────────────────
+ * A BREAK IS NOT A DISCONNECT. Web Serial reports four line conditions as errors on the
+ * reader — a break, a framing error, a parity error, a buffer overrun — and all four are
+ * recoverable: the reader that saw it is finished, but the port is still open and
+ * port.readable is a fresh stream to carry on from. The loop treated the first one as the
+ * end, so one "Break received" (an indicator powering up does it, so does a loose
+ * connector) dropped the scale, and the errored reader kept its lock, so the port could
+ * not even be closed for the next try (Hetvi, at the floor PC: "issues when connecting
+ * the scale machine").
+ *
+ * A line that breaks over and over with nothing readable in between is a different story:
+ * that is what an indicator sounds like at the wrong baud rate or framing. That stops, and
+ * says so, rather than spinning.
+ */
+const RECOVERABLE = new Set(["BreakError", "FramingError", "ParityError", "BufferOverrunError"]);
+const MAX_LINE_ERRORS = 30;
+
+export type PumpEnd = { reason: "stopped" | "closed" | "noisy" | "error"; error?: unknown; lineErrors?: string };
+
+export async function pumpPort(
+  port: SerialPortLike,
+  ev: {
+    shouldStop: () => boolean;
+    onReader: (r: ReadableStreamDefaultReader<Uint8Array>) => void;
+    onBytes: (chunk: Uint8Array) => void;
+    onLineError: (name: string, inARow: number) => void;
+  },
+): Promise<PumpEnd> {
+  let inARow = 0;
+  while (!ev.shouldStop()) {
+    const stream = port.readable;
+    if (!stream) return { reason: "closed" };
+    const reader = stream.getReader();
+    ev.onReader(reader);
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return { reason: ev.shouldStop() ? "stopped" : "closed" };
+        if (value?.length) {
+          inARow = 0;
+          ev.onBytes(value);
+        }
+      }
+    } catch (e) {
+      if (ev.shouldStop()) return { reason: "stopped" };
+      const name = (e as { name?: string })?.name ?? "";
+      if (!RECOVERABLE.has(name)) return { reason: "error", error: e };
+      inARow += 1;
+      ev.onLineError(name, inARow);
+      if (inARow >= MAX_LINE_ERRORS) return { reason: "noisy", error: e, lineErrors: name };
+      await sleep(50);
+    } finally {
+      // Always, or the port can never be closed — close() refuses a locked stream.
+      try { reader.releaseLock(); } catch { /* ignore */ }
+    }
+  }
+  return { reason: "stopped" };
+}
+
+const MISMATCH =
+  "That is what a scale sounds like at the wrong speed: set the baud rate and framing to the " +
+  "indicator's own (most are 9600 / 8N1; many Indian ones are 2400 or 7E1), then Connect again.";
 
 function explainOpenFailure(e: unknown, port: SerialPortLike | null): string {
   const err = e as { name?: string; message?: string };
@@ -196,7 +267,13 @@ function explainOpenFailure(e: unknown, port: SerialPortLike | null): string {
       "Couldn't open the port — either another program is holding it, or this isn't the " +
       "scale's port. Close the old Mahavir .exe and any scale/printer utility, close other " +
       "tabs of this app, unplug-replug the serial cable, then Connect again. In the picker " +
-      "choose the USB-Serial / COM port the scale is wired to — not the TSC printer." + tail
+      "choose the USB-Serial / COM port the scale is wired to — not the TSC printer." +
+      // The port named in the fault was the PC's own COM port. Worth saying outright: if the
+      // scale's cable goes into a USB socket, this was simply the wrong entry in the list.
+      (port && portKey(port) === "native"
+        ? " This was the PC's built-in COM port — if the scale's cable goes into a USB socket, " +
+          "press Choose port and pick the USB-Serial entry instead."
+        : "") + tail
     );
   }
   if (err?.name === "SecurityError") {
@@ -221,6 +298,9 @@ export function useSerialScale() {
   const portRef = useRef<SerialPortLike | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const stopRef = useRef(false);
+  /** Which read loop is the live one. Releasing the port moves it on, so a loop still
+   *  winding down from the last connection cannot mark the NEW one disconnected. */
+  const sessionRef = useRef(0);
   const silenceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearSilence = useCallback(() => {
@@ -228,8 +308,13 @@ export function useSerialScale() {
   }, []);
 
   const release = useCallback(async () => {
-    try { await readerRef.current?.cancel(); } catch { /* ignore */ }
+    sessionRef.current += 1;
+    const reader = readerRef.current;
     readerRef.current = null;
+    try { await reader?.cancel(); } catch { /* ignore */ }
+    // Unlocked before closing: close() refuses a stream a reader still holds, and a port
+    // that is never closed can never be reopened at a different baud rate.
+    try { reader?.releaseLock(); } catch { /* ignore */ }
     try { await portRef.current?.close(); } catch { /* ignore */ }
     portRef.current = null;
   }, []);
@@ -257,10 +342,8 @@ export function useSerialScale() {
   /** Pump the port's bytes into readings. Shared by the manual connect and the automatic
    *  one, so a scale opened either way behaves identically. */
   const startReading = useCallback((port: SerialPortLike) => {
-    const stream = port.readable;
-    if (!stream) { setError("Port has no readable stream."); return; }
-    const reader = stream.getReader();
-    readerRef.current = reader;
+    if (!port.readable) { setError("Port has no readable stream."); return; }
+    const me = ++sessionRef.current;
     const decoder = new TextDecoder();
     let buf = "";
 
@@ -287,42 +370,50 @@ export function useSerialScale() {
       setNote(null);
       setReading(parseScaleFrame(ln));
     };
-    void (async () => {
-      try {
-        while (!stopRef.current) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          if (value?.length) {
-            clearSilence();
-            setBytes((n) => n + value.length);
-          }
-          buf += decoder.decode(value, { stream: true });
-          // STX/ETX are delimiters too, and are stripped rather than parsed.
-          const parts = buf.split(/\r\n|\r|\n|\x02|\x03/);
-          buf = parts.pop() ?? "";
-          for (const ln of parts) emit(ln);
-          // NO DELIMITER AT ALL is a real frame style, not a fault. A buffer that stops
-          // growing for a moment is a finished frame, and one that runs long without a
-          // break never had a delimiter to wait for — either way, read it rather than hold
-          // it for ever.
-          if (flush) clearTimeout(flush);
-          if (buf.length > 160) { emit(buf); buf = ""; }
-          else if (buf) flush = setTimeout(() => { emit(buf); buf = ""; }, 400);
-        }
-      } catch (e) {
-        if (!stopRef.current) setError(String((e as Error)?.message || e));
-      } finally {
+    const stale = () => stopRef.current || sessionRef.current !== me;
+    void pumpPort(port, {
+      shouldStop: stale,
+      onReader: (r) => { readerRef.current = r; },
+      onBytes: (value) => {
+        clearSilence();
+        setBytes((n) => n + value.length);
+        buf += decoder.decode(value, { stream: true });
+        // STX/ETX are delimiters too, and are stripped rather than parsed.
+        const parts = buf.split(/\r\n|\r|\n|\x02|\x03/);
+        buf = parts.pop() ?? "";
+        for (const ln of parts) emit(ln);
+        // NO DELIMITER AT ALL is a real frame style, not a fault. A buffer that stops
+        // growing for a moment is a finished frame, and one that runs long without a
+        // break never had a delimiter to wait for — either way, read it rather than hold
+        // it for ever.
         if (flush) clearTimeout(flush);
-        // The cable being pulled ends the stream; without this the UI keeps claiming it is
-        // connected and the operator waits on a reading that can never arrive.
-        if (!stopRef.current) {
-          clearSilence();
-          setConnected(false);
-          setPortLabel(null);
-        }
+        if (buf.length > 160) { emit(buf); buf = ""; }
+        else if (buf) flush = setTimeout(() => { emit(buf); buf = ""; }, 400);
+      },
+      onLineError: (name, n) => {
+        // One break is an indicator powering up; several in a row is a mismatch.
+        if (n >= 3) setNote(`The signal from the scale keeps breaking (${name} ×${n}). ${MISMATCH}`);
+      },
+    }).then(async (end) => {
+      if (flush) clearTimeout(flush);
+      if (end.reason === "stopped" || sessionRef.current !== me) return;
+      clearSilence();
+      // CLOSED, not left open behind a dead reader — so the next Connect opens it fresh with
+      // whatever baud and framing it is given. The cable being pulled ends up here too;
+      // without this the UI kept claiming it was connected.
+      await release();
+      setConnected(false);
+      setPortLabel(null);
+      if (end.reason === "noisy") {
+        setError(`Stopped listening: the scale's signal broke ${MAX_LINE_ERRORS} times in a row with nothing readable (${end.lineErrors}). ${MISMATCH}`);
+      } else if (end.reason === "error") {
+        const err = end.error as { name?: string; message?: string };
+        setError(`The scale connection dropped: ${err?.name ? `${err.name}: ` : ""}${String(err?.message || end.error)}`);
+      } else {
+        setNote("The scale stopped sending and the port closed — check the cable and that the indicator is on, then Connect again.");
       }
-    })();
-  }, [clearSilence]);
+    });
+  }, [clearSilence, release]);
 
   const autoConnect = useCallback(
     async (baudRate = 9600, frame: FrameName = "8N1") => {
