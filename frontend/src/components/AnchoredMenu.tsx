@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 /** Breathing room between the field and its menu. */
@@ -139,4 +139,30 @@ export default function AnchoredMenu({
 export function isInsideMenu(target: EventTarget | null): boolean {
 	const el = target as Element | null;
 	return !!el?.closest?.("[data-mm-menu]");
+}
+
+/** Close a picker when the user clicks or tabs away from it.
+ *
+ *  CAPTURE PHASE, so no dialog can swallow the click. A sheet stops its clicks from
+ *  bubbling, so that a click inside it does not reach the scrim behind and close the sheet,
+ *  and that stopped them reaching a listener on `document` too. A picker opened inside the
+ *  Job In voucher therefore never closed again (Hetvi: "dropdown once open does not
+ *  close"). Listening on the way down hears every click before anything can stop it.
+ *  Focus leaving the field by Tab closes it the same way. The menu itself is portalled
+ *  onto <body>, outside `wrap`, so it is checked separately. */
+export function useCloseOnOutside(wrap: RefObject<HTMLElement | null>, close: () => void) {
+	const closeRef = useRef(close);
+	closeRef.current = close;
+	useEffect(() => {
+		function away(e: Event) {
+			if (isInsideMenu(e.target)) return;
+			if (wrap.current && !wrap.current.contains(e.target as Node)) closeRef.current();
+		}
+		document.addEventListener("click", away, true);
+		document.addEventListener("focusin", away, true);
+		return () => {
+			document.removeEventListener("click", away, true);
+			document.removeEventListener("focusin", away, true);
+		};
+	}, [wrap]);
 }

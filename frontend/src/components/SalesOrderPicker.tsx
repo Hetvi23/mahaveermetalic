@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { ChevronDown, X } from "lucide-react";
-import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import AnchoredMenu, { useCloseOnOutside } from "./AnchoredMenu";
 import { useMenuKeys } from "@/utils/menuKeys";
 
 export type SOOption = {
@@ -74,16 +74,9 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
   );
   const options = useMemo(() => data?.message ?? [], [data]);
 
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      // The menu is portalled onto <body>, so it isn't inside `wrap` — check it too,
-      // otherwise using the party filter inside the list closes the list.
-      if (isInsideMenu(e.target)) return;
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("click", onDoc);
-    return () => document.removeEventListener("click", onDoc);
-  }, []);
+  // The party filter inside the list lives in the portalled menu, so using it does not
+  // close the list (useCloseOnOutside checks the menu separately).
+  useCloseOnOutside(wrap, () => setOpen(false));
 
   const selected = options.find((o) => o.sales_order === value);
   // Colour is what the operator recognises an order by on the floor, so it belongs in

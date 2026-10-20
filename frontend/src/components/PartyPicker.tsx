@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { ChevronDown, Plus, UserPlus, X } from "lucide-react";
 import { getMasterByDoctype } from "@/config/registry";
-import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import AnchoredMenu, { useCloseOnOutside } from "./AnchoredMenu";
 import { useMenuKeys } from "@/utils/menuKeys";
 import QuickCreateMaster from "./QuickCreateMaster";
 
@@ -47,15 +47,7 @@ export default function PartyPicker({
     return out;
   }, [data]);
 
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      // The menu is portalled onto <body>, so it isn't inside `wrap` — check it too.
-      if (isInsideMenu(e.target)) return;
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("click", onDoc);
-    return () => document.removeEventListener("click", onDoc);
-  }, []);
+  useCloseOnOutside(wrap, () => setOpen(false));
 
   const keys = useMenuKeys({
     open, setOpen, items: rows,

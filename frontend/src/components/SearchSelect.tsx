@@ -1,7 +1,7 @@
 import { ChevronDown, Plus, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { getMasterByDoctype } from "@/config/registry";
-import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import AnchoredMenu, { useCloseOnOutside } from "./AnchoredMenu";
 import QuickCreateMaster from "./QuickCreateMaster";
 
 export type SelectOption = {
@@ -79,17 +79,10 @@ export default function SearchSelect({
 	const wrap = useRef<HTMLDivElement>(null);
 	const master = createDoctype ? getMasterByDoctype(createDoctype) : undefined;
 
-	useEffect(() => {
-		function onDoc(e: MouseEvent) {
-			if (isInsideMenu(e.target)) return;
-			if (wrap.current && !wrap.current.contains(e.target as Node)) {
-				setOpen(false);
-				setDirty(false);
-			}
-		}
-		document.addEventListener("click", onDoc);
-		return () => document.removeEventListener("click", onDoc);
-	}, []);
+	useCloseOnOutside(wrap, () => {
+		setOpen(false);
+		setDirty(false);
+	});
 
 	const selected = options.find((o) => o.value === value);
 	// An unknown value still shows itself, so a stale/hand-set value is never hidden.

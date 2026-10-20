@@ -2,7 +2,7 @@ import { getMasterByDoctype } from "@/config/registry";
 import { useFrappeGetDocList } from "frappe-react-sdk";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import AnchoredMenu, { isInsideMenu } from "./AnchoredMenu";
+import AnchoredMenu, { useCloseOnOutside } from "./AnchoredMenu";
 import { useMenuKeys } from "@/utils/menuKeys";
 import QuickCreateMaster from "./QuickCreateMaster";
 
@@ -37,15 +37,7 @@ export default function LinkField({ label, linkDoctype, value, onChange, disable
 		setText(value || "");
 	}, [value]);
 
-	useEffect(() => {
-		function onDocClick(e: MouseEvent) {
-			// The menu is portalled onto <body>, so it isn't inside `wrap` — check it too.
-			if (isInsideMenu(e.target)) return;
-			if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-		}
-		document.addEventListener("click", onDocClick);
-		return () => document.removeEventListener("click", onDocClick);
-	}, []);
+	useCloseOnOutside(wrap, () => setOpen(false));
 
 	// Show all options on focus; filter once the user actually types. Uses get_list
 	// (search_link is unreliable on some sites and returns nothing).
