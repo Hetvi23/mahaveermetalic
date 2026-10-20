@@ -288,6 +288,11 @@ export function useSerialScale() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The scale answered, but at a speed or framing it is not set to. Retrying on its own
+   *  cannot fix that, so the automatic retries stand down until the settings change or
+   *  someone presses Connect. */
+  const [mismatch, setMismatch] = useState(false);
+  const clearMismatch = useCallback(() => setMismatch(false), []);
   const [note, setNote] = useState<string | null>(null);
   const [portLabel, setPortLabel] = useState<string | null>(null);
   const [reading, setReading] = useState<ScaleReading | null>(null);
@@ -405,6 +410,7 @@ export function useSerialScale() {
       setConnected(false);
       setPortLabel(null);
       if (end.reason === "noisy") {
+        setMismatch(true);
         setError(`Stopped listening: the scale's signal broke ${MAX_LINE_ERRORS} times in a row with nothing readable (${end.lineErrors}). ${MISMATCH}`);
       } else if (end.reason === "error") {
         const err = end.error as { name?: string; message?: string };
@@ -453,6 +459,7 @@ export function useSerialScale() {
     async (baudRate = 9600, opts?: { pick?: boolean; frame?: FrameName }) => {
       if (!serial) { setError("Web Serial is not available in this browser / context."); return; }
       setError(null);
+      setMismatch(false);
       setNote(null);
       setConnecting(true);
       stopRef.current = false;
@@ -516,5 +523,5 @@ export function useSerialScale() {
   // Clean up the port on unmount.
   useEffect(() => () => { void disconnect(); }, [disconnect]);
 
-  return { supported, granted, connected, connecting, error, note, portLabel, reading, bytes, connect, autoConnect, disconnect };
+  return { supported, granted, connected, connecting, error, note, portLabel, reading, bytes, mismatch, clearMismatch, connect, autoConnect, disconnect };
 }

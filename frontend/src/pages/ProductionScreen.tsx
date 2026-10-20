@@ -326,7 +326,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     const saved = typeof window !== "undefined" ? window.localStorage.getItem("mm-scale-frame") : null;
     return (saved && saved in FRAMES ? saved : "8N1") as FrameName;
   });
-  const { supported: scaleOk, granted: scaleGranted, connected: scaleOn, connecting: scaleBusy, autoConnect } = scale;
+  const {
+    supported: scaleOk, granted: scaleGranted, connected: scaleOn, connecting: scaleBusy,
+    mismatch: scaleMismatch, clearMismatch, autoConnect,
+  } = scale;
   const [scaleTries, setScaleTries] = useState(0);
   // A port appearing — the operator picked the scale, or plugged the cable in — is a fresh
   // reason to try, so the tries start over rather than staying spent.
@@ -334,20 +337,23 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   useEffect(() => {
     // Chrome only needs a click to CHOOSE a port, never to reopen one already granted, so
     // the operator picks the scale once on this PC and never presses Connect again.
-    // Retried a few times because the usual reasons it fails are temporary: the indicator
-    // is still warming up, or the last handle has not been released yet.
-    // Nothing granted yet means there is nothing to reopen; the screen asks for the one
-    // click instead of retrying something that cannot succeed.
-    if (!scaleOk || scaleOn || scaleBusy || scaleTries > 4 || scaleGranted === 0) return;
+    //
+    // IT KEEPS TRYING, for as long as the voucher is open (Hetvi: "on every entry or
+    // restart pc this should auto connect"). It gave up after five tries, twenty seconds,
+    // and every reason it fails is one that passes: the old Mahavir .exe or another tab
+    // still holding COM1 after a restart, the indicator warming up, the scale switched off
+    // and on mid-voucher. Past the first attempt it is one quiet try every five seconds.
+    //
+    // It stands down in two cases only: nothing granted yet (the screen asks for the one
+    // click — Chrome will not open a port nobody has chosen), and a scale answering at the
+    // wrong speed, which no number of retries can fix until the baud or framing changes.
+    if (!scaleOk || scaleOn || scaleBusy || scaleMismatch || scaleGranted === 0) return;
     const t = setTimeout(() => {
       setScaleTries((n) => n + 1);
       void autoConnect(baud, frame);
-    }, scaleTries === 0 ? 0 : 4000);
+    }, scaleTries === 0 ? 0 : 5000);
     return () => clearTimeout(t);
-    // baud deliberately not a dependency: changing it must not re-fire the auto-connect
-    // behind the operator while they are choosing one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scaleOk, scaleOn, scaleBusy, scaleTries, scaleGranted, autoConnect]);
+  }, [scaleOk, scaleOn, scaleBusy, scaleMismatch, scaleTries, scaleGranted, autoConnect, baud, frame]);
 
   const [jobWorkTouched, setJobWorkTouched] = useState(false);
   const [operator, setOperator] = useState("");
@@ -977,9 +983,10 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
                 defaultReturns={{ box: boxReturn, bobbin: bobbinReturn }}
                 scale={scale}
                 baud={baud}
-                onBaud={(b) => { setBaud(b); window.localStorage.setItem("mm-scale-baud", String(b)); }}
+                // A new setting is a fresh reason to try, straight away.
+                onBaud={(b) => { setBaud(b); window.localStorage.setItem("mm-scale-baud", String(b)); setScaleTries(0); clearMismatch(); }}
                 frame={frame}
-                onFrame={(f) => { setFrame(f); window.localStorage.setItem("mm-scale-frame", f); }}
+                onFrame={(f) => { setFrame(f); window.localStorage.setItem("mm-scale-frame", f); setScaleTries(0); clearMismatch(); }}
                 onClose={() => { setAdding(false); setEditing(null); }}
                 onAdd={(bx) => {
                   const wasEdit = editing != null;
