@@ -84,7 +84,6 @@ export default function SalesChallanVoucher() {
   const [company, setCompany] = useState("");
   const [order, setOrder] = useState("");
   const [challanType, setChallanType] = useState("Sales");
-  const [challanNo, setChallanNo] = useState("");
   // The challan's own ID, typed by hand. Blank leaves it to the type's series.
   const [challanId, setChallanId] = useState("");
   const [date, setDate] = useState(today());
@@ -277,7 +276,7 @@ export default function SalesChallanVoucher() {
         pin: withPin || undefined,
         delivery_by: deliveryBy || undefined,
         challan_type: challanType,
-        job_work: jobWork ? 1 : 0, challan_no: challanNo || undefined,
+        job_work: jobWork ? 1 : 0,
         challan_id: challanId.trim() || undefined,
         boxes: JSON.stringify(lines.filter((l) => l.kind === "box").map((l) => l.ref)),
         rolls: JSON.stringify(lines.filter((l) => l.kind === "roll").map((l) => l.ref)),
@@ -285,7 +284,7 @@ export default function SalesChallanVoucher() {
       const name = (res as { message?: { challan?: string } })?.message?.challan;
       const typeLabel = CHALLAN_TYPES.find((t) => t.value === challanType)?.label ?? challanType;
       toast(`${typeLabel} ${name || ""} created`);
-      setLines([]); setChallanNo(""); setChallanId(""); setRemark("");
+      setLines([]); setChallanId(""); setRemark("");
       setOverCover(false); setPin("");
       if (name) {
         setLastChallan(name);
@@ -350,11 +349,11 @@ export default function SalesChallanVoucher() {
               onChange={(e) => setChallanId(e.target.value)}
               placeholder="e.g. 123" />
           </label>
-          <label className="mm-field">
-            <span className="mm-field-label">Manual Chalan No</span>
-            <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)}
-              placeholder="Blank — numbered by the series" />
-          </label>
+          {/* No "Manual Chalan No" here (Hetvi: "hide manual challan no"). Challan ID above is
+              the number a sales challan is known by — it names the challan (MMUSC-123-26/27)
+              and is what prints — so a second, free-typed book number only invited two
+              numbers for one dispatch: one sales challan in 287 on mm carried one. Job Out and
+              Job In keep theirs: there it is the worker's C.No, and receipts file under it. */}
           <label className="mm-field">
             <span className="mm-field-label">Party / Company *</span>
             <SearchSelect
