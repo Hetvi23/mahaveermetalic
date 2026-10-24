@@ -213,6 +213,11 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 				"voucher_no": r.voucher_no,
 				"bobbin": r.bobbin,
 				"note": r.note,
+				# WHAT SOMEBODY WROTE, not what the system did (Hetvi: "remark addition in
+				# bobbin report"). A Bobbin In / Out entry carries the operator's own note; a
+				# production's line carries "Used in production MMPROD-…", which only repeats
+				# the Vch.No beside it, so it is not a remark and stays blank.
+				"remark": (r.note or None) if r.voucher_type == "Bobbin Challan" else None,
 				"in_qty": float(r.in_qty or 0),
 				"out_qty": float(r.out_qty or 0),
 				"qty": round(float(r.in_qty or 0) - float(r.out_qty or 0), 3),
