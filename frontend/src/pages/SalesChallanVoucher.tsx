@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { X, Search, PackageSearch, Boxes, Printer } from "lucide-react";
-import PartyPicker from "@/components/PartyPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 
@@ -32,8 +31,28 @@ const today = todayISO;
 // above it, not a job movement: it takes stock out and counts toward the order.
 const CHALLAN_TYPES = DISPATCH_SERIES;
 
+/* A BOX IS NUMBERED BY ITS PRODUCTION (Hetvi: "show the selected box production grouped like
+   11.1 11.2 11.3 12.1"). The barcode spells it out in full — MMPROD-00011.3 — which reads as
+   a wall of zeros across twenty lines and hides which boxes came off the same voucher. The
+   short form is the production's own number and the box's place in it, and the lines are
+   kept in that order, so a challan drawn from three productions reads as three runs. */
+const prodNo = (production?: string) => (production || "").replace(/^MMPROD-0*/i, "");
+const boxNo = (l: { production?: string; boxIdx?: number; barcode?: string }) =>
+  l.production && l.boxIdx ? `${prodNo(l.production)}.${l.boxIdx}` : l.barcode || "";
+const prodSortKey = (production?: string) => {
+  const n = prodNo(production);
+  return /^\d+$/.test(n) ? n.padStart(12, "0") : n;
+};
+function groupLines(lines: Line[]): Line[] {
+  const boxes = lines.filter((l) => l.kind === "box").sort((a, b) =>
+    prodSortKey(a.production).localeCompare(prodSortKey(b.production)) || (a.boxIdx ?? 0) - (b.boxIdx ?? 0));
+  return [...boxes, ...lines.filter((l) => l.kind !== "box")];
+}
+
 type BoxRow = {
   box: string; production: string; posting_date?: string; item?: string; cut?: string;
+  /** The box's place in its production — the "3" of 11.3. */
+  box_idx?: number;
   customer_order?: string; barcode?: string; gross_weight?: number; bobbin?: string; bobbin_pcs?: number;
   bobbin_pcs_weight?: number; total_bobbin_weight?: number; box_weight?: number; net_weight?: number;
   /** Ticked on the production voucher: this box's packaging / bobbins come back. */
@@ -50,6 +69,7 @@ type RollRow = {
 };
 type Line = {
   key: string; kind: "box" | "roll"; ref: string; barcode?: string; item?: string; size?: string;
+  production?: string; boxIdx?: number;
   gross: number; qty: number; bobbin?: string; bobbinPcs: number; perPcs: number;
   totalBobbin: number; boxWeight: number; net: number; rBox: boolean; rBobbin: boolean;
 };
@@ -61,6 +81,7 @@ type Line = {
  */
 export default function SalesChallanVoucher() {
   const [party, setParty] = useState("");
+  const [company, setCompany] = useState("");
   const [order, setOrder] = useState("");
   const [challanType, setChallanType] = useState("Sales");
   const [challanNo, setChallanNo] = useState("");
@@ -132,7 +153,7 @@ export default function SalesChallanVoucher() {
   }
   // Orders not yet dispatched. An order that already has a submitted challan is gone from
   // this list — offering it again invites a second challan for the same goods.
-  const ordersCall = useFrappeGetCall<{ message: { name: string; party?: string; party_name?: string; colours?: string }[] }>(
+  const ordersCall = useFrappeGetCall<{ message: { name: string; party?: string; party_name?: string; company_name?: string; colours?: string }[] }>(
     `${API}.orders_for_challan`,
     party ? { party } : {},
     // Fetched with or without a customer: the order can be picked first, and picking it
@@ -140,6 +161,37 @@ export default function SalesChallanVoucher() {
     // overwrite each other.
     party ? `chal-orders-${party}` : "chal-orders-all",
   );
+
+  /* PARTY AND COMPANY ARE ONE PICK, as on the Job In voucher (Hetvi: "here also the
+     company/party together selection and searching"). Every row is a company with its party
+     underneath, found by either name, and choosing it sets both. A party with no company on
+     file is listed under its own name (api.party.all_companies). */
+  const companiesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
+    "mahaveermetalic.mahaveer_metallic.api.party.all_companies", undefined, "mm-all-companies",
+  );
+  const companies = useMemo(() => companiesCall.data?.message ?? [], [companiesCall.data]);
+  const pcKey = (partyName: string, firm: string) => `${partyName}\u001f${firm}`;
+  const pcOptions = useMemo(
+    () => companies.map((c) => ({
+      value: pcKey(c.party, c.company_name),
+      label: c.company_name,
+      meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
+    })),
+    [companies],
+  );
+  // A party set without a firm — by an order, or a party just created — takes its own
+  // company when it has only the one, so the box is never left showing nothing.
+  useEffect(() => {
+    if (!party || company) return;
+    const own = companies.filter((c) => c.party === party);
+    if (own.length === 1) setCompany(own[0].company_name);
+  }, [party, company, companies]);
+  /** Name the customer from an order: its party, and its firm when it records one. */
+  const takeOrderParty = (o?: { party?: string; company_name?: string }) => {
+    if (!o?.party) return;
+    if (o.party !== party) { setParty(o.party); setCompany(o.company_name || ""); }
+    else if (o.company_name && o.company_name !== company) setCompany(o.company_name);
+  };
 
   const totals = useMemo(() => {
     const boxes = lines.filter((l) => l.kind === "box").length;
@@ -157,12 +209,27 @@ export default function SalesChallanVoucher() {
   }, [lines, rateFor]);
 
   function addBoxes(rows: BoxRow[]) {
-    setLines((p) => [
+    /* THE ORDER COMES WITH THE BOXES (Hetvi: "the order got auto selected — if it's blank
+       then leave it blank"). A box carries the order its production was made for, so when
+       nothing is chosen yet and the boxes name one order between them, that is the order.
+       Boxes made for no order leave it blank, and boxes naming two orders are not guessed
+       between. It is taken only when it is an open order this customer can dispatch against
+       — the list above is already narrowed to the chosen party — and picking it names the
+       customer when none is chosen. */
+    if (!order) {
+      const named = [...new Set(rows.map((r) => (r.customer_order || "").trim()).filter(Boolean))];
+      if (named.length === 1) {
+        const hit = (ordersCall.data?.message ?? []).find((o) => o.name === named[0]);
+        if (hit) { setOrder(hit.name); takeOrderParty(hit); }
+      }
+    }
+    setLines((p) => groupLines([
       ...p,
       ...rows
         .filter((r) => !p.some((l) => l.kind === "box" && l.ref === r.box))
         .map<Line>((r) => ({
           key: `box-${r.box}`, kind: "box", ref: r.box, barcode: r.barcode, item: r.item, size: r.cut,
+          production: r.production, boxIdx: r.box_idx,
           gross: Number(r.gross_weight || 0), qty: 1, bobbin: r.bobbin,
           bobbinPcs: Number(r.bobbin_pcs || 0), perPcs: Number(r.bobbin_pcs_weight || 0),
           totalBobbin: Number(r.total_bobbin_weight || 0), boxWeight: Number(r.box_weight || 0),
@@ -172,7 +239,7 @@ export default function SalesChallanVoucher() {
           // "Return No. of Box / No. of Bobbin" read 0.
           rBox: !!r.box_return, rBobbin: !!r.bobbin_return,
         })),
-    ]);
+    ]));
     setPicker(null);
   }
   function addRolls(rows: RollRow[]) {
@@ -192,11 +259,11 @@ export default function SalesChallanVoucher() {
 
   async function submit(withPin?: string) {
     setErr(null);
-    if (!party) return setErr("Choose the customer.");
+    if (!party) return setErr("Choose the party / company.");
     if (lines.length === 0) return setErr("Add at least one box or roll.");
     try {
       const res = await createChallan({
-        party, sales_order: order || undefined, challan_date: date, remark: remark || undefined,
+        party, company_name: company || undefined, sales_order: order || undefined, challan_date: date, remark: remark || undefined,
         pin: withPin || undefined,
         delivery_by: deliveryBy || undefined,
         challan_type: challanType,
@@ -278,9 +345,22 @@ export default function SalesChallanVoucher() {
             <input className="mm-input" value={challanNo} onChange={(e) => setChallanNo(e.target.value)}
               placeholder="Blank — numbered by the series" />
           </label>
-          {/* `required` already appends the asterisk inside PartyPicker — the label
-              carried its own as well and the field read "Customer * *". */}
-          <PartyPicker label="Customer" value={party} required onChange={(v) => { setParty(v); setOrder(""); }} />
+          <label className="mm-field">
+            <span className="mm-field-label">Party / Company *</span>
+            <SearchSelect
+              value={party && company ? pcKey(party, company) : ""}
+              placeholder={companiesCall.isLoading ? "Loading…" : "Search party or company"}
+              options={pcOptions}
+              menuMinWidth={300}
+              createDoctype="MM Party Master"
+              onCreated={(name) => { setParty(name); setCompany(""); setOrder(""); void companiesCall.mutate(); }}
+              onChange={(v) => {
+                const row = companies.find((c) => pcKey(c.party, c.company_name) === v);
+                setParty(row?.party || "");
+                setCompany(row?.company_name || "");
+                setOrder("");
+              }} />
+          </label>
           <label className="mm-field">
             <span className="mm-field-label">Order</span>
             {/* USABLE BEFORE THE CUSTOMER. A dispatch is identified on the floor by its
@@ -298,8 +378,7 @@ export default function SalesChallanVoucher() {
               }))}
               onChange={(v) => {
                 setOrder(v);
-                const picked = (ordersCall.data?.message ?? []).find((o) => o.name === v);
-                if (picked?.party && picked.party !== party) setParty(picked.party);
+                takeOrderParty((ordersCall.data?.message ?? []).find((o) => o.name === v));
               }} />
           </label>
           <label className="mm-field">
@@ -332,7 +411,7 @@ export default function SalesChallanVoucher() {
           <table className="mm-table mm-table-dense">
             <thead>
               <tr>
-                <th>Barcode</th><th>Item</th><th>Size</th><th className="mm-num">Gr.Wt | Qty</th>
+                <th>Box</th><th>Item</th><th>Size</th><th className="mm-num">Gr.Wt | Qty</th>
                 <th className="mm-num">Bobbin | Pcs</th><th className="mm-num">Bobbin/Pcs Wt</th>
                 <th className="mm-num">Total Bobbin Wt</th><th className="mm-num">Box Wt</th>
                 <th className="mm-num">Net Wt</th><th className="mm-num">Rate</th>
@@ -345,7 +424,8 @@ export default function SalesChallanVoucher() {
               ) : (
                 lines.map((l, i) => (
                   <tr key={l.key}>
-                    <td>{l.barcode || "—"}</td>
+                    {/* Production.box — the barcode in full on hover, for matching a sticker. */}
+                    <td title={l.barcode || undefined}><strong>{boxNo(l) || "—"}</strong></td>
                     <td>{l.item || "—"}</td>
                     <td>{l.size || "—"}</td>
                     <td className="mm-num">{l.gross.toLocaleString()} | {l.qty}</td>

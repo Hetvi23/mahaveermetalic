@@ -201,7 +201,7 @@ def available_boxes(party=None, sales_order=None, limit=500):
 	"""
 	rows = frappe.db.sql(
 		f"""
-		select b.name as box, b.barcode, p.name as production, p.posting_date, p.shade as item, p.cut,
+		select b.name as box, b.idx as box_idx, b.barcode, p.name as production, p.posting_date, p.shade as item, p.cut,
 			p.customer_order, b.gross_weight, b.bobbin, b.bobbin_pcs, b.bobbin_pcs_weight,
 			b.total_bobbin_weight, b.box_weight, b.net_weight,
 			-- THE RETURN TICKS TRAVEL WITH THE BOX. They were not selected, so a box ticked
@@ -240,7 +240,7 @@ def available_boxes(party=None, sales_order=None, limit=500):
 @frappe.whitelist()
 def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 	job_work=0, boxes=None, rolls=None, challan_no=None, location=None, branch=None,
-	challan_type="Sales", delivery_by=None, challan_id=None, pin=None, **kwargs):
+	challan_type="Sales", delivery_by=None, challan_id=None, pin=None, company_name=None, **kwargs):
 	"""Build a challan by hand from picked produced boxes and/or inventory rolls.
 
 	`challan_type` is the paper being issued — Sales, Job Challan, Challan or Delivery
@@ -339,6 +339,12 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 			"naming_series": SERIES[challan_type],
 			"transaction_date": challan_date or frappe.utils.today(),
 			"party": party,
+			# THE FIRM IT WENT TO, as picked on the voucher's Party / Company box; else the
+			# order's. Left blank, the print fell back to the party's first company, which is
+			# the wrong name on the paper for a party trading as more than one.
+			"company_name": (company_name or "").strip()
+				or (frappe.db.get_value("MM Sales Order", sales_order, "company_name") if sales_order else None)
+				or None,
 			"sales_order": sales_order or None,
 			"challan_no": challan_no or None,
 			"remarks": remark or None,
@@ -385,7 +391,7 @@ def scan_box(barcode):
 		frappe.throw(_("Scan or type a barcode."))
 	b = frappe.db.get_value(
 		"MM Production Box", {"barcode": code},
-		["name as box", "parent as production", "item", "barcode", "gross_weight", "bobbin",
+		["name as box", "idx as box_idx", "parent as production", "item", "barcode", "gross_weight", "bobbin",
 		 "bobbin_pcs", "bobbin_pcs_weight", "total_bobbin_weight", "box_weight", "net_weight"],
 		as_dict=True,
 	)
@@ -396,9 +402,21 @@ def scan_box(barcode):
 		frappe.throw(_("Box {0} belongs to a production that isn't submitted.").format(code))
 	b["cut"] = p.cut if p else None
 	b["customer_order"] = p.customer_order if p else None
-	used = frappe.db.exists("MM Sales Challan Item", {"barcode": code})
+	# GONE BY THE SAME RULE SELECT BOX USES (available_boxes). Any challan line with the
+	# barcode counted, so a box on a CANCELLED challan, or one received back on a Job In
+	# written in its own MMUJI- book (a receipt, so the box is in stock), could be picked
+	# from Select Box and refused at the scanner with "already on a challan".
+	used = frappe.db.sql(
+		"""select c.name from `tabMM Sales Challan Item` ci
+		join `tabMM Sales Challan` c on c.name = ci.parent
+		where ci.barcode = %(code)s and c.docstatus < 2
+			and not (c.challan_type = 'Job In'
+				and (c.naming_series = 'MMUJI-.YYYY.-' or c.name like 'MMUJI-%%'))
+		limit 1""",
+		{"code": code},
+	)
 	if used:
-		frappe.throw(_("Box {0} is already on a challan.").format(code))
+		frappe.throw(_("Box {0} is already on challan {1}.").format(code, used[0][0]))
 	return b
 
 
@@ -1329,7 +1347,7 @@ def orders_for_challan(party=None, colours=None):
 		)
 	rows = frappe.db.sql(
 		f"""
-		select so.name, so.party, so.transaction_date, so.ordered_weight, so.ordered_box, so.completion_mode,
+		select so.name, so.party, so.company_name, so.transaction_date, so.ordered_weight, so.ordered_box, so.completion_mode,
 			pm.party_name,
 			(select group_concat(distinct x.color_name order by x.color_name separator ', ')
 			 from `tabMM Sales Order Item` x where x.parent = so.name) as colours
@@ -1346,7 +1364,9 @@ def orders_for_challan(party=None, colours=None):
 		-- Tie-broken on `creation`, not `modified`: editing an old order must not shuffle
 		-- it to a different place in the queue.
 		order by so.transaction_date asc, so.creation asc
-		limit 200
+		-- 1,000, not 200: completed orders are only dropped AFTER this read (below), so 200
+		-- oldest-first left the newest open orders out once a site passed 200 orders.
+		limit 1000
 		""",
 		vals,
 		as_dict=True,
