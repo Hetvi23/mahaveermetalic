@@ -778,21 +778,21 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     "mm-all-companies",
   );
   const jiCompanies = jiCompaniesCall.data?.message ?? [];
-  /** One row per party, for the Party box — the company list repeats a party once per
-   *  company it owns. */
-  const jiParties = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const c of jiCompanies) if (c.party && !seen.has(c.party)) seen.set(c.party, c.party_name || c.party);
-    return [...seen].map(([value, label]) => ({ value, label }));
-  }, [jiCompanies]);
-  /** THE COMPANIES OF THE CHOSEN PARTY, and every company until one is chosen. A company
-   *  belongs to exactly one party (MM Party Company sits under MM Party Master), so once
-   *  the party is named the rest are not choices — they are other firms' companies, and
-   *  picking one files the receipt against a company its party does not own (Hetvi: "on
-   *  party selection company should be filtered"). */
-  const jiCompanyOpts = useMemo(
-    () => (jiParty ? jiCompanies.filter((c) => c.party === jiParty) : jiCompanies),
-    [jiCompanies, jiParty],
+  /* PARTY AND COMPANY ARE ONE PICK (Hetvi: "merge this party and company field together").
+     Two boxes asked the same question twice — whose account is this — and the second had to
+     be filtered by the first so the pair could not disagree. Every row is a company with the
+     party it belongs to underneath, found by either name, and choosing it sets both. A party
+     with no company on file is listed under its own name (api.party.all_companies). */
+  const pcKey = (partyName: string, company: string) => `${partyName}\u001f${company}`;
+  const pcOptions = useMemo(
+    () => jiCompanies.map((c) => ({
+      value: pcKey(c.party, c.company_name),
+      label: c.company_name,
+      // Which party owns this company — two firms can run companies that read alike, and
+      // filing under the wrong one is the whole risk here.
+      meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
+    })),
+    [jiCompanies],
   );
   // The book the Job In challan is written in: its own unless another series is picked.
   // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
@@ -851,7 +851,13 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
     jiParty ? { party: jiParty, color: jobColour || undefined } : undefined,
     jiParty ? `ji-party-orders-${jiParty}-${jobColour}` : null,
   );
-  const partyOrders = partyOrdersCall.data?.message ?? [];
+  // AND THE COMPANY (Hetvi: "based on the company/party both filter the order must be
+  // shown"). A party trading as two firms has orders under each, and a receipt filed under
+  // one firm answers that firm's order. An order with no company on it is still the party's.
+  const partyOrders = useMemo(() => {
+    const rows = partyOrdersCall.data?.message ?? [];
+    return jiCompany ? rows.filter((o) => !o.company_name || o.company_name === jiCompany) : rows;
+  }, [partyOrdersCall.data, jiCompany]);
   const partyPick = partyOrders.find((o) => o.name === order);
   const picked: JobOutOrder | undefined = orderOpts.find((o) => o.order === order)
     ?? (partyPick ? { order: partyPick.name, company_name: partyPick.company_name } : undefined);
@@ -1163,50 +1169,26 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                   says which one that would be, so leaving it empty is an informed choice
                   rather than a blind one. */}
               <label className="mm-field">
-                <span className="mm-field-label">Party</span>
+                <span className="mm-field-label">Party / Company</span>
                 <SearchSelect
-                  value={jiParty}
+                  value={jiParty && jiCompany ? pcKey(jiParty, jiCompany) : ""}
                   onChange={(v) => {
-                    setJiParty(v);
-                    // A company already picked under the previous party is not this one's.
-                    // Left standing it would submit a mismatched pair, and the box would
-                    // still be showing a name that no longer belongs to anything.
-                    setJiCompany((c) =>
-                      c && !jiCompanies.some((x) => x.company_name === c && x.party === v) ? "" : c);
+                    const row = jiCompanies.find((c) => pcKey(c.party, c.company_name) === v);
+                    setJiParty(row?.party || "");
+                    setJiCompany(row?.company_name || "");
                   }}
-                  options={jiParties.map((p) => ({ value: p.value, label: p.label }))}
-                  // WITH NO ORDER THERE IS NOBODY TO NAME. This fell all the way back to
-                  // the Job Out's own party — the job WORKER — so a receipt against no
-                  // order sat reading "SHREEJI JARI" as though an account had been chosen
+                  options={pcOptions}
+                  menuMinWidth={300}
+                  // WITH NO ORDER THERE IS NOBODY TO NAME. Falling back to the Job Out's own
+                  // party put the job WORKER in the box as though an account had been chosen
                   // (Hetvi: "if order not selected then job party should not be auto
                   // selected"). An order names its customer and that is worth offering;
                   // without one the box says what it means, which is: pick.
                   placeholder={order
-                    ? (picked?.customer_name || picked?.customer || meta?.party_name
-                        || meta?.party_label || party || "Party")
-                    : "Select party"}
-                  emptyText="No party matches." />
-              </label>
-              <label className="mm-field">
-                <span className="mm-field-label">Company</span>
-                <SearchSelect
-                  value={jiCompany}
-                  onChange={setJiCompany}
-                  options={jiCompanyOpts.map((c) => ({
-                    value: c.company_name,
-                    label: c.company_name,
-                    // Which party owns this company — two firms can run companies that read
-                    // alike, and filing under the wrong one is the whole risk here.
-                    meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
-                  }))}
-                  // Same rule as Party above: with no order there is nobody to name, and
-                  // falling back to the Job Out's company put the WORKER's firm in the box
-                  // as though it had been chosen (Hetvi: "company also like party if order
-                  // not selected then dont auto select").
-                  placeholder={order
-                    ? ((picked ? picked.company_name : meta?.company_name) || "Company")
-                    : "Select company"}
-                  emptyText={jiParty ? "That party has no other company on file." : "No company matches."} />
+                    ? ((picked ? picked.company_name : meta?.company_name) || picked?.customer_name
+                        || meta?.party_name || meta?.party_label || party || "Party / Company")
+                    : "Select party / company"}
+                  emptyText="No party or company matches." />
               </label>
               {/* Who brought it back — the same question a dispatch asks, read the other
                   way round, so it is the same box with the same suggestions. */}
