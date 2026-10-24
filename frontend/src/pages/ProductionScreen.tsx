@@ -751,11 +751,27 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     }
   }
 
+  /* ONE LEVEL AT A TIME (Hetvi: "before closing the box tab the entire production tab
+     should not be closed — sometimes by mistake it is happening"). The voucher's X sits just
+     above the box panel's, and its Cancel just below the panel's, so a click meant for the
+     box closed the whole voucher and every box weighed on it went with it. Now, while a box
+     is open, the voucher's X and Cancel close the BOX; and a voucher holding boxes that
+     have not been submitted asks before it lets them go. */
+  const requestClose = () => {
+    if (adding) { setAdding(false); setEditing(null); return; }
+    if (boxes.length > 0 && !window.confirm(
+      boxes.length === 1
+        ? "Close this voucher? The box weighed on it has not been submitted and will be lost."
+        : `Close this voucher? The ${boxes.length} boxes weighed on it have not been submitted and will be lost.`,
+    )) return;
+    onClose();
+  };
+
   return (
     /* The box form renders INSIDE this scrim, so a click meant to dismiss it used to
        bubble up here and close the whole voucher — losing every box already weighed.
-       While a box is open the backdrop is inert; the voucher closes from its own X. */
-    <div className="mm-modal-scrim mm-scrim-right" onClick={() => { if (!adding) onClose(); }}>
+       While a box is open the backdrop is inert; otherwise it closes the way X does. */
+    <div className="mm-modal-scrim mm-scrim-right" onClick={() => { if (!adding) requestClose(); }}>
       {/* FULL WIDTH, because this is the screen the floor stands at: the paperwork is
           filled once and the box table is read all night. Capped at 1240px it used a
           third of a wide monitor for the details and left the boxes in a tall narrow
@@ -763,7 +779,9 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
       <div className="mm-modal mm-sheet mm-sheet-full" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="mm-modal-head">
           <span className="mm-modal-title">Production Voucher — {program.roll_no || program.shade || "program"}</span>
-          <button className="mm-chat-overlay-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="mm-chat-overlay-close" onClick={requestClose}
+            aria-label={adding ? "Close the box first" : "Close voucher"}
+            title={adding ? "Closes the box being keyed — the voucher stays open" : "Close voucher"}><X size={18} /></button>
         </div>
         {/* Two ROWS, not two columns: the paperwork across the top — voucher details, and
             the box form beside them while a box is being keyed — and the box table
@@ -1160,7 +1178,8 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </span>
           </div>
           <div className="mm-foot-actions">
-            <button className="mm-btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="mm-btn-ghost" onClick={requestClose}
+              title={adding ? "Closes the box being keyed — the voucher stays open" : undefined}>Cancel</button>
             <button className="mm-btn-primary" disabled={loading} onClick={() => void submit()}>{loading ? "Saving…" : "Submit voucher"}</button>
           </div>
         </div>
