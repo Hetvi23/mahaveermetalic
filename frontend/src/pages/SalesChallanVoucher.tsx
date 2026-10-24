@@ -193,6 +193,16 @@ export default function SalesChallanVoucher() {
     else if (o.company_name && o.company_name !== company) setCompany(o.company_name);
   };
 
+  /* THE ORDERS OF WHOEVER IS PICKED (Hetvi: "order should have party/company filter if
+     selected"). The server already narrows to the party; a party trading as more than one
+     firm has orders under each, so the chosen company narrows it again. An order with no
+     company on it is still the party's. Nothing picked lists every open order — picking one
+     names the customer. */
+  const orderRows = useMemo(() => {
+    const rows = ordersCall.data?.message ?? [];
+    return party && company ? rows.filter((o) => !o.company_name || o.company_name === company) : rows;
+  }, [ordersCall.data, party, company]);
+
   const totals = useMemo(() => {
     const boxes = lines.filter((l) => l.kind === "box").length;
     const rolls = lines.filter((l) => l.kind === "roll").length;
@@ -219,7 +229,7 @@ export default function SalesChallanVoucher() {
     if (!order) {
       const named = [...new Set(rows.map((r) => (r.customer_order || "").trim()).filter(Boolean))];
       if (named.length === 1) {
-        const hit = (ordersCall.data?.message ?? []).find((o) => o.name === named[0]);
+        const hit = orderRows.find((o) => o.name === named[0]);
         if (hit) { setOrder(hit.name); takeOrderParty(hit); }
       }
     }
@@ -371,14 +381,15 @@ export default function SalesChallanVoucher() {
             <SearchSelect
               value={order}
               placeholder="— none (from stock) —"
-              options={(ordersCall.data?.message ?? []).map((o) => ({
+              options={orderRows.map((o) => ({
                 value: o.name,
                 label: `${o.name}${o.colours ? ` · ${o.colours}` : ""}`,
-                meta: !party ? o.party_name || o.party : undefined,
+                meta: !party ? [o.company_name, o.party_name || o.party].filter(Boolean).join(" · ") : undefined,
               }))}
+              emptyText={party ? "No open order for this party / company." : "No open orders."}
               onChange={(v) => {
                 setOrder(v);
-                takeOrderParty((ordersCall.data?.message ?? []).find((o) => o.name === v));
+                takeOrderParty(orderRows.find((o) => o.name === v));
               }} />
           </label>
           <label className="mm-field">
