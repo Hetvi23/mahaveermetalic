@@ -1042,10 +1042,25 @@ def pick_options(kind, search=None):
 	require_staff()
 	s = f"%{(search or '').strip()}%"
 	if kind == "party":
-		return frappe.get_all(
-			"MM Party Master", or_filters={"name": ["like", s], "party_name": ["like", s]},
-			fields=["name", "party_name as label"], limit_page_length=20, order_by="name asc",
+		# FOUND BY ITS COMPANY TOO (Hetvi: "party should be searchable company wise as well"):
+		# a party matches on its own name or on any company filed under it, and a company
+		# match says which firm it was. The value is still the party.
+		rows = frappe.db.sql(
+			"""select pm.name, pm.party_name,
+				group_concat(distinct pc.company_name order by pc.company_name separator ', ') as companies
+			from `tabMM Party Master` pm
+			left join `tabMM Party Company` pc on pc.parent = pm.name and pc.parenttype = 'MM Party Master'
+			where pm.name like %(s)s or pm.party_name like %(s)s or pc.company_name like %(s)s
+			group by pm.name, pm.party_name
+			order by pm.name asc
+			limit 20""",
+			{"s": s},
+			as_dict=True,
 		)
+		return [
+			{"name": r.name, "label": " · ".join(x for x in (r.party_name, r.companies) if x and x != r.party_name) or r.party_name}
+			for r in rows
+		]
 	if kind == "supplier":
 		return frappe.get_all(
 			"MM Vendor Master", filters={"name": ["like", s]},

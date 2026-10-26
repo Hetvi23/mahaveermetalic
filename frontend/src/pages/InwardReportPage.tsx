@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { Check, Pencil, ScrollText, Trash2, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
 import Pager, { pageSlice } from "@/components/Pager";
 import { toast } from "@/components/Toaster";
@@ -91,9 +92,6 @@ export default function InwardReportPage() {
   });
   /** Which page of the register is on screen. */
   const [page, setPage] = useState(1);
-  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
-    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
-  });
   const apply = () => {
     setApplied({ challan, from, to, company, item, party, lot, jobWork, pending });
     // A new filter is a new list, and page 4 of the old one means nothing in it.
@@ -119,7 +117,6 @@ export default function InwardReportPage() {
   const rows = useMemo(() => data?.message?.rows ?? [], [data]);
   const totals = data?.message?.totals;
   const itemOptions = data?.message?.items ?? [];
-  const companyOptions = data?.message?.companies ?? [];
   const maybeMore = rows.length >= limit;
   const { pages, current, start, rows: pageRows } = pageSlice(rows, page);
 
@@ -334,14 +331,13 @@ export default function InwardReportPage() {
       >
         <Filter label="From"><input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Filter>
         <Filter label="To"><input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Filter>
-        <Filter label="Party">
-          <SearchSelect value={party} placeholder="All parties"
-            options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))}
-            onChange={setParty} />
-        </Filter>
-        <Filter label="Company">
-          <SearchSelect value={company} placeholder="All companies"
-            options={companyOptions.map((c) => ({ value: c, label: c }))} onChange={setCompany} />
+        {/* One box for both, searchable by either name (Hetvi: "merge the company/party
+            names everywhere"). A firm narrows to that company; a party's "all companies" row
+            to the whole party — the same two filters as before. */}
+        <Filter label="Party / Company">
+          <PartyCompanyPicker bare wholeParty party={party} company={company}
+            placeholder="All parties / companies"
+            onChange={(p, c) => { setParty(p); setCompany(c); }} />
         </Filter>
         <Filter label="Item">
           <SearchSelect value={item} placeholder="All items"

@@ -193,6 +193,9 @@ def all_companies(txt: str = "", limit: int = 500):
 			"company_name": p.party_name or p.name,
 			"party": p.name,
 			"party_name": p.party_name or p.name,
+			# Not a company: the party standing in for one. A picker shows it by name but
+			# must not save that name as the document's company.
+			"is_party": 1,
 		})
 	out.sort(key=lambda o: (o["company_name"] or "").lower())
 	txt = (txt or "").strip().lower()

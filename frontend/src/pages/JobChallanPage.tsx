@@ -6,6 +6,7 @@ import {
   ArrowDownFromLine, ArrowRight, ArrowUpFromLine, Check, Disc3, Package, Plus, Search, Trash2, X,
 } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
@@ -280,8 +281,9 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
 
   async function onSubmit() {
     setError(null);
-    if (!company) return setError("Choose the company — job work is selected company-wise.");
-    if (!party) return setError("That company has no party on file.");
+    // The PARTY is what the Job Out is filed under and all it sends; the company only helps
+    // find it. A worker with no company on file is picked by name and has none to give.
+    if (!party) return setError("Choose the party / company.");
     if (picked.length === 0 && bobbins.length === 0) return setError("Add at least one roll or bobbin.");
     try {
       const res = await createJobChallan({
@@ -607,33 +609,17 @@ export default function JobChallanPage({ type }: { type: "Job Out" | "Job In" })
                 <input className="mm-input" value={challanNo} placeholder="Next number, or type your own"
                   onChange={(e) => { setChallanNo(e.target.value); setChallanNoTyped(true); }} />
               </label>
-              <label className="mm-field mm-job-company">
-                <span className="mm-field-label">Company *</span>
-                <SearchSelect
-                  value={company}
-                  onChange={(v) => {
-                    setCompany(v);
-                    setParty(companies.find((c) => c.company_name === v)?.party || "");
-                  }}
+              {/* The shared Party / Company picker: one pick, searchable by firm or by the
+                  party it is filed under, setting both (Hetvi: "merge the company/party names
+                  everywhere"). A new company is a new party with that company on it. */}
+              <div className="mm-job-company">
+                <PartyCompanyPicker
+                  party={party}
+                  company={company}
                   required
-                  placeholder="Search company or party…"
-                  options={companies.map((c) => ({ value: c.company_name, label: c.company_name, meta: c.party_name }))}
-                  // A COMPANY IS NOT A MASTER OF ITS OWN — it is a row on the party that
-                  // owns it (MM Party Company), so "new company" means "new party, with
-                  // this company on it". The dialog therefore creates the PARTY, and what
-                  // comes back is the party's name, not the company's — which is why this
-                  // field maps it back itself instead of letting the picker select it.
-                  createDoctype="MM Party Master"
-                  onCreated={async (newParty) => {
-                    const fresh = await companiesCall.mutate();
-                    const rows = (fresh as { message?: { company_name: string; party: string }[] } | undefined)?.message ?? [];
-                    const hit = rows.find((c) => c.party === newParty);
-                    setParty(newParty);
-                    if (hit) setCompany(hit.company_name);
-                  }}
-                />
-                {party && <span className="mm-job-partyhint">Party: <strong>{party}</strong></span>}
-              </label>
+                  allowCreate
+                  onChange={(p, c) => { setParty(p); setCompany(c); }} />
+              </div>
             </div>
           </section>
 
@@ -772,28 +758,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
      the Job Out's — so a receipt taken without choosing anything still files itself. */
   const [jiParty, setJiParty] = useState("");
   const [jiCompany, setJiCompany] = useState("");
-  const jiCompaniesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
-    "mahaveermetalic.mahaveer_metallic.api.party.all_companies",
-    undefined,
-    "mm-all-companies",
-  );
-  const jiCompanies = jiCompaniesCall.data?.message ?? [];
-  /* PARTY AND COMPANY ARE ONE PICK (Hetvi: "merge this party and company field together").
-     Two boxes asked the same question twice — whose account is this — and the second had to
-     be filtered by the first so the pair could not disagree. Every row is a company with the
-     party it belongs to underneath, found by either name, and choosing it sets both. A party
-     with no company on file is listed under its own name (api.party.all_companies). */
-  const pcKey = (partyName: string, company: string) => `${partyName}\u001f${company}`;
-  const pcOptions = useMemo(
-    () => jiCompanies.map((c) => ({
-      value: pcKey(c.party, c.company_name),
-      label: c.company_name,
-      // Which party owns this company — two firms can run companies that read alike, and
-      // filing under the wrong one is the whole risk here.
-      meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
-    })),
-    [jiCompanies],
-  );
+  /* PARTY AND COMPANY ARE ONE PICK (Hetvi: "merge this party and company field together"),
+     the shared PartyCompanyPicker. */
   // The book the Job In challan is written in: its own unless another series is picked.
   // A typed Challan ID is filed under it as series-number-year (MMUJI-123-26/27).
   const [series, setSeries] = useState("");
@@ -1168,28 +1134,19 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                   then the Job Out's, which is what a receipt always did. The placeholder
                   says which one that would be, so leaving it empty is an informed choice
                   rather than a blind one. */}
-              <label className="mm-field">
-                <span className="mm-field-label">Party / Company</span>
-                <SearchSelect
-                  value={jiParty && jiCompany ? pcKey(jiParty, jiCompany) : ""}
-                  onChange={(v) => {
-                    const row = jiCompanies.find((c) => pcKey(c.party, c.company_name) === v);
-                    setJiParty(row?.party || "");
-                    setJiCompany(row?.company_name || "");
-                  }}
-                  options={pcOptions}
-                  menuMinWidth={300}
-                  // WITH NO ORDER THERE IS NOBODY TO NAME. Falling back to the Job Out's own
-                  // party put the job WORKER in the box as though an account had been chosen
-                  // (Hetvi: "if order not selected then job party should not be auto
-                  // selected"). An order names its customer and that is worth offering;
-                  // without one the box says what it means, which is: pick.
-                  placeholder={order
-                    ? ((picked ? picked.company_name : meta?.company_name) || picked?.customer_name
-                        || meta?.party_name || meta?.party_label || party || "Party / Company")
-                    : "Select party / company"}
-                  emptyText="No party or company matches." />
-              </label>
+              <PartyCompanyPicker
+                party={jiParty}
+                company={jiCompany}
+                onChange={(p, c) => { setJiParty(p); setJiCompany(c); }}
+                // WITH NO ORDER THERE IS NOBODY TO NAME. Falling back to the Job Out's own
+                // party put the job WORKER in the box as though an account had been chosen
+                // (Hetvi: "if order not selected then job party should not be auto
+                // selected"). An order names its customer and that is worth offering;
+                // without one the box says what it means, which is: pick.
+                placeholder={order
+                  ? ((picked ? picked.company_name : meta?.company_name) || picked?.customer_name
+                      || meta?.party_name || meta?.party_label || party || "Party / Company")
+                  : "Select party / company"} />
               {/* Who brought it back — the same question a dispatch asks, read the other
                   way round, so it is the same box with the same suggestions. */}
               <DeliveryByInput value={deliveryBy} onChange={setDeliveryBy} placeholder="Who brought it back" />

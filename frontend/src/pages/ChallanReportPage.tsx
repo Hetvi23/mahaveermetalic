@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { ArrowLeft, Barcode, FileText, Package, Printer, RefreshCw, Search } from "lucide-react";
-import PartyPicker from "@/components/PartyPicker";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -73,6 +73,7 @@ const kg = (n?: number) => (Number(n) || 0).toLocaleString(undefined, { minimumF
  */
 export default function ChallanReportPage() {
   const [party, setParty] = useState("");
+  const [company, setCompany] = useState("");
   const [type, setType] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -103,7 +104,10 @@ export default function ChallanReportPage() {
     { party: party || undefined, challan_type: type || undefined, from_date: from || undefined, to_date: to || undefined },
     key,
   );
-  const rows = useMemo(() => data?.message ?? [], [data]);
+  const rows = useMemo(
+    () => (data?.message ?? []).filter((r) => !company || r.company === company),
+    [data, company],
+  );
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return rows;
@@ -143,7 +147,11 @@ export default function ChallanReportPage() {
 
       <section className="mm-card mm-card-pad">
         <div className="mm-form-grid">
-          <PartyPicker label="Party" value={party} onChange={setParty} />
+          {/* Searchable by firm or party (Hetvi: "merge the company/party names everywhere").
+              The register is fetched by party as before; a firm narrows it to that company. */}
+          <PartyCompanyPicker wholeParty party={party} company={company}
+            placeholder="All parties / companies"
+            onChange={(p, c) => { setParty(p); setCompany(c); }} />
           <label className="mm-field">
             <span className="mm-field-label">Type</span>
             <SearchSelect value={type} placeholder="Sales + Job Challan"

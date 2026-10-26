@@ -12,7 +12,7 @@ import {
 import { Check, Flame, Inbox, Plus, Search, Trash2, X } from "lucide-react";
 import type { FieldSchema } from "@/config/registry";
 import { FieldInput } from "@/components/FieldInputs";
-import PartyPicker from "@/components/PartyPicker";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import SearchSelect from "@/components/SearchSelect";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -1027,17 +1027,17 @@ export default function OrderWorkspace() {
             <FieldInput field={F.delivery_date} value={header.delivery_date} disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, delivery_date: String(v ?? "") }))} />
           </div>
           <div className="mm-form-grid">
-            <PartyPicker label="Party" value={header.party} required disabled={ro} onChange={(v) => setHeader((h) => ({ ...h, party: v, company: "" }))} />
-            <label className="mm-field">
-              <span className="mm-field-label">Company</span>
-              <SearchSelect
-                value={header.company}
-                disabled={ro || !header.party}
-                placeholder={!header.party ? "Pick a party first" : companiesCall.isLoading ? "Loading…" : "— select company —"}
-                options={companies.map((c) => ({ value: c, label: c }))}
-                onChange={(v) => setHeader((h) => ({ ...h, company: v }))}
-              />
-            </label>
+            {/* One pick for both, searchable by either name (Hetvi: "merge the company/party
+                names everywhere"). The order still saves its party and its company as before;
+                a party picked with no firm still takes its first company (effect above). */}
+            <PartyCompanyPicker
+              party={header.party}
+              company={header.company}
+              required
+              disabled={ro}
+              allowCreate
+              onChange={(p, c) => setHeader((h) => ({ ...h, party: p, company: c }))}
+            />
             {/* Some material is only sold in fixed lots (600 kg beams, say). Ticked, a
                 purchase order raised for this order has to be a whole number of them —
                 the lot size lives in MM Settings, because it is the supplier's figure. */}

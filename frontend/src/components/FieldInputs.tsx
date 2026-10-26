@@ -2,6 +2,7 @@ import type { FieldSchema } from "@/config/registry";
 import { useState, type ReactNode } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import LinkField from "./LinkField";
+import PartyCompanyPicker from "./PartyCompanyPicker";
 import SearchSelect from "./SearchSelect";
 
 type JobOutOption = {
@@ -182,6 +183,21 @@ export function FieldInput({ field, value, onChange, disabled, compact, record }
 				return v ? ([lf.field, "=", v] as [string, string, unknown]) : null;
 			})
 			.filter((f): f is [string, string, unknown] => f !== null);
+		// A PARTY IS PICKED BY ITS COMPANY TOO (Hetvi: "merge the company/party names
+		// everywhere"): the shared picker, searchable by either name. The form still stores
+		// the party alone, exactly as before — the company only helps find it.
+		if (field.options === "MM Party Master") {
+			return (
+				<PartyCompanyPicker
+					label="Party / Company"
+					party={value == null ? "" : String(value)}
+					onChange={(p) => onChange(p)}
+					disabled={ro}
+					required={field.reqd}
+					allowCreate={!ro}
+				/>
+			);
+		}
 		return (
 			<LinkField
 				label={field.label}

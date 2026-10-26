@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
+import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import SearchSelect from "@/components/SearchSelect";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import { Link2, Link2Off, RefreshCw, Search } from "lucide-react";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -48,6 +49,7 @@ export default function RollMappingPage() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   const [party, setParty] = useState("");
+  const [company, setCompany] = useState("");
   const ordersCall = useFrappeGetCall<{ message: Order[] }>(
     `${API}.orders`,
     {
@@ -56,9 +58,6 @@ export default function RollMappingPage() {
     },
     `map-orders-${iq}-${onlyOpen}-${party}`, { keepPreviousData: true },
   );
-  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
-    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
-  });
   /* The colours the selected order is actually placed for. Crediting a roll of any other
      colour to it is a picking mistake, so the shelf is narrowed to these the moment an
      order is chosen \u2014 on 191 rolls that is also the difference between a readable list
@@ -112,7 +111,7 @@ export default function RollMappingPage() {
   const { call: assign, loading: assigning } = useFrappePostCall(`${API}.assign_to_order`);
   const { call: unassign, loading: unassigning } = useFrappePostCall(`${API}.unassign_from_order`);
 
-  const orders = ordersCall.data?.message ?? [];
+  const orders = (ordersCall.data?.message ?? []).filter((o) => !company || o.company_name === company);
   const rolls = rollsCall.data?.message ?? [];
   const current = orders.find((o) => o.name === sel) || null;
   const picked = useMemo(() => Object.keys(checked).filter((k) => checked[k]), [checked]);
@@ -171,12 +170,13 @@ export default function RollMappingPage() {
               <input className="mm-input mm-input-compact" placeholder="Order id, party or company…"
                 value={iq} onChange={(e) => setIq(e.target.value)} />
             </div>
-            <SearchSelect value={party} onChange={setParty} placeholder="All parties"
-              className="mm-map-colour" menuMinWidth={260}
-              options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))} />
+            {/* Searchable by firm or party; a firm narrows the orders to that company. */}
+            <PartyCompanyPicker bare wholeParty party={party} company={company}
+              className="mm-map-colour" placeholder="All parties / companies"
+              onChange={(p, c) => { setParty(p); setCompany(c); }} />
             {(iq || party) && (
               <button type="button" className="mm-mini"
-                onClick={() => { setIq(""); setParty(""); }}>Clear</button>
+                onClick={() => { setIq(""); setParty(""); setCompany(""); }}>Clear</button>
             )}
           </div>
           {ordersCall.isLoading && !orders.length ? (

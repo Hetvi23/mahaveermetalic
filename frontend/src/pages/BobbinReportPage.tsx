@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
+import { useFrappeGetCall } from "frappe-react-sdk";
 import { Printer, Disc3 } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import { todayISO, fmtDate } from "@/utils/localDate";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.bobbin";
@@ -44,14 +45,8 @@ export default function BobbinReportPage() {
   const [to, setTo] = useState(today());
   const [applied, setApplied] = useState({ party: "", company: "", owner: "", from: monthAgo(), to: today() });
 
-  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
-    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
-  });
   // Selecting a company here means the party it is filed under, exactly as on the order
   // and production screens — the server resolves company -> party.
-  const companies = useFrappeGetDocList<{ name: string; company_name?: string; parent?: string }>("MM Party Company", {
-    fields: ["name", "company_name", "parent"], limit: 0, orderBy: { field: "company_name", order: "asc" },
-  });
 
   /* ONE LINE PER BILL by default (Hetvi: "bobbin report bill wise"). A production that
      used twenty bobbins wrote twenty identical-looking ledger rows, and the statement ran
@@ -83,17 +78,11 @@ export default function BobbinReportPage() {
 
       <section className="mm-card mm-card-pad mm-no-print" style={{ marginBottom: "1rem" }}>
         <div className="mm-brp-filters">
-          <label className="mm-field">
-            <span className="mm-field-label">Party</span>
-            <SearchSelect value={party} placeholder="All parties"
-              options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))} onChange={setParty} />
-          </label>
-          <label className="mm-field">
-            <span className="mm-field-label">Company</span>
-            <SearchSelect value={company} placeholder="All companies"
-              options={(companies.data ?? []).map((c) => ({ value: c.company_name || c.name, label: c.company_name || c.name, meta: c.parent }))}
-              onChange={setCompany} />
-          </label>
+          {/* One box for both, searchable by either name (Hetvi: "merge the company/party
+              names everywhere"); the report still filters by party and company as before. */}
+          <PartyCompanyPicker wholeParty party={party} company={company}
+            placeholder="All parties / companies"
+            onChange={(p, c) => { setParty(p); setCompany(c); }} />
           <label className="mm-field">
             <span className="mm-field-label">Bobbins of</span>
             <SearchSelect value={owner} placeholder="Both"

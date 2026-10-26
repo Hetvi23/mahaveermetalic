@@ -3,6 +3,7 @@ import NumInput from "@/components/NumInput";
 import { useFrappeGetCall, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { Disc3, ScrollText, X } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
+import PartyCompanyPicker from "@/components/PartyCompanyPicker";
 import { Filter, ReportFilters } from "@/components/ReportFilters";
 import { toast } from "@/components/Toaster";
 import { extractErrorMessage } from "@/utils/frappeError";
@@ -69,12 +70,6 @@ export default function JobHisabPage() {
   });
   const [addingTo, setAddingTo] = useState<Row | null>(null);
 
-  const parties = useFrappeGetDocList<{ name: string; party_name?: string }>("MM Party Master", {
-    fields: ["name", "party_name"], limit: 0, orderBy: { field: "party_name", order: "asc" },
-  });
-  const companies = useFrappeGetCall<{ message: { company_name: string }[] }>(
-    "mahaveermetalic.mahaveer_metallic.api.party.all_companies", undefined, "mm-all-companies",
-  );
 
   const { data, isLoading, mutate } = useFrappeGetCall<{ message: HisabReport }>(
     `${API}.job_work_hisab`,
@@ -146,15 +141,13 @@ export default function JobHisabPage() {
       >
         <Filter label="From"><input className="mm-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Filter>
         <Filter label="To"><input className="mm-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Filter>
-        <Filter label="Party">
-          <SearchSelect value={party} placeholder="All parties"
-            options={(parties.data ?? []).map((p) => ({ value: p.name, label: p.party_name || p.name }))}
-            onChange={setParty} />
-        </Filter>
-        <Filter label="Company">
-          <SearchSelect value={company} placeholder="All companies"
-            options={(companies.data?.message ?? []).map((c) => ({ value: c.company_name, label: c.company_name }))}
-            onChange={setCompany} />
+        {/* One box for both, searchable by either name (Hetvi: "merge the company/party
+            names everywhere"). A firm narrows to that company; a party's "all companies" row
+            to the whole party — the same two filters as before. */}
+        <Filter label="Party / Company">
+          <PartyCompanyPicker bare wholeParty party={party} company={company}
+            placeholder="All parties / companies"
+            onChange={(p, c) => { setParty(p); setCompany(c); }} />
         </Filter>
         <Filter label="Show">
           <SearchSelect value={openOnly ? "open" : "all"}

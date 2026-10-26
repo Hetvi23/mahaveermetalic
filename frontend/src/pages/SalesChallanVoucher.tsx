@@ -9,6 +9,7 @@ const money = (v: number) =>
   `\u20B9${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import SearchSelect from "@/components/SearchSelect";
+import PartyCompanyPicker, { useCompanyRows } from "@/components/PartyCompanyPicker";
 import { todayISO, fmtDate } from "@/utils/localDate";
 import DeliveryByInput from "@/components/DeliveryByInput";
 import { DISPATCH_SERIES, challanIdFor } from "@/utils/challanSeries";
@@ -165,25 +166,14 @@ export default function SalesChallanVoucher() {
      company/party together selection and searching"). Every row is a company with its party
      underneath, found by either name, and choosing it sets both. A party with no company on
      file is listed under its own name (api.party.all_companies). */
-  const companiesCall = useFrappeGetCall<{ message: { company_name: string; party: string; party_name: string }[] }>(
-    "mahaveermetalic.mahaveer_metallic.api.party.all_companies", undefined, "mm-all-companies",
-  );
-  const companies = useMemo(() => companiesCall.data?.message ?? [], [companiesCall.data]);
-  const pcKey = (partyName: string, firm: string) => `${partyName}\u001f${firm}`;
-  const pcOptions = useMemo(
-    () => companies.map((c) => ({
-      value: pcKey(c.party, c.company_name),
-      label: c.company_name,
-      meta: c.party_name && c.party_name !== c.company_name ? c.party_name : undefined,
-    })),
-    [companies],
-  );
+  const { rows: companies } = useCompanyRows();
   // A party set without a firm — by an order, or a party just created — takes its own
   // company when it has only the one, so the box is never left showing nothing.
   useEffect(() => {
     if (!party || company) return;
     const own = companies.filter((c) => c.party === party);
-    if (own.length === 1) setCompany(own[0].company_name);
+    // Not a party with no firm of its own: that row is the party's name, not a company.
+    if (own.length === 1 && !own[0].is_party) setCompany(own[0].company_name);
   }, [party, company, companies]);
   /** Name the customer from an order: its party, and its firm when it records one. */
   const takeOrderParty = (o?: { party?: string; company_name?: string }) => {
@@ -354,22 +344,12 @@ export default function SalesChallanVoucher() {
               and is what prints — so a second, free-typed book number only invited two
               numbers for one dispatch: one sales challan in 287 on mm carried one. Job Out and
               Job In keep theirs: there it is the worker's C.No, and receipts file under it. */}
-          <label className="mm-field">
-            <span className="mm-field-label">Party / Company *</span>
-            <SearchSelect
-              value={party && company ? pcKey(party, company) : ""}
-              placeholder={companiesCall.isLoading ? "Loading…" : "Search party or company"}
-              options={pcOptions}
-              menuMinWidth={300}
-              createDoctype="MM Party Master"
-              onCreated={(name) => { setParty(name); setCompany(""); setOrder(""); void companiesCall.mutate(); }}
-              onChange={(v) => {
-                const row = companies.find((c) => pcKey(c.party, c.company_name) === v);
-                setParty(row?.party || "");
-                setCompany(row?.company_name || "");
-                setOrder("");
-              }} />
-          </label>
+          <PartyCompanyPicker
+            party={party}
+            company={company}
+            required
+            allowCreate
+            onChange={(p, c) => { setParty(p); setCompany(c); setOrder(""); }} />
           <label className="mm-field">
             <span className="mm-field-label">Order</span>
             {/* USABLE BEFORE THE CUSTOMER. A dispatch is identified on the floor by its
