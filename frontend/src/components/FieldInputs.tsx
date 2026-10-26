@@ -165,16 +165,23 @@ export function FieldInput({ field, value, onChange, disabled, compact, record }
 	}
 
 	if (field.fieldtype === "Link" && field.options) {
+		// A LINK IN A TABLE ROW IS A PICKER TOO (Hetvi: "bobbin type drop down from master").
+		// Cells drew a bare text box whose placeholder was the doctype's own name — "MM Bobbin
+		// Master" — so a bobbin had to be typed from memory and a misspelt one was refused
+		// only on save. The same Link picker the form fields use, in its compact form: it
+		// lists the master, still accepts typing, and offers "+" for a new record.
 		if (compact) {
-			return lab(
-				<input
-					className={ic}
+			return (
+				<LinkField
+					compact
+					label={field.label}
+					linkDoctype={field.options}
 					value={value == null ? "" : String(value)}
+					onChange={(v) => onChange(v)}
 					disabled={ro}
 					required={field.reqd}
-					placeholder={field.options}
-					onChange={(e) => onChange(e.target.value)}
-				/>,
+					placeholder={`Select ${field.label.toLowerCase()}`}
+				/>
 			);
 		}
 		const extraFilters = (field.linkFilters ?? [])
