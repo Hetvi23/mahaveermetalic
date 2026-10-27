@@ -23,6 +23,9 @@ type Row = {
   note?: string | null;
   /** The operator's own note on a Bobbin In / Out entry; none on a production's line. */
   remark?: string | null;
+  /** The source document: the production(s) a sales challan's boxes came off, the Job Out a
+   *  Job In answers, or the Job Out a Bobbin In / Out entry was made against. */
+  reference?: string | null;
   in_qty: number; out_qty: number; qty: number; box: number;
   /** How many ledger movements this line stands for — >1 when the bill is grouped. */
   movements?: number;
@@ -129,16 +132,15 @@ export default function BobbinReportPage() {
               <thead>
                 <tr>
                   {/* No Type or Note (Hetvi: "remove type, notes from list view"). The Vch.No
-                      already says what moved the bobbins and the sign on the qty which way;
-                      Note was the system's own "Used in production …" on almost every line.
-                      Remark is what the operator wrote. */}
-                  <th>Date</th><th>Vch.No</th><th>Bobbin</th><th>Remark</th>
+                      says which paper moved the bobbins, Reference where its boxes came from,
+                      and the sign on the qty which way. Remark is what the operator wrote. */}
+                  <th>Date</th><th>Vch.No</th><th>Reference</th><th>Bobbin</th><th>Remark</th>
                   <th className="mm-num">Bobbin Qty</th><th className="mm-num">Box Qty</th><th className="mm-num">Balance</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="mm-brp-opening">
-                  <td>{applied.from}</td><td /><td><strong>Opening Stock</strong></td><td />
+                  <td>{applied.from}</td><td /><td /><td><strong>Opening Stock</strong></td><td />
                   <td className="mm-num"><strong>{(r?.opening_qty ?? 0).toLocaleString()}</strong></td>
                   <td className="mm-num"><strong>{(r?.opening_box ?? 0).toLocaleString()}</strong></td>
                   <td className="mm-num"><strong>{(r?.opening_qty ?? 0).toLocaleString()}</strong></td>
@@ -147,6 +149,7 @@ export default function BobbinReportPage() {
                   <tr key={i}>
                     <td>{fmtDate(row.date) || "—"}</td>
                     <td>{row.voucher_no || "—"}</td>
+                    <td className="mm-cell-wrap">{row.reference || "—"}</td>
                     <td>{row.bobbin || "—"}</td>
                     {/* Free text — let it wrap rather than stretch the register sideways. */}
                     <td className="mm-cell-wrap">{row.remark || "—"}</td>
@@ -156,12 +159,12 @@ export default function BobbinReportPage() {
                   </tr>
                 ))}
                 {(r?.rows ?? []).length === 0 && (
-                  <tr><td colSpan={7} className="mm-empty">No bobbin movement in this period.</td></tr>
+                  <tr><td colSpan={8} className="mm-empty">No bobbin movement in this period.</td></tr>
                 )}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={4}><strong>TOTAL</strong></td>
+                  <td colSpan={5}><strong>TOTAL</strong></td>
                   <td className="mm-num"><strong>{(r?.closing_qty ?? 0).toLocaleString()}</strong></td>
                   <td className="mm-num"><strong>{(r?.closing_box ?? 0).toLocaleString()}</strong></td>
                   <td className="mm-num"><strong>{(r?.closing_qty ?? 0).toLocaleString()}</strong></td>

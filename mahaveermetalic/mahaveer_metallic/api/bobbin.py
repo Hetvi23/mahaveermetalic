@@ -1,14 +1,16 @@
 # Copyright (c) 2026, Mahaveer and contributors
 # License: MIT
-"""Bobbin stock — a party-wise ledger fed from two places.
+"""Bobbin stock — a party-wise ledger fed from the papers that carry bobbins to a party.
 
-  1. Bobbin / Box challan (MM Bobbin Box Tracking) — Receive = we got bobbins from the
-     party (in), Give = we handed bobbins to them (out).
-  2. Production — the bobbins entered on each box are consumed (out).
+  1. Bobbin / Box challan (MM Bobbin Box Tracking) — Received = we got bobbins back from the
+     party (in), Given = we handed bobbins to them (out).
+  2. Sales-side challans — Sales, Job Challan, Challan, Delivery Challan, Roll Challan —
+     and every Job In: the bobbins inside each box go OUT to the challan's party.
 
-Those two, and nothing else. A Job Out / Job In challan lists the bobbins inside the
-boxes it carries, but the production that packed them has already consumed them — posting
-the challan as well counted the same bobbins out twice. See post_job_challan.
+Those, and nothing else (Hetvi, 2026-10-27: "data will only come from job in/sales or bobbin
+in/out"). Production no longer posts: the bobbins it packs are counted when the boxes leave
+on a challan, which is when they actually reach a party. Job Out is still left out — its
+boxes carry bobbins the Job In that answers it counts.
 
 The report reads that ledger as Opening (everything before the from-date) + the period's
 movements, ending in a running balance.
@@ -59,24 +61,12 @@ def post_bobbin_challan(doc):
 
 
 def post_production(doc):
-	"""Bobbins entered on a production's boxes are consumed out of stock."""
+	"""Production no longer posts bobbins — its boxes post when they leave on a challan.
+
+	Still called on submit and cancel, and still clears: a production posted under the old
+	rule drops its rows the next time it is touched, and the rebuild clears the rest.
+	"""
 	clear_voucher(doc.name)
-	for b in doc.boxes or []:
-		pcs = float(b.bobbin_pcs or 0)
-		if not b.bobbin or pcs <= 0:
-			continue
-		_post(
-			posting_date=doc.posting_date or frappe.utils.today(),
-			voucher_type="Production",
-			voucher_no=doc.name,
-			party=doc.party,
-			bobbin=b.bobbin,
-			note=_("Used in production {0}").format(doc.name),
-			in_qty=0,
-			out_qty=pcs,
-			box_in=0,
-			box_out=1,
-		)
 
 
 @frappe.whitelist()
@@ -165,7 +155,9 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 		fields=["name", "posting_date", "voucher_type", "voucher_no", "bobbin", "note",
 			"in_qty", "out_qty", "box_in", "box_out", "party"],
 		order_by="posting_date asc, creation asc",
-		limit_page_length=1000,
+		# Every row, or the running balance is struck on a part of them: the ledger is one
+		# row per box line now, and an all-parties period passes 1,000 easily.
+		limit_page_length=0,
 	)
 
 	# ONE LINE PER BILL, before the running balance is struck — the balance has to be the
@@ -193,6 +185,7 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 				g.posting_date = r.posting_date
 		rows = sorted(grouped.values(), key=lambda g: (g.posting_date or "", g.voucher_no or ""))
 
+	refs = _references(rows)
 	bal_qty, bal_box = opening_qty, opening_box
 	out = []
 	for r in rows:
@@ -214,10 +207,13 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 				"bobbin": r.bobbin,
 				"note": r.note,
 				# WHAT SOMEBODY WROTE, not what the system did (Hetvi: "remark addition in
-				# bobbin report"). A Bobbin In / Out entry carries the operator's own note; a
-				# production's line carries "Used in production MMPROD-…", which only repeats
-				# the Vch.No beside it, so it is not a remark and stays blank.
-				"remark": (r.note or None) if r.voucher_type == "Bobbin Challan" else None,
+				# bobbin report"): the Bobbin In / Out note, or the challan's own remark. A
+				# production's old "Used in production MMPROD-…" only repeated the Vch.No.
+				"remark": (r.note or None) if r.voucher_type != "Production" else None,
+				# THE SOURCE DOCUMENT (Hetvi: "show reference name"): the production(s) a
+				# sales challan's boxes came off, the Job Out a Job In answers, the Job Out
+				# a Bobbin In / Out entry was made against.
+				"reference": refs.get((r.voucher_type, r.voucher_no, r.bobbin)) or None,
 				"in_qty": float(r.in_qty or 0),
 				"out_qty": float(r.out_qty or 0),
 				"qty": round(float(r.in_qty or 0) - float(r.out_qty or 0), 3),
@@ -263,28 +259,83 @@ def bobbin_balances(party=None):
 	)
 
 
+def _references(rows):
+	"""(voucher_type, voucher_no, bobbin) -> the document the movement came from."""
+	sales = {r.voucher_no for r in rows if r.voucher_type in ("Sales Challan", "Job In")}
+	tracking = {r.voucher_no for r in rows if r.voucher_type == "Bobbin Challan"}
+	out = {}
+	if sales:
+		job_out = {
+			c.name: c.against_job_out
+			for c in frappe.get_all("MM Sales Challan", filters={"name": ["in", list(sales)]},
+				fields=["name", "against_job_out"], limit_page_length=0)
+		}
+		prods = {}
+		for it in frappe.get_all(
+			"MM Sales Challan Item",
+			filters={"parent": ["in", list(sales)], "parenttype": "MM Sales Challan", "production": ["is", "set"]},
+			fields=["parent", "bobbin", "production"], order_by="parent asc, idx asc", limit_page_length=0,
+		):
+			got = prods.setdefault((it.parent, it.bobbin), [])
+			if it.production not in got:
+				got.append(it.production)
+		for r in rows:
+			if r.voucher_type == "Job In" and job_out.get(r.voucher_no):
+				out[(r.voucher_type, r.voucher_no, r.bobbin)] = job_out[r.voucher_no]
+			elif r.voucher_type in ("Sales Challan", "Job In"):
+				p = prods.get((r.voucher_no, r.bobbin))
+				if p:
+					out[(r.voucher_type, r.voucher_no, r.bobbin)] = ", ".join(p)
+	if tracking:
+		jo = {
+			t.name: t.against_job_out
+			for t in frappe.get_all("MM Bobbin Box Tracking", filters={"name": ["in", list(tracking)]},
+				fields=["name", "against_job_out"], limit_page_length=0)
+		}
+		for r in rows:
+			if r.voucher_type == "Bobbin Challan" and jo.get(r.voucher_no):
+				out[(r.voucher_type, r.voucher_no, r.bobbin)] = jo[r.voucher_no]
+	return out
+
+
+# The challans whose boxes take bobbins to a party: everything the Sales Challan Voucher
+# issues, and every Job In. Job Out is not among them (see the module docstring).
+BOBBIN_CHALLAN_TYPES = ("Sales", "Job Challan", "Challan", "Delivery Challan", "Roll Challan", "Job In")
+
+
 def post_job_challan(doc):
-	"""A job challan does NOT move the bobbin ledger. It only clears what it once wrote.
+	"""Post a challan's bobbins: each box line's bobbins go OUT to the challan's party.
 
-	THE SAME BOBBINS, COUNTED TWICE. A Job Out carries boxes to the worker and lists the
-	bobbins inside them; the production that packed those boxes has already consumed those
-	very bobbins. Posting both took 1,555 bobbins out on MMUJO-2026-00001 and the same
-	1,555 out again on MMPROD-00001 the next day — 31,309 bobbins double-counted across 19
-	Job Outs on mm alone, and every party's balance that much too low.
+	Cleared and written again from the document every time, so a re-post (mapping the
+	challan to another order's party, an edit) never double-counts. A cancelled challan, or a
+	type that does not carry bobbins to a party, is left with no rows.
 
-	The ledger has two feeds and only ever had two (Hetvi: "data will come from
-	give/receive format from the bobbin in/out page through the given/received label and
-	the production"):
-
-	  • Bobbin / Box tracking — Given takes bobbins out, Received brings them back. This is
-	    where a bobbin physically changing hands is recorded.
-	  • Production — the bobbins packed into each box are consumed.
-
-	A job challan is neither: it moves goods that were already accounted for. The hisab's
-	per-Job-Out bobbin count is untouched by this — it reads `against_job_out`, which only
-	Bobbin In / Out ever sets.
-
-	Still called, and still clears: a job challan posted under the old rule drops its rows
-	the next time it is saved or cancelled.
+	Two things are deliberately NOT set on these rows:
+	  • against_job_out — Job Hisab reads ledger rows carrying it as LOOSE bobbins sent or
+	    returned against a Job Out (Bobbin In / Out). A Job In's own bobbins are already in
+	    the hisab off the challan; tagging them would count them twice. The report works the
+	    Job Out out from the challan instead (_references).
+	  • a Production row — the production that packed these boxes no longer posts.
 	"""
 	clear_voucher(doc.name)
+	if doc.docstatus != 1 or (doc.challan_type or "Sales") not in BOBBIN_CHALLAN_TYPES:
+		return
+	vtype = "Job In" if doc.challan_type == "Job In" else "Sales Challan"
+	for it in doc.items or []:
+		pcs = float(it.bobbin_pcs or 0)
+		if not it.bobbin or pcs <= 0:
+			continue
+		_post(
+			posting_date=doc.transaction_date or frappe.utils.today(),
+			voucher_type=vtype,
+			voucher_no=doc.name,
+			party=doc.party,
+			bobbin=it.bobbin,
+			# The challan's own remark, the operator's words — the report's Remark column.
+			note=(doc.get("remarks") or "").strip() or None,
+			job_work_flag=1 if frappe.utils.cint(doc.get("job_work_flag")) else 0,
+			in_qty=0,
+			out_qty=pcs,
+			box_in=0,
+			box_out=float(it.qty_box or 1),
+		)

@@ -1969,6 +1969,14 @@ def map_challan_order(challan, sales_order=None, company_name=None):
 		update_modified=True,
 	)
 
+	# The bobbins on it are the party's: mapping can change the party, so post them again.
+	try:
+		from mahaveermetalic.mahaveer_metallic.api.bobbin import post_job_challan
+
+		post_job_challan(frappe.get_doc("MM Sales Challan", doc.name))
+	except Exception:
+		frappe.log_error(title=f"bobbin ledger re-post after mapping challan {doc.name} failed")
+
 	# The movement this challan posted is stamped with the order it went out against, and
 	# the Stock Ledger is read by order. Left alone, the kilos would show against the old
 	# order — or against nothing — for ever.
