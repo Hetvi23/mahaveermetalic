@@ -208,11 +208,10 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 				"note": r.note,
 				# WHAT SOMEBODY WROTE, not what the system did (Hetvi: "remark addition in
 				# bobbin report"): the Bobbin In / Out note, or the challan's own remark. A
-				# production's old "Used in production MMPROD-…" only repeated the Vch.No.
+				# production's old "Used in production MMPROD-…" only repeated its number.
 				"remark": (r.note or None) if r.voucher_type != "Production" else None,
-				# THE SOURCE DOCUMENT (Hetvi: "show reference name"): the production(s) a
-				# sales challan's boxes came off, the Job Out a Job In answers, the Job Out
-				# a Bobbin In / Out entry was made against.
+				# THE CHALLAN ID (Hetvi: "remove voucher no, reference should come based on
+				# the challan id"): the one number the register shows per line.
 				"reference": refs.get((r.voucher_type, r.voucher_no, r.bobbin)) or None,
 				"in_qty": float(r.in_qty or 0),
 				"out_qty": float(r.out_qty or 0),
@@ -260,41 +259,45 @@ def bobbin_balances(party=None):
 
 
 def _references(rows):
-	"""(voucher_type, voucher_no, bobbin) -> the document the movement came from."""
-	sales = {r.voucher_no for r in rows if r.voucher_type in ("Sales Challan", "Job In")}
+	"""(voucher_type, voucher_no, bobbin) -> the challan ID the bobbins moved on.
+
+	A Sales Challan / Job In / Job Out row's voucher IS that challan. A Bobbin In / Out entry
+	is keyed by a hash, so it shows the number off the party's paper (challan_number), else
+	the Job Out it was made against. A Production row — only ledgers not yet rebuilt under
+	the 2026-10-27 rule still hold them — shows the challan(s) its boxes went out on, and
+	nothing while they sit in stock.
+	"""
 	tracking = {r.voucher_no for r in rows if r.voucher_type == "Bobbin Challan"}
-	out = {}
-	if sales:
-		job_out = {
-			c.name: c.against_job_out
-			for c in frappe.get_all("MM Sales Challan", filters={"name": ["in", list(sales)]},
-				fields=["name", "against_job_out"], limit_page_length=0)
-		}
-		prods = {}
-		for it in frappe.get_all(
-			"MM Sales Challan Item",
-			filters={"parent": ["in", list(sales)], "parenttype": "MM Sales Challan", "production": ["is", "set"]},
-			fields=["parent", "bobbin", "production"], order_by="parent asc, idx asc", limit_page_length=0,
-		):
-			got = prods.setdefault((it.parent, it.bobbin), [])
-			if it.production not in got:
-				got.append(it.production)
-		for r in rows:
-			if r.voucher_type == "Job In" and job_out.get(r.voucher_no):
-				out[(r.voucher_type, r.voucher_no, r.bobbin)] = job_out[r.voucher_no]
-			elif r.voucher_type in ("Sales Challan", "Job In"):
-				p = prods.get((r.voucher_no, r.bobbin))
-				if p:
-					out[(r.voucher_type, r.voucher_no, r.bobbin)] = ", ".join(p)
+	prods = {r.voucher_no for r in rows if r.voucher_type == "Production"}
+	paper = {}
 	if tracking:
-		jo = {
-			t.name: t.against_job_out
+		paper = {
+			t.name: t.challan_number or t.against_job_out
 			for t in frappe.get_all("MM Bobbin Box Tracking", filters={"name": ["in", list(tracking)]},
-				fields=["name", "against_job_out"], limit_page_length=0)
+				fields=["name", "challan_number", "against_job_out"], limit_page_length=0)
 		}
-		for r in rows:
-			if r.voucher_type == "Bobbin Challan" and jo.get(r.voucher_no):
-				out[(r.voucher_type, r.voucher_no, r.bobbin)] = jo[r.voucher_no]
+	went_on = {}
+	if prods:
+		for p, c in frappe.db.sql(
+			"""select i.production, i.parent from `tabMM Sales Challan Item` i
+			join `tabMM Sales Challan` c on c.name = i.parent
+			where c.docstatus = 1 and i.parenttype = 'MM Sales Challan' and i.production in %(p)s
+			order by c.transaction_date asc, c.creation asc""",
+			{"p": list(prods)},
+		):
+			got = went_on.setdefault(p, [])
+			if c not in got:
+				got.append(c)
+
+	out = {}
+	for r in rows:
+		key = (r.voucher_type, r.voucher_no, r.bobbin)
+		if r.voucher_type == "Bobbin Challan":
+			out[key] = paper.get(r.voucher_no)
+		elif r.voucher_type == "Production":
+			out[key] = ", ".join(went_on.get(r.voucher_no, []))
+		else:
+			out[key] = r.voucher_no
 	return out
 
 
