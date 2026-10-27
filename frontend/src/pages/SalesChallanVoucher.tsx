@@ -176,21 +176,24 @@ export default function SalesChallanVoucher() {
     if (own.length === 1 && !own[0].is_party) setCompany(own[0].company_name);
   }, [party, company, companies]);
   /** Name the customer from an order: its party, and its firm when it records one. */
+  //
+  // THE FIRM PICKED ON THE CHALLAN STAYS (Hetvi: "I selected A, and order 13 [placed for
+  // company B] should come … it should be deducting from that order"). A party's firms
+  // share its orders, so an order of firm B can be sent to firm A. The order only fills the
+  // firm in when none is chosen, or names the party when the order belongs to another one.
   const takeOrderParty = (o?: { party?: string; company_name?: string }) => {
     if (!o?.party) return;
     if (o.party !== party) { setParty(o.party); setCompany(o.company_name || ""); }
-    else if (o.company_name && o.company_name !== company) setCompany(o.company_name);
+    else if (!company && o.company_name) setCompany(o.company_name);
   };
 
-  /* THE ORDERS OF WHOEVER IS PICKED (Hetvi: "order should have party/company filter if
-     selected"). The server already narrows to the party; a party trading as more than one
-     firm has orders under each, so the chosen company narrows it again. An order with no
-     company on it is still the party's. Nothing picked lists every open order — picking one
-     names the customer. */
-  const orderRows = useMemo(() => {
-    const rows = ordersCall.data?.message ?? [];
-    return party && company ? rows.filter((o) => !o.company_name || o.company_name === company) : rows;
-  }, [ordersCall.data, party, company]);
+  /* THE ORDERS OF THE PICKED PARTY — EVERY ONE OF ITS FIRMS. A party trading as A to E
+     takes an order under any of them, and a challan to firm A can answer firm B's order
+     (Hetvi: "order number 13 should come"); narrowing the list to the picked firm hid it.
+     The server already narrows to the party, and the colour and open-order rules stand.
+     Each order says which firm it was placed under. Nothing picked lists every open
+     order — picking one names the customer. */
+  const orderRows = ordersCall.data?.message ?? [];
 
   const totals = useMemo(() => {
     const boxes = lines.filter((l) => l.kind === "box").length;
@@ -363,9 +366,12 @@ export default function SalesChallanVoucher() {
               options={orderRows.map((o) => ({
                 value: o.name,
                 label: `${o.name}${o.colours ? ` · ${o.colours}` : ""}`,
-                meta: !party ? [o.company_name, o.party_name || o.party].filter(Boolean).join(" · ") : undefined,
+                // The firm it was placed under — with a party picked, which of its firms.
+                meta: !party
+                  ? [o.company_name, o.party_name || o.party].filter(Boolean).join(" · ")
+                  : o.company_name ? `placed for ${o.company_name}` : undefined,
               }))}
-              emptyText={party ? "No open order for this party / company." : "No open orders."}
+              emptyText={party ? "No open order for this party." : "No open orders."}
               onChange={(v) => {
                 setOrder(v);
                 takeOrderParty(orderRows.find((o) => o.name === v));
