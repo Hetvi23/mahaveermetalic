@@ -462,8 +462,8 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
                   <input className="mm-input" value={d.challan_no} readOnly /></label>
               )}
               {/* The same name the register prints, not the party underneath it. Typed only
-                  while no order is mapped — once there is one, the order settles who the
-                  customer is and a second answer here could only contradict it. */}
+                  while no order is mapped — once there is one, the server keeps this firm if
+                  it is one of the order party's, else takes the order's. */}
               <label className="mm-field"><span className="mm-field-label">Customer</span>
                 <input className="mm-input" value={customer} readOnly={!!order}
                   onChange={(e) => setCustomer(e.target.value)}
@@ -498,7 +498,7 @@ function EditChallan({ challan, onClose, onSaved }: { challan: string; onClose: 
               <div className="mm-cr-maprow">
                 <span className="mm-muted">
                   {order
-                    ? `Map this challan to ${order}: its weight counts against that order, the ordered rate is carried onto the lines, and the customer comes from the order.`
+                    ? `Map this challan to ${order}: its weight counts against that order and the ordered rate is carried onto the lines. The challan keeps its firm if it is one of the order party's firms.`
                     : "Take the order off this challan. Its weight stops counting against it, which can reopen it."}
                 </span>
                 <button type="button" className="mm-btn-primary" disabled={mapping} onClick={() => void saveMapping()}>

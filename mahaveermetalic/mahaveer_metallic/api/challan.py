@@ -1856,8 +1856,8 @@ def map_challan_order(challan, sales_order=None, company_name=None):
 	so a header written alone would be ignored on any challan whose rows already name one.
 
 	With no order, `company_name` is whatever the office types — an order-less challan still
-	has a customer's name on the paper. With an order, the order answers that question and
-	the typed value is ignored.
+	has a customer's name on the paper. With an order the typed value is ignored: the
+	challan keeps its firm if it is one of the order party's, else takes the order's.
 	"""
 	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import (
 		is_dispatch,
@@ -1945,7 +1945,15 @@ def map_challan_order(challan, sales_order=None, company_name=None):
 		# settles who that is.
 		if so.party and is_dispatch(doc.challan_type):
 			doc.party = so.party
-		if so.company_name:
+		# A PARTY'S FIRMS SHARE ITS ORDERS (Hetvi, 2026-10-27): a challan made out to firm A
+		# can fill the order placed for firm B and stays firm A's paper, as on the voucher.
+		# The order's firm is taken only when the challan names none, or one that is not
+		# this party's.
+		keep = doc.company_name and frappe.db.exists(
+			"MM Party Company",
+			{"parent": doc.party, "parenttype": "MM Party Master", "company_name": doc.company_name},
+		)
+		if so.company_name and not keep:
 			doc.company_name = so.company_name
 	elif company_name is not None:
 		doc.company_name = (company_name or "").strip() or None
