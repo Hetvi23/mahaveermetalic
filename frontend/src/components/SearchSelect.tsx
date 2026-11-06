@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { getMasterByDoctype } from "@/config/registry";
 import AnchoredMenu, { useCloseOnOutside } from "./AnchoredMenu";
 import QuickCreateMaster from "./QuickCreateMaster";
+import { matchesSearch, matchRank } from "@/utils/search";
 
 export type SelectOption = {
 	value: string;
@@ -12,6 +13,9 @@ export type SelectOption = {
 	/** Heading the option sits under. Options carrying one are expected to arrive already
 	 *  ordered by group; a heading is drawn each time the group changes. */
 	group?: string;
+	/** Listed ahead of the other matches while searching — a report's "all of this party's
+	 *  companies" row ahead of the companies themselves. */
+	pinned?: boolean;
 };
 
 type Props = {
@@ -94,14 +98,20 @@ export default function SearchSelect({
 	// EVERY WORD, IN ANY ORDER. Matched as one phrase, "bch lk" found nothing for LK BCH BSM
 	// and "anmol 11" nothing for ANMOL 11 BS — the colour had to be typed exactly as it is
 	// spelled, from its first letter. Each word now has to appear somewhere in the option's
-	// label or its subtitle, so anything the old phrase found is still found.
+	// label or its subtitle, punctuation aside (utils/search).
+	// THE CLOSEST FIRST: the name itself, then names starting with it, then the rest — Enter
+	// takes the top row, and in list order "anmol 1" put ANMOL 10 BS there. Groups keep
+	// their order; ranking happens inside each.
 	const shown = useMemo(() => {
 		if (!q) return options;
-		const words = q.split(/\s+/).filter(Boolean);
-		return options.filter((o) => {
-			const hay = `${o.label} ${o.meta ?? ""}`.toLowerCase();
-			return words.every((w) => hay.includes(w));
-		});
+		const groupAt = new Map<string, number>();
+		for (const o of options) if (!groupAt.has(o.group ?? "")) groupAt.set(o.group ?? "", groupAt.size);
+		return options
+			.map((o, i) => ({ o, i }))
+			.filter(({ o }) => matchesSearch([o.label, o.meta], q))
+			.map((x) => ({ ...x, g: groupAt.get(x.o.group ?? "") ?? 0, p: x.o.pinned ? 0 : 1, r: matchRank(x.o.label, q) }))
+			.sort((a, b) => a.g - b.g || a.p - b.p || a.r - b.r || a.i - b.i)
+			.map((x) => x.o);
 	}, [options, q]);
 	// Typing re-filters, so the highlight has to come back to the top or it points at
 	// whatever now happens to sit at that index. OPENING is different: the highlight starts

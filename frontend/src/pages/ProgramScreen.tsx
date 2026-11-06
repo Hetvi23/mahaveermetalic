@@ -13,6 +13,7 @@ import PattyTile from "@/components/PattyTile";
 import BoardInput from "@/components/BoardInput";
 import { filterPatties, groupPatties } from "@/utils/finishedPatty";
 import { todayISO, tomorrowISO, fmtDate } from "@/utils/localDate";
+import { matchesSearch } from "@/utils/search";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const today = todayISO;
@@ -818,7 +819,7 @@ function AddProgramModal({ machines, presetMachine, presetShift, presetColour, p
   const q = search.trim().toLowerCase();
   // Searchable by lot and challan too, matching the shelf's own filter.
   const searched = q
-    ? sources.filter((s) => [s.colour, s.lotId, s.challan, s.rollNo].some((v) => (v || "").toLowerCase().includes(q)))
+    ? sources.filter((s) => matchesSearch([s.colour, s.lotId, s.challan, s.rollNo], q))
     : sources;
 
   // A machine runs one cut. Offering it a patty cut to something else is offering a job it

@@ -14,6 +14,7 @@ import { DISPATCH_SERIES, challanIdFor } from "@/utils/challanSeries";
 import SearchSelect from "@/components/SearchSelect";
 import DeliveryByInput from "@/components/DeliveryByInput";
 import { todayISO } from "@/utils/localDate";
+import { matchesSearch } from "@/utils/search";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.production";
 const today = todayISO;
@@ -102,8 +103,7 @@ export default function ProductionScreen() {
     const t = q.trim().toLowerCase();
     if (!t) return queue;
     return queue.filter((p) =>
-      [p.shade, p.roll_no, p.cut, p.party, p.customer_order, p.lot_id, p.machine_no, p.shift]
-        .filter(Boolean).join(" ").toLowerCase().includes(t),
+      matchesSearch([p.shade, p.roll_no, p.cut, p.party, p.customer_order, p.lot_id, p.machine_no, p.shift], t),
     );
   }, [queue, q]);
   const refresh = () => { void queueCall.mutate(); };

@@ -3,6 +3,7 @@ import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import { ChevronDown, ChevronRight, History, Printer, Search } from "lucide-react";
 import SearchSelect from "@/components/SearchSelect";
 import { fmtDate, todayISO } from "@/utils/localDate";
+import { applyOnEnter } from "@/components/ReportFilters";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.program";
 const monthAgo = () => {
@@ -144,13 +145,12 @@ export default function ProgramHistoryPage() {
       </header>
 
       <section className="mm-card mm-card-pad mm-no-print" style={{ marginBottom: "1rem" }}>
-        <div className="mm-brp-filters">
+        <div className="mm-brp-filters" onKeyDown={applyOnEnter(apply)}>
           <label className="mm-field" style={{ minWidth: 240 }}>
             <span className="mm-field-label">Search</span>
             <div className="mm-search-wrap">
               <Search size={15} className="mm-search-icon" aria-hidden />
               <input className="mm-input mm-search-pill" value={q} onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
                 placeholder="Colour / lot / roll / cut / order / program" />
             </div>
           </label>

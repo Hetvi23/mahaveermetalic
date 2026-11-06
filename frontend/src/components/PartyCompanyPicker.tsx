@@ -75,10 +75,12 @@ export default function PartyCompanyPicker({
       meta: r.party_name && r.party_name !== r.company_name ? r.party_name : undefined,
     }));
     if (wholeParty) {
+      // Pinned: a search that finds this party lists "All N companies" first (Hetvi: "when
+      // searched in party/company, All n companies as first option"), then its firms.
       for (const [p, own] of byParty) {
-        if (own.length > 1) out.push({ value: keyOf(p, WHOLE), label: own[0].party_name || p, meta: `all ${own.length} companies` });
+        if (own.length > 1) out.push({ value: keyOf(p, WHOLE), label: own[0].party_name || p, meta: `All ${own.length} companies`, pinned: true });
       }
-      out.sort((a, b) => a.label.localeCompare(b.label));
+      out.sort((a, b) => a.label.localeCompare(b.label) || Number(!!b.pinned) - Number(!!a.pinned));
     }
     return out;
   }, [rows, byParty, wholeParty]);

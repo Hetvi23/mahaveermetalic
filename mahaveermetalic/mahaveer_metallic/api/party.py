@@ -156,12 +156,15 @@ def party_master_list(q: str = "", limit: int = 200):
 
 
 @frappe.whitelist()
-def all_companies(txt: str = "", limit: int = 500):
+def all_companies(txt: str = "", limit: int = 0):
 	"""Every company with the party it belongs to.
 
 	Screens that must be filled in company-wise (inward, job work) need to find a company
 	by its own name OR by the party it sits under — operators know some sites by the party
 	and some by the company.
+
+	Every company by default: a cap of 500 cut off the firms past it alphabetically, and
+	their parties then showed up under the party's own name, unfindable by the firm's.
 	"""
 	rows = frappe.get_all(
 		"MM Party Company",

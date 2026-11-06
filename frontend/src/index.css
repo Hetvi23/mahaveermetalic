@@ -3869,3 +3869,10 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 }
 .mm-cover-override .mm-muted { flex: 1; min-width: 240px; font-size: 0.82rem; }
 .mm-cover-override input { flex: 0 0 140px; }
+
+/* Bobbin Report: the line the keyboard is on, and the lines that open a paper. Beats the
+   table's hover tint so the cursor stays visible under the mouse. */
+.mm-table tbody tr.mm-brp-row:focus { outline: none; }
+.mm-table tbody tr.mm-brp-row:focus td { background: var(--mm-accent-bg); }
+.mm-table tbody tr.mm-brp-row:focus td:first-child { box-shadow: inset 3px 0 0 var(--mm-accent); }
+.mm-brp-row-doc { cursor: pointer; }

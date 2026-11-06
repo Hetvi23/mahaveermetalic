@@ -345,13 +345,11 @@ export default function InwardReportPage() {
         </Filter>
         <Filter label="Chalan No">
           <input className="mm-input" value={challan} placeholder="Ch.No"
-            onChange={(e) => setChallan(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") apply(); }} />
+            onChange={(e) => setChallan(e.target.value)} />
         </Filter>
         <Filter label="Lot">
           <input className="mm-input" value={lot} placeholder="Lot id"
-            onChange={(e) => setLot(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") apply(); }} />
+            onChange={(e) => setLot(e.target.value)} />
         </Filter>
         <Filter label="Job work">
           <SearchSelect value={jobWork} placeholder="All receipts"

@@ -7,6 +7,7 @@ import { extractErrorMessage } from "@/utils/frappeError";
 import SearchSelect from "@/components/SearchSelect";
 import { todayISO, fmtDate } from "@/utils/localDate";
 import { isAdmin } from "@/utils/roles";
+import { matchesSearch } from "@/utils/search";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.cutting";
 const PROGRAM_API = "mahaveermetalic.mahaveer_metallic.api.program";
@@ -353,7 +354,7 @@ function FinishRollModal({ card, onClose, onDone }: { card: BoardCard; onClose: 
 
   const q = search.trim().toLowerCase();
   const shown = q
-    ? rolls.filter((r) => `${r.roll_no || ""} ${r.lot_number || ""} ${r.location || ""} ${r.color_name || ""}`.toLowerCase().includes(q))
+    ? rolls.filter((r) => matchesSearch([r.roll_no, r.lot_number, r.location, r.color_name], q))
     : rolls;
 
   const chosen = Object.values(picked);

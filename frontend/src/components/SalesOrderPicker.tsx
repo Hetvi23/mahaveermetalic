@@ -3,6 +3,7 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { ChevronDown, X } from "lucide-react";
 import AnchoredMenu, { useCloseOnOutside } from "./AnchoredMenu";
 import { useMenuKeys } from "@/utils/menuKeys";
+import { matchesSearch } from "@/utils/search";
 
 export type SOOption = {
   sales_order: string;
@@ -114,9 +115,7 @@ export default function SalesOrderPicker({ label, value, onChange, required, dis
     return options.filter((o) => {
       if (partyFilter && (o.party_name || o.party) !== partyFilter) return false;
       if (!q) return true;
-      return [o.sales_order, o.party_name, o.party, (o.colours || []).join(" "), (o.cuts || []).join(" "), o.delivery_date]
-        .filter(Boolean)
-        .some((s) => String(s).toLowerCase().includes(q));
+      return matchesSearch([o.sales_order, o.party_name, o.party, ...(o.colours || []), ...(o.cuts || []), o.delivery_date], q);
     });
   }, [options, q, partyFilter]);
   const keys = useMenuKeys({

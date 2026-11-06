@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type KeyboardEvent, type ReactNode } from "react";
 import { Download, Printer, RotateCcw, Search } from "lucide-react";
 
 /**
@@ -11,6 +11,21 @@ import { Download, Printer, RotateCcw, Search } from "lucide-react";
  * controls. This owns the layout, the actions and the Reset; the report supplies its own
  * fields, because only it knows what it can be filtered by.
  */
+/**
+ * ENTER APPLIES THE FILTER (Hetvi: "filter on enter on all the pages"), from any field in
+ * the bar. A field that used the key itself is left alone: Enter in a dropdown picks its
+ * option, and the next Enter, with the list closed, filters.
+ */
+export function applyOnEnter(onApply?: () => void) {
+  return (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Enter" || e.defaultPrevented || !onApply) return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === "TEXTAREA" || tag === "BUTTON") return;
+    e.preventDefault();
+    onApply();
+  };
+}
+
 export function ReportFilters({ children, onApply, onReset, onPrint, onExport, exportDisabled, applyLabel, note }: {
   children: ReactNode;
   onApply?: () => void;
@@ -24,7 +39,7 @@ export function ReportFilters({ children, onApply, onReset, onPrint, onExport, e
 }) {
   return (
     <section className="mm-card mm-card-pad mm-no-print mm-rf">
-      <div className="mm-rf-fields">{children}</div>
+      <div className="mm-rf-fields" onKeyDown={applyOnEnter(onApply)}>{children}</div>
       <div className="mm-rf-actions">
         {onApply && (
           <button type="button" className="mm-btn-primary" onClick={onApply}>

@@ -13,6 +13,7 @@ import PartyCompanyPicker, { useCompanyRows } from "@/components/PartyCompanyPic
 import { todayISO, fmtDate } from "@/utils/localDate";
 import DeliveryByInput from "@/components/DeliveryByInput";
 import { DISPATCH_SERIES, challanIdFor } from "@/utils/challanSeries";
+import { matchesSearch } from "@/utils/search";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 const today = todayISO;
@@ -501,8 +502,7 @@ function BoxPicker({ party, order, colours, onClose, onAdd }: { party: string; o
     .filter((r) => {
       const t = q.trim().toLowerCase();
       if (!t) return true;
-      return [r.item, r.cut, r.customer_order, r.barcode, r.posting_date, String(r.net_weight ?? "")]
-        .some((v) => String(v ?? "").toLowerCase().includes(t));
+      return matchesSearch([r.item, r.cut, r.customer_order, r.barcode, r.posting_date, r.net_weight], t);
     })
     // Dates compare as ISO strings — which is what posting_date already is, so this needs
     // no parsing and no timezone to get wrong. An open end leaves that side unbounded.
@@ -606,7 +606,7 @@ function RollPicker({ colours, onClose, onAdd }: { colours: string[]; onClose: (
     // is a picking mistake that mis-bills the customer.
     .filter((r) => colours.length === 0 || !r.color_name || colours.includes(r.color_name))
     .filter((r) =>
-      !q.trim() || `${r.roll_no || ""} ${r.color_name || ""} ${r.lot_number || ""} ${r.location || ""}`.toLowerCase().includes(q.toLowerCase()),
+      matchesSearch([r.roll_no, r.color_name, r.lot_number, r.location], q),
     );
   const [sel, setSel] = useState<Record<string, RollRow>>({});
   return (

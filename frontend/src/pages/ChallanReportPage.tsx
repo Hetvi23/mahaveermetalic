@@ -10,6 +10,7 @@ import { extractErrorMessage } from "@/utils/frappeError";
 import { printChallan, type ChallanPrintData } from "@/utils/challanPrint";
 import { fmtDate } from "@/utils/localDate";
 import { downloadBoxStickers, printBoxStickers, stickersFromChallan } from "@/utils/boxSticker";
+import { matchesSearch } from "@/utils/search";
 
 const API = "mahaveermetalic.mahaveer_metallic.api.challan";
 
@@ -112,8 +113,7 @@ export default function ChallanReportPage() {
     const t = q.trim().toLowerCase();
     if (!t) return rows;
     return rows.filter((r) =>
-      [r.name, r.challan_no, r.company, r.party_name, r.party, r.sales_order, r.challan_type, (r.colours ?? []).join(" ")]
-        .filter(Boolean).join(" ").toLowerCase().includes(t),
+      matchesSearch([r.name, r.challan_no, r.company, r.party_name, r.party, r.sales_order, r.challan_type, ...(r.colours ?? [])], t),
     );
   }, [rows, q]);
 
