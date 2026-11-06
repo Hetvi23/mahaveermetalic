@@ -4,8 +4,13 @@
 
   1. Bobbin / Box challan (MM Bobbin Box Tracking) — Received = we got bobbins back from the
      party (in), Given = we handed bobbins to them (out).
-  2. Sales-side challans — Sales, Job Challan, Challan, Delivery Challan, Roll Challan —
-     and every Job In: the bobbins inside each box go OUT to the challan's party.
+  2. Sales-side challans — Sales, Job Challan, Challan, Delivery Challan, Roll Challan: the
+     bobbins and box of each line ticked returnable go OUT to the challan's party.
+  3. Job In: they come back IN from the job worker (and a Job In numbered in a dispatch
+     book goes straight on OUT to the customer as well). See post_job_challan.
+
+Coming in to MM is +, going to a party is − (Hetvi, 2026-11-06: "the bobbin stock has to be
+maintained, if bobbin coming in MM then + if going to party then -").
 
 Those, and nothing else (Hetvi, 2026-10-27: "data will only come from job in/sales or bobbin
 in/out"). Production no longer posts: the bobbins it packs are counted when the boxes leave
@@ -165,7 +170,9 @@ def bobbin_report(party=None, from_date=None, to_date=None, bobbin=None, owner=N
 	if frappe.utils.cint(bill_wise):
 		grouped = {}
 		for r in rows:
-			key = (r.voucher_type, r.voucher_no, r.bobbin)
+			# Per party too: a Job In in a dispatch book posts + from the worker and − to the
+			# customer, and one line across all parties would net them to nothing.
+			key = (r.voucher_type, r.voucher_no, r.bobbin, r.party)
 			g = grouped.get(key)
 			if g is None:
 				g = grouped[key] = frappe._dict({
@@ -307,38 +314,57 @@ BOBBIN_CHALLAN_TYPES = ("Sales", "Job Challan", "Challan", "Delivery Challan", "
 
 
 def post_job_challan(doc):
-	"""Post a challan's bobbins: each box line's bobbins go OUT to the challan's party.
+	"""Post a challan's bobbins and boxes: coming in to MM +, going to a party −.
+
+	ONLY WHAT IS TICKED RETURNABLE (Hetvi, 2026-11-06): a line's bobbins count when it is
+	ticked R.Bobbin and its box when ticked R.Box — the same ticks the challan prints as
+	"Return No. of Box / Bobbin". Every box used to count, so a party showed owing boxes
+	that were never coming back (on mm only 999 of 5,088 sales lines are ticked R.Box).
+
+	  • A sales-side challan: OUT to its party (−).
+	  • A Job In: the boxes come back from the job worker INTO MM (+), on the worker's
+	    account — the Job Out's party. One numbered in a dispatch book (is_dispatch) also
+	    goes straight on to the customer, so it posts that OUT (−) as well.
 
 	Cleared and written again from the document every time, so a re-post (mapping the
 	challan to another order's party, an edit) never double-counts. A cancelled challan, or a
-	type that does not carry bobbins to a party, is left with no rows.
+	type that does not carry bobbins (Job Out), is left with no rows.
 
-	Two things are deliberately NOT set on these rows:
-	  • against_job_out — Job Hisab reads ledger rows carrying it as LOOSE bobbins sent or
-	    returned against a Job Out (Bobbin In / Out). A Job In's own bobbins are already in
-	    the hisab off the challan; tagging them would count them twice. The report works the
-	    Job Out out from the challan instead (_references).
-	  • a Production row — the production that packed these boxes no longer posts.
+	against_job_out is deliberately NOT set: Job Hisab reads ledger rows carrying it as LOOSE
+	bobbins sent or returned against a Job Out (Bobbin In / Out), and a Job In's own bobbins
+	are already in the hisab off the challan — tagging them would count them twice.
 	"""
+	from mahaveermetalic.mahaveer_metallic.doctype.mm_sales_challan.mm_sales_challan import is_dispatch
+
 	clear_voucher(doc.name)
 	if doc.docstatus != 1 or (doc.challan_type or "Sales") not in BOBBIN_CHALLAN_TYPES:
 		return
-	vtype = "Job In" if doc.challan_type == "Job In" else "Sales Challan"
+	if doc.challan_type == "Job In":
+		worker = doc.get("against_job_out") and frappe.db.get_value("MM Sales Challan", doc.against_job_out, "party")
+		moves = [(worker or doc.party, 1)]
+		if is_dispatch(doc.challan_type, doc.name, doc.get("naming_series")):
+			moves.append((doc.party, -1))
+		vtype = "Job In"
+	else:
+		moves = [(doc.party, -1)]
+		vtype = "Sales Challan"
 	for it in doc.items or []:
-		pcs = float(it.bobbin_pcs or 0)
-		if not it.bobbin or pcs <= 0:
+		pcs = float(it.bobbin_pcs or 0) if (it.get("r_bobbin") and it.bobbin) else 0.0
+		box = float(it.qty_box or 1) if it.get("r_box") else 0.0
+		if pcs <= 0 and box <= 0:
 			continue
-		_post(
-			posting_date=doc.transaction_date or frappe.utils.today(),
-			voucher_type=vtype,
-			voucher_no=doc.name,
-			party=doc.party,
-			bobbin=it.bobbin,
-			# The challan's own remark, the operator's words — the report's Remark column.
-			note=(doc.get("remarks") or "").strip() or None,
-			job_work_flag=1 if frappe.utils.cint(doc.get("job_work_flag")) else 0,
-			in_qty=0,
-			out_qty=pcs,
-			box_in=0,
-			box_out=float(it.qty_box or 1),
-		)
+		for party, sign in moves:
+			_post(
+				posting_date=doc.transaction_date or frappe.utils.today(),
+				voucher_type=vtype,
+				voucher_no=doc.name,
+				party=party,
+				bobbin=it.bobbin or None,
+				# The challan's own remark, the operator's words — the report's Remark column.
+				note=(doc.get("remarks") or "").strip() or None,
+				job_work_flag=1 if frappe.utils.cint(doc.get("job_work_flag")) else 0,
+				in_qty=pcs if sign > 0 else 0,
+				out_qty=pcs if sign < 0 else 0,
+				box_in=box if sign > 0 else 0,
+				box_out=box if sign < 0 else 0,
+			)
