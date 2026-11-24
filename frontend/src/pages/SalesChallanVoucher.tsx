@@ -86,11 +86,14 @@ export default function SalesChallanVoucher() {
   const [company, setCompany] = useState("");
   const [order, setOrder] = useState("");
   const [challanType, setChallanType] = useState("Sales");
-  // The challan's own ID, typed by hand. Blank leaves it to the type's series.
-  const [challanId, setChallanId] = useState("");
   const [date, setDate] = useState(today());
-  /* Typed, not suggested (Hetvi: "make challan id manual for now"). The book's next number
-     is still available as api.challan.next_challan_id if this is switched back on. */
+  /* THE CHALLAN ID IS NOT TYPED (Hetvi: "close the manual entry also, it should be auto
+     from last entry"). Typed numbers went in as 680 for 580 and as 6.38. The server gives
+     the book's next number at save; this only shows which number that will be. */
+  const nextIdCall = useFrappeGetCall<{ message: string }>(
+    `${API}.next_challan_id`, { series: challanType, on: date }, `scv-next-id-${challanType}-${date}`,
+  );
+  const nextId = nextIdCall.data?.message;
   const [remark, setRemark] = useState("");
   const [deliveryBy, setDeliveryBy] = useState("");
   const [jobWork, setJobWork] = useState(false);
@@ -271,14 +274,14 @@ export default function SalesChallanVoucher() {
         delivery_by: deliveryBy || undefined,
         challan_type: challanType,
         job_work: jobWork ? 1 : 0,
-        challan_id: challanId.trim() || undefined,
         boxes: JSON.stringify(lines.filter((l) => l.kind === "box").map((l) => l.ref)),
         rolls: JSON.stringify(lines.filter((l) => l.kind === "roll").map((l) => l.ref)),
       });
       const name = (res as { message?: { challan?: string } })?.message?.challan;
       const typeLabel = CHALLAN_TYPES.find((t) => t.value === challanType)?.label ?? challanType;
       toast(`${typeLabel} ${name || ""} created`);
-      setLines([]); setChallanId(""); setRemark("");
+      setLines([]); setRemark("");
+      void nextIdCall.mutate();
       setOverCover(false); setPin("");
       if (name) {
         setLastChallan(name);
@@ -331,17 +334,12 @@ export default function SalesChallanVoucher() {
             />
           </label>
           <label className="mm-field">
-            {/* The saved ID rides in the label, on a line of its own above the box — the row
-                is bottom-aligned, so a line under the box would lift this one field. */}
-            <span className="mm-field-label">
-              Challan ID
-              {challanId.trim() && (
-                <span className="mm-muted" style={{ display: "block", whiteSpace: "nowrap" }}>{challanIdFor(CHALLAN_TYPES.find((t) => t.value === challanType)?.series ?? "MMUSC-", challanId, date)}</span>
-              )}
-            </span>
-            <input className="mm-input" value={challanId}
-              onChange={(e) => setChallanId(e.target.value)}
-              placeholder="e.g. 123" />
+            {/* Shown, not typed: the next number in the picked book, given on save. */}
+            <span className="mm-field-label">Challan ID</span>
+            <input className="mm-input" readOnly tabIndex={-1}
+              value={nextId ? challanIdFor(CHALLAN_TYPES.find((t) => t.value === challanType)?.series ?? "MMUSC-", nextId, date) : ""}
+              placeholder="Auto"
+              title="Given automatically on save: the next number in this book" />
           </label>
           {/* No "Manual Chalan No" here (Hetvi: "hide manual challan no"). Challan ID above is
               the number a sales challan is known by — it names the challan (MMUSC-123-26/27)

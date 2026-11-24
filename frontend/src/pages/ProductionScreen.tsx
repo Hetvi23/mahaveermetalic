@@ -384,15 +384,7 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
     setChallanSeries(jobWork ? "Job Challan" : DISPATCH_SERIES[0].value);
   }, [jobWork, seriesTouched]);
   const [challanId, setChallanId] = useState("");
-  /** Typed by hand? Then the book's own count stops suggesting over it. */
-  const [challanIdTyped, setChallanIdTyped] = useState(false);
   const [vdate, setVdate] = useState<string>(today());
-  /* THE CHALLAN ID IS TYPED, NOT SUGGESTED (Hetvi: "make challan id manual for now"). The
-     book's next number is still available server-side — api.challan.next_challan_id, which
-     counts each book on its own and restarts every financial year — so this can be filled
-     in again by reading it here. Note what a blank ID means: the box stickers are built
-     from it, so with nothing typed they fall back to the voucher number, and to PREVIEW
-     when that is blank too. */
   const [boxReturn, setBoxReturn] = useState(false);
   const [bobbinReturn, setBobbinReturn] = useState(false);
   const [boxes, setBoxes] = useState<BoxRow[]>([]);
@@ -548,35 +540,64 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
   // Once a sticker carries the ID, what the code is built from cannot change under it.
   const codesPrinted = boxes.some((b) => isRealCode(b.code));
 
-  /* THE BOOK'S OWN NEXT NUMBER, suggested once per book-and-date (Hetvi: "by auto bring
-     the latest series based on challan type"). Each book counts on its own and restarts
-     every financial year, so it is re-asked when either changes.
-
-     ASKED ONCE, AND TYPING ALWAYS WINS. `nextIdCall` is a fresh function on every render,
-     so listing it as a dependency re-ran this on every render — each run fetching, setting
-     the id, re-rendering, fetching again. Keystrokes landed in the middle of that and the
-     next answer wrote straight over them, which reads as a field that will not let you
-     type (Hetvi: "it should be editable as well"). A ref remembers what has already been
-     asked, and a second ref holds whether the operator has typed, read at the moment the
-     answer arrives rather than when it was sent. */
-  const suggestedFor = useRef("");
-  const typedRef = useRef(false);
+  /* THE BOOK'S OWN NEXT NUMBER, NEVER TYPED (Hetvi: "close the manual entry also, it should
+     be auto from last entry"; typed IDs went in as 680 for 580 and as 6.38). Each book counts
+     on its own and restarts every financial year, so it is asked again when either changes,
+     and once more when the boxes are deleted — until a sticker carries it.
+     `nextIdCall` is a fresh function on every render, so it is NOT a dependency: listing it
+     re-ran this on every render, each answer causing the next. */
   useEffect(() => {
-    if (!challanActive || challanIdTyped || codesPrinted) return;
-    const key = `${challanSeries}|${vdate}`;
-    if (suggestedFor.current === key) return;
-    suggestedFor.current = key;
+    if (!challanActive || codesPrinted) return;
     void (async () => {
       try {
         const r = await nextIdCall({ series: challanSeries, on: vdate });
         const next = (r as { message?: string })?.message;
-        // Typed while this was in flight? Then the number on screen is theirs, not ours.
-        if (next && !typedRef.current) setChallanId(String(next));
+        if (next) setChallanId(String(next));
       } catch { /* a suggestion that cannot be fetched is simply not made */ }
     })();
-    // nextIdCall is deliberately NOT a dependency — see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [challanActive, challanSeries, vdate, challanIdTyped, codesPrinted]);
+  }, [challanActive, challanSeries, vdate, codesPrinted]);
+
+  /* HELD FROM THE FIRST STICKER. Until this voucher is saved, nothing on the server knows
+     its number is already printed on boxes, and a Sales Challan Voucher saved meanwhile read
+     the same "last + 1" and took it. api.challan.hold_challan_id keeps the number out of
+     everyone else's count; the save frees it, and so do deleting the boxes or closing the
+     voucher unsaved. */
+  const holder = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const held = useRef("");
+  const [heldElsewhere, setHeldElsewhere] = useState("");
+  const { call: holdCall } = useFrappePostCall<{ message: { ok: boolean; name: string } }>(
+    "mahaveermetalic.mahaveer_metallic.api.challan.hold_challan_id",
+  );
+  const { call: releaseCall } = useFrappePostCall("mahaveermetalic.mahaveer_metallic.api.challan.release_challan_id");
+  const releaseRef = useRef(releaseCall);
+  releaseRef.current = releaseCall;
+  useEffect(() => {
+    if (codesPrinted && challanActive && challanId && !held.current) {
+      held.current = "pending";
+      void (async () => {
+        try {
+          const r = await holdCall({ series: challanSeries, on: vdate, challan_id: challanId, holder: holder.current });
+          const m = (r as { message?: { ok: boolean; name: string } })?.message;
+          held.current = m?.ok ? m.name : "";
+          if (m && !m.ok) setHeldElsewhere(m.name);
+        } catch { held.current = ""; /* the save still refuses a number that has gone */ }
+      })();
+    } else if (!codesPrinted && held.current) {
+      if (held.current !== "pending") {
+        void releaseRef.current({ name: held.current, holder: holder.current }).catch(() => undefined);
+      }
+      held.current = "";
+      setHeldElsewhere("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codesPrinted, challanActive, challanId]);
+  // Closed unsaved: let the number go. After a save the server has already freed it.
+  useEffect(() => () => {
+    if (held.current && held.current !== "pending") {
+      void releaseRef.current({ name: held.current, holder: holder.current }).catch(() => undefined);
+    }
+  }, []);
 
 
   /** One box as a sticker — otherwise exactly the label that gets stuck on. */
@@ -884,22 +905,17 @@ function ProduceModal({ program, onClose, onDone }: { program: Program; onClose:
             </label>
             <label className="mm-field">
               <span className="mm-field-label">Challan ID</span>
-              {/* Suggested from the book's own count, and read-only once a box wears it:
-                  the stickers are printed from this. */}
-              <input className="mm-input" value={challanId} disabled={!challanActive}
-                readOnly={codesPrinted && challanActive}
-                title={codesPrinted ? "Boxes are already labelled with this ID — delete them to change it" : undefined}
-                placeholder={challanActive ? "e.g. 123" : toStock ? "Added to stock" : "No party — goes to stock"}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setChallanId(v);
-                  // Set on the ref FIRST and synchronously: an answer already in flight is
-                  // checked against this, not against state that has not settled yet.
-                  typedRef.current = v.trim() !== "";
-                  setChallanIdTyped(typedRef.current);
-                  // Emptied by hand? Let the book suggest again for this type and date.
-                  if (!typedRef.current) suggestedFor.current = "";
-                }} />
+              {/* The book's next number, shown and never typed: the stickers are printed
+                  from it, so it is held from the first one until the voucher is saved. */}
+              <input className="mm-input" value={challanId} disabled={!challanActive} readOnly tabIndex={-1}
+                title={codesPrinted ? "Boxes are already labelled with this ID" : "The next number in this book, given automatically"}
+                placeholder={challanActive ? "Auto" : toStock ? "Added to stock" : "No party — goes to stock"} />
+              {heldElsewhere && (
+                <span className="mm-field-hint" style={{ color: "var(--mm-danger)", whiteSpace: "normal" }}>
+                  {heldElsewhere} was just taken by another challan. Delete these boxes and add
+                  them again to get the next number.
+                </span>
+              )}
               {challanActive && challanId.trim() && (
                 <span className="mm-field-hint">
                   Saved as <b>{challanIdFor(

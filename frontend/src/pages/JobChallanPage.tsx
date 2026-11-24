@@ -745,10 +745,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   // The JOB OUT's challan number, fetched when it is picked: a receipt is filed under the
   // number of the challan it answers, so every Job In against 125 reads 125. Editable.
   const [cNo, setCNo] = useState("");
-  // The production's voucher number is typed by hand; the Job In challan's ID follows its
-  // book's own count until somebody types one, because the box stickers are built from it.
+  // The production's voucher number is typed by hand; the Job In challan's ID is not.
   const [vNo, setVNo] = useState("");
-  const [challanId, setChallanId] = useState("");
   /* WHOSE ACCOUNT THIS RECEIPT LANDS IN — the operator's choice, not the order's.
      These two were read-only and read off the picked order, which meant a receipt could
      only ever be filed under whoever that order named. They are pickers now, and they
@@ -767,8 +765,13 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
    *  either way — the production does that — so this turns off the book and the number,
    *  and marks the production a stock receipt. */
   const [toStock, setToStock] = useState(false);
-  /* Typed, not suggested (Hetvi: "make challan id manual for now"). api.challan.next_challan_id
-     still knows each book's next number if this is ever filled in again. */
+  /* THE CHALLAN ID IS NOT TYPED (Hetvi: "close the manual entry also, it should be auto
+     from last entry"). The server gives the book's next number at save; this shows it. */
+  const idSeries = series || "Job In";
+  const nextIdCall = useFrappeGetCall<{ message: string }>(
+    `${API}.next_challan_id`, { series: idSeries, on: vDate }, toStock ? null : `ji-next-id-${idSeries}-${vDate}`,
+  );
+  const nextId = toStock ? "" : nextIdCall.data?.message || "";
   const [batchNo, setBatchNo] = useState("");
   const [size, setSize] = useState("");
   const [order, setOrder] = useState("");
@@ -842,7 +845,7 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
   const sent = Number(meta?.total_weight || 0);
 
   useEffect(() => {
-    setBoxes([]); setErr(null); setAdding(false); setVNo(""); setChallanId("");
+    setBoxes([]); setErr(null); setAdding(false); setVNo("");
     setSeries("");
     setToStock(false);
     // A fresh receipt names nobody yet. This used to happen through the order: a new Job
@@ -879,7 +882,6 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
         posting_date: vDate,
         batch_no: batchNo || undefined,
         voucher_no: vNo.trim() || undefined,
-        challan_id: toStock ? undefined : challanId.trim() || undefined,
         challan_series: toStock ? undefined : series,
         to_stock: toStock ? 1 : 0,
         cut: size || undefined,
@@ -928,7 +930,8 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
           /* Labels are best-effort: the receipt is posted and must not be undone by them. */
         }
       }
-      setBoxes([]); setBatchNo(""); setVNo(""); setChallanId("");
+      setBoxes([]); setBatchNo(""); setVNo("");
+      void nextIdCall.mutate();
       onDone();
     } catch (e) {
       const msg = extractErrorMessage(e);
@@ -1070,26 +1073,22 @@ function JobInVoucher({ jobOut, meta, party, onDone, onClose }: {
                       // not being shown as the actual saved id"). An empty box cannot
                       // promise a number it is not going to get.
                       setToStock(e.target.checked);
-                      if (e.target.checked) { setChallanId(""); setSeries(""); }
+                      if (e.target.checked) setSeries("");
                     }} />
                   <span>Into stock — no challan number</span>
                 </span>
               </label>
               <label className="mm-field">
                 <span className="mm-field-label">Challan ID</span>
-                <input className="mm-input" value={challanId} placeholder={toStock ? "—" : "e.g. 123"}
-                  disabled={toStock}
-                  onChange={(e) => setChallanId(e.target.value)} />
+                <input className="mm-input" readOnly tabIndex={-1} disabled={toStock}
+                  value={nextId ? challanIdFor(
+                    [JOB_IN_SERIES, ...DISPATCH_SERIES].find((t) => t.value === series)?.series ?? JOB_IN_SERIES.series,
+                    nextId, vDate,
+                  ) : ""}
+                  placeholder={toStock ? "—" : "Auto"}
+                  title="Given automatically on save: the next number in this book" />
                 {toStock && (
                   <span className="mm-field-hint">Numbered automatically in the Job In book.</span>
-                )}
-                {!toStock && challanId.trim() && (
-                  <span className="mm-field-hint">
-                    Saved as <b>{challanIdFor(
-                      [JOB_IN_SERIES, ...DISPATCH_SERIES].find((t) => t.value === series)?.series ?? JOB_IN_SERIES.series,
-                      challanId, vDate,
-                    )}</b>
-                  </span>
                 )}
               </label>
               <label className="mm-field">

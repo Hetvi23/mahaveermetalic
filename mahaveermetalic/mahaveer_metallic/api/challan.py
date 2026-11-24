@@ -11,6 +11,7 @@ picking boxes (SELECT BOX) or rolls straight from inventory (SELECT ROLL).
 
 import json
 import re
+import time
 
 import frappe
 from frappe import _
@@ -143,6 +144,7 @@ def create_challan_from_production(production, challan_series=None, challan_id=N
 	challan.flags.manual_id = _challan_id(challan_id, series_key, challan.transaction_date)
 	challan.insert(ignore_permissions=True)
 	challan.submit()   # dispatched straight away
+	frappe.cache().hdel(HELD_IDS_KEY, challan.name)  # saved now, so it counts as used anyway
 	return challan.name
 
 
@@ -355,7 +357,7 @@ def create_challan(party=None, sales_order=None, challan_date=None, remark=None,
 			"items": rows,
 		}
 	)
-	challan.flags.manual_id = _challan_id(challan_id, challan_type, challan.transaction_date)
+	challan.flags.manual_id = _next_id(challan_type, challan.transaction_date)
 	# Over the order's inward cover, on purpose and on an admin's say-so. Checked here so a
 	# wrong PIN is refused before anything is created, and recorded in the remarks so the
 	# register says the challan went out over cover rather than leaving it to be noticed
@@ -523,6 +525,10 @@ def _challan_id(value, series_key, on=None):
 	name = challan_id_name(value, series_key, on)
 	if not name:
 		return None
+	# A NUMBER, NOTHING ELSE: "6.38" was filed as MMUSC-6.38-26/27 and had to be renamed.
+	number = name.split("-")[1]
+	if not number.isdigit():
+		frappe.throw(_("Challan ID {0} is not a number.").format(number))
 	taken = frappe.db.get_value("MM Sales Challan", name, ["name", "challan_type"], as_dict=True)
 	if taken:
 		frappe.throw(_("Challan ID {0} is already used by a {1} challan.").format(taken.name, taken.challan_type))
@@ -543,7 +549,10 @@ CHALLAN_ID_START = {"Sales": 3}
 #
 # The current run is at 230; it would have to write 1,670 more challans before this
 # mattered, and a number in the old range can still be typed by hand if one is needed.
-CHALLAN_ID_LEGACY_FROM = {"Sales": 1900}
+#
+# The Job In book (MMUJI) carries the same kind of old numbers (1953–2121 beside a 55), so
+# its count skips them too.
+CHALLAN_ID_LEGACY_FROM = {"Sales": 1900, "Job In": 1900}
 
 
 @frappe.whitelist()
@@ -562,10 +571,13 @@ def next_challan_id(series=None, on=None):
 	fy = financial_year(frappe.utils.getdate(on or frappe.utils.today())).replace("-", "/")
 	legacy_from = CHALLAN_ID_LEGACY_FROM.get(key)
 	highest = 0
-	for (name,) in frappe.db.sql(
+	taken = [n for (n,) in frappe.db.sql(
 		"""select name from `tabMM Sales Challan` where name like %s""",
 		(f"{code}-%-{fy}",),
-	):
+	)]
+	# A number a production voucher has already printed on its stickers is used too.
+	taken += [n for n in _held_ids() if n.startswith(f"{code}-") and n.endswith(f"-{fy}")]
+	for name in taken:
 		middle = name[len(code) + 1 : -len(fy) - 1]
 		if not middle.isdigit():
 			continue
@@ -574,6 +586,61 @@ def next_challan_id(series=None, on=None):
 			continue
 		highest = max(highest, n)
 	return str(max(highest + 1, CHALLAN_ID_START.get(key, 1)))
+
+
+# A NUMBER A PRODUCTION VOUCHER HAS ALREADY PRINTED. The voucher stamps its challan ID on
+# each box sticker as the box is added, long before it is saved, so until then nothing here
+# knows the number is gone: a Sales Challan Voucher saved meanwhile read the same "highest
+# + 1" and took it. The voucher holds its number from its first sticker until it is saved
+# or its boxes are deleted, and next_challan_id counts a held number as used. A hold left by
+# a voucher that was simply closed lapses after a shift.
+HELD_IDS_KEY = "mm_challan_id_held"
+HOLD_SECONDS = 16 * 3600
+
+
+def _held_ids():
+	"""Challan names held by open production vouchers: name -> holder. Lapsed holds go."""
+	cache = frappe.cache()
+	now = time.time()
+	held = {}
+	for name, v in (cache.hgetall(HELD_IDS_KEY) or {}).items():
+		name = frappe.safe_decode(name)
+		if v and v.get("until", 0) > now:
+			held[name] = v.get("holder")
+		else:
+			cache.hdel(HELD_IDS_KEY, name)
+	return held
+
+
+@frappe.whitelist()
+def hold_challan_id(series=None, on=None, challan_id=None, holder=None):
+	"""Hold the number a production voucher has started printing on its box stickers.
+
+	Answers ok False when the number has gone in the meantime — to a saved challan, or to
+	another voucher's hold — so the screen can say so before any more stickers carry it.
+	"""
+	key = _series_key(series, "Sales")
+	name = challan_id_name(challan_id, key, on)
+	if not name or not holder:
+		frappe.throw(_("A challan ID and a holder are needed."))
+	other = _held_ids().get(name)
+	if frappe.db.exists("MM Sales Challan", name) or (other and other != holder):
+		return {"ok": False, "name": name}
+	frappe.cache().hset(HELD_IDS_KEY, name, {"holder": holder, "until": time.time() + HOLD_SECONDS})
+	return {"ok": True, "name": name}
+
+
+@frappe.whitelist()
+def release_challan_id(name=None, holder=None):
+	"""Let go of a held number: the voucher's boxes were deleted, or it was closed unsaved."""
+	if name and _held_ids().get(name) == holder:
+		frappe.cache().hdel(HELD_IDS_KEY, name)
+
+
+def _next_id(series_key, on):
+	"""THE BOOK'S NEXT NUMBER, given at save (Hetvi: "close the manual entry also, it
+	should be auto from last entry"). Typed IDs went in as 680 for 580 and as 6.38."""
+	return challan_id_name(next_challan_id(series_key, on), series_key, on)
 
 
 @frappe.whitelist()
@@ -2370,10 +2437,9 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	challan_series=None, company_name=None, to_stock=0):
 	"""Receive a Job Out back as a PRODUCTION voucher, and close the Job Out with a Job In.
 
-	`voucher_no` and `challan_id` are the two IDs the operator may type by hand — the
-	production's, as typed, and the Job In challan's, filed as series-number-year
-	(MMUJI-123-26/27) under `challan_series` (a SERIES key, Job In unless picked). Blank
-	leaves each to its series.
+	`voucher_no` is the production's number, typed by hand (blank leaves it to its series).
+	The Job In challan's ID is the next number in `challan_series` (a SERIES key, Job In
+	unless picked), filed as series-number-year (MMUJI-123-26/27); `challan_id` is ignored.
 
 	Two records, because they answer two questions the shop asks separately: the production
 	is what came back (boxes, barcodes, bobbins, finished-goods stock), and the Job In
@@ -2398,11 +2464,11 @@ def create_job_in_production(against_job_out, boxes=None, customer_order=None, p
 	# balance in Job work hisab is computed from it and skipping it would leave the material
 	# showing as still with the worker.
 	to_stock = frappe.utils.cint(to_stock)
-	if to_stock:
-		challan_id = None
 	voucher_no = _manual_id("MM Production", voucher_no, frappe.get_meta("MM Production").autoname)
 	challan_series = _series_key(challan_series, "Job In")
-	_challan_id(challan_id, challan_series, posting_date)
+	# The book's next number, never typed; decided here, before the production, because its
+	# box codes are built from it. A stock receipt has no number to give.
+	challan_id = None if to_stock else next_challan_id(challan_series, posting_date)
 
 	jo = frappe.get_doc("MM Sales Challan", against_job_out)
 	if jo.challan_type != "Job Out":
